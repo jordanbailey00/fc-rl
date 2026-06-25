@@ -10,7 +10,7 @@
 #include "fc_npc.h"
 
 typedef struct {
-    float w_damage_dealt;      /* applied as (damage + hits_landed) * w per tick */
+    float w_damage_dealt;      /* applied as (damage + damaging_hits) * w per tick */
     float w_damage_taken;
     float w_npc_kill;
     float w_wave_clear;
@@ -27,7 +27,7 @@ typedef struct {
     float shape_npc_melee_penalty;
     float shape_wasted_attack_penalty;
     float shape_kiting_reward;
-    float shape_safespot_attack_reward;
+    float shape_safespot_attack_reward;  /* deprecated no-op; LOS safespotting remains valid */
     float shape_unnecessary_prayer_penalty;
     float shape_wave_stall_base_penalty;
     float shape_wave_stall_cap;
@@ -86,7 +86,7 @@ typedef struct {
 
 /* Reward channel enumeration — one slot per named field in FcRewardBreakdown above,
  * excluding `raw` and `total`. Used by analytics code in fc-training to accumulate
- * per-channel sums and fire counts per episode (see g_sum_rwd_* in binding.c). */
+ * per-channel sums and fire counts per episode. */
 typedef enum {
     FC_CH_DAMAGE_DEALT = 0,
     FC_CH_DAMAGE_TAKEN,
@@ -238,9 +238,9 @@ static inline FcRewardBreakdown fc_reward_compute_breakdown(
     prayer_reward_idle =
         (runtime->ticks_since_attack >= 1 && out.raw[FC_RWD_ATTACK_ATTEMPT] <= 0.0f);
 
-    /* damage_dealt fires per landed hit: (damage + hits_landed) * w.
-     * Base reward per landed hit is w_damage_dealt (rolls up the old
-     * w_attack_attempt signal); damage scales on top. */
+    /* damage_dealt fires per damaging hit: (damage + damaging_hits) * w.
+     * Base reward per hit only applies when actual damage is dealt; zero
+     * damage impacts still resolve mechanically but do not pay damage reward. */
     out.damage_dealt = (out.raw[FC_RWD_DAMAGE_DEALT] +
                        (float)state->hits_landed_this_tick) * params->w_damage_dealt;
 
@@ -331,9 +331,9 @@ static inline FcRewardBreakdown fc_reward_compute_breakdown(
         }
     }
 
-    if (state->safespot_attack_this_tick) {
-        out.safespot_attack = params->shape_safespot_attack_reward;
-    }
+    /* Direct safespot reward is intentionally disabled. Italy-rock-style LOS
+     * safespotting remains valid through combat/pathing mechanics, but it
+     * should not receive a separate shallow reward bonus. */
 
     /* Wave-stall penalty — timer-based, fires every tick past the threshold
      * while the wave still has NPCs. Ramps linearly and clamps at cap.

@@ -45,6 +45,9 @@ static void clear_per_tick_flags(FcState* state) {
     state->attack_attempt_this_tick = 0;
     state->safespot_attack_this_tick = 0;
     state->invalid_action_this_tick = 0;
+    for (int i = 0; i < FC_INVALID_ACTION_CLASS_COUNT; i++) {
+        state->invalid_action_class_this_tick[i] = 0;
+    }
     state->movement_this_tick = 0;
     state->idle_this_tick = 0;
     state->food_used_this_tick = 0;
@@ -76,34 +79,10 @@ static void clear_per_tick_flags(FcState* state) {
 
 /* Same ordering as observation writer — must be identical for consistency */
 static int npc_slot_to_index(const FcState* state, int slot) {
-    int active_indices[FC_MAX_NPCS];
-    int active_count = 0;
-    for (int i = 0; i < FC_MAX_NPCS; i++) {
-        if (state->npcs[i].active && !state->npcs[i].is_dead) {
-            active_indices[active_count++] = i;
-        }
-    }
-
-    /* Sort by (distance, spawn_index) — same as obs writer */
-    for (int i = 1; i < active_count; i++) {
-        int key = active_indices[i];
-        int dk = fc_distance_to_npc(state->player.x, state->player.y, &state->npcs[key]);
-        int j = i - 1;
-        while (j >= 0) {
-            int dj = fc_distance_to_npc(state->player.x, state->player.y,
-                                        &state->npcs[active_indices[j]]);
-            if (dj < dk || (dj == dk &&
-                state->npcs[active_indices[j]].spawn_index < state->npcs[key].spawn_index)) {
-                break;
-            }
-            active_indices[j + 1] = active_indices[j];
-            j--;
-        }
-        active_indices[j + 1] = key;
-    }
-
-    if (slot < 0 || slot >= active_count || slot >= FC_VISIBLE_NPCS) return -1;
-    return active_indices[slot];
+    int visible_indices[FC_VISIBLE_NPCS];
+    int visible = fc_visible_npc_indices(state, visible_indices);
+    if (slot < 0 || slot >= visible) return -1;
+    return visible_indices[slot];
 }
 
 /* ======================================================================== */
@@ -121,8 +100,24 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
     int act_drink    = actions[4];
     int act_target_x = actions[5];
     int act_target_y = actions[6];
+    int requested_attack_idx = -1;
+    int invalid_classes[FC_INVALID_ACTION_CLASS_COUNT];
 
-    state->invalid_action_this_tick = fc_action_attempt_is_invalid(state, actions);
+    fc_action_invalid_classes(state, actions, invalid_classes);
+    for (int i = 0; i < FC_INVALID_ACTION_CLASS_COUNT; i++) {
+        state->invalid_action_class_this_tick[i] = invalid_classes[i];
+        if (invalid_classes[i]) {
+            state->invalid_action_this_tick = 1;
+            state->ep_invalid_action_classes[i]++;
+        }
+    }
+
+    /* Resolve attack slots against the pre-action NPC slot ordering. The action
+     * was chosen from the previous observation, so movement later in this tick
+     * must not rebind slot N to a different NPC identity. */
+    if (act_attack > FC_ATTACK_NONE) {
+        requested_attack_idx = npc_slot_to_index(state, act_attack - 1);
+    }
 
     /* ---- Prayer (instant, processed first) ---- */
     if (act_prayer > 0) {
@@ -249,10 +244,10 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
 
     /* ---- Attack target selection ---- */
     if (act_attack > FC_ATTACK_NONE) {
-        int slot = act_attack - 1;
-        int npc_idx = npc_slot_to_index(state, slot);
-        if (npc_idx >= 0) {
-            p->attack_target_idx = npc_idx;
+        if (requested_attack_idx >= 0 &&
+            state->npcs[requested_attack_idx].active &&
+            !state->npcs[requested_attack_idx].is_dead) {
+            p->attack_target_idx = requested_attack_idx;
             p->approach_target = 1;  /* auto-walk into range, same as human click */
         }
     }
@@ -373,6 +368,57 @@ static void decrement_player_timers(FcPlayer* p) {
 /* Jad healer auto-spawn                                                     */
 /* ======================================================================== */
 
+static int footprints_overlap(int ax, int ay, int asize,
+                              int bx, int by, int bsize) {
+    return ax < bx + bsize && ax + asize > bx &&
+           ay < by + bsize && ay + asize > by;
+}
+
+static int healer_spawn_tile_valid(const FcState* state, int x, int y, int size) {
+    if (!fc_footprint_walkable(x, y, size, state->walkable)) return 0;
+
+    if (footprints_overlap(x, y, size, state->player.x, state->player.y, 1)) {
+        return 0;
+    }
+
+    for (int i = 0; i < FC_MAX_NPCS; i++) {
+        const FcNpc* npc = &state->npcs[i];
+        if (!npc->active || npc->is_dead) continue;
+        if (footprints_overlap(x, y, size, npc->x, npc->y, npc->size)) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+static int find_valid_healer_spawn(const FcState* state,
+                                   int preferred_x, int preferred_y,
+                                   int size, int* out_x, int* out_y) {
+    if (healer_spawn_tile_valid(state, preferred_x, preferred_y, size)) {
+        *out_x = preferred_x;
+        *out_y = preferred_y;
+        return 1;
+    }
+
+    for (int r = 1; r < FC_ARENA_WIDTH; r++) {
+        for (int dx = -r; dx <= r; dx++) {
+            for (int dy = -r; dy <= r; dy++) {
+                if (dx != -r && dx != r && dy != -r && dy != r) continue;
+                int nx = preferred_x + dx;
+                int ny = preferred_y + dy;
+                if (healer_spawn_tile_valid(state, nx, ny, size)) {
+                    *out_x = nx;
+                    *out_y = ny;
+                    return 1;
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
 /*
  * Jad healer spawn (from TzhaarFightCave.kt npcLevelChanged handler):
  *   Trigger: Jad HP drops below 150 HP.
@@ -411,15 +457,15 @@ static void check_jad_healers(FcState* state) {
         /* Spawn up to 4 total (fill missing slots) */
         int to_spawn = FC_JAD_NUM_HEALERS - alive_healers;
         int offsets[4][2] = {{-2, 0}, {2, 0}, {0, -2}, {0, 2}};
+        const FcNpcStats* healer_stats = fc_npc_get_stats(NPC_YT_HURKOT);
         int spawned = 0;
         for (int h = 0; h < to_spawn; h++) {
             int hx = jad->x + offsets[(alive_healers + h) % 4][0];
             int hy = jad->y + offsets[(alive_healers + h) % 4][1];
-            /* Clamp to arena */
-            if (hx < 1) hx = 1;
-            if (hy < 1) hy = 1;
-            if (hx >= FC_ARENA_WIDTH - 1) hx = FC_ARENA_WIDTH - 2;
-            if (hy >= FC_ARENA_HEIGHT - 1) hy = FC_ARENA_HEIGHT - 2;
+
+            if (!find_valid_healer_spawn(state, hx, hy, healer_stats->size, &hx, &hy)) {
+                continue;
+            }
 
             for (int slot = 0; slot < FC_MAX_NPCS; slot++) {
                 if (!state->npcs[slot].active) {
@@ -431,7 +477,9 @@ static void check_jad_healers(FcState* state) {
                 }
             }
         }
-        state->jad_healers_spawned = 1;
+        if (spawned > 0) {
+            state->jad_healers_spawned = 1;
+        }
         return;
     }
 }

@@ -100,81 +100,49 @@ void my_init(Env* env, Dict* kwargs) {
 void my_log(Log* log, Dict* out) {
     dict_set(out, "episode_length", log->episode_length);
     dict_set(out, "wave_reached", log->wave_reached);
-    /* Globals — bypass PufferLib Log struct, averaged here */
-    extern float g_max_wave_ever;
-    extern float g_most_npcs_ever;
-    extern float g_sum_prayer_uptime_melee;
-    extern float g_sum_prayer_uptime_range, g_sum_prayer_uptime_magic;
-    extern float g_sum_correct_blocks;
-    extern float g_sum_wrong_prayer_hits, g_sum_no_prayer_hits;
-    extern float g_sum_prayer_switches, g_sum_damage_blocked, g_sum_damage_taken;
-    extern float g_sum_attack_when_ready;
-    extern float g_sum_pots_used, g_sum_avg_prayer_on_pot;
-    extern float g_sum_food_eaten, g_sum_avg_hp_on_food;
-    extern float g_sum_food_wasted, g_sum_pots_wasted, g_n_analytics;
-    extern float g_sum_tokxil_melee_ticks, g_sum_ketzek_melee_ticks;
-    extern float g_sum_max_wave_ticks, g_sum_max_wave_ticks_wave;
-    extern float g_sum_reached_wave_63, g_sum_jad_kill_rate;
-    dict_set(out, "max_wave", g_max_wave_ever);
-    dict_set(out, "most_npcs_slayed", g_most_npcs_ever);
-    if (g_n_analytics > 0) {
-        dict_set(out, "prayer_uptime_melee", g_sum_prayer_uptime_melee / g_n_analytics);
-        dict_set(out, "prayer_uptime_range", g_sum_prayer_uptime_range / g_n_analytics);
-        dict_set(out, "prayer_uptime_magic", g_sum_prayer_uptime_magic / g_n_analytics);
-        dict_set(out, "correct_prayer", g_sum_correct_blocks / g_n_analytics);
-        dict_set(out, "wrong_prayer_hits", g_sum_wrong_prayer_hits / g_n_analytics);
-        dict_set(out, "no_prayer_hits", g_sum_no_prayer_hits / g_n_analytics);
-        dict_set(out, "prayer_switches", g_sum_prayer_switches / g_n_analytics);
-        dict_set(out, "damage_blocked", g_sum_damage_blocked / g_n_analytics);
-        dict_set(out, "dmg_taken_avg", g_sum_damage_taken / g_n_analytics);
-        dict_set(out, "attack_when_ready_rate", g_sum_attack_when_ready / g_n_analytics);
-        dict_set(out, "pots_used", g_sum_pots_used / g_n_analytics);
-        dict_set(out, "avg_prayer_on_pot", g_sum_avg_prayer_on_pot / g_n_analytics);
-        dict_set(out, "food_eaten", g_sum_food_eaten / g_n_analytics);
-        dict_set(out, "avg_hp_on_food", g_sum_avg_hp_on_food / g_n_analytics);
-        dict_set(out, "food_wasted", g_sum_food_wasted / g_n_analytics);
-        dict_set(out, "pots_wasted", g_sum_pots_wasted / g_n_analytics);
-        dict_set(out, "tokxil_melee_ticks", g_sum_tokxil_melee_ticks / g_n_analytics);
-        dict_set(out, "ketzek_melee_ticks", g_sum_ketzek_melee_ticks / g_n_analytics);
-        dict_set(out, "max_wave_ticks", g_sum_max_wave_ticks / g_n_analytics);
-        dict_set(out, "max_wave_ticks_wave", g_sum_max_wave_ticks_wave / g_n_analytics);
-        dict_set(out, "reached_wave_63", g_sum_reached_wave_63 / g_n_analytics);
-        dict_set(out, "jad_kill_rate", g_sum_jad_kill_rate / g_n_analytics);
-        /* Per-reward-channel per-episode averages (total reward and fire count).
-         * Keys must use static storage because dict_set stores the pointer (see
-         * vecenv.h:dict_set) — stack-local char arrays would leave dangling
-         * pointers once the loop iteration ends, corrupting the dict. */
-        extern float g_sum_rwd[FC_CH_COUNT];
-        extern float g_fires_rwd[FC_CH_COUNT];
-        static char rwd_keys_total[FC_CH_COUNT][48];
-        static char rwd_keys_fires[FC_CH_COUNT][48];
-        static int rwd_keys_built = 0;
-        if (!rwd_keys_built) {
-            for (int i = 0; i < FC_CH_COUNT; i++) {
-                snprintf(rwd_keys_total[i], 48, "rwd_%s_total", FC_CH_NAMES[i]);
-                snprintf(rwd_keys_fires[i], 48, "rwd_%s_fires", FC_CH_NAMES[i]);
-            }
-            rwd_keys_built = 1;
-        }
+    dict_set(out, "npcs_slayed", log->npcs_slayed);
+    dict_set(out, "prayer_uptime_melee", log->prayer_uptime_melee);
+    dict_set(out, "prayer_uptime_range", log->prayer_uptime_range);
+    dict_set(out, "prayer_uptime_magic", log->prayer_uptime_magic);
+    dict_set(out, "correct_prayer", log->correct_prayer);
+    dict_set(out, "wrong_prayer_hits", log->wrong_prayer_hits);
+    dict_set(out, "no_prayer_hits", log->no_prayer_hits);
+    dict_set(out, "prayer_switches", log->prayer_switches);
+    dict_set(out, "damage_blocked", log->damage_blocked);
+    dict_set(out, "dmg_taken_avg", log->dmg_taken_avg);
+    dict_set(out, "attack_when_ready_rate", log->attack_when_ready_rate);
+    dict_set(out, "invalid_move", log->invalid_move);
+    dict_set(out, "invalid_attack", log->invalid_attack);
+    dict_set(out, "invalid_prayer", log->invalid_prayer);
+    dict_set(out, "invalid_eat", log->invalid_eat);
+    dict_set(out, "invalid_drink", log->invalid_drink);
+    dict_set(out, "pots_used", log->pots_used);
+    dict_set(out, "avg_prayer_on_pot", log->avg_prayer_on_pot);
+    dict_set(out, "food_eaten", log->food_eaten);
+    dict_set(out, "avg_hp_on_food", log->avg_hp_on_food);
+    dict_set(out, "food_wasted", log->food_wasted);
+    dict_set(out, "pots_wasted", log->pots_wasted);
+    dict_set(out, "tokxil_melee_ticks", log->tokxil_melee_ticks);
+    dict_set(out, "ketzek_melee_ticks", log->ketzek_melee_ticks);
+    dict_set(out, "max_wave_ticks", log->max_wave_ticks);
+    dict_set(out, "max_wave_ticks_wave", log->max_wave_ticks_wave);
+    dict_set(out, "reached_wave_63", log->reached_wave_63);
+    dict_set(out, "jad_kill_rate", log->jad_kill_rate);
+
+    /* Keys must use static storage because dict_set stores the pointer (see
+     * vecenv.h:dict_set); stack-local char arrays would dangle. */
+    static char rwd_keys_total[FC_CH_COUNT][48];
+    static char rwd_keys_fires[FC_CH_COUNT][48];
+    static int rwd_keys_built = 0;
+    if (!rwd_keys_built) {
         for (int i = 0; i < FC_CH_COUNT; i++) {
-            dict_set(out, rwd_keys_total[i], g_sum_rwd[i] / g_n_analytics);
-            dict_set(out, rwd_keys_fires[i], g_fires_rwd[i] / g_n_analytics);
-            g_sum_rwd[i] = 0;
-            g_fires_rwd[i] = 0;
+            snprintf(rwd_keys_total[i], 48, "rwd_%s_total", FC_CH_NAMES[i]);
+            snprintf(rwd_keys_fires[i], 48, "rwd_%s_fires", FC_CH_NAMES[i]);
         }
-        g_sum_prayer_uptime_melee = 0;
-        g_sum_prayer_uptime_range = 0; g_sum_prayer_uptime_magic = 0;
-        g_sum_correct_blocks = 0;
-        g_sum_wrong_prayer_hits = 0; g_sum_no_prayer_hits = 0;
-        g_sum_prayer_switches = 0; g_sum_damage_blocked = 0;
-        g_sum_damage_taken = 0; g_sum_attack_when_ready = 0;
-        g_sum_pots_used = 0;
-        g_sum_avg_prayer_on_pot = 0; g_sum_food_eaten = 0;
-        g_sum_avg_hp_on_food = 0; g_sum_food_wasted = 0;
-        g_sum_pots_wasted = 0; g_sum_tokxil_melee_ticks = 0;
-        g_sum_ketzek_melee_ticks = 0; g_sum_max_wave_ticks = 0;
-        g_sum_max_wave_ticks_wave = 0; g_sum_reached_wave_63 = 0;
-        g_sum_jad_kill_rate = 0;
-        g_n_analytics = 0;
+        rwd_keys_built = 1;
+    }
+    for (int i = 0; i < FC_CH_COUNT; i++) {
+        dict_set(out, rwd_keys_total[i], log->rwd_sum[i]);
+        dict_set(out, rwd_keys_fires[i], log->rwd_fires[i]);
     }
 }

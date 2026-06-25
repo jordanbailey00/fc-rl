@@ -147,4 +147,29 @@ if [ "${#EXTRA_ARGS[@]}" -gt 0 ]; then
     CMD+=("${EXTRA_ARGS[@]}")
 fi
 
+RUN_MANIFEST_DIR="${FC_RUN_MANIFEST_DIR:-$PUFFER_DIR/logs/fight_caves/manifests}"
+RUN_MANIFEST_TS="$(date -u +%Y%m%dT%H%M%SZ)"
+RUN_MANIFEST_PATH="${FC_RUN_MANIFEST_PATH:-$RUN_MANIFEST_DIR/${RUN_MANIFEST_TS}-${MODE}-$$.json}"
+export FC_RUN_MANIFEST_PATH="$RUN_MANIFEST_PATH"
+if grep -Eq '^\[run\]' "$PUFFER_DIR/config/fight_caves.ini" \
+    && grep -Eq '^manifest_path[[:space:]]*=' "$PUFFER_DIR/config/fight_caves.ini"; then
+    CMD+=(--run.manifest-path "$RUN_MANIFEST_PATH")
+fi
+if ! "$PYTHON_BIN" "$SRC_DIR/tools/validation/run_manifest.py" \
+    --repo-root "$ROOT_DIR" \
+    --runescape-dir "$SRC_DIR" \
+    --puffer-dir "$PUFFER_DIR" \
+    --config-path "$CONFIG_PATH" \
+    --synced-config-path "$PUFFER_DIR/config/fight_caves.ini" \
+    --backend-stamp "$BACKEND_STAMP" \
+    --active-loadout "$ACTIVE_LOADOUT_KEY" \
+    --python-bin "$PYTHON_BIN" \
+    --mode "$MODE" \
+    --output-path "$RUN_MANIFEST_PATH" \
+    -- "${CMD[@]}"; then
+    echo "Error: failed to write run manifest at $RUN_MANIFEST_PATH" >&2
+    exit 1
+fi
+echo "[train.sh] Wrote run manifest: $RUN_MANIFEST_PATH"
+
 "${CMD[@]}"

@@ -57,7 +57,8 @@
  *
  *   1. Only active (alive) NPCs are eligible for slots.
  *   2. Sort eligible NPCs by:
- *      a. Chebyshev distance to player, ascending (closest first).
+ *      a. Chebyshev distance to the nearest tile of the NPC footprint,
+ *         ascending (closest first).
  *      b. On distance tie: spawn_index ascending (earlier spawns first).
  *   3. Take the first 8 from the sorted list.
  *   4. If fewer than 8 active NPCs, remaining slots are zeroed (valid=0).
@@ -87,7 +88,7 @@
 #define FC_NPC_X                1   /* x / ARENA_WIDTH */
 #define FC_NPC_Y                2   /* y / ARENA_HEIGHT */
 #define FC_NPC_HP               3   /* current_hp / max_hp */
-#define FC_NPC_DISTANCE         4   /* chebyshev distance / ARENA_WIDTH */
+#define FC_NPC_DISTANCE         4   /* chebyshev distance to NPC footprint / ARENA_WIDTH */
 #define FC_NPC_TELE_MELEE       5   /* one-hot: NPC would melee at current distance */
 #define FC_NPC_TELE_RANGED      6   /* one-hot: NPC would range at current distance */
 #define FC_NPC_TELE_MAGIC       7   /* one-hot: NPC would magic at current distance */

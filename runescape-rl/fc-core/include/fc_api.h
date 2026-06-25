@@ -63,6 +63,11 @@ void fc_apply_obs_ablation(float* out,
                            int ablate_incoming_aggregates,
                            int ablate_npc_valid);
 
+/* Fill out_indices with the active NPC array indices currently visible in
+ * policy NPC slots, using the same ordering as fc_write_obs and fc_write_mask.
+ * Returns the number of filled slots, capped at FC_VISIBLE_NPCS. */
+int fc_visible_npc_indices(const FcState* state, int out_indices[FC_VISIBLE_NPCS]);
+
 /* Write the action mask buffer.
  * out must have room for FC_ACTION_MASK_SIZE floats.
  * 1.0 = valid action, 0.0 = invalid. */
@@ -71,6 +76,13 @@ void fc_write_mask(const FcState* state, float* out);
 /* Returns 1 if any RL-facing masked action head (move/attack/prayer/eat/drink)
  * contains an invalid attempted action for the current state. */
 int fc_action_attempt_is_invalid(const FcState* state, const int actions[FC_NUM_ACTION_HEADS]);
+
+/* Fill out_classes with 0/1 invalid-action diagnostics for RL-facing heads
+ * 0-4 only: move, attack, prayer, eat, drink. Heads 5-6 path targets stay
+ * excluded to preserve the current mask/reward behavior. */
+void fc_action_invalid_classes(const FcState* state,
+                               const int actions[FC_NUM_ACTION_HEADS],
+                               int out_classes[FC_INVALID_ACTION_CLASS_COUNT]);
 
 /* Compute and write reward features for the current tick.
  * out must have room for FC_REWARD_FEATURES floats.

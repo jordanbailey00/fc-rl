@@ -177,24 +177,25 @@ runescape-rl/
 
 **Viewer (`fc-viewer/`):** Raylib-based 3D viewer for human play and policy replay. Debug overlay shows reward breakdown, NPC stats, prayer state, threat context.
 
-**Training stack:** PPO with MinGRU policy (2-layer, 256 hidden, ~439K params). W&B integration for logging and sweep analysis.
+**Training stack:** PPO with MinGRU policy (3-layer, 256 hidden). W&B integration for logging and sweep analysis.
 
 ---
 
 ## RL Config
 
-Current live config is the v36 no-consumables diagnostic: v35.1/v34 top-pick hparams with
-`initial_sharks=0` and `initial_prayer_doses=0`. Restoring full supplies means setting those two
-keys back to `20` and `32`.
+Current live config is based on the full-supplies v35.1/v34 top-pick baseline with
+explicit `initial_sharks=20`, `initial_prayer_doses=32`, and Phase 4 reward cleanup.
+The old v36 no-consumables diagnostic is archived at
+[`runescape-rl/config/archive/fight_caves_v36_no_consumables.ini`](runescape-rl/config/archive/fight_caves_v36_no_consumables.ini).
 
-Base recipe (v35.1 — v32.0 reward baseline + v34 sweep top-pick hparams):
+Base recipe (v35.1 hparams with Phase 4 reward cleanup):
 
 | Category | Key params |
 |----------|-----------|
 | **Combat rewards** | `w_damage_dealt=0.9`, `w_npc_kill=3.5`, `w_wave_clear=15.0`, `w_jad_kill=2000.0` |
 | **Survival penalties** | `w_damage_taken=-1.9` (squared, 70x amplified), `w_player_death=-11.0` |
 | **Prayer shaping** | `w_correct_danger_prayer=0.25`, `w_correct_jad_prayer=1.5`, `shape_wrong_prayer_penalty=-0.3`, `shape_unnecessary_prayer_penalty=-0.2` |
-| **Positioning** | `shape_npc_melee_penalty=-0.8`, `shape_safespot_attack_reward=1.5`, `shape_kiting_reward=2.2` (band 2-10) |
+| **Positioning** | `shape_npc_melee_penalty=-0.8`, direct safespot reward disabled, `shape_kiting_reward=2.2` (band 2-10) |
 | **Resource management** | `shape_food_waste_scale=-1.2`, `shape_pot_waste_scale=-1.2` (proportional waste only) |
 | **Wave-stall pressure** | `shape_wave_stall_start=1400`, `shape_wave_stall_base_penalty=-0.5`, `shape_wave_stall_cap=-2.0` |
 | **Procedural penalties** | `w_invalid_action=-0.1`, `w_tick_penalty=-0.005`, `shape_wasted_attack_penalty=-0.1`, `shape_jad_heal_penalty=-0.3` |
@@ -206,6 +207,11 @@ Base recipe (v35.1 — v32.0 reward baseline + v34 sweep top-pick hparams):
 | **Vector** | `4096 agents`, `2 buffers` |
 
 Full config: [`runescape-rl/config/fight_caves.ini`](runescape-rl/config/fight_caves.ini).
+
+Each `train.sh` launch writes a run manifest under `pufferlib_4/logs/fight_caves/manifests/`.
+The manifest records the git commit, dirty-tree status, active loadout, backend build stamp, config
+hashes, resolved supplies, PPO run settings, observation/action/reward versions, and the PufferLib
+reward clipping contract.
 
 ---
 

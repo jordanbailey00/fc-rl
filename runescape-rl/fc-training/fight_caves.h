@@ -45,42 +45,6 @@
 #include "fc_render.h"
 #endif
 
-/* All-time max trackers (global, bypasses PufferLib Log averaging) */
-float g_max_wave_ever = 0;
-float g_most_npcs_ever = 0;
-
-/* Per-logging-period analytics (accumulated across all envs, averaged in my_log) */
-float g_sum_prayer_uptime_melee = 0;
-float g_sum_prayer_uptime_range = 0;
-float g_sum_prayer_uptime_magic = 0;
-float g_sum_correct_blocks = 0;
-float g_sum_wrong_prayer_hits = 0;
-float g_sum_no_prayer_hits = 0;
-float g_sum_prayer_switches = 0;
-float g_sum_damage_blocked = 0;
-float g_sum_damage_taken = 0;
-float g_sum_attack_when_ready = 0;
-float g_sum_pots_used = 0;
-float g_sum_avg_prayer_on_pot = 0;
-float g_sum_food_eaten = 0;
-float g_sum_avg_hp_on_food = 0;
-float g_sum_food_wasted = 0;
-float g_sum_pots_wasted = 0;
-float g_sum_tokxil_melee_ticks = 0;
-float g_sum_ketzek_melee_ticks = 0;
-float g_sum_max_wave_ticks = 0;
-float g_sum_max_wave_ticks_wave = 0;
-float g_sum_reached_wave_63 = 0;
-float g_sum_jad_kill_rate = 0;
-
-/* Per-reward-channel accumulators (array-indexed by FcRwdChannel enum).
- * g_sum_rwd[i]   — sum of channel i's reward value across all ticks in all episodes in window
- * g_fires_rwd[i] — count of ticks where channel i was non-zero across all episodes in window
- * Both divided by g_n_analytics in my_log to produce per-episode averages. */
-float g_sum_rwd[FC_CH_COUNT] = {0};
-float g_fires_rwd[FC_CH_COUNT] = {0};
-float g_n_analytics = 0;
-
 /* ======================================================================== */
 /* PufferLib Log struct (required fields)                                    */
 /* ======================================================================== */
@@ -88,6 +52,36 @@ float g_n_analytics = 0;
 typedef struct {
     float episode_length;
     float wave_reached;
+    float npcs_slayed;
+    float prayer_uptime_melee;
+    float prayer_uptime_range;
+    float prayer_uptime_magic;
+    float correct_prayer;
+    float wrong_prayer_hits;
+    float no_prayer_hits;
+    float prayer_switches;
+    float damage_blocked;
+    float dmg_taken_avg;
+    float attack_when_ready_rate;
+    float invalid_move;
+    float invalid_attack;
+    float invalid_prayer;
+    float invalid_eat;
+    float invalid_drink;
+    float pots_used;
+    float avg_prayer_on_pot;
+    float food_eaten;
+    float avg_hp_on_food;
+    float food_wasted;
+    float pots_wasted;
+    float tokxil_melee_ticks;
+    float ketzek_melee_ticks;
+    float max_wave_ticks;
+    float max_wave_ticks_wave;
+    float reached_wave_63;
+    float jad_kill_rate;
+    float rwd_sum[FC_CH_COUNT];
+    float rwd_fires[FC_CH_COUNT];
     float n;  /* must be last */
 } Log;
 
@@ -117,7 +111,7 @@ typedef struct FightCaves {
     FcState state;
 
     /* Reward shaping weights (from config) */
-    float w_damage_dealt;       /* applied as (damage + hits_landed) * w per tick */
+    float w_damage_dealt;       /* applied as (damage + damaging_hits) * w per tick */
     float w_damage_taken;
     float w_npc_kill;
     float w_wave_clear;
@@ -135,7 +129,7 @@ typedef struct FightCaves {
     float shape_npc_melee_penalty;
     float shape_wasted_attack_penalty;
     float shape_kiting_reward;
-    float shape_safespot_attack_reward;
+    float shape_safespot_attack_reward;  /* deprecated no-op; kept for config compatibility */
     float shape_unnecessary_prayer_penalty;
     float shape_wave_stall_base_penalty;
     float shape_wave_stall_cap;
@@ -161,8 +155,8 @@ typedef struct FightCaves {
     int ep_length;
 
     /* Per-episode reward-channel analytics. Reset at c_reset, transferred to
-     * g_sum_rwd_* and g_fires_rwd_* globals on terminal. See FcRwdChannel enum
-     * in fc_reward.h for channel indices and names. */
+     * the per-env PufferLib Log on terminal. See FcRwdChannel enum in
+     * fc_reward.h for channel indices and names. */
     float ep_rwd_sum[FC_CH_COUNT];
     int   ep_rwd_fires[FC_CH_COUNT];
 
@@ -247,7 +241,7 @@ static float fc_puffer_compute_reward(FightCaves* env) {
     if (breakdown.threat_ctx.ketzek_melee) env->state.ep_ketzek_melee_ticks++;
 
     /* Per-channel analytics: accumulate value and fire count per reward channel.
-     * Drains into g_sum_rwd_* / g_fires_rwd_* globals on terminal; see c_step. */
+     * Drains into the per-env PufferLib Log on terminal; see c_step. */
     float ch[FC_CH_COUNT];
     fc_reward_breakdown_channels(&breakdown, ch);
     for (int i = 0; i < FC_CH_COUNT; i++) {
@@ -262,9 +256,20 @@ static float fc_puffer_compute_reward(FightCaves* env) {
 /* PufferLib interface: c_reset, c_step, c_render, c_close                   */
 /* ======================================================================== */
 
+static uint32_t fc_puffer_mix_reset_seed(uint32_t env_rng, uint32_t episode) {
+    uint32_t x = env_rng + 0x9E3779B9u * (episode + 1u);
+    x ^= x >> 16;
+    x *= 0x7FEB352Du;
+    x ^= x >> 15;
+    x *= 0x846CA68Bu;
+    x ^= x >> 16;
+    return (x != 0u) ? x : 0x12345678u;
+}
+
 void c_reset(FightCaves* env) {
     env->seed_counter++;
-    fc_reset(&env->state, env->seed_counter);
+    fc_reset(&env->state,
+             fc_puffer_mix_reset_seed((uint32_t)env->rng, env->seed_counter));
     if (env->initial_sharks < 0) env->initial_sharks = 0;
     if (env->initial_sharks > FC_MAX_SHARKS) env->initial_sharks = FC_MAX_SHARKS;
     if (env->initial_prayer_doses < 0) env->initial_prayer_doses = 0;
@@ -316,51 +321,53 @@ void c_step(FightCaves* env) {
         env->terminals[0] = 1.0f;
         env->log.episode_length += (float)env->ep_length;
         env->log.wave_reached += (float)env->state.current_wave;
-        /* Analytics globals (averaged in my_log) */
-        g_sum_prayer_uptime_melee += (env->ep_length > 0)
+        env->log.npcs_slayed += (float)env->state.total_npcs_killed;
+        env->log.prayer_uptime_melee += (env->ep_length > 0)
             ? (float)env->state.ep_ticks_pray_melee / (float)env->ep_length : 0.0f;
-        g_sum_prayer_uptime_range += (env->ep_length > 0)
+        env->log.prayer_uptime_range += (env->ep_length > 0)
             ? (float)env->state.ep_ticks_pray_range / (float)env->ep_length : 0.0f;
-        g_sum_prayer_uptime_magic += (env->ep_length > 0)
+        env->log.prayer_uptime_magic += (env->ep_length > 0)
             ? (float)env->state.ep_ticks_pray_magic / (float)env->ep_length : 0.0f;
-        g_sum_correct_blocks += (float)env->state.ep_correct_blocks;
-        g_sum_wrong_prayer_hits += (float)env->state.ep_wrong_prayer_hits;
-        g_sum_no_prayer_hits += (float)env->state.ep_no_prayer_hits;
-        g_sum_prayer_switches += (float)env->state.ep_prayer_switches;
-        g_sum_damage_blocked += (float)env->state.ep_damage_blocked;
-        g_sum_damage_taken += (float)env->state.player.total_damage_taken;
-        g_sum_attack_when_ready += (env->state.ep_attack_ready_ticks > 0)
+        env->log.correct_prayer += (float)env->state.ep_correct_blocks;
+        env->log.wrong_prayer_hits += (float)env->state.ep_wrong_prayer_hits;
+        env->log.no_prayer_hits += (float)env->state.ep_no_prayer_hits;
+        env->log.prayer_switches += (float)env->state.ep_prayer_switches;
+        env->log.damage_blocked += (float)env->state.ep_damage_blocked;
+        env->log.dmg_taken_avg += (float)env->state.player.total_damage_taken;
+        env->log.attack_when_ready_rate += (env->state.ep_attack_ready_ticks > 0)
             ? (float)env->state.ep_attack_attempt_ticks / (float)env->state.ep_attack_ready_ticks
             : 0.0f;
-        g_sum_pots_used += (float)env->state.ep_pots_used;
-        g_sum_avg_prayer_on_pot += (env->state.ep_pots_used > 0 && env->state.player.max_prayer > 0)
+        env->log.invalid_move +=
+            (float)env->state.ep_invalid_action_classes[FC_INVALID_ACTION_MOVE];
+        env->log.invalid_attack +=
+            (float)env->state.ep_invalid_action_classes[FC_INVALID_ACTION_ATTACK];
+        env->log.invalid_prayer +=
+            (float)env->state.ep_invalid_action_classes[FC_INVALID_ACTION_PRAYER];
+        env->log.invalid_eat +=
+            (float)env->state.ep_invalid_action_classes[FC_INVALID_ACTION_EAT];
+        env->log.invalid_drink +=
+            (float)env->state.ep_invalid_action_classes[FC_INVALID_ACTION_DRINK];
+        env->log.pots_used += (float)env->state.ep_pots_used;
+        env->log.avg_prayer_on_pot += (env->state.ep_pots_used > 0 && env->state.player.max_prayer > 0)
             ? ((float)env->state.ep_pot_pre_prayer_sum /
                ((float)env->state.ep_pots_used * (float)env->state.player.max_prayer)) : 0.0f;
-        g_sum_food_eaten += (float)env->state.ep_food_eaten;
-        g_sum_avg_hp_on_food += (env->state.ep_food_eaten > 0 && env->state.player.max_hp > 0)
+        env->log.food_eaten += (float)env->state.ep_food_eaten;
+        env->log.avg_hp_on_food += (env->state.ep_food_eaten > 0 && env->state.player.max_hp > 0)
             ? ((float)env->state.ep_food_pre_hp_sum /
                ((float)env->state.ep_food_eaten * (float)env->state.player.max_hp)) : 0.0f;
-        g_sum_food_wasted += (float)env->state.ep_food_overhealed;
-        g_sum_pots_wasted += (float)env->state.ep_pots_overrestored;
-        g_sum_tokxil_melee_ticks += (float)env->state.ep_tokxil_melee_ticks;
-        g_sum_ketzek_melee_ticks += (float)env->state.ep_ketzek_melee_ticks;
-        g_sum_max_wave_ticks += (float)env->state.ep_max_wave_ticks;
-        g_sum_max_wave_ticks_wave += (float)env->state.ep_max_wave_ticks_wave;
-        g_sum_reached_wave_63 += (float)env->state.ep_reached_wave_63;
-        g_sum_jad_kill_rate += (float)env->state.ep_jad_killed;
-        /* Per-reward-channel: per-episode total and fire-count, summed across
-         * episodes within the log window (divided by g_n_analytics in my_log). */
-        extern float g_sum_rwd[FC_CH_COUNT];
-        extern float g_fires_rwd[FC_CH_COUNT];
+        env->log.food_wasted += (float)env->state.ep_food_overhealed;
+        env->log.pots_wasted += (float)env->state.ep_pots_overrestored;
+        env->log.tokxil_melee_ticks += (float)env->state.ep_tokxil_melee_ticks;
+        env->log.ketzek_melee_ticks += (float)env->state.ep_ketzek_melee_ticks;
+        env->log.max_wave_ticks += (float)env->state.ep_max_wave_ticks;
+        env->log.max_wave_ticks_wave += (float)env->state.ep_max_wave_ticks_wave;
+        env->log.reached_wave_63 += (float)env->state.ep_reached_wave_63;
+        env->log.jad_kill_rate += (float)env->state.ep_jad_killed;
+
         for (int i = 0; i < FC_CH_COUNT; i++) {
-            g_sum_rwd[i]   += env->ep_rwd_sum[i];
-            g_fires_rwd[i] += (float)env->ep_rwd_fires[i];
+            env->log.rwd_sum[i] += env->ep_rwd_sum[i];
+            env->log.rwd_fires[i] += (float)env->ep_rwd_fires[i];
         }
-        g_n_analytics += 1.0f;
-        if ((float)env->state.current_wave > g_max_wave_ever)
-            g_max_wave_ever = (float)env->state.current_wave;
-        if ((float)env->state.total_npcs_killed > g_most_npcs_ever)
-            g_most_npcs_ever = (float)env->state.total_npcs_killed;
         env->log.n += 1.0f;
 
         /* Auto-reset for next episode. Obs already written above

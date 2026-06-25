@@ -65,6 +65,16 @@ typedef enum {
     TERMINAL_TICK_CAP      = 3
 } FcTerminalCode;
 
+/* Invalid-action diagnostic classes for RL-facing heads 0-4. */
+typedef enum {
+    FC_INVALID_ACTION_MOVE   = 0,
+    FC_INVALID_ACTION_ATTACK = 1,
+    FC_INVALID_ACTION_PRAYER = 2,
+    FC_INVALID_ACTION_EAT    = 3,
+    FC_INVALID_ACTION_DRINK  = 4,
+    FC_INVALID_ACTION_CLASS_COUNT = 5
+} FcInvalidActionClass;
+
 /* NPC spawn direction for wave rotations */
 typedef enum {
     SPAWN_SOUTH      = 0,
@@ -355,7 +365,7 @@ typedef struct {
 
     /* Per-tick aggregated event flags (for reward features) */
     int damage_dealt_this_tick;
-    int hits_landed_this_tick;   /* count of player pending-hits that resolved on NPCs this tick */
+    int hits_landed_this_tick;   /* count of player pending-hits that dealt damage this tick */
     int damage_taken_this_tick;
     int npcs_killed_this_tick;
     int wave_just_cleared;
@@ -367,6 +377,7 @@ typedef struct {
     int wrong_danger_prayer;
     int attack_attempt_this_tick;
     int invalid_action_this_tick;
+    int invalid_action_class_this_tick[FC_INVALID_ACTION_CLASS_COUNT];
     int movement_this_tick;
     int idle_this_tick;
     int food_used_this_tick;
@@ -396,6 +407,7 @@ typedef struct {
     int ep_attack_ready_ticks;  /* ticks where attack cooldown was ready */
     int ep_attack_attempt_ticks;/* ready ticks where a real attack fired */
     int safespot_attack_this_tick; /* 1 if player attacked with no NPC adjacent */
+    int ep_invalid_action_classes[FC_INVALID_ACTION_CLASS_COUNT];
     int ep_reached_wave_63;     /* 1 if episode reached Jad wave */
     int ep_jad_killed;          /* 1 if Jad died at any point this episode */
     int wave_start_tick;        /* tick when current wave was spawned */

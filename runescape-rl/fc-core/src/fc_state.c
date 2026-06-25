@@ -1,4 +1,5 @@
 #include "fc_api.h"
+#include "fc_combat.h"
 #include "fc_npc.h"
 #include "fc_wave.h"
 #include "fc_pathfinding.h"
@@ -175,22 +176,12 @@ void fc_destroy(FcState* state) {
 /* Observation / Mask / Reward                                               */
 /* ======================================================================== */
 
-/*
- * NPC slot selection: sort active NPCs by (distance, spawn_index),
- * take first FC_VISIBLE_NPCS.
- */
-static int npc_distance(const FcPlayer* p, const FcNpc* n) {
-    int dx = (p->x > n->x) ? (p->x - n->x) : (n->x - p->x);
-    int dy = (p->y > n->y) ? (p->y - n->y) : (n->y - p->y);
-    return (dx > dy) ? dx : dy;  /* Chebyshev distance */
-}
-
 /* Sort helper: indices of active NPCs, sorted by (distance, spawn_index) */
 static int compare_npc_slots(const void* a, const void* b, const FcState* state) {
     int ia = *(const int*)a;
     int ib = *(const int*)b;
-    int da = npc_distance(&state->player, &state->npcs[ia]);
-    int db = npc_distance(&state->player, &state->npcs[ib]);
+    int da = fc_distance_to_npc(state->player.x, state->player.y, &state->npcs[ia]);
+    int db = fc_distance_to_npc(state->player.x, state->player.y, &state->npcs[ib]);
     if (da != db) return da - db;
     return state->npcs[ia].spawn_index - state->npcs[ib].spawn_index;
 }
@@ -206,6 +197,25 @@ static void sort_npc_indices(int* indices, int count, const FcState* state) {
         }
         indices[j + 1] = key;
     }
+}
+
+int fc_visible_npc_indices(const FcState* state, int out_indices[FC_VISIBLE_NPCS]) {
+    int active_indices[FC_MAX_NPCS];
+    int active_count = 0;
+
+    for (int i = 0; i < FC_MAX_NPCS; i++) {
+        if (state->npcs[i].active && !state->npcs[i].is_dead) {
+            active_indices[active_count++] = i;
+        }
+    }
+
+    sort_npc_indices(active_indices, active_count, state);
+
+    int visible = (active_count < FC_VISIBLE_NPCS) ? active_count : FC_VISIBLE_NPCS;
+    for (int slot = 0; slot < visible; slot++) {
+        out_indices[slot] = active_indices[slot];
+    }
+    return visible;
 }
 
 static int move_action_valid(const FcState* state, int action) {
@@ -230,21 +240,14 @@ static int move_action_valid(const FcState* state, int action) {
 }
 
 static int attack_action_valid(const FcState* state, int action) {
-    int active_indices[FC_MAX_NPCS];
-    int active_count = 0;
+    int visible_indices[FC_VISIBLE_NPCS];
     int visible;
     int slot;
 
     if (action < 0 || action >= FC_ATTACK_DIM) return 0;
     if (action == FC_ATTACK_NONE) return 1;
 
-    for (int i = 0; i < FC_MAX_NPCS; i++) {
-        if (state->npcs[i].active && !state->npcs[i].is_dead) {
-            active_indices[active_count++] = i;
-        }
-    }
-    sort_npc_indices(active_indices, active_count, state);
-    visible = (active_count < FC_VISIBLE_NPCS) ? active_count : FC_VISIBLE_NPCS;
+    visible = fc_visible_npc_indices(state, visible_indices);
     slot = action - 1;
     return slot >= 0 && slot < visible;
 }
@@ -389,16 +392,8 @@ void fc_write_obs(const FcState* state, float* out) {
     player[FC_OBS_PLAYER_TARGET]    = 0.0f;  /* filled after NPC slot computation below */
 
     /* NPC slot selection: gather active NPCs, sort, take first 8 */
-    int active_indices[FC_MAX_NPCS];
-    int active_count = 0;
-    for (int i = 0; i < FC_MAX_NPCS; i++) {
-        if (state->npcs[i].active && !state->npcs[i].is_dead) {
-            active_indices[active_count++] = i;
-        }
-    }
-    sort_npc_indices(active_indices, active_count, state);
-
-    int visible = (active_count < FC_VISIBLE_NPCS) ? active_count : FC_VISIBLE_NPCS;
+    int active_indices[FC_VISIBLE_NPCS];
+    int visible = fc_visible_npc_indices(state, active_indices);
     for (int slot = 0; slot < visible; slot++) {
         const FcNpc* n = &state->npcs[active_indices[slot]];
         float* npc_out = out + FC_OBS_NPC_START + slot * FC_OBS_NPC_STRIDE;
@@ -407,7 +402,8 @@ void fc_write_obs(const FcState* state, float* out) {
         npc_out[FC_NPC_X]             = (float)n->x / (float)FC_ARENA_WIDTH;
         npc_out[FC_NPC_Y]             = (float)n->y / (float)FC_ARENA_HEIGHT;
         npc_out[FC_NPC_HP]            = (n->max_hp > 0) ? (float)n->current_hp / (float)n->max_hp : 0.0f;
-        npc_out[FC_NPC_DISTANCE]      = (float)npc_distance(p, n) / (float)FC_ARENA_WIDTH;
+        npc_out[FC_NPC_DISTANCE]      =
+            (float)fc_distance_to_npc(p->x, p->y, n) / (float)FC_ARENA_WIDTH;
         float has_los = (float)fc_has_los_to_npc(
             p->x, p->y, n->x, n->y, n->size, state->walkable);
         int tele = npc_telegraph_style(state, n);
@@ -509,15 +505,27 @@ void fc_write_reward_features(const FcState* state, float* out) {
     out[FC_RWD_ATTACK_ATTEMPT]      = (float)state->attack_attempt_this_tick;
 }
 
-int fc_action_attempt_is_invalid(const FcState* state, const int actions[FC_NUM_ACTION_HEADS]) {
+void fc_action_invalid_classes(const FcState* state,
+                               const int actions[FC_NUM_ACTION_HEADS],
+                               int out_classes[FC_INVALID_ACTION_CLASS_COUNT]) {
     /* Keep this aligned with the RL-facing mask surface (heads 0-4 only).
      * Path-target X/Y are intentionally excluded here because those heads are
      * not exposed in the policy mask today and would dominate this signal. */
-    return !move_action_valid(state, actions[0]) ||
-           !attack_action_valid(state, actions[1]) ||
-           !prayer_action_valid(actions[2]) ||
-           !eat_action_valid(state, actions[3]) ||
-           !drink_action_valid(state, actions[4]);
+    out_classes[FC_INVALID_ACTION_MOVE] = !move_action_valid(state, actions[0]);
+    out_classes[FC_INVALID_ACTION_ATTACK] = !attack_action_valid(state, actions[1]);
+    out_classes[FC_INVALID_ACTION_PRAYER] = !prayer_action_valid(actions[2]);
+    out_classes[FC_INVALID_ACTION_EAT] = !eat_action_valid(state, actions[3]);
+    out_classes[FC_INVALID_ACTION_DRINK] = !drink_action_valid(state, actions[4]);
+}
+
+int fc_action_attempt_is_invalid(const FcState* state, const int actions[FC_NUM_ACTION_HEADS]) {
+    int invalid_classes[FC_INVALID_ACTION_CLASS_COUNT];
+
+    fc_action_invalid_classes(state, actions, invalid_classes);
+    for (int i = 0; i < FC_INVALID_ACTION_CLASS_COUNT; i++) {
+        if (invalid_classes[i]) return 1;
+    }
+    return 0;
 }
 
 void fc_write_mask(const FcState* state, float* out) {

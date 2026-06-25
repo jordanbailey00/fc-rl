@@ -17,5 +17,8 @@ add_subdirectory(fc-core)
 # Fight Caves viewer and tests
 add_subdirectory(fc-viewer)
 
+# Fight Caves validation guardrails
+add_subdirectory(fc-validation)
+
 # Fight Caves training backend
 add_subdirectory(fc-training)
