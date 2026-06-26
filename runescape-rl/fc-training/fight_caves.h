@@ -66,18 +66,39 @@ typedef struct {
     float invalid_move;
     float invalid_attack;
     float invalid_prayer;
-    float pots_used;
-    float avg_prayer_on_pot;
-    float food_eaten;
-    float avg_hp_on_food;
-    float food_wasted;
-    float pots_wasted;
     float tokxil_melee_ticks;
     float ketzek_melee_ticks;
     float max_wave_ticks;
     float max_wave_ticks_wave;
     float reached_wave_63;
     float jad_kill_rate;
+    float dmg_to_npc_type[NPC_TYPE_COUNT];
+    float resolved_hits_to_npc_type[NPC_TYPE_COUNT];
+    float damaging_hits_to_npc_type[NPC_TYPE_COUNT];
+    float attack_cycles_to_npc_type[NPC_TYPE_COUNT];
+    float target_ticks_by_npc_type[NPC_TYPE_COUNT];
+    float target_held_ticks;
+    float no_target_ticks;
+    float target_in_range_los_ticks;
+    float target_out_of_range_or_los_ticks;
+    float attack_cooldown_wait_ticks;
+    float ready_but_no_attack_ticks;
+    float action_move_idle_ticks;
+    float action_move_walk_ticks;
+    float action_move_run_ticks;
+    float action_attack_none_ticks;
+    float action_attack_target_ticks;
+    float action_prayer_noop_ticks;
+    float action_prayer_cmd_ticks;
+    float no_progress_ticks;
+    float no_progress_idle_move_ticks;
+    float no_progress_move_cmd_ticks;
+    float no_progress_attack_none_ticks;
+    float no_progress_attack_target_ticks;
+    float no_progress_has_target_ticks;
+    float no_progress_no_target_ticks;
+    float no_progress_prayer_cmd_ticks;
+    float no_progress_invalid_action_ticks;
     float rwd_sum[FC_CH_COUNT];
     float rwd_fires[FC_CH_COUNT];
     float n;  /* must be last */
@@ -147,6 +168,19 @@ typedef struct FightCaves {
      * fc_reward.h for channel indices and names. */
     float ep_rwd_sum[FC_CH_COUNT];
     int   ep_rwd_fires[FC_CH_COUNT];
+
+    /* Puffer-action no-progress diagnostics. These are adapter-level metrics
+     * for stall-like ticks: no movement, no attack cycle, no damage, no kill,
+     * no wave clear, and not just normal in-range weapon cooldown waiting. */
+    float ep_no_progress_ticks;
+    float ep_no_progress_idle_move_ticks;
+    float ep_no_progress_move_cmd_ticks;
+    float ep_no_progress_attack_none_ticks;
+    float ep_no_progress_attack_target_ticks;
+    float ep_no_progress_has_target_ticks;
+    float ep_no_progress_no_target_ticks;
+    float ep_no_progress_prayer_cmd_ticks;
+    float ep_no_progress_invalid_action_ticks;
 
     /* RNG seed counter (increments each episode for variety) */
     uint32_t seed_counter;
@@ -229,6 +263,66 @@ static float fc_puffer_compute_reward(FightCaves* env) {
     return breakdown.total;
 }
 
+static void fc_puffer_reset_episode_action_diagnostics(FightCaves* env) {
+    env->ep_no_progress_ticks = 0.0f;
+    env->ep_no_progress_idle_move_ticks = 0.0f;
+    env->ep_no_progress_move_cmd_ticks = 0.0f;
+    env->ep_no_progress_attack_none_ticks = 0.0f;
+    env->ep_no_progress_attack_target_ticks = 0.0f;
+    env->ep_no_progress_has_target_ticks = 0.0f;
+    env->ep_no_progress_no_target_ticks = 0.0f;
+    env->ep_no_progress_prayer_cmd_ticks = 0.0f;
+    env->ep_no_progress_invalid_action_ticks = 0.0f;
+}
+
+static void fc_puffer_record_no_progress_diagnostics(
+    FightCaves* env,
+    const int actions[FC_NUM_ACTION_HEADS]) {
+    const FcState* state = &env->state;
+    const FcPlayer* player = &state->player;
+    int target_active = 0;
+
+    if (state->terminal != TERMINAL_NONE || state->npcs_remaining <= 0) return;
+    if (state->movement_this_tick || state->attack_attempt_this_tick) return;
+    if (state->damage_dealt_this_tick > 0 || state->npcs_killed_this_tick > 0) return;
+    if (state->wave_just_cleared) return;
+
+    if (player->attack_target_idx >= 0) {
+        const FcNpc* target = &state->npcs[player->attack_target_idx];
+        target_active = target->active && !target->is_dead;
+        if (target_active && player->attack_timer > 0) {
+            int dist = fc_distance_to_npc(player->x, player->y, target);
+            int has_los = fc_has_los_to_npc(
+                player->x, player->y, target->x, target->y, target->size,
+                state->walkable);
+            if (dist <= player->weapon_range && has_los) return;
+        }
+    }
+
+    env->ep_no_progress_ticks += 1.0f;
+    if (actions[0] == FC_MOVE_IDLE) {
+        env->ep_no_progress_idle_move_ticks += 1.0f;
+    } else {
+        env->ep_no_progress_move_cmd_ticks += 1.0f;
+    }
+    if (actions[1] == FC_ATTACK_NONE) {
+        env->ep_no_progress_attack_none_ticks += 1.0f;
+    } else {
+        env->ep_no_progress_attack_target_ticks += 1.0f;
+    }
+    if (target_active) {
+        env->ep_no_progress_has_target_ticks += 1.0f;
+    } else {
+        env->ep_no_progress_no_target_ticks += 1.0f;
+    }
+    if (actions[2] != 0) {
+        env->ep_no_progress_prayer_cmd_ticks += 1.0f;
+    }
+    if (state->invalid_action_this_tick) {
+        env->ep_no_progress_invalid_action_ticks += 1.0f;
+    }
+}
+
 /* ======================================================================== */
 /* PufferLib interface: c_reset, c_step, c_render, c_close                   */
 /* ======================================================================== */
@@ -262,6 +356,7 @@ void c_reset(FightCaves* env) {
         env->ep_rwd_sum[i] = 0.0f;
         env->ep_rwd_fires[i] = 0;
     }
+    fc_puffer_reset_episode_action_diagnostics(env);
 
     /* Compute initial observations */
     fc_puffer_write_obs(env);
@@ -284,6 +379,7 @@ void c_step(FightCaves* env) {
 
     /* Step the game simulation */
     fc_step(&env->state, actions);
+    fc_puffer_record_no_progress_diagnostics(env, actions);
 
     /* Compute reward */
     float reward = fc_puffer_compute_reward(env);
@@ -321,22 +417,57 @@ void c_step(FightCaves* env) {
             (float)env->state.ep_invalid_action_classes[FC_INVALID_ACTION_ATTACK];
         env->log.invalid_prayer +=
             (float)env->state.ep_invalid_action_classes[FC_INVALID_ACTION_PRAYER];
-        env->log.pots_used += (float)env->state.ep_pots_used;
-        env->log.avg_prayer_on_pot += (env->state.ep_pots_used > 0 && env->state.player.max_prayer > 0)
-            ? ((float)env->state.ep_pot_pre_prayer_sum /
-               ((float)env->state.ep_pots_used * (float)env->state.player.max_prayer)) : 0.0f;
-        env->log.food_eaten += (float)env->state.ep_food_eaten;
-        env->log.avg_hp_on_food += (env->state.ep_food_eaten > 0 && env->state.player.max_hp > 0)
-            ? ((float)env->state.ep_food_pre_hp_sum /
-               ((float)env->state.ep_food_eaten * (float)env->state.player.max_hp)) : 0.0f;
-        env->log.food_wasted += (float)env->state.ep_food_overhealed;
-        env->log.pots_wasted += (float)env->state.ep_pots_overrestored;
         env->log.tokxil_melee_ticks += (float)env->state.ep_tokxil_melee_ticks;
         env->log.ketzek_melee_ticks += (float)env->state.ep_ketzek_melee_ticks;
         env->log.max_wave_ticks += (float)env->state.ep_max_wave_ticks;
         env->log.max_wave_ticks_wave += (float)env->state.ep_max_wave_ticks_wave;
         env->log.reached_wave_63 += (float)env->state.ep_reached_wave_63;
         env->log.jad_kill_rate += (float)env->state.ep_jad_killed;
+        for (int i = 0; i < NPC_TYPE_COUNT; i++) {
+            env->log.dmg_to_npc_type[i] +=
+                (float)env->state.ep_damage_to_npc_type[i];
+            env->log.resolved_hits_to_npc_type[i] +=
+                (float)env->state.ep_resolved_hits_to_npc_type[i];
+            env->log.damaging_hits_to_npc_type[i] +=
+                (float)env->state.ep_damaging_hits_to_npc_type[i];
+            env->log.attack_cycles_to_npc_type[i] +=
+                (float)env->state.ep_attack_cycles_to_npc_type[i];
+            env->log.target_ticks_by_npc_type[i] +=
+                (float)env->state.ep_target_ticks_by_npc_type[i];
+        }
+        env->log.target_held_ticks += (float)env->state.ep_target_held_ticks;
+        env->log.no_target_ticks += (float)env->state.ep_no_target_ticks;
+        env->log.target_in_range_los_ticks +=
+            (float)env->state.ep_target_in_range_los_ticks;
+        env->log.target_out_of_range_or_los_ticks +=
+            (float)env->state.ep_target_out_of_range_or_los_ticks;
+        env->log.attack_cooldown_wait_ticks +=
+            (float)env->state.ep_attack_cooldown_wait_ticks;
+        env->log.ready_but_no_attack_ticks +=
+            (float)env->state.ep_ready_but_no_attack_ticks;
+        env->log.action_move_idle_ticks +=
+            (float)env->state.ep_action_move_idle_ticks;
+        env->log.action_move_walk_ticks +=
+            (float)env->state.ep_action_move_walk_ticks;
+        env->log.action_move_run_ticks +=
+            (float)env->state.ep_action_move_run_ticks;
+        env->log.action_attack_none_ticks +=
+            (float)env->state.ep_action_attack_none_ticks;
+        env->log.action_attack_target_ticks +=
+            (float)env->state.ep_action_attack_target_ticks;
+        env->log.action_prayer_noop_ticks +=
+            (float)env->state.ep_action_prayer_noop_ticks;
+        env->log.action_prayer_cmd_ticks +=
+            (float)env->state.ep_action_prayer_cmd_ticks;
+        env->log.no_progress_ticks += env->ep_no_progress_ticks;
+        env->log.no_progress_idle_move_ticks += env->ep_no_progress_idle_move_ticks;
+        env->log.no_progress_move_cmd_ticks += env->ep_no_progress_move_cmd_ticks;
+        env->log.no_progress_attack_none_ticks += env->ep_no_progress_attack_none_ticks;
+        env->log.no_progress_attack_target_ticks += env->ep_no_progress_attack_target_ticks;
+        env->log.no_progress_has_target_ticks += env->ep_no_progress_has_target_ticks;
+        env->log.no_progress_no_target_ticks += env->ep_no_progress_no_target_ticks;
+        env->log.no_progress_prayer_cmd_ticks += env->ep_no_progress_prayer_cmd_ticks;
+        env->log.no_progress_invalid_action_ticks += env->ep_no_progress_invalid_action_ticks;
 
         for (int i = 0; i < FC_CH_COUNT; i++) {
             env->log.rwd_sum[i] += env->ep_rwd_sum[i];

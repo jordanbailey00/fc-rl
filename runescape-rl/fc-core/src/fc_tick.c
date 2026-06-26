@@ -102,6 +102,29 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
     int act_target_y = actions[6];
     int requested_attack_idx = -1;
     int invalid_classes[FC_INVALID_ACTION_CLASS_COUNT];
+    int target_metrics_recorded = 0;
+
+    if (state->npcs_remaining > 0) {
+        if (act_move == FC_MOVE_IDLE) {
+            state->ep_action_move_idle_ticks++;
+        } else if (act_move >= FC_MOVE_WALK_N && act_move < FC_MOVE_RUN_N) {
+            state->ep_action_move_walk_ticks++;
+        } else if (act_move >= FC_MOVE_RUN_N && act_move < FC_MOVE_DIM) {
+            state->ep_action_move_run_ticks++;
+        }
+
+        if (act_attack == FC_ATTACK_NONE) {
+            state->ep_action_attack_none_ticks++;
+        } else {
+            state->ep_action_attack_target_ticks++;
+        }
+
+        if (act_prayer == 0) {
+            state->ep_action_prayer_noop_ticks++;
+        } else {
+            state->ep_action_prayer_cmd_ticks++;
+        }
+    }
 
     fc_action_invalid_classes(state, actions, invalid_classes);
     for (int i = 0; i < FC_INVALID_ACTION_CLASS_COUNT; i++) {
@@ -265,6 +288,22 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
             int weapon_range = p->weapon_range;
             int has_los = fc_has_los_to_npc(
                 p->x, p->y, target->x, target->y, target->size, state->walkable);
+            int target_can_fire = (dist <= weapon_range && has_los);
+            int target_ready = (p->attack_timer <= 0);
+
+            if (target->npc_type > NPC_NONE && target->npc_type < NPC_TYPE_COUNT) {
+                state->ep_target_ticks_by_npc_type[target->npc_type]++;
+            }
+            state->ep_target_held_ticks++;
+            target_metrics_recorded = 1;
+            if (target_can_fire) {
+                state->ep_target_in_range_los_ticks++;
+                if (!target_ready) {
+                    state->ep_attack_cooldown_wait_ticks++;
+                }
+            } else {
+                state->ep_target_out_of_range_or_los_ticks++;
+            }
 
             if ((dist > weapon_range || !has_los) &&
                 p->approach_target && p->route_idx >= p->route_len) {
@@ -305,7 +344,7 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
                 }
             }
 
-            if (dist <= weapon_range && has_los && p->attack_timer <= 0) {
+            if (target_can_fire && target_ready) {
                 /* In range — fire attack */
                 int att_roll = fc_player_ranged_attack_roll(p, target);
                 const FcNpcStats* tstats = fc_npc_get_stats(target->npc_type);
@@ -322,6 +361,9 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
                                      damage, delay, ATTACK_RANGED, -1, 0);
 
                 state->attack_attempt_this_tick = 1;
+                if (target->npc_type > NPC_NONE && target->npc_type < NPC_TYPE_COUNT) {
+                    state->ep_attack_cycles_to_npc_type[target->npc_type]++;
+                }
                 p->attack_timer = p->weapon_speed;
                 if (p->weapon_uses_ammo && p->ammo_count > 0)
                     p->ammo_count--;
@@ -338,6 +380,28 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
                 }
                 if (!any_adjacent) state->safespot_attack_this_tick = 1;
             }
+
+            if (target_can_fire && target_ready && !state->attack_attempt_this_tick) {
+                state->ep_ready_but_no_attack_ticks++;
+            }
+        }
+    }
+
+    if (state->npcs_remaining > 0) {
+        int target_active = 0;
+        if (p->attack_target_idx >= 0) {
+            FcNpc* current_target = &state->npcs[p->attack_target_idx];
+            target_active = current_target->active && !current_target->is_dead;
+        }
+        if (!target_active) {
+            state->ep_no_target_ticks++;
+        } else if (!target_metrics_recorded) {
+            FcNpc* current_target = &state->npcs[p->attack_target_idx];
+            if (current_target->npc_type > NPC_NONE &&
+                current_target->npc_type < NPC_TYPE_COUNT) {
+                state->ep_target_ticks_by_npc_type[current_target->npc_type]++;
+            }
+            state->ep_target_held_ticks++;
         }
     }
 

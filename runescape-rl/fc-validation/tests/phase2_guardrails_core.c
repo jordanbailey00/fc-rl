@@ -205,14 +205,23 @@ static int test_zero_damage_reward(void) {
     fc_reward_runtime_reset(&runtime);
     breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
 
-    if (state.hits_landed_this_tick == 0 && fabsf(breakdown.damage_dealt) < 0.0001f) {
+    if (state.hits_landed_this_tick == 0 &&
+        state.ep_resolved_hits_to_npc_type[NPC_TZ_KIH] == 1 &&
+        state.ep_damaging_hits_to_npc_type[NPC_TZ_KIH] == 0 &&
+        state.ep_damage_to_npc_type[NPC_TZ_KIH] == 0 &&
+        fabsf(breakdown.damage_dealt) < 0.0001f) {
         fc_destroy(&state);
-        return pass("zero-damage hits do not produce damage reward");
+        return pass("zero-damage hits are logged as resolved hits without damage reward");
     }
 
     char msg[160];
-    snprintf(msg, sizeof(msg), "zero-damage hit counted: hits=%d reward=%.4f",
-             state.hits_landed_this_tick, breakdown.damage_dealt);
+    snprintf(msg, sizeof(msg),
+             "zero-damage hit metrics wrong: hits=%d resolved=%d damaging=%d damage=%d reward=%.4f",
+             state.hits_landed_this_tick,
+             state.ep_resolved_hits_to_npc_type[NPC_TZ_KIH],
+             state.ep_damaging_hits_to_npc_type[NPC_TZ_KIH],
+             state.ep_damage_to_npc_type[NPC_TZ_KIH],
+             breakdown.damage_dealt);
     fc_destroy(&state);
     return fail(msg);
 }

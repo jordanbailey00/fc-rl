@@ -1031,6 +1031,20 @@ static void format_speed_label(const ViewerState* v, char* buf, size_t buf_size)
     }
 }
 
+static const char* policy_metric_npc_name(int npc_type) {
+    switch (npc_type) {
+        case NPC_TZ_KIH:    return "tz_kih";
+        case NPC_TZ_KEK:    return "tz_kek";
+        case NPC_TZ_KEK_SM: return "tz_kek_sm";
+        case NPC_TOK_XIL:   return "tok_xil";
+        case NPC_YT_MEJKOT: return "yt_mejkot";
+        case NPC_KET_ZEK:   return "ket_zek";
+        case NPC_TZTOK_JAD: return "tztok_jad";
+        case NPC_YT_HURKOT: return "yt_hurkot";
+        default:            return "unknown";
+    }
+}
+
 static void print_policy_episode_summary(const ViewerState* v) {
     const FcState* s = &v->state;
     const FcPlayer* p = &s->player;
@@ -1043,10 +1057,6 @@ static void print_policy_episode_summary(const ViewerState* v) {
         ? (float)s->ep_ticks_pray_magic / (float)episode_length : 0.0f;
     float attack_when_ready_rate = (s->ep_attack_ready_ticks > 0)
         ? (float)s->ep_attack_attempt_ticks / (float)s->ep_attack_ready_ticks : 0.0f;
-    float avg_prayer_on_pot = (s->ep_pots_used > 0 && p->max_prayer > 0)
-        ? (float)s->ep_pot_pre_prayer_sum / ((float)s->ep_pots_used * (float)p->max_prayer) : 0.0f;
-    float avg_hp_on_food = (s->ep_food_eaten > 0 && p->max_hp > 0)
-        ? (float)s->ep_food_pre_hp_sum / ((float)s->ep_food_eaten * (float)p->max_hp) : 0.0f;
 
     fprintf(stderr,
         "[policy-pipe] episode_summary "
@@ -1064,19 +1074,25 @@ static void print_policy_episode_summary(const ViewerState* v) {
         "\"env/damage_blocked\":%d,"
         "\"env/dmg_taken_avg\":%d,"
         "\"env/attack_when_ready_rate\":%.6f,"
-        "\"env/pots_used\":%d,"
-        "\"env/avg_prayer_on_pot\":%.6f,"
-        "\"env/food_eaten\":%d,"
-        "\"env/avg_hp_on_food\":%.6f,"
-        "\"env/food_wasted\":%d,"
-        "\"env/pots_wasted\":%d,"
         "\"env/tokxil_melee_ticks\":%d,"
         "\"env/ketzek_melee_ticks\":%d,"
         "\"env/max_wave_ticks\":%d,"
         "\"env/max_wave_ticks_wave\":%d,"
         "\"env/reached_wave_63\":%d,"
         "\"env/jad_kill_rate\":%d,"
-        "\"env/n\":1.0}\n",
+        "\"env/target_held_ticks\":%d,"
+        "\"env/no_target_ticks\":%d,"
+        "\"env/target_in_range_los_ticks\":%d,"
+        "\"env/target_out_of_range_or_los_ticks\":%d,"
+        "\"env/attack_cooldown_wait_ticks\":%d,"
+        "\"env/ready_but_no_attack_ticks\":%d,"
+        "\"env/action_move_idle_ticks\":%d,"
+        "\"env/action_move_walk_ticks\":%d,"
+        "\"env/action_move_run_ticks\":%d,"
+        "\"env/action_attack_none_ticks\":%d,"
+        "\"env/action_attack_target_ticks\":%d,"
+        "\"env/action_prayer_noop_ticks\":%d,"
+        "\"env/action_prayer_cmd_ticks\":%d",
         v->policy_episode_count + 1,
         v->seed,
         fc_terminal_name(s->terminal),
@@ -1093,18 +1109,42 @@ static void print_policy_episode_summary(const ViewerState* v) {
         s->ep_damage_blocked,
         p->total_damage_taken,
         attack_when_ready_rate,
-        s->ep_pots_used,
-        avg_prayer_on_pot,
-        s->ep_food_eaten,
-        avg_hp_on_food,
-        s->ep_food_overhealed,
-        s->ep_pots_overrestored,
         s->ep_tokxil_melee_ticks,
         s->ep_ketzek_melee_ticks,
         s->ep_max_wave_ticks,
         s->ep_max_wave_ticks_wave,
         s->ep_reached_wave_63,
-        s->ep_jad_killed);
+        s->ep_jad_killed,
+        s->ep_target_held_ticks,
+        s->ep_no_target_ticks,
+        s->ep_target_in_range_los_ticks,
+        s->ep_target_out_of_range_or_los_ticks,
+        s->ep_attack_cooldown_wait_ticks,
+        s->ep_ready_but_no_attack_ticks,
+        s->ep_action_move_idle_ticks,
+        s->ep_action_move_walk_ticks,
+        s->ep_action_move_run_ticks,
+        s->ep_action_attack_none_ticks,
+        s->ep_action_attack_target_ticks,
+        s->ep_action_prayer_noop_ticks,
+        s->ep_action_prayer_cmd_ticks);
+
+    for (int i = 1; i < NPC_TYPE_COUNT; i++) {
+        const char* npc = policy_metric_npc_name(i);
+        fprintf(stderr,
+            ",\"env/dmg_to_%s\":%d"
+            ",\"env/resolved_hits_to_%s\":%d"
+            ",\"env/damaging_hits_to_%s\":%d"
+            ",\"env/attack_cycles_to_%s\":%d"
+            ",\"env/target_ticks_%s\":%d",
+            npc, s->ep_damage_to_npc_type[i],
+            npc, s->ep_resolved_hits_to_npc_type[i],
+            npc, s->ep_damaging_hits_to_npc_type[i],
+            npc, s->ep_attack_cycles_to_npc_type[i],
+            npc, s->ep_target_ticks_by_npc_type[i]);
+    }
+
+    fprintf(stderr, ",\"env/n\":1.0}\n");
 }
 
 static void reset_ep(ViewerState* v) {

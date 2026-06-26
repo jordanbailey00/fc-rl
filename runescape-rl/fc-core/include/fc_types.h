@@ -406,6 +406,24 @@ typedef struct {
     int ep_attack_attempt_ticks;/* ready ticks where a real attack fired */
     int safespot_attack_this_tick; /* 1 if player attacked with no NPC adjacent */
     int ep_invalid_action_classes[FC_INVALID_ACTION_CLASS_COUNT];
+    int ep_damage_to_npc_type[NPC_TYPE_COUNT];       /* player damage by NPC type */
+    int ep_resolved_hits_to_npc_type[NPC_TYPE_COUNT];/* all resolved player hitsplats, including 0s */
+    int ep_damaging_hits_to_npc_type[NPC_TYPE_COUNT];/* resolved player hitsplats with damage > 0 */
+    int ep_attack_cycles_to_npc_type[NPC_TYPE_COUNT];/* actual attack cycles fired by target type */
+    int ep_target_ticks_by_npc_type[NPC_TYPE_COUNT]; /* ticks with active attack target by type */
+    int ep_target_held_ticks;        /* ticks with any active attack target */
+    int ep_no_target_ticks;          /* ticks with NPCs alive and no active attack target */
+    int ep_target_in_range_los_ticks;/* target held, in range, and line of sight available */
+    int ep_target_out_of_range_or_los_ticks; /* target held but cannot currently fire */
+    int ep_attack_cooldown_wait_ticks;       /* target held and fireable, but weapon cooling down */
+    int ep_ready_but_no_attack_ticks;        /* target held/fireable/ready but no attack cycle launched */
+    int ep_action_move_idle_ticks;
+    int ep_action_move_walk_ticks;
+    int ep_action_move_run_ticks;
+    int ep_action_attack_none_ticks;
+    int ep_action_attack_target_ticks;
+    int ep_action_prayer_noop_ticks;
+    int ep_action_prayer_cmd_ticks;
     int ep_reached_wave_63;     /* 1 if episode reached Jad wave */
     int ep_jad_killed;          /* 1 if Jad died at any point this episode */
     int wave_start_tick;        /* tick when current wave was spawned */

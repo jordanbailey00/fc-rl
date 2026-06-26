@@ -5,7 +5,17 @@ for project follow-ups that should not become public repo documentation yet.
 
 ## Current Focus
 
-- Work tracker: `runescape-rl/docs/fight_caves_improvement_plan.md`
+- Immediate next dev tracker: `fc_revamp.md`
+- Current status on 2026-06-26: backend/config phases are complete enough to
+  pause the old phase plan. The next work is the Fight Caves revamp experiments
+  in `fc_revamp.md`, implemented one by one so each training result is
+  interpretable.
+- First planned revamp target: add explicit NPC type one-hot observations per
+  visible NPC slot. After that, test reward cleanup by replacing per-hit damage
+  reward with NPC kill/progress rewards and rescaling around the `-1, 1` clamp.
+- Later revamp targets: expose prayer decision deadline, hard-apply native
+  Puffer action masks, then review target persistence and auto-pathing control.
+- Previous work tracker: `runescape-rl/docs/fight_caves_improvement_plan.md`
 - Current status on 2026-06-25: Phase 7 simplified no-supplies retrain
   completed as W&B run `rw70szhc`; it is mechanically clean but should not be
   adopted as the new reward baseline.
@@ -31,11 +41,11 @@ for project follow-ups that should not become public repo documentation yet.
   `wave_reached=61.332`, `reached_wave_63=0.839`,
   `jad_kill_rate=0.126`. Food/pots stayed zero and the Puffer policy used the
   intended 3-head move/attack/prayer action space.
-- Next: continue Phase 7 by keeping the no-supplies action contract, but
-  reintroduce or sweep anti-stall/range guidance first. Most likely candidates
-  are wave-stall shaping and kiting/range shaping. The full-supplies benchmark
-  `27x0wmy4` is historical because future runs are intended to be foodless and
-  prayer-potionless.
+- Immediate next: use `fc_revamp.md` instead of continuing ad hoc Phase 7
+  tweaks. Keep the no-supplies action contract, but first test structural fixes:
+  NPC identity observations, kill/progress rewards, and cleaner reward scaling.
+  The full-supplies benchmark `27x0wmy4` is historical because future runs are
+  intended to be foodless and prayer-potionless.
 
 ## Backend / Training Correctness
 
@@ -67,7 +77,17 @@ for project follow-ups that should not become public repo documentation yet.
 
 ## Reward / Observation Iteration
 
-- Clean up, reduce, and prune the reward config, then run another sweep.
+- Follow `fc_revamp.md` as the immediate reward/observation implementation plan.
+  - Start with explicit NPC type one-hot observations.
+  - Then replace per-hit damage reward with NPC kill/progress rewards.
+  - Then restructure reward weights around the `-1, 1` clamp.
+  - Then add prayer decision deadline observations.
+  - Then hard-apply action masks and remove invalid-action reward clutter once
+    validation proves masks are correct.
+  - Finally, review target persistence and auto-pathing control.
+
+- Longer-running cleanup: reduce and prune the reward config, then run another
+  sweep.
   - Remove reward terms that are redundant, dead, unreachable, or mostly acting as
     optimizer noise.
   - Prefer simpler reward terms that line up with OSRS-relevant outcomes and avoid

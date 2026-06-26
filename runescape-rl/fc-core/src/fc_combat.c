@@ -357,6 +357,13 @@ void fc_resolve_npc_pending_hits(FcState* state, int npc_idx) {
 
             npc->damage_taken_this_tick += h->damage;
             state->damage_dealt_this_tick += h->damage;
+            if (npc->npc_type > NPC_NONE && npc->npc_type < NPC_TYPE_COUNT) {
+                state->ep_resolved_hits_to_npc_type[npc->npc_type]++;
+                state->ep_damage_to_npc_type[npc->npc_type] += h->damage;
+                if (h->damage > 0) {
+                    state->ep_damaging_hits_to_npc_type[npc->npc_type]++;
+                }
+            }
             if (h->damage > 0) {
                 state->hits_landed_this_tick++;
             }

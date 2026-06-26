@@ -94,18 +94,73 @@ void my_log(Log* log, Dict* out) {
     dict_set(out, "invalid_move", log->invalid_move);
     dict_set(out, "invalid_attack", log->invalid_attack);
     dict_set(out, "invalid_prayer", log->invalid_prayer);
-    dict_set(out, "pots_used", log->pots_used);
-    dict_set(out, "avg_prayer_on_pot", log->avg_prayer_on_pot);
-    dict_set(out, "food_eaten", log->food_eaten);
-    dict_set(out, "avg_hp_on_food", log->avg_hp_on_food);
-    dict_set(out, "food_wasted", log->food_wasted);
-    dict_set(out, "pots_wasted", log->pots_wasted);
     dict_set(out, "tokxil_melee_ticks", log->tokxil_melee_ticks);
     dict_set(out, "ketzek_melee_ticks", log->ketzek_melee_ticks);
     dict_set(out, "max_wave_ticks", log->max_wave_ticks);
     dict_set(out, "max_wave_ticks_wave", log->max_wave_ticks_wave);
     dict_set(out, "reached_wave_63", log->reached_wave_63);
     dict_set(out, "jad_kill_rate", log->jad_kill_rate);
+    dict_set(out, "target_held_ticks", log->target_held_ticks);
+    dict_set(out, "no_target_ticks", log->no_target_ticks);
+    dict_set(out, "target_in_range_los_ticks", log->target_in_range_los_ticks);
+    dict_set(out, "target_out_of_range_or_los_ticks", log->target_out_of_range_or_los_ticks);
+    dict_set(out, "attack_cooldown_wait_ticks", log->attack_cooldown_wait_ticks);
+    dict_set(out, "ready_but_no_attack_ticks", log->ready_but_no_attack_ticks);
+    dict_set(out, "action_move_idle_ticks", log->action_move_idle_ticks);
+    dict_set(out, "action_move_walk_ticks", log->action_move_walk_ticks);
+    dict_set(out, "action_move_run_ticks", log->action_move_run_ticks);
+    dict_set(out, "action_attack_none_ticks", log->action_attack_none_ticks);
+    dict_set(out, "action_attack_target_ticks", log->action_attack_target_ticks);
+    dict_set(out, "action_prayer_noop_ticks", log->action_prayer_noop_ticks);
+    dict_set(out, "action_prayer_cmd_ticks", log->action_prayer_cmd_ticks);
+    dict_set(out, "no_progress_ticks", log->no_progress_ticks);
+    dict_set(out, "no_progress_idle_move_ticks", log->no_progress_idle_move_ticks);
+    dict_set(out, "no_progress_move_cmd_ticks", log->no_progress_move_cmd_ticks);
+    dict_set(out, "no_progress_attack_none_ticks", log->no_progress_attack_none_ticks);
+    dict_set(out, "no_progress_attack_target_ticks", log->no_progress_attack_target_ticks);
+    dict_set(out, "no_progress_has_target_ticks", log->no_progress_has_target_ticks);
+    dict_set(out, "no_progress_no_target_ticks", log->no_progress_no_target_ticks);
+    dict_set(out, "no_progress_prayer_cmd_ticks", log->no_progress_prayer_cmd_ticks);
+    dict_set(out, "no_progress_invalid_action_ticks", log->no_progress_invalid_action_ticks);
+
+    static const char* npc_names[NPC_TYPE_COUNT] = {
+        "none",
+        "tz_kih",
+        "tz_kek",
+        "tz_kek_sm",
+        "tok_xil",
+        "yt_mejkot",
+        "ket_zek",
+        "tztok_jad",
+        "yt_hurkot",
+    };
+    static char npc_dmg_keys[NPC_TYPE_COUNT][48];
+    static char npc_resolved_hit_keys[NPC_TYPE_COUNT][48];
+    static char npc_damaging_hit_keys[NPC_TYPE_COUNT][48];
+    static char npc_attack_cycle_keys[NPC_TYPE_COUNT][48];
+    static char npc_target_tick_keys[NPC_TYPE_COUNT][48];
+    static int npc_keys_built = 0;
+    if (!npc_keys_built) {
+        for (int i = 1; i < NPC_TYPE_COUNT; i++) {
+            snprintf(npc_dmg_keys[i], 48, "dmg_to_%s", npc_names[i]);
+            snprintf(npc_resolved_hit_keys[i], 48,
+                     "resolved_hits_to_%s", npc_names[i]);
+            snprintf(npc_damaging_hit_keys[i], 48,
+                     "damaging_hits_to_%s", npc_names[i]);
+            snprintf(npc_attack_cycle_keys[i], 48,
+                     "attack_cycles_to_%s", npc_names[i]);
+            snprintf(npc_target_tick_keys[i], 48,
+                     "target_ticks_%s", npc_names[i]);
+        }
+        npc_keys_built = 1;
+    }
+    for (int i = 1; i < NPC_TYPE_COUNT; i++) {
+        dict_set(out, npc_dmg_keys[i], log->dmg_to_npc_type[i]);
+        dict_set(out, npc_resolved_hit_keys[i], log->resolved_hits_to_npc_type[i]);
+        dict_set(out, npc_damaging_hit_keys[i], log->damaging_hits_to_npc_type[i]);
+        dict_set(out, npc_attack_cycle_keys[i], log->attack_cycles_to_npc_type[i]);
+        dict_set(out, npc_target_tick_keys[i], log->target_ticks_by_npc_type[i]);
+    }
 
     /* Keys must use static storage because dict_set stores the pointer (see
      * vecenv.h:dict_set); stack-local char arrays would dangle. */
