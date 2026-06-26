@@ -17,8 +17,25 @@ static void init_env(FightCaves* env,
     env->terminals = terminals;
     env->num_agents = 1;
     env->rng = rng;
-    env->initial_sharks = FC_MAX_SHARKS;
-    env->initial_prayer_doses = FC_MAX_PRAYER_DOSES;
+    env->initial_sharks = 0;
+    env->initial_prayer_doses = 0;
+}
+
+static int test_no_supplies_policy_contract(void) {
+    int expected_obs = FC_POLICY_OBS_SIZE + FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM;
+
+    if (FC_PUFFER_NUM_ATNS != 3) {
+        printf("FAIL: expected 3 Puffer action heads, got %d\n", FC_PUFFER_NUM_ATNS);
+        return 1;
+    }
+    if (FC_PUFFER_OBS_SIZE != expected_obs) {
+        printf("FAIL: expected Puffer obs size %d, got %d\n",
+               expected_obs, FC_PUFFER_OBS_SIZE);
+        return 1;
+    }
+
+    printf("PASS: no-supplies Puffer contract exposes move/attack/prayer only\n");
+    return 0;
 }
 
 static int test_rng_seed_diversity(void) {
@@ -52,11 +69,14 @@ static int test_rng_seed_diversity(void) {
 
 int main(int argc, char** argv) {
     if (argc != 2) {
-        fprintf(stderr, "usage: %s <rng_seed_diversity>\n", argv[0]);
+        fprintf(stderr, "usage: %s <rng_seed_diversity|no_supplies_policy_contract>\n", argv[0]);
         return 2;
     }
     if (strcmp(argv[1], "rng_seed_diversity") == 0) {
         return test_rng_seed_diversity();
+    }
+    if (strcmp(argv[1], "no_supplies_policy_contract") == 0) {
+        return test_no_supplies_policy_contract();
     }
     fprintf(stderr, "unknown guardrail: %s\n", argv[1]);
     return 2;

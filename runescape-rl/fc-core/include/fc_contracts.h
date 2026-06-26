@@ -148,7 +148,7 @@
 #define FC_TOTAL_OBS            (FC_POLICY_OBS_SIZE + FC_REWARD_FEATURES)  /* 141 */
 
 /* ======================================================================== */
-/* Action space — 5 independent heads                                        */
+/* Action space — 7 canonical core heads                                     */
 /* ======================================================================== */
 
 /*
@@ -299,15 +299,15 @@ static const int FC_ACTION_DIMS[FC_NUM_ACTION_HEADS] = FC_ACT_SIZES;
  *   FC_POLICY_OBS_SIZE (122) + FC_REWARD_FEATURES (19) + FC_ACTION_MASK_SIZE (166) = 307
  *
  * The PufferLib adapter does NOT expose this full buffer directly. It exposes:
- *   FC_PUFFER_OBS_SIZE = FC_POLICY_OBS_SIZE + mask(heads 0-4 only)
- *                      = 122 + 36 = 158
+ *   FC_PUFFER_OBS_SIZE = FC_POLICY_OBS_SIZE + mask(heads 0-2 only)
+ *                      = 122 + 31 = 153
  *
  * Python trainer slices:
  *   policy_obs   = obs[:FC_POLICY_OBS_SIZE]
  *   reward_feat  = full_obs[FC_REWARD_START:FC_REWARD_START + FC_REWARD_FEATURES]
  *   action_mask  = full_obs[FC_TOTAL_OBS:FC_TOTAL_OBS + FC_ACTION_MASK_SIZE]
  */
-#define FC_OBS_SIZE             (FC_TOTAL_OBS + FC_ACTION_MASK_SIZE)  /* 291 */
+#define FC_OBS_SIZE             (FC_TOTAL_OBS + FC_ACTION_MASK_SIZE)  /* 307 */
 
 /* ======================================================================== */
 /* Normalization divisors                                                     */

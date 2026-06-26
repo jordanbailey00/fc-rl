@@ -820,9 +820,8 @@ static int dbg_draw_panel_tabs(const FcState* state,
                  b->total,
                  reward_runtime->ticks_since_attack);
         DrawText(buf, x, by, 8, dbg_reward_color(b->total)); by += sh;
-        snprintf(buf, sizeof(buf), "threat any:%d imm:%d melee:%d",
+        snprintf(buf, sizeof(buf), "threat any:%d melee:%d",
                  b->threat_ctx.any_threat,
-                 b->threat_ctx.imminent_threat,
                  b->threat_ctx.melee_pressure_npcs);
         DrawText(buf, x, by, 8, DBG_COL_LABEL); by += sh + 2;
 
@@ -837,16 +836,11 @@ static int dbg_draw_panel_tabs(const FcState* state,
                 {"wave_clear", b->wave_clear},
                 {"jad_kill", b->jad_kill},
                 {"death", b->player_death},
-                {"food_waste", b->food_waste},
-                {"pot_waste", b->pot_waste},
                 {"jad_ok", b->correct_jad_prayer},
                 {"danger_ok", b->correct_danger_prayer},
-                {"danger_bad_s", b->wrong_danger_prayer_shape},
                 {"pray_waste", b->unnecessary_prayer},
-                {"melee_pen", b->melee_pressure},
-                {"wasted_atk", b->wasted_attack},
-                {"kite", b->kiting},
-                {"safespot", b->safespot_attack},
+                {"wave_stall", b->wave_stall},
+                {"jad_heal", b->jad_heal},
                 {"invalid", b->invalid_action},
                 {"tick_pen", b->tick_penalty},
             };

@@ -27,7 +27,7 @@ void fc_init(FcState* state);
 void fc_reset(FcState* state, uint32_t seed);
 
 /* Advance the simulation by one tick with the given actions.
- * actions[0..FC_NUM_ACTION_HEADS-1] are the 5 action head values.
+ * actions[0..FC_NUM_ACTION_HEADS-1] are the canonical core action head values.
  * After step, per-tick event flags and terminal status are set. */
 void fc_step(FcState* state, const int actions[FC_NUM_ACTION_HEADS]);
 
@@ -73,13 +73,13 @@ int fc_visible_npc_indices(const FcState* state, int out_indices[FC_VISIBLE_NPCS
  * 1.0 = valid action, 0.0 = invalid. */
 void fc_write_mask(const FcState* state, float* out);
 
-/* Returns 1 if any RL-facing masked action head (move/attack/prayer/eat/drink)
+/* Returns 1 if any Puffer-facing masked action head (move/attack/prayer)
  * contains an invalid attempted action for the current state. */
 int fc_action_attempt_is_invalid(const FcState* state, const int actions[FC_NUM_ACTION_HEADS]);
 
-/* Fill out_classes with 0/1 invalid-action diagnostics for RL-facing heads
- * 0-4 only: move, attack, prayer, eat, drink. Heads 5-6 path targets stay
- * excluded to preserve the current mask/reward behavior. */
+/* Fill out_classes with 0/1 invalid-action diagnostics for Puffer-facing heads
+ * 0-2 only: move, attack, prayer. Core consumable/path-target heads stay
+ * excluded because the no-supplies policy does not emit them. */
 void fc_action_invalid_classes(const FcState* state,
                                const int actions[FC_NUM_ACTION_HEADS],
                                int out_classes[FC_INVALID_ACTION_CLASS_COUNT]);

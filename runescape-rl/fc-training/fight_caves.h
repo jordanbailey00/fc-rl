@@ -66,8 +66,6 @@ typedef struct {
     float invalid_move;
     float invalid_attack;
     float invalid_prayer;
-    float invalid_eat;
-    float invalid_drink;
     float pots_used;
     float avg_prayer_on_pot;
     float food_eaten;
@@ -90,13 +88,13 @@ typedef struct {
 /* ======================================================================== */
 
 /* Puffer-facing observation size:
- *   policy obs + masks for heads 0-4 only (move/attack/prayer/eat/drink)
- *   = 122 + 36 = 158
+ *   policy obs + masks for heads 0-2 only (move/attack/prayer)
+ *   = 122 + 31 = 153
  */
-#define FC_PUFFER_OBS_SIZE (FC_POLICY_OBS_SIZE + FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM + FC_EAT_DIM + FC_DRINK_DIM)
+#define FC_PUFFER_OBS_SIZE (FC_POLICY_OBS_SIZE + FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM)
 
-/* Number of action heads for PufferLib (v1: 5 heads, no walk-to-tile) */
-#define FC_PUFFER_NUM_ATNS 5
+/* Number of action heads for PufferLib: move, attack, prayer. */
+#define FC_PUFFER_NUM_ATNS 3
 
 typedef struct FightCaves {
     Log log;                    /* required by PufferLib */
@@ -123,20 +121,10 @@ typedef struct FightCaves {
     float w_tick_penalty;
 
     /* Configurable shaping terms (kept separate from reward-feature weights) */
-    float shape_food_waste_scale;
-    float shape_pot_waste_scale;
-    float shape_wrong_prayer_penalty;
-    float shape_npc_melee_penalty;
-    float shape_wasted_attack_penalty;
-    float shape_kiting_reward;
-    float shape_safespot_attack_reward;  /* deprecated no-op; kept for config compatibility */
     float shape_unnecessary_prayer_penalty;
     float shape_wave_stall_base_penalty;
     float shape_wave_stall_cap;
     float shape_jad_heal_penalty;
-    int shape_resource_threat_window;
-    int shape_kiting_min_dist;
-    int shape_kiting_max_dist;
     int shape_wave_stall_start;
     int shape_wave_stall_ramp_interval;
     int initial_sharks;
@@ -180,11 +168,10 @@ static void fc_puffer_write_obs(FightCaves* env) {
                           env->obs_ablate_incoming_aggregates,
                           env->obs_ablate_npc_valid);
 
-    /* Action mask: 36 floats (5 heads only, skip walk-to-tile heads) */
+    /* Action mask: 31 floats (move/attack/prayer only). */
     float full_mask[FC_ACTION_MASK_SIZE];
     fc_write_mask(&env->state, full_mask);
-    /* Copy only the first 36 floats (heads 0-4), skip heads 5-6 */
-    int mask_size = FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM + FC_EAT_DIM + FC_DRINK_DIM;
+    int mask_size = FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM;
     memcpy(obs + FC_POLICY_OBS_SIZE, full_mask, sizeof(float) * mask_size);
 }
 
@@ -203,21 +190,11 @@ static FcRewardParams fc_reward_params_from_env(const FightCaves* env) {
     params.w_invalid_action = env->w_invalid_action;
     params.w_tick_penalty = env->w_tick_penalty;
 
-    params.shape_food_waste_scale = env->shape_food_waste_scale;
-    params.shape_pot_waste_scale = env->shape_pot_waste_scale;
-    params.shape_wrong_prayer_penalty = env->shape_wrong_prayer_penalty;
-    params.shape_npc_melee_penalty = env->shape_npc_melee_penalty;
-    params.shape_wasted_attack_penalty = env->shape_wasted_attack_penalty;
-    params.shape_kiting_reward = env->shape_kiting_reward;
-    params.shape_safespot_attack_reward = env->shape_safespot_attack_reward;
     params.shape_unnecessary_prayer_penalty = env->shape_unnecessary_prayer_penalty;
     params.shape_wave_stall_base_penalty = env->shape_wave_stall_base_penalty;
     params.shape_wave_stall_cap = env->shape_wave_stall_cap;
     params.shape_jad_heal_penalty = env->shape_jad_heal_penalty;
 
-    params.shape_resource_threat_window = env->shape_resource_threat_window;
-    params.shape_kiting_min_dist = env->shape_kiting_min_dist;
-    params.shape_kiting_max_dist = env->shape_kiting_max_dist;
     params.shape_wave_stall_start = env->shape_wave_stall_start;
     params.shape_wave_stall_ramp_interval = env->shape_wave_stall_ramp_interval;
 
@@ -296,7 +273,8 @@ void c_step(FightCaves* env) {
 
     /* Convert float actions from network to int action heads.
      * PufferLib sends actions as floats in a flat array.
-     * We only use 5 heads for v1 (skip walk-to-tile). */
+     * Puffer-facing no-supplies policy uses only move/attack/prayer.
+     * Core heads 3-6 are left as zero: no eat, no drink, no walk-to-tile. */
     int actions[FC_NUM_ACTION_HEADS];
     memset(actions, 0, sizeof(actions));
     for (int h = 0; h < FC_PUFFER_NUM_ATNS; h++) {
@@ -343,10 +321,6 @@ void c_step(FightCaves* env) {
             (float)env->state.ep_invalid_action_classes[FC_INVALID_ACTION_ATTACK];
         env->log.invalid_prayer +=
             (float)env->state.ep_invalid_action_classes[FC_INVALID_ACTION_PRAYER];
-        env->log.invalid_eat +=
-            (float)env->state.ep_invalid_action_classes[FC_INVALID_ACTION_EAT];
-        env->log.invalid_drink +=
-            (float)env->state.ep_invalid_action_classes[FC_INVALID_ACTION_DRINK];
         env->log.pots_used += (float)env->state.ep_pots_used;
         env->log.avg_prayer_on_pot += (env->state.ep_pots_used > 0 && env->state.player.max_prayer > 0)
             ? ((float)env->state.ep_pot_pre_prayer_sum /

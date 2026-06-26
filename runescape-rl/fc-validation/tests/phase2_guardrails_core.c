@@ -26,8 +26,6 @@ static const char* invalid_class_name(int idx) {
         case FC_INVALID_ACTION_MOVE: return "move";
         case FC_INVALID_ACTION_ATTACK: return "attack";
         case FC_INVALID_ACTION_PRAYER: return "prayer";
-        case FC_INVALID_ACTION_EAT: return "eat";
-        case FC_INVALID_ACTION_DRINK: return "drink";
         default: return "unknown";
     }
 }
@@ -128,36 +126,8 @@ static int test_invalid_action_classes(void) {
 
     make_open_manual_state(&state, 10, 10);
     memset(actions, 0, sizeof(actions));
-    state.player.current_hp = state.player.max_hp;
-    state.player.sharks_remaining = 1;
-    actions[3] = FC_EAT_SHARK;
-    if (check_invalid_case("invalid_eat", &state, actions, FC_INVALID_ACTION_EAT)) {
-        fc_destroy(&state);
-        return 1;
-    }
-    fc_destroy(&state);
-
-    make_open_manual_state(&state, 10, 10);
-    memset(actions, 0, sizeof(actions));
-    state.player.current_prayer = state.player.max_prayer;
-    state.player.prayer_doses_remaining = 1;
-    actions[4] = FC_DRINK_PRAYER_POT;
-    if (check_invalid_case("invalid_drink", &state, actions, FC_INVALID_ACTION_DRINK)) {
-        fc_destroy(&state);
-        return 1;
-    }
-    fc_destroy(&state);
-
-    make_open_manual_state(&state, 10, 10);
-    memset(actions, 0, sizeof(actions));
-    state.player.current_hp = state.player.max_hp - 100;
-    state.player.current_prayer = state.player.max_prayer - 100;
-    state.player.sharks_remaining = 1;
-    state.player.prayer_doses_remaining = 1;
     actions[0] = FC_MOVE_WALK_N;
     actions[2] = FC_PRAYER_MAGIC;
-    actions[3] = FC_EAT_SHARK;
-    actions[4] = FC_DRINK_PRAYER_POT;
     if (check_invalid_case("valid_nonzero", &state, actions, -1)) {
         fc_destroy(&state);
         return 1;
@@ -174,7 +144,7 @@ static int test_invalid_action_classes(void) {
     }
     fc_destroy(&state);
 
-    return pass("invalid-action diagnostics classify heads 0-4 without path-target noise");
+    return pass("invalid-action diagnostics classify policy heads 0-2 without path-target noise");
 }
 
 static int test_target_identity(void) {
@@ -259,19 +229,17 @@ static int test_safespot_reward_disabled(void) {
     state.safespot_attack_this_tick = 1;
 
     memset(&params, 0, sizeof(params));
-    params.shape_safespot_attack_reward = 5.0f;
     fc_reward_runtime_reset(&runtime);
     breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
 
-    if (fabsf(breakdown.safespot_attack) < 0.0001f &&
-        fabsf(breakdown.total) < 0.0001f) {
+    if (fabsf(breakdown.total) < 0.0001f) {
         fc_destroy(&state);
         return pass("direct safespot reward is disabled while LOS mechanics remain intact");
     }
 
     char msg[160];
-    snprintf(msg, sizeof(msg), "safespot reward still fires: safespot=%.4f total=%.4f",
-             breakdown.safespot_attack, breakdown.total);
+    snprintf(msg, sizeof(msg), "safespot reward still affects total: total=%.4f",
+             breakdown.total);
     fc_destroy(&state);
     return fail(msg);
 }

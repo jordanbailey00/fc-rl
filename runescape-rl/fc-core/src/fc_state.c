@@ -508,14 +508,12 @@ void fc_write_reward_features(const FcState* state, float* out) {
 void fc_action_invalid_classes(const FcState* state,
                                const int actions[FC_NUM_ACTION_HEADS],
                                int out_classes[FC_INVALID_ACTION_CLASS_COUNT]) {
-    /* Keep this aligned with the RL-facing mask surface (heads 0-4 only).
-     * Path-target X/Y are intentionally excluded here because those heads are
-     * not exposed in the policy mask today and would dominate this signal. */
+    /* Keep this aligned with the Puffer-facing policy mask surface:
+     * move, attack, and prayer only. Consumable and path-target heads remain
+     * canonical core actions, but are not emitted by the no-supplies policy. */
     out_classes[FC_INVALID_ACTION_MOVE] = !move_action_valid(state, actions[0]);
     out_classes[FC_INVALID_ACTION_ATTACK] = !attack_action_valid(state, actions[1]);
     out_classes[FC_INVALID_ACTION_PRAYER] = !prayer_action_valid(actions[2]);
-    out_classes[FC_INVALID_ACTION_EAT] = !eat_action_valid(state, actions[3]);
-    out_classes[FC_INVALID_ACTION_DRINK] = !drink_action_valid(state, actions[4]);
 }
 
 int fc_action_attempt_is_invalid(const FcState* state, const int actions[FC_NUM_ACTION_HEADS]) {

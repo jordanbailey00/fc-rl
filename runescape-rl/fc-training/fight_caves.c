@@ -30,24 +30,14 @@ int main(void) {
         env.w_invalid_action = defaults.w_invalid_action;
         env.w_tick_penalty = defaults.w_tick_penalty;
 
-        env.shape_food_waste_scale = defaults.shape_food_waste_scale;
-        env.shape_pot_waste_scale = defaults.shape_pot_waste_scale;
-        env.shape_wrong_prayer_penalty = defaults.shape_wrong_prayer_penalty;
-        env.shape_npc_melee_penalty = defaults.shape_npc_melee_penalty;
-        env.shape_wasted_attack_penalty = defaults.shape_wasted_attack_penalty;
-        env.shape_kiting_reward = defaults.shape_kiting_reward;
-        env.shape_safespot_attack_reward = defaults.shape_safespot_attack_reward;
         env.shape_unnecessary_prayer_penalty = defaults.shape_unnecessary_prayer_penalty;
         env.shape_wave_stall_base_penalty = defaults.shape_wave_stall_base_penalty;
         env.shape_wave_stall_cap = defaults.shape_wave_stall_cap;
-        env.shape_resource_threat_window = defaults.shape_resource_threat_window;
-        env.shape_kiting_min_dist = defaults.shape_kiting_min_dist;
-        env.shape_kiting_max_dist = defaults.shape_kiting_max_dist;
         env.shape_wave_stall_start = defaults.shape_wave_stall_start;
         env.shape_wave_stall_ramp_interval = defaults.shape_wave_stall_ramp_interval;
         env.shape_jad_heal_penalty = defaults.shape_jad_heal_penalty;
-        env.initial_sharks = FC_MAX_SHARKS;
-        env.initial_prayer_doses = FC_MAX_PRAYER_DOSES;
+        env.initial_sharks = 0;
+        env.initial_prayer_doses = 0;
 
         /* Obs ablation flags default to 0 (no ablation) for the standalone harness. */
         env.obs_ablate_npc_distance = 0;
@@ -75,8 +65,6 @@ int main(void) {
             env.actions[0] = (rand() % 3 == 0) ? (float)(rand() % 17) : 0.0f;
             env.actions[1] = (rand() % 5 == 0) ? (float)(rand() % 9) : 0.0f;
             env.actions[2] = (rand() % 10 == 0) ? (float)(rand() % 5) : 0.0f;
-            env.actions[3] = (rand() % 8 == 0) ? (float)(rand() % 3) : 0.0f;
-            env.actions[4] = (rand() % 8 == 0) ? (float)(rand() % 2) : 0.0f;
             c_step(&env);
             total_reward += env.rewards[0];
             ep_ticks++;

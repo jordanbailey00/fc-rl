@@ -20,7 +20,9 @@ simulator should remain normal game logic used by training and the viewer.
 
 ## Current Stop Point
 
-As of 2026-06-25, Phase 7 reward simplification is in progress.
+As of 2026-06-25, Phase 7 reward simplification is in progress. The simplified
+no-supplies 1B retrain completed as W&B run `rw70szhc`; it validated the
+no-supplies policy/action contract but regressed training performance badly.
 
 Completed so far:
 
@@ -32,30 +34,37 @@ Completed so far:
 - Phase 6 corrected baseline training is complete.
 - Phase 7 trial 1 completed, but the no-kiting-reward variant should not be
   adopted.
+- Phase 7 simplified no-supplies candidate is implemented, smoke-tested, and
+  trained for 1B steps.
 - The validation/test tooling is kept outside `fc-core`.
 - The full fresh CTest run from `runescape-rl/build-phase2` passes.
 - No expected-failing guardrails remain.
 
-Current work: continue Phase 7 reward simplification with one-change reward
-trials.
+Current work: continue Phase 7 reward iteration. Keep the no-supplies
+move/attack/prayer action contract, but do not adopt the fully simplified
+reward candidate. The next likely tests should reintroduce or sweep
+anti-stall/range guidance, especially wave-stall shaping and kiting/range
+shaping.
 
 Recommended Phase 7 order:
 
 1. Do not tune against the old historical SOTA numbers directly; Phase 6 shows
    the corrected environment performs differently.
-2. Use the 1B-step development config for reward/testing iteration:
-   `runescape-rl/config/experiments/fight_caves_phase7_dev_1b.ini`.
+2. Use 1B-step no-supplies configs for reward/testing iteration:
+   `runescape-rl/config/experiments/fight_caves_phase7_simplified_no_supplies_1b.ini`.
    This keeps each test run short enough for development while still long
    enough to show Jad-reach/Jad-kill signal.
 3. Reserve the live 3B config (`runescape-rl/config/fight_caves.ini`) for
    final confirmation after a shorter run looks promising.
-4. Start by pruning obviously noisy or redundant reward terms while preserving
-   core progress/survival outcomes: damage dealt, NPC kills, wave clear, Jad
-   kill, player death, and basic resource penalties.
-5. Use the Phase 6 invalid-action diagnostics to decide whether invalid-action
-   penalties are helping or just measuring unsupported/masked behavior.
-6. Run one reward simplification at a time against the Phase 6 corrected
-   baseline, not multiple reward changes in one run.
+4. Preserve core progress/survival outcomes: damage dealt, damage taken, NPC
+   kills, wave clear, Jad kill, player death, correct-prayer rewards,
+   invalid-action penalty, tick penalty, and Jad-heal penalty.
+5. Future runs are foodless and prayer-potionless. The Puffer policy action
+   contract now exposes only move, attack, and prayer.
+6. Compare future no-supplies candidates primarily against W&B run `2386cesn`,
+   the current repo 1B no-food/no-prayer-potion benchmark. W&B run `27x0wmy4`
+   remains the old full-supplies reference but is no longer the future-run
+   contract.
 
 Phase 7 trial 1:
 
@@ -66,14 +75,6 @@ Phase 7 trial 1:
   invalid-action, and tick-cost signals unchanged.
 - Comparison target: Phase 6 corrected baseline plus the 1B dev baseline config,
   not historical pre-fix SOTA.
-
-Default Phase 7 dev-run command:
-
-```bash
-CONFIG_PATH=runescape-rl/config/experiments/fight_caves_phase7_dev_1b.ini \
-WANDB_TAG=phase7_dev_<change_name> \
-./runescape-rl/train.sh train --wandb-group phase7_reward_dev
-```
 
 Phase 7 trial 1 command:
 
@@ -135,17 +136,116 @@ Interpretation:
 - A comparable Phase 6 checkpoint around `1.126B` steps had
   `reached_wave_63=0.697452`, `jad_kill_rate=0.408166`, and
   `wave_reached=60.667226`, so Phase 7 trial 1 is materially worse.
-- Keep the current direct kiting reward in the live 3B config for now.
+- Historical note: this result argued against simply zeroing only kiting while
+  leaving the old supplies/action/reward surface in place. It is not the same
+  experiment as the later no-supplies contract simplification.
 
-Next Phase 7 trial:
+Phase 7 simplified no-supplies candidate:
 
-- Test a smaller one-change reward edit. Recommended order:
-  reduce `shape_kiting_reward` from `2.2` to `1.0` instead of zeroing it, or
-  leave kiting intact and prune one smaller shaping term such as
-  `shape_wasted_attack_penalty`, `shape_wave_stall_base_penalty`, or a
-  prayer-correctness reward in a separate 1B run.
-- Continue using the 1B experiment config pattern and compare every trial
-  against the Phase 6 corrected baseline.
+- Config:
+  `runescape-rl/config/experiments/fight_caves_phase7_simplified_no_supplies_1b.ini`
+- Benchmark: W&B run `2386cesn`, the current repo 1B no-food/no-prayer-potion
+  run with the prior 5-head policy and older reward surface.
+- Historical full-supplies reference: W&B run `27x0wmy4`.
+- Removed scalar shaping: consumable waste, wrong-prayer penalty,
+  adjacent-melee pressure, wasted-attack penalty, kiting reward/band, direct
+  safespot reward/no-op key, and resource threat window.
+- Zeroed-but-kept scalar shaping: unnecessary-prayer penalty and wave-stall
+  start/ramp/base/cap.
+- Kept shaping: `shape_jad_heal_penalty = -0.3`.
+- Supplies: `initial_sharks = 0`, `initial_prayer_doses = 0`.
+- Puffer policy action heads: move, attack, prayer only.
+- Observation/action contract:
+  `fight_caves_puffer_policy_obs_v2_mask_heads_0_2_no_supplies` and
+  `fight_caves_multidiscrete_3_head_no_supplies_v1`.
+- Reward version: `fight_caves_v38_phase7_simplified_no_supplies`.
+
+Verification before the 1B run:
+
+- `cmake -S runescape-rl -B runescape-rl/build-phase2 -DCMAKE_BUILD_TYPE=Release`
+- `cmake --build runescape-rl/build-phase2 --target phase2_guardrails_core phase2_guardrails_training -j2`
+- `ctest --test-dir runescape-rl/build-phase2 -L phase7 --output-on-failure`
+- `ctest --test-dir runescape-rl/build-phase2 --output-on-failure`
+- `cmake --build runescape-rl/build-phase2 -j2`
+- Direct Puffer binding syntax check with POSIX feature macro.
+- Short `--no-wandb` GPU smoke with forced backend rebuild completed and
+  reported `Detected discrete action space with 3 heads`.
+
+Phase 7 simplified no-supplies 1B command used:
+
+```bash
+FC_ACTIVE_LOADOUT=FC_LOADOUT_SOTA_TBOW \
+FORCE_BACKEND_REBUILD=1 \
+CONFIG_PATH=runescape-rl/config/experiments/fight_caves_phase7_simplified_no_supplies_1b.ini \
+WANDB_TAG=phase7_simplified_no_supplies_1b \
+./runescape-rl/train.sh train --wandb-group phase7_simplified_no_supplies
+```
+
+Phase 7 simplified no-supplies 1B result:
+
+- Completed on 2026-06-25.
+- W&B run: `rw70szhc` / `denim-sky-620`
+- W&B group: `phase7_simplified_no_supplies`
+- W&B tag: `phase7_simplified_no_supplies_1b`
+- W&B URL:
+  `https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/rw70szhc`
+- Manifest:
+  `pufferlib_4/logs/fight_caves/manifests/20260625T222817Z-train-880044.json`
+- Local metrics JSON: `pufferlib_4/logs/fight_caves/rw70szhc.json`
+
+Config/run contract:
+
+- Loadout: `FC_LOADOUT_SOTA_TBOW`
+- Total timesteps: `1,000,000,000`
+- Effective final logged steps: `999,292,928`
+- Supplies: `initial_sharks=0`, `initial_prayer_doses=0`
+- Puffer action heads: move, attack, prayer only
+- Observation version:
+  `fight_caves_puffer_policy_obs_v2_mask_heads_0_2_no_supplies`
+- Action version: `fight_caves_multidiscrete_3_head_no_supplies_v1`
+- Reward version: `fight_caves_v38_phase7_simplified_no_supplies`
+
+Final eval summary from local JSON:
+
+- `wave_reached`: `27.591917`
+- `reached_wave_63`: `0.0`
+- `jad_kill_rate`: `0.0`
+- `npcs_slayed`: `105.504089`
+- `episode_length`: `11449.527344`
+- `attack_when_ready_rate`: `0.956626`
+- `correct_prayer`: `4844.036133`
+- `wrong_prayer_hits`: `15.812276`
+- `no_prayer_hits`: `219.494705`
+- `food_eaten`: `0.0`
+- `pots_used`: `0.0`
+- `max_wave_ticks`: `4124.016113`
+- `max_wave_ticks_wave`: `23.248104`
+
+Comparison against current no-supplies benchmark `2386cesn`:
+
+- `2386cesn` used the same 1B-step budget with zero sharks and zero prayer
+  doses.
+- Benchmark final `wave_reached`: `61.331554`
+- Benchmark final `reached_wave_63`: `0.838770`
+- Benchmark final `jad_kill_rate`: `0.126335`
+- Benchmark final `npcs_slayed`: `267.104889`
+- Benchmark final `episode_length`: `8152.024414`
+- Benchmark final `attack_when_ready_rate`: `0.988180`
+- Benchmark final `no_prayer_hits`: `22.459272`
+- Benchmark final `max_wave_ticks`: `286.802887`
+
+Interpretation:
+
+- Do not adopt the fully simplified reward candidate as the new baseline.
+- The no-supplies mechanics are correct: food/potion usage remained zero and
+  the Puffer policy exposed only the three intended heads.
+- The training regression is severe. Progress collapsed from near-Jad
+  performance to average wave `27.6`, and `max_wave_ticks` increased from about
+  `287` to about `4124`, which points to mid-wave stalling.
+- The next Phase 7 experiments should keep the no-supplies action contract but
+  restore or sweep the smallest amount of anti-stall/range guidance needed.
+  Start with wave-stall shaping and kiting/range shaping before revisiting the
+  removed consumable, wrong-prayer, melee-pressure, or wasted-attack terms.
 
 ## Phase 1 Completion Notes
 

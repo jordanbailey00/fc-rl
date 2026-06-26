@@ -11,7 +11,7 @@
 #define OBS_SIZE FC_PUFFER_OBS_SIZE
 #define OBS_TENSOR_T FloatTensor
 #define NUM_ATNS FC_PUFFER_NUM_ATNS
-#define ACT_SIZES {17, 9, 5, 3, 2}
+#define ACT_SIZES {17, 9, 5}
 #define OBS_TYPE FLOAT
 #define ACT_TYPE DOUBLE
 
@@ -46,20 +46,6 @@ void my_init(Env* env, Dict* kwargs) {
     env->w_tick_penalty = item ? (float)item->value : defaults.w_tick_penalty;
 
     /* Configurable shaping terms */
-    item = dict_get_unsafe(kwargs, "shape_food_waste_scale");
-    env->shape_food_waste_scale = item ? (float)item->value : defaults.shape_food_waste_scale;
-    item = dict_get_unsafe(kwargs, "shape_pot_waste_scale");
-    env->shape_pot_waste_scale = item ? (float)item->value : defaults.shape_pot_waste_scale;
-    item = dict_get_unsafe(kwargs, "shape_wrong_prayer_penalty");
-    env->shape_wrong_prayer_penalty = item ? (float)item->value : defaults.shape_wrong_prayer_penalty;
-    item = dict_get_unsafe(kwargs, "shape_npc_melee_penalty");
-    env->shape_npc_melee_penalty = item ? (float)item->value : defaults.shape_npc_melee_penalty;
-    item = dict_get_unsafe(kwargs, "shape_wasted_attack_penalty");
-    env->shape_wasted_attack_penalty = item ? (float)item->value : defaults.shape_wasted_attack_penalty;
-    item = dict_get_unsafe(kwargs, "shape_kiting_reward");
-    env->shape_kiting_reward = item ? (float)item->value : defaults.shape_kiting_reward;
-    item = dict_get_unsafe(kwargs, "shape_safespot_attack_reward");
-    env->shape_safespot_attack_reward = item ? (float)item->value : defaults.shape_safespot_attack_reward;
     item = dict_get_unsafe(kwargs, "shape_unnecessary_prayer_penalty");
     env->shape_unnecessary_prayer_penalty = item ? (float)item->value : defaults.shape_unnecessary_prayer_penalty;
     item = dict_get_unsafe(kwargs, "shape_wave_stall_base_penalty");
@@ -68,20 +54,14 @@ void my_init(Env* env, Dict* kwargs) {
     env->shape_wave_stall_cap = item ? (float)item->value : defaults.shape_wave_stall_cap;
     item = dict_get_unsafe(kwargs, "shape_jad_heal_penalty");
     env->shape_jad_heal_penalty = item ? (float)item->value : defaults.shape_jad_heal_penalty;
-    item = dict_get_unsafe(kwargs, "shape_resource_threat_window");
-    env->shape_resource_threat_window = item ? (int)item->value : defaults.shape_resource_threat_window;
-    item = dict_get_unsafe(kwargs, "shape_kiting_min_dist");
-    env->shape_kiting_min_dist = item ? (int)item->value : defaults.shape_kiting_min_dist;
-    item = dict_get_unsafe(kwargs, "shape_kiting_max_dist");
-    env->shape_kiting_max_dist = item ? (int)item->value : defaults.shape_kiting_max_dist;
     item = dict_get_unsafe(kwargs, "shape_wave_stall_start");
     env->shape_wave_stall_start = item ? (int)item->value : defaults.shape_wave_stall_start;
     item = dict_get_unsafe(kwargs, "shape_wave_stall_ramp_interval");
     env->shape_wave_stall_ramp_interval = item ? (int)item->value : defaults.shape_wave_stall_ramp_interval;
     item = dict_get_unsafe(kwargs, "initial_sharks");
-    env->initial_sharks = item ? (int)item->value : FC_MAX_SHARKS;
+    env->initial_sharks = item ? (int)item->value : 0;
     item = dict_get_unsafe(kwargs, "initial_prayer_doses");
-    env->initial_prayer_doses = item ? (int)item->value : FC_MAX_PRAYER_DOSES;
+    env->initial_prayer_doses = item ? (int)item->value : 0;
 
     /* Obs ablation flags (default 0 — i.e. no ablation, full obs).
      * See fc_apply_obs_ablation in fc-core/src/fc_state.c for what each zeroes. */
@@ -114,8 +94,6 @@ void my_log(Log* log, Dict* out) {
     dict_set(out, "invalid_move", log->invalid_move);
     dict_set(out, "invalid_attack", log->invalid_attack);
     dict_set(out, "invalid_prayer", log->invalid_prayer);
-    dict_set(out, "invalid_eat", log->invalid_eat);
-    dict_set(out, "invalid_drink", log->invalid_drink);
     dict_set(out, "pots_used", log->pots_used);
     dict_set(out, "avg_prayer_on_pot", log->avg_prayer_on_pot);
     dict_set(out, "food_eaten", log->food_eaten);

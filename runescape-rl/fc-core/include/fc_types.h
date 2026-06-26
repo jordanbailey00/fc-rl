@@ -65,14 +65,12 @@ typedef enum {
     TERMINAL_TICK_CAP      = 3
 } FcTerminalCode;
 
-/* Invalid-action diagnostic classes for RL-facing heads 0-4. */
+/* Invalid-action diagnostic classes for Puffer-facing heads 0-2. */
 typedef enum {
     FC_INVALID_ACTION_MOVE   = 0,
     FC_INVALID_ACTION_ATTACK = 1,
     FC_INVALID_ACTION_PRAYER = 2,
-    FC_INVALID_ACTION_EAT    = 3,
-    FC_INVALID_ACTION_DRINK  = 4,
-    FC_INVALID_ACTION_CLASS_COUNT = 5
+    FC_INVALID_ACTION_CLASS_COUNT = 3
 } FcInvalidActionClass;
 
 /* NPC spawn direction for wave rotations */

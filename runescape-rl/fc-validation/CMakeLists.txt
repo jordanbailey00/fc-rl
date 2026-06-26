@@ -55,6 +55,11 @@ add_test(NAME phase3_rng_seed_diversity
 set_tests_properties(phase3_rng_seed_diversity PROPERTIES
     LABELS "phase3;guardrail")
 
+add_test(NAME phase7_no_supplies_policy_contract
+    COMMAND phase2_guardrails_training no_supplies_policy_contract)
+set_tests_properties(phase7_no_supplies_policy_contract PROPERTIES
+    LABELS "phase7;guardrail")
+
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
     add_test(NAME phase3_analytics_no_globals
@@ -64,12 +69,12 @@ if(Python3_Interpreter_FOUND)
     set_tests_properties(phase3_analytics_no_globals PROPERTIES
         LABELS "phase3;guardrail")
 
-    add_test(NAME phase4_live_safespot_reward_zero
+    add_test(NAME phase7_live_no_supplies_simplified_config
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/../tools/validation/tests/phase2_static_guardrails.py
-                live_safespot_reward_zero)
-    set_tests_properties(phase4_live_safespot_reward_zero PROPERTIES
-        LABELS "phase4;guardrail")
+                live_no_supplies_simplified_config)
+    set_tests_properties(phase7_live_no_supplies_simplified_config PROPERTIES
+        LABELS "phase7;guardrail")
 else()
     message(STATUS "Python3 not found — skipping phase2 static validation guardrails")
 endif()

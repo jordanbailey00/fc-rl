@@ -183,22 +183,24 @@ runescape-rl/
 
 ## RL Config
 
-Current live config is based on the full-supplies v35.1/v34 top-pick baseline with
-explicit `initial_sharks=20`, `initial_prayer_doses=32`, and Phase 4 reward cleanup.
+Current live config uses the v35.1/v34 top-pick PPO recipe with the Phase 7
+simplified no-supplies contract: `initial_sharks=0`,
+`initial_prayer_doses=0`, and only move/attack/prayer exposed to the Puffer
+policy.
 The old v36 no-consumables diagnostic is archived at
 [`runescape-rl/config/archive/fight_caves_v36_no_consumables.ini`](runescape-rl/config/archive/fight_caves_v36_no_consumables.ini).
 
-Base recipe (v35.1 hparams with Phase 4 reward cleanup):
+Base recipe (v35.1 hparams with Phase 7 reward simplification):
 
 | Category | Key params |
 |----------|-----------|
 | **Combat rewards** | `w_damage_dealt=0.9`, `w_npc_kill=3.5`, `w_wave_clear=15.0`, `w_jad_kill=2000.0` |
 | **Survival penalties** | `w_damage_taken=-1.9` (squared, 70x amplified), `w_player_death=-11.0` |
-| **Prayer shaping** | `w_correct_danger_prayer=0.25`, `w_correct_jad_prayer=1.5`, `shape_wrong_prayer_penalty=-0.3`, `shape_unnecessary_prayer_penalty=-0.2` |
-| **Positioning** | `shape_npc_melee_penalty=-0.8`, direct safespot reward disabled, `shape_kiting_reward=2.2` (band 2-10) |
-| **Resource management** | `shape_food_waste_scale=-1.2`, `shape_pot_waste_scale=-1.2` (proportional waste only) |
-| **Wave-stall pressure** | `shape_wave_stall_start=1400`, `shape_wave_stall_base_penalty=-0.5`, `shape_wave_stall_cap=-2.0` |
-| **Procedural penalties** | `w_invalid_action=-0.1`, `w_tick_penalty=-0.005`, `shape_wasted_attack_penalty=-0.1`, `shape_jad_heal_penalty=-0.3` |
+| **Prayer shaping** | `w_correct_danger_prayer=0.25`, `w_correct_jad_prayer=1.5`, `shape_unnecessary_prayer_penalty=0.0` |
+| **Supplies/actions** | no food, no prayer potion doses, no eat/drink policy heads |
+| **Removed shaping** | consumable waste, wrong-prayer penalty, melee-pressure penalty, wasted-attack penalty, kiting reward, direct safespot key, resource threat window |
+| **Wave-stall pressure** | disabled: start/ramp/base/cap are all `0` |
+| **Procedural penalties** | `w_invalid_action=-0.1`, `w_tick_penalty=-0.005`, `shape_jad_heal_penalty=-0.3` |
 | **PPO (swept)** | `lr=9e-4`, `gamma=0.9963`, `gae_lambda=0.9641`, `ent_coef=0.0242`, `clip_coef=0.178`, `vf_coef=1.0`, `max_grad_norm=0.25` |
 | **VTrace / prio replay (swept)** | `replay_ratio=1.568`, `vtrace_rho_clip=0.5`, `vtrace_c_clip=0.504`, `prio_alpha=0.968` |
 | **Adam (swept)** | `beta1=0.95`, `beta2=0.9996`, `eps=1e-10` |
@@ -246,7 +248,7 @@ The v35.1 config holds the v32.0 reward shaping unchanged and swaps in only the 
 - **v32.0** — Added `shape_jad_heal_penalty=-0.3`: peak jad kill 0.810 (+15.4% over obs.1 prior SOTA)
 - **v34 sweep** — 200-trial Protein sweep on v32.0 baseline; identified PPO/optimizer recipe that lifted peak by another ~8.5%
 - **v35.1** — Cold-start reproduction of v34's top pick (`a3mi6u2g`); **peak jad kill rate 94.9% — current SOTA**
-- **v36** — No-consumables diagnostic (`jta3lkgx`): `initial_sharks=0`, `initial_prayer_doses=0`, same action heads/masks; peak Jad kill rate 80.8%
+- **v36** — No-consumables diagnostic (`jta3lkgx`): `initial_sharks=0`, `initial_prayer_doses=0`, old 5-head policy; peak Jad kill rate 80.8%
 
 ### Hparam Recipe (from the v34 sweep)
 
