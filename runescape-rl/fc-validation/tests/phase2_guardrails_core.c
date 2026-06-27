@@ -50,6 +50,20 @@ static void make_open_manual_state(FcState* state, int player_x, int player_y) {
     state->player.run_energy = 10000;
 }
 
+static int expected_npc_type_obs_offset(int npc_type) {
+    switch (npc_type) {
+        case NPC_TZ_KIH: return FC_NPC_TYPE_TZ_KIH;
+        case NPC_TZ_KEK: return FC_NPC_TYPE_TZ_KEK;
+        case NPC_TZ_KEK_SM: return FC_NPC_TYPE_TZ_KEK_SM;
+        case NPC_TOK_XIL: return FC_NPC_TYPE_TOK_XIL;
+        case NPC_YT_MEJKOT: return FC_NPC_TYPE_YT_MEJKOT;
+        case NPC_KET_ZEK: return FC_NPC_TYPE_KET_ZEK;
+        case NPC_TZTOK_JAD: return FC_NPC_TYPE_TZTOK_JAD;
+        case NPC_YT_HURKOT: return FC_NPC_TYPE_YT_HURKOT;
+        default: return -1;
+    }
+}
+
 static int check_invalid_case(const char* label,
                               FcState* state,
                               const int actions[FC_NUM_ACTION_HEADS],
@@ -183,6 +197,87 @@ static int test_target_identity(void) {
              state.player.attack_target_idx);
     fc_destroy(&state);
     return fail(msg);
+}
+
+static int test_npc_type_obs_one_hot(void) {
+    const int npc_types[] = {
+        NPC_TZ_KIH,
+        NPC_TZ_KEK,
+        NPC_TZ_KEK_SM,
+        NPC_TOK_XIL,
+        NPC_YT_MEJKOT,
+        NPC_KET_ZEK,
+        NPC_TZTOK_JAD,
+        NPC_YT_HURKOT,
+    };
+    const char* npc_names[] = {
+        "Tz-Kih",
+        "Tz-Kek",
+        "small Tz-Kek",
+        "Tok-Xil",
+        "Yt-MejKot",
+        "Ket-Zek",
+        "TzTok-Jad",
+        "Yt-HurKot",
+    };
+
+    for (int i = 0; i < 8; i++) {
+        FcState state;
+        float obs[FC_OBS_SIZE];
+        int expected_offset = expected_npc_type_obs_offset(npc_types[i]);
+        int base = FC_OBS_NPC_START;
+
+        make_open_manual_state(&state, 10, 10);
+        fc_npc_spawn(&state.npcs[0], npc_types[i], 12, 10, 0);
+        state.npcs_remaining = 1;
+        fc_write_obs(&state, obs);
+
+        if (obs[base + FC_NPC_VALID] < 0.5f) {
+            char msg[128];
+            snprintf(msg, sizeof(msg), "%s slot not marked valid", npc_names[i]);
+            fc_destroy(&state);
+            return fail(msg);
+        }
+
+        int type_bits_on = 0;
+        for (int offset = FC_NPC_TYPE_TZ_KIH; offset <= FC_NPC_TYPE_YT_HURKOT; offset++) {
+            int is_on = obs[base + offset] > 0.5f;
+            int should_be_on = offset == expected_offset;
+            if (is_on != should_be_on) {
+                char msg[192];
+                snprintf(msg, sizeof(msg),
+                         "%s type bit offset %d was %d, expected %d",
+                         npc_names[i], offset, is_on, should_be_on);
+                fc_destroy(&state);
+                return fail(msg);
+            }
+            type_bits_on += is_on;
+        }
+
+        if (type_bits_on != 1) {
+            char msg[128];
+            snprintf(msg, sizeof(msg), "%s had %d type bits set",
+                     npc_names[i], type_bits_on);
+            fc_destroy(&state);
+            return fail(msg);
+        }
+
+        int empty_base = FC_OBS_NPC_START + FC_OBS_NPC_STRIDE;
+        for (int offset = FC_NPC_TYPE_TZ_KIH; offset <= FC_NPC_TYPE_YT_HURKOT; offset++) {
+            if (obs[empty_base + offset] > 0.5f) {
+                char msg[160];
+                snprintf(msg, sizeof(msg),
+                         "%s leaked type bit %d into empty slot",
+                         npc_names[i], offset);
+                fc_destroy(&state);
+                return fail(msg);
+            }
+        }
+
+        fc_destroy(&state);
+    }
+
+    return pass("visible NPC slots expose exactly one NPC type bit");
 }
 
 static int test_zero_damage_reward(void) {
@@ -328,13 +423,14 @@ static int test_safespot_los(void) {
 
 int main(int argc, char** argv) {
     if (argc != 2) {
-        fprintf(stderr, "usage: %s <target_identity|zero_damage_reward|safespot_reward_disabled|healer_spawn_validity|safespot_los|invalid_action_classes>\n",
+        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|safespot_reward_disabled|healer_spawn_validity|safespot_los|invalid_action_classes>\n",
                 argv[0]);
         return 2;
     }
 
     if (strcmp(argv[1], "invalid_action_classes") == 0) return test_invalid_action_classes();
     if (strcmp(argv[1], "target_identity") == 0) return test_target_identity();
+    if (strcmp(argv[1], "npc_type_obs_one_hot") == 0) return test_npc_type_obs_one_hot();
     if (strcmp(argv[1], "zero_damage_reward") == 0) return test_zero_damage_reward();
     if (strcmp(argv[1], "safespot_reward_disabled") == 0) return test_safespot_reward_disabled();
     if (strcmp(argv[1], "healer_spawn_validity") == 0) return test_healer_spawn_validity();

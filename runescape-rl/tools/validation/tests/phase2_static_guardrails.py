@@ -93,8 +93,8 @@ def live_no_supplies_simplified_config() -> int:
 
         if parser.get("run", "action_version", fallback="").strip("'\"") != "fight_caves_multidiscrete_3_head_no_supplies_v1":
             failures.append(f"{label}: action_version is not the 3-head no-supplies contract")
-        if parser.get("run", "observation_version", fallback="").strip("'\"") != "fight_caves_puffer_policy_obs_v2_mask_heads_0_2_no_supplies":
-            failures.append(f"{label}: observation_version is not the no-supplies mask-heads-0-2 contract")
+        if parser.get("run", "observation_version", fallback="").strip("'\"") != "fight_caves_puffer_policy_obs_v3_npc_type_mask_heads_0_2_no_supplies":
+            failures.append(f"{label}: observation_version is not the no-supplies NPC-type mask-heads-0-2 contract")
 
     if failures:
         print("FAIL: live configs are not on the simplified no-supplies contract:")

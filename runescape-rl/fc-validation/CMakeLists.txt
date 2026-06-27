@@ -25,6 +25,11 @@ add_test(NAME phase3_target_identity_stable
 set_tests_properties(phase3_target_identity_stable PROPERTIES
     LABELS "phase3;guardrail")
 
+add_test(NAME revamp_npc_type_obs_one_hot
+    COMMAND phase2_guardrails_core npc_type_obs_one_hot)
+set_tests_properties(revamp_npc_type_obs_one_hot PROPERTIES
+    LABELS "revamp;guardrail")
+
 add_test(NAME phase4_zero_damage_reward
     COMMAND phase2_guardrails_core zero_damage_reward)
 set_tests_properties(phase4_zero_damage_reward PROPERTIES

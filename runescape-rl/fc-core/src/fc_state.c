@@ -349,6 +349,20 @@ static int npc_telegraph_style(const FcState* state, const FcNpc* npc) {
     return npc->attack_style;
 }
 
+static int npc_type_obs_offset(int npc_type) {
+    switch (npc_type) {
+        case NPC_TZ_KIH: return FC_NPC_TYPE_TZ_KIH;
+        case NPC_TZ_KEK: return FC_NPC_TYPE_TZ_KEK;
+        case NPC_TZ_KEK_SM: return FC_NPC_TYPE_TZ_KEK_SM;
+        case NPC_TOK_XIL: return FC_NPC_TYPE_TOK_XIL;
+        case NPC_YT_MEJKOT: return FC_NPC_TYPE_YT_MEJKOT;
+        case NPC_KET_ZEK: return FC_NPC_TYPE_KET_ZEK;
+        case NPC_TZTOK_JAD: return FC_NPC_TYPE_TZTOK_JAD;
+        case NPC_YT_HURKOT: return FC_NPC_TYPE_YT_HURKOT;
+        default: return -1;
+    }
+}
+
 void fc_write_obs(const FcState* state, float* out) {
     memset(out, 0, sizeof(float) * FC_TOTAL_OBS);
 
@@ -412,6 +426,10 @@ void fc_write_obs(const FcState* state, float* out) {
         npc_out[FC_NPC_TELE_MAGIC]    = (tele == ATTACK_MAGIC)  ? 1.0f : 0.0f;
         npc_out[FC_NPC_ATK_TIMER]     = (n->attack_speed > 0) ? (float)n->attack_timer / (float)n->attack_speed : 0.0f;
         npc_out[FC_NPC_LOS]           = has_los;
+        int type_offset = npc_type_obs_offset(n->npc_type);
+        if (type_offset >= 0) {
+            npc_out[type_offset] = 1.0f;
+        }
 
         /* Pending attack from this NPC — scan player's pending hits */
         npc_out[FC_NPC_PENDING_STYLE] = 0.0f;

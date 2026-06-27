@@ -51,7 +51,7 @@
 #define FC_OBS_PLAYER_TARGET    16  /* attack_target NPC slot index / 8 (0=no target, 0.125-1.0=slot 0-7) */
 #define FC_OBS_PLAYER_SIZE      17
 
-/* --- Per-NPC features (10 floats × 8 visible NPCs = 80 floats) --- */
+/* --- Per-NPC features (20 floats × 8 visible NPCs = 160 floats) --- */
 /*
  * NPC slot ordering — deterministic rules for the 8 visible NPC slots:
  *
@@ -72,7 +72,7 @@
  * equal, which is critical for replay consistency and debug reproducibility.
  */
 #define FC_OBS_NPC_START        FC_OBS_PLAYER_SIZE  /* 17 */
-#define FC_OBS_NPC_STRIDE       12
+#define FC_OBS_NPC_STRIDE       20
 #define FC_OBS_NPC_SLOTS        8   /* FC_VISIBLE_NPCS */
 
 /* Per-NPC feature offsets within stride.
@@ -96,11 +96,19 @@
 #define FC_NPC_LOS              9   /* 1 if player has line of sight, 0 if blocked */
 #define FC_NPC_PENDING_STYLE    10  /* incoming attack style (0=none, 0.33/0.67/1.0) */
 #define FC_NPC_PENDING_TICKS    11  /* ticks until incoming attack resolves (normalized) */
+#define FC_NPC_TYPE_TZ_KIH      12  /* one-hot NPC identity: Tz-Kih */
+#define FC_NPC_TYPE_TZ_KEK      13  /* one-hot NPC identity: Tz-Kek */
+#define FC_NPC_TYPE_TZ_KEK_SM   14  /* one-hot NPC identity: small Tz-Kek */
+#define FC_NPC_TYPE_TOK_XIL     15  /* one-hot NPC identity: Tok-Xil */
+#define FC_NPC_TYPE_YT_MEJKOT   16  /* one-hot NPC identity: Yt-MejKot */
+#define FC_NPC_TYPE_KET_ZEK     17  /* one-hot NPC identity: Ket-Zek */
+#define FC_NPC_TYPE_TZTOK_JAD   18  /* one-hot NPC identity: TzTok-Jad */
+#define FC_NPC_TYPE_YT_HURKOT   19  /* one-hot NPC identity: Yt-HurKot */
 
-#define FC_OBS_NPC_TOTAL        (FC_OBS_NPC_STRIDE * FC_OBS_NPC_SLOTS)  /* 96 */
+#define FC_OBS_NPC_TOTAL        (FC_OBS_NPC_STRIDE * FC_OBS_NPC_SLOTS)  /* 160 */
 
 /* --- Wave/meta features (9 floats) --- */
-#define FC_OBS_META_START       (FC_OBS_NPC_START + FC_OBS_NPC_TOTAL)  /* 97 */
+#define FC_OBS_META_START       (FC_OBS_NPC_START + FC_OBS_NPC_TOTAL)  /* 177 */
 #define FC_OBS_META_WAVE        0   /* current_wave / NUM_WAVES */
 #define FC_OBS_META_ROTATION    1   /* rotation_id / NUM_ROTATIONS */
 #define FC_OBS_META_REMAINING   2   /* npcs_remaining / MAX_NPCS */
@@ -113,7 +121,7 @@
 #define FC_OBS_META_SIZE        9
 
 /* --- Policy observation total --- */
-#define FC_POLICY_OBS_SIZE      (FC_OBS_PLAYER_SIZE + FC_OBS_NPC_TOTAL + FC_OBS_META_SIZE)  /* 122 */
+#define FC_POLICY_OBS_SIZE      (FC_OBS_PLAYER_SIZE + FC_OBS_NPC_TOTAL + FC_OBS_META_SIZE)  /* 186 */
 
 /* --- Reward features (19 floats) --- */
 /*
@@ -122,7 +130,7 @@
  * The policy DOES NOT consume these by default.
  * Python applies configurable shaping weights to produce the scalar reward.
  */
-#define FC_REWARD_START         FC_POLICY_OBS_SIZE  /* 122 */
+#define FC_REWARD_START         FC_POLICY_OBS_SIZE  /* 186 */
 #define FC_RWD_DAMAGE_DEALT     0   /* NPC HP reduced this tick (normalized) */
 #define FC_RWD_DAMAGE_TAKEN     1   /* player HP reduced this tick */
 #define FC_RWD_NPC_KILL         2   /* NPC death count this tick */
@@ -145,7 +153,7 @@
 #define FC_REWARD_FEATURES      19
 
 /* --- Total observation (policy obs + reward features) --- */
-#define FC_TOTAL_OBS            (FC_POLICY_OBS_SIZE + FC_REWARD_FEATURES)  /* 141 */
+#define FC_TOTAL_OBS            (FC_POLICY_OBS_SIZE + FC_REWARD_FEATURES)  /* 205 */
 
 /* ======================================================================== */
 /* Action space — 7 canonical core heads                                     */
@@ -296,18 +304,18 @@ static const int FC_ACTION_DIMS[FC_NUM_ACTION_HEADS] = FC_ACT_SIZES;
 
 /*
  * Total floats in the full FC backend buffer:
- *   FC_POLICY_OBS_SIZE (122) + FC_REWARD_FEATURES (19) + FC_ACTION_MASK_SIZE (166) = 307
+ *   FC_POLICY_OBS_SIZE (186) + FC_REWARD_FEATURES (19) + FC_ACTION_MASK_SIZE (166) = 371
  *
  * The PufferLib adapter does NOT expose this full buffer directly. It exposes:
  *   FC_PUFFER_OBS_SIZE = FC_POLICY_OBS_SIZE + mask(heads 0-2 only)
- *                      = 122 + 31 = 153
+ *                      = 186 + 31 = 217
  *
  * Python trainer slices:
  *   policy_obs   = obs[:FC_POLICY_OBS_SIZE]
  *   reward_feat  = full_obs[FC_REWARD_START:FC_REWARD_START + FC_REWARD_FEATURES]
  *   action_mask  = full_obs[FC_TOTAL_OBS:FC_TOTAL_OBS + FC_ACTION_MASK_SIZE]
  */
-#define FC_OBS_SIZE             (FC_TOTAL_OBS + FC_ACTION_MASK_SIZE)  /* 307 */
+#define FC_OBS_SIZE             (FC_TOTAL_OBS + FC_ACTION_MASK_SIZE)  /* 371 */
 
 /* ======================================================================== */
 /* Normalization divisors                                                     */

@@ -110,7 +110,7 @@ typedef struct {
 
 /* Puffer-facing observation size:
  *   policy obs + masks for heads 0-2 only (move/attack/prayer)
- *   = 122 + 31 = 153
+ *   = 186 + 31 = 217
  */
 #define FC_PUFFER_OBS_SIZE (FC_POLICY_OBS_SIZE + FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM)
 
