@@ -107,7 +107,7 @@
 
 #define FC_OBS_NPC_TOTAL        (FC_OBS_NPC_STRIDE * FC_OBS_NPC_SLOTS)  /* 160 */
 
-/* --- Wave/meta features (9 floats) --- */
+/* --- Wave/meta features (13 floats) --- */
 #define FC_OBS_META_START       (FC_OBS_NPC_START + FC_OBS_NPC_TOTAL)  /* 177 */
 #define FC_OBS_META_WAVE        0   /* current_wave / NUM_WAVES */
 #define FC_OBS_META_ROTATION    1   /* rotation_id / NUM_ROTATIONS */
@@ -118,10 +118,14 @@
 #define FC_OBS_META_IN_MAG_3T   6   /* normalized count of magic hits landing in 3 ticks */
 #define FC_OBS_META_DMG_T_TICK  7   /* damage_taken_this_tick / max_hp */
 #define FC_OBS_META_WAVE_CLR    8   /* wave_just_cleared (0 or 1) */
-#define FC_OBS_META_SIZE        9
+#define FC_OBS_META_CAVE_PROG   9   /* derived cave progress, [0,1] */
+#define FC_OBS_META_WAVE_PROG   10  /* derived current-wave progress, [0,1] */
+#define FC_OBS_META_WORK_REM    11  /* required_work_remaining / required_work_start */
+#define FC_OBS_META_NO_PROG     12  /* ticks_since_positive_progress / 2400 */
+#define FC_OBS_META_SIZE        13
 
 /* --- Policy observation total --- */
-#define FC_POLICY_OBS_SIZE      (FC_OBS_PLAYER_SIZE + FC_OBS_NPC_TOTAL + FC_OBS_META_SIZE)  /* 186 */
+#define FC_POLICY_OBS_SIZE      (FC_OBS_PLAYER_SIZE + FC_OBS_NPC_TOTAL + FC_OBS_META_SIZE)  /* 190 */
 
 /* --- Reward features (19 floats) --- */
 /*
@@ -130,7 +134,7 @@
  * The policy DOES NOT consume these by default.
  * Python applies configurable shaping weights to produce the scalar reward.
  */
-#define FC_REWARD_START         FC_POLICY_OBS_SIZE  /* 186 */
+#define FC_REWARD_START         FC_POLICY_OBS_SIZE  /* 190 */
 #define FC_RWD_DAMAGE_DEALT     0   /* NPC HP reduced this tick (normalized) */
 #define FC_RWD_DAMAGE_TAKEN     1   /* player HP reduced this tick */
 #define FC_RWD_NPC_KILL         2   /* NPC death count this tick */
@@ -153,7 +157,7 @@
 #define FC_REWARD_FEATURES      19
 
 /* --- Total observation (policy obs + reward features) --- */
-#define FC_TOTAL_OBS            (FC_POLICY_OBS_SIZE + FC_REWARD_FEATURES)  /* 205 */
+#define FC_TOTAL_OBS            (FC_POLICY_OBS_SIZE + FC_REWARD_FEATURES)  /* 209 */
 
 /* ======================================================================== */
 /* Action space — 7 canonical core heads                                     */
@@ -304,18 +308,18 @@ static const int FC_ACTION_DIMS[FC_NUM_ACTION_HEADS] = FC_ACT_SIZES;
 
 /*
  * Total floats in the full FC backend buffer:
- *   FC_POLICY_OBS_SIZE (186) + FC_REWARD_FEATURES (19) + FC_ACTION_MASK_SIZE (166) = 371
+ *   FC_POLICY_OBS_SIZE (190) + FC_REWARD_FEATURES (19) + FC_ACTION_MASK_SIZE (166) = 375
  *
  * The PufferLib adapter does NOT expose this full buffer directly. It exposes:
  *   FC_PUFFER_OBS_SIZE = FC_POLICY_OBS_SIZE + mask(heads 0-2 only)
- *                      = 186 + 31 = 217
+ *                      = 190 + 31 = 221
  *
  * Python trainer slices:
  *   policy_obs   = obs[:FC_POLICY_OBS_SIZE]
  *   reward_feat  = full_obs[FC_REWARD_START:FC_REWARD_START + FC_REWARD_FEATURES]
  *   action_mask  = full_obs[FC_TOTAL_OBS:FC_TOTAL_OBS + FC_ACTION_MASK_SIZE]
  */
-#define FC_OBS_SIZE             (FC_TOTAL_OBS + FC_ACTION_MASK_SIZE)  /* 371 */
+#define FC_OBS_SIZE             (FC_TOTAL_OBS + FC_ACTION_MASK_SIZE)  /* 375 */
 
 /* ======================================================================== */
 /* Normalization divisors                                                     */

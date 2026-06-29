@@ -55,6 +55,10 @@ static void clear_per_tick_flags(FcState* state) {
     state->pre_eat_hp = 0;
     state->pre_drink_prayer = 0;
     state->jad_heal_procs_this_tick = 0;
+    state->npc_heal_procs_this_tick = 0;
+    state->npc_heal_amount_this_tick = 0;
+    state->mejkot_heal_amount_this_tick = 0;
+    state->jad_heal_amount_this_tick = 0;
 
     FcPlayer* p = &state->player;
     p->damage_taken_this_tick = 0;

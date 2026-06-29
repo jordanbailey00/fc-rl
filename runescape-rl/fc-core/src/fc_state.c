@@ -302,6 +302,12 @@ static float normalize_incoming_count(int count) {
     return (float)count / 4.0f;
 }
 
+static float clamp01(float value) {
+    if (value < 0.0f) return 0.0f;
+    if (value > 1.0f) return 1.0f;
+    return value;
+}
+
 static float normalize_prayer_drain_counter(const FcPlayer* p) {
     int resistance = 60 + 2 * p->prayer_bonus;
     if (resistance <= 0) return 0.0f;
@@ -466,6 +472,13 @@ void fc_write_obs(const FcState* state, float* out) {
     meta[FC_OBS_META_IN_MAG_3T]  = normalize_incoming_count(incoming_counts[2][2]);
     meta[FC_OBS_META_DMG_T_TICK] = (p->max_hp > 0) ? (float)state->damage_taken_this_tick / (float)p->max_hp : 0.0f;
     meta[FC_OBS_META_WAVE_CLR]   = (float)state->wave_just_cleared;
+    meta[FC_OBS_META_CAVE_PROG]  = clamp01(state->progress_cave_progress);
+    meta[FC_OBS_META_WAVE_PROG]  = clamp01(state->progress_current_wave_progress);
+    meta[FC_OBS_META_WORK_REM]   = (state->progress_required_work_start > 0.0f)
+        ? clamp01(state->progress_required_work_remaining /
+                  state->progress_required_work_start)
+        : 0.0f;
+    meta[FC_OBS_META_NO_PROG]    = clamp01((float)state->progress_ticks_since_positive / 2400.0f);
 
     /* Reward features (at offset FC_REWARD_START) — written by fc_write_reward_features */
     fc_write_reward_features(state, out + FC_REWARD_START);

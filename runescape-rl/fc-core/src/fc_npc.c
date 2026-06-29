@@ -214,6 +214,18 @@ static void jad_attack(FcState* state, FcNpc* npc, int npc_idx) {
 /* Yt-MejKot: heal nearby NPCs                                              */
 /* ======================================================================== */
 
+static void record_npc_heal(FcState* state, int amount, int source_type, int target_type) {
+    if (amount <= 0) return;
+    state->npc_heal_procs_this_tick++;
+    state->npc_heal_amount_this_tick += amount;
+    if (source_type == NPC_YT_MEJKOT) {
+        state->mejkot_heal_amount_this_tick += amount;
+    }
+    if (target_type == NPC_TZTOK_JAD) {
+        state->jad_heal_amount_this_tick += amount;
+    }
+}
+
 static void yt_mejkot_heal_tick(FcState* state, FcNpc* npc) {
     if (!fc_npc_can_melee_player(state->player.x, state->player.y,
                                  npc->x, npc->y, npc->size, state->walkable)) {
@@ -243,10 +255,13 @@ static void yt_mejkot_heal_tick(FcState* state, FcNpc* npc) {
         int dist = (dx > dy) ? dx : dy;
 
         if (dist <= 8) {
+            int before = target->current_hp;
             target->current_hp += npc->heal_amount;
             if (target->current_hp > target->max_hp) {
                 target->current_hp = target->max_hp;
             }
+            record_npc_heal(state, target->current_hp - before,
+                            npc->npc_type, target->npc_type);
             return;  /* single heal per attack cycle */
         }
     }
@@ -288,6 +303,8 @@ static void yt_hurkot_tick(FcState* state, FcNpc* npc) {
                     }
                     if (jad->current_hp > before) {
                         state->jad_heal_procs_this_tick++;
+                        record_npc_heal(state, jad->current_hp - before,
+                                        npc->npc_type, jad->npc_type);
                     }
                 }
             } else {

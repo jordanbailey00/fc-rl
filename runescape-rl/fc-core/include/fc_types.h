@@ -383,6 +383,18 @@ typedef struct {
     int pre_eat_hp;                 /* HP before eating (for reward threshold check) */
     int pre_drink_prayer;           /* prayer before drinking (for reward threshold check) */
     int jad_heal_procs_this_tick;   /* number of Yt-HurKot heal procs that restored Jad HP */
+    int npc_heal_procs_this_tick;   /* number of NPC heal procs that restored any NPC HP */
+    int npc_heal_amount_this_tick;  /* total NPC HP restored this tick */
+    int mejkot_heal_amount_this_tick; /* total HP restored by Yt-MejKot this tick */
+    int jad_heal_amount_this_tick;    /* total HP restored to Jad this tick */
+
+    /* Derived progression state, maintained by reward/runtime code for obs. */
+    float progress_required_work_start;
+    float progress_required_work_remaining;
+    float progress_current_wave_progress;
+    float progress_cave_progress;
+    float progress_delta_this_tick;
+    int progress_ticks_since_positive;
 
     /* Episode-level analytics (cumulative, zeroed on fc_reset via memset) */
     int ep_ticks_pray_melee;    /* ticks with protect melee active */

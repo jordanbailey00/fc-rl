@@ -99,6 +99,26 @@ typedef struct {
     float no_progress_no_target_ticks;
     float no_progress_prayer_cmd_ticks;
     float no_progress_invalid_action_ticks;
+    float required_work_remaining;
+    float required_work_start;
+    float cave_progress;
+    float current_wave_progress;
+    float progress_delta;
+    float progress_reward;
+    float ticks_since_positive_progress;
+    float positive_progress_ticks;
+    float zero_progress_ticks;
+    float negative_progress_ticks;
+    float gross_damage_dealt;
+    float net_required_work_removed;
+    float gross_damage_to_net_progress_ratio;
+    float npc_healing_total;
+    float mejkot_healing_total;
+    float jad_healing_total;
+    float preclip_reward;
+    float postclip_reward;
+    float positive_clip_count;
+    float negative_clip_count;
     float rwd_sum[FC_CH_COUNT];
     float rwd_fires[FC_CH_COUNT];
     float n;  /* must be last */
@@ -110,7 +130,7 @@ typedef struct {
 
 /* Puffer-facing observation size:
  *   policy obs + masks for heads 0-2 only (move/attack/prayer)
- *   = 186 + 31 = 217
+ *   = 190 + 31 = 221
  */
 #define FC_PUFFER_OBS_SIZE (FC_POLICY_OBS_SIZE + FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM)
 
@@ -130,11 +150,13 @@ typedef struct FightCaves {
     FcState state;
 
     /* Reward shaping weights (from config) */
-    float w_damage_dealt;       /* applied as (damage + damaging_hits) * w per tick */
+    float w_damage_dealt;       /* legacy per-hit damage shaping; active fc_revamp config sets 0 */
+    float w_progress;
     float w_damage_taken;
     float w_npc_kill;
     float w_wave_clear;
     float w_jad_kill;
+    float w_cave_complete;
     float w_player_death;
     float w_correct_jad_prayer;      /* fires only on Jad hits */
     float w_correct_danger_prayer;   /* fires on non-Jad styled hits (melee/ranged/magic) */
@@ -146,12 +168,18 @@ typedef struct FightCaves {
     float shape_wave_stall_base_penalty;
     float shape_wave_stall_cap;
     float shape_jad_heal_penalty;
+    float shape_npc_heal_penalty;
+    float shape_no_progress_penalty_1;
+    float shape_no_progress_penalty_2;
+    float shape_no_progress_penalty_3;
     int shape_wave_stall_start;
     int shape_wave_stall_ramp_interval;
+    int shape_no_progress_start_1;
+    int shape_no_progress_start_2;
+    int shape_no_progress_start_3;
     int initial_sharks;
     int initial_prayer_doses;
-    int ticks_since_attack;      /* ticks since agent last dealt damage */
-    int ticks_in_wave;           /* ticks since current wave started (reset on wave_clear) */
+    FcRewardRuntime reward_runtime;
 
     /* Obs ablation flags (experimental — see fc_apply_obs_ablation in fc_state.c).
      * When non-zero, the corresponding obs slots are zeroed AFTER fc_write_obs.
@@ -181,6 +209,17 @@ typedef struct FightCaves {
     float ep_no_progress_no_target_ticks;
     float ep_no_progress_prayer_cmd_ticks;
     float ep_no_progress_invalid_action_ticks;
+    float ep_progress_delta;
+    float ep_progress_reward;
+    float ep_gross_damage_dealt;
+    float ep_net_required_work_removed;
+    float ep_npc_healing_total;
+    float ep_mejkot_healing_total;
+    float ep_jad_healing_total;
+    float ep_preclip_reward;
+    float ep_postclip_reward;
+    float ep_positive_clip_count;
+    float ep_negative_clip_count;
 
     /* RNG seed counter (increments each episode for variety) */
     uint32_t seed_counter;
@@ -214,10 +253,12 @@ static FcRewardParams fc_reward_params_from_env(const FightCaves* env) {
     memset(&params, 0, sizeof(params));
 
     params.w_damage_dealt = env->w_damage_dealt;
+    params.w_progress = env->w_progress;
     params.w_damage_taken = env->w_damage_taken;
     params.w_npc_kill = env->w_npc_kill;
     params.w_wave_clear = env->w_wave_clear;
     params.w_jad_kill = env->w_jad_kill;
+    params.w_cave_complete = env->w_cave_complete;
     params.w_player_death = env->w_player_death;
     params.w_correct_jad_prayer = env->w_correct_jad_prayer;
     params.w_correct_danger_prayer = env->w_correct_danger_prayer;
@@ -228,9 +269,16 @@ static FcRewardParams fc_reward_params_from_env(const FightCaves* env) {
     params.shape_wave_stall_base_penalty = env->shape_wave_stall_base_penalty;
     params.shape_wave_stall_cap = env->shape_wave_stall_cap;
     params.shape_jad_heal_penalty = env->shape_jad_heal_penalty;
+    params.shape_npc_heal_penalty = env->shape_npc_heal_penalty;
+    params.shape_no_progress_penalty_1 = env->shape_no_progress_penalty_1;
+    params.shape_no_progress_penalty_2 = env->shape_no_progress_penalty_2;
+    params.shape_no_progress_penalty_3 = env->shape_no_progress_penalty_3;
 
     params.shape_wave_stall_start = env->shape_wave_stall_start;
     params.shape_wave_stall_ramp_interval = env->shape_wave_stall_ramp_interval;
+    params.shape_no_progress_start_1 = env->shape_no_progress_start_1;
+    params.shape_no_progress_start_2 = env->shape_no_progress_start_2;
+    params.shape_no_progress_start_3 = env->shape_no_progress_start_3;
 
     return params;
 }
@@ -241,12 +289,9 @@ static FcRewardParams fc_reward_params_from_env(const FightCaves* env) {
 
 static float fc_puffer_compute_reward(FightCaves* env) {
     FcRewardParams params = fc_reward_params_from_env(env);
-    FcRewardRuntime runtime = { env->ticks_since_attack, env->ticks_in_wave };
     FcRewardBreakdown breakdown =
-        fc_reward_compute_breakdown(&env->state, &params, &runtime);
-
-    env->ticks_since_attack = runtime.ticks_since_attack;
-    env->ticks_in_wave = runtime.ticks_in_wave;
+        fc_reward_compute_breakdown(&env->state, &params, &env->reward_runtime);
+    fc_reward_sync_progress_state(&env->state, &env->reward_runtime);
 
     if (breakdown.threat_ctx.tokxil_melee) env->state.ep_tokxil_melee_ticks++;
     if (breakdown.threat_ctx.ketzek_melee) env->state.ep_ketzek_melee_ticks++;
@@ -258,6 +303,26 @@ static float fc_puffer_compute_reward(FightCaves* env) {
     for (int i = 0; i < FC_CH_COUNT; i++) {
         env->ep_rwd_sum[i] += ch[i];
         if (ch[i] != 0.0f) env->ep_rwd_fires[i]++;
+    }
+
+    env->ep_progress_delta += env->reward_runtime.last_progress_delta;
+    env->ep_progress_reward += breakdown.progress;
+    env->ep_gross_damage_dealt += (float)env->state.damage_dealt_this_tick;
+    env->ep_net_required_work_removed += env->reward_runtime.last_net_required_work_removed;
+    env->ep_npc_healing_total += (float)env->state.npc_heal_amount_this_tick;
+    env->ep_mejkot_healing_total += (float)env->state.mejkot_heal_amount_this_tick;
+    env->ep_jad_healing_total += (float)env->state.jad_heal_amount_this_tick;
+    env->ep_preclip_reward += breakdown.total;
+    {
+        float clipped = breakdown.total;
+        if (clipped > 1.0f) {
+            clipped = 1.0f;
+            env->ep_positive_clip_count += 1.0f;
+        } else if (clipped < -1.0f) {
+            clipped = -1.0f;
+            env->ep_negative_clip_count += 1.0f;
+        }
+        env->ep_postclip_reward += clipped;
     }
 
     return breakdown.total;
@@ -273,6 +338,17 @@ static void fc_puffer_reset_episode_action_diagnostics(FightCaves* env) {
     env->ep_no_progress_no_target_ticks = 0.0f;
     env->ep_no_progress_prayer_cmd_ticks = 0.0f;
     env->ep_no_progress_invalid_action_ticks = 0.0f;
+    env->ep_progress_delta = 0.0f;
+    env->ep_progress_reward = 0.0f;
+    env->ep_gross_damage_dealt = 0.0f;
+    env->ep_net_required_work_removed = 0.0f;
+    env->ep_npc_healing_total = 0.0f;
+    env->ep_mejkot_healing_total = 0.0f;
+    env->ep_jad_healing_total = 0.0f;
+    env->ep_preclip_reward = 0.0f;
+    env->ep_postclip_reward = 0.0f;
+    env->ep_positive_clip_count = 0.0f;
+    env->ep_negative_clip_count = 0.0f;
 }
 
 static void fc_puffer_record_no_progress_diagnostics(
@@ -350,8 +426,7 @@ void c_reset(FightCaves* env) {
     env->state.player.prayer_doses_remaining = env->initial_prayer_doses;
 
     env->ep_length = 0;
-    env->ticks_since_attack = 0;
-    env->ticks_in_wave = 0;
+    fc_reward_runtime_begin_episode(&env->reward_runtime, &env->state);
     for (int i = 0; i < FC_CH_COUNT; i++) {
         env->ep_rwd_sum[i] = 0.0f;
         env->ep_rwd_fires[i] = 0;
@@ -468,6 +543,36 @@ void c_step(FightCaves* env) {
         env->log.no_progress_no_target_ticks += env->ep_no_progress_no_target_ticks;
         env->log.no_progress_prayer_cmd_ticks += env->ep_no_progress_prayer_cmd_ticks;
         env->log.no_progress_invalid_action_ticks += env->ep_no_progress_invalid_action_ticks;
+        env->log.required_work_remaining +=
+            env->reward_runtime.last_required_work_remaining;
+        env->log.required_work_start +=
+            env->reward_runtime.required_work_at_wave_start;
+        env->log.cave_progress += env->reward_runtime.last_cave_progress;
+        env->log.current_wave_progress +=
+            env->reward_runtime.last_current_wave_progress;
+        env->log.progress_delta += env->ep_progress_delta;
+        env->log.progress_reward += env->ep_progress_reward;
+        env->log.ticks_since_positive_progress +=
+            (float)env->reward_runtime.ticks_since_positive_progress;
+        env->log.positive_progress_ticks +=
+            (float)env->reward_runtime.positive_progress_ticks;
+        env->log.zero_progress_ticks +=
+            (float)env->reward_runtime.zero_progress_ticks;
+        env->log.negative_progress_ticks +=
+            (float)env->reward_runtime.negative_progress_ticks;
+        env->log.gross_damage_dealt += env->ep_gross_damage_dealt;
+        env->log.net_required_work_removed += env->ep_net_required_work_removed;
+        env->log.gross_damage_to_net_progress_ratio +=
+            env->ep_gross_damage_dealt /
+            ((env->ep_net_required_work_removed > 1.0f)
+                ? env->ep_net_required_work_removed : 1.0f);
+        env->log.npc_healing_total += env->ep_npc_healing_total;
+        env->log.mejkot_healing_total += env->ep_mejkot_healing_total;
+        env->log.jad_healing_total += env->ep_jad_healing_total;
+        env->log.preclip_reward += env->ep_preclip_reward;
+        env->log.postclip_reward += env->ep_postclip_reward;
+        env->log.positive_clip_count += env->ep_positive_clip_count;
+        env->log.negative_clip_count += env->ep_negative_clip_count;
 
         for (int i = 0; i < FC_CH_COUNT; i++) {
             env->log.rwd_sum[i] += env->ep_rwd_sum[i];

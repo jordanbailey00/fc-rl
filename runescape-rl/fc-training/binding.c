@@ -26,6 +26,8 @@ void my_init(Env* env, Dict* kwargs) {
     DictItem* item;
     item = dict_get_unsafe(kwargs, "w_damage_dealt");
     env->w_damage_dealt = item ? (float)item->value : defaults.w_damage_dealt;
+    item = dict_get_unsafe(kwargs, "w_progress");
+    env->w_progress = item ? (float)item->value : defaults.w_progress;
     item = dict_get_unsafe(kwargs, "w_damage_taken");
     env->w_damage_taken = item ? (float)item->value : defaults.w_damage_taken;
     item = dict_get_unsafe(kwargs, "w_npc_kill");
@@ -34,6 +36,8 @@ void my_init(Env* env, Dict* kwargs) {
     env->w_wave_clear = item ? (float)item->value : defaults.w_wave_clear;
     item = dict_get_unsafe(kwargs, "w_jad_kill");
     env->w_jad_kill = item ? (float)item->value : defaults.w_jad_kill;
+    item = dict_get_unsafe(kwargs, "w_cave_complete");
+    env->w_cave_complete = item ? (float)item->value : defaults.w_cave_complete;
     item = dict_get_unsafe(kwargs, "w_player_death");
     env->w_player_death = item ? (float)item->value : defaults.w_player_death;
     item = dict_get_unsafe(kwargs, "w_correct_jad_prayer");
@@ -54,10 +58,24 @@ void my_init(Env* env, Dict* kwargs) {
     env->shape_wave_stall_cap = item ? (float)item->value : defaults.shape_wave_stall_cap;
     item = dict_get_unsafe(kwargs, "shape_jad_heal_penalty");
     env->shape_jad_heal_penalty = item ? (float)item->value : defaults.shape_jad_heal_penalty;
+    item = dict_get_unsafe(kwargs, "shape_npc_heal_penalty");
+    env->shape_npc_heal_penalty = item ? (float)item->value : defaults.shape_npc_heal_penalty;
+    item = dict_get_unsafe(kwargs, "shape_no_progress_penalty_1");
+    env->shape_no_progress_penalty_1 = item ? (float)item->value : defaults.shape_no_progress_penalty_1;
+    item = dict_get_unsafe(kwargs, "shape_no_progress_penalty_2");
+    env->shape_no_progress_penalty_2 = item ? (float)item->value : defaults.shape_no_progress_penalty_2;
+    item = dict_get_unsafe(kwargs, "shape_no_progress_penalty_3");
+    env->shape_no_progress_penalty_3 = item ? (float)item->value : defaults.shape_no_progress_penalty_3;
     item = dict_get_unsafe(kwargs, "shape_wave_stall_start");
     env->shape_wave_stall_start = item ? (int)item->value : defaults.shape_wave_stall_start;
     item = dict_get_unsafe(kwargs, "shape_wave_stall_ramp_interval");
     env->shape_wave_stall_ramp_interval = item ? (int)item->value : defaults.shape_wave_stall_ramp_interval;
+    item = dict_get_unsafe(kwargs, "shape_no_progress_start_1");
+    env->shape_no_progress_start_1 = item ? (int)item->value : defaults.shape_no_progress_start_1;
+    item = dict_get_unsafe(kwargs, "shape_no_progress_start_2");
+    env->shape_no_progress_start_2 = item ? (int)item->value : defaults.shape_no_progress_start_2;
+    item = dict_get_unsafe(kwargs, "shape_no_progress_start_3");
+    env->shape_no_progress_start_3 = item ? (int)item->value : defaults.shape_no_progress_start_3;
     item = dict_get_unsafe(kwargs, "initial_sharks");
     env->initial_sharks = item ? (int)item->value : 0;
     item = dict_get_unsafe(kwargs, "initial_prayer_doses");
@@ -122,6 +140,26 @@ void my_log(Log* log, Dict* out) {
     dict_set(out, "no_progress_no_target_ticks", log->no_progress_no_target_ticks);
     dict_set(out, "no_progress_prayer_cmd_ticks", log->no_progress_prayer_cmd_ticks);
     dict_set(out, "no_progress_invalid_action_ticks", log->no_progress_invalid_action_ticks);
+    dict_set(out, "required_work_remaining", log->required_work_remaining);
+    dict_set(out, "required_work_start", log->required_work_start);
+    dict_set(out, "cave_progress", log->cave_progress);
+    dict_set(out, "current_wave_progress", log->current_wave_progress);
+    dict_set(out, "progress_delta", log->progress_delta);
+    dict_set(out, "progress_reward", log->progress_reward);
+    dict_set(out, "ticks_since_positive_progress", log->ticks_since_positive_progress);
+    dict_set(out, "positive_progress_ticks", log->positive_progress_ticks);
+    dict_set(out, "zero_progress_ticks", log->zero_progress_ticks);
+    dict_set(out, "negative_progress_ticks", log->negative_progress_ticks);
+    dict_set(out, "gross_damage_dealt", log->gross_damage_dealt);
+    dict_set(out, "net_required_work_removed", log->net_required_work_removed);
+    dict_set(out, "gross_damage_to_net_progress_ratio", log->gross_damage_to_net_progress_ratio);
+    dict_set(out, "npc_healing_total", log->npc_healing_total);
+    dict_set(out, "mejkot_healing_total", log->mejkot_healing_total);
+    dict_set(out, "jad_healing_total", log->jad_healing_total);
+    dict_set(out, "preclip_reward", log->preclip_reward);
+    dict_set(out, "postclip_reward", log->postclip_reward);
+    dict_set(out, "positive_clip_count", log->positive_clip_count);
+    dict_set(out, "negative_clip_count", log->negative_clip_count);
 
     static const char* npc_names[NPC_TYPE_COUNT] = {
         "none",
@@ -165,17 +203,14 @@ void my_log(Log* log, Dict* out) {
     /* Keys must use static storage because dict_set stores the pointer (see
      * vecenv.h:dict_set); stack-local char arrays would dangle. */
     static char rwd_keys_total[FC_CH_COUNT][48];
-    static char rwd_keys_fires[FC_CH_COUNT][48];
     static int rwd_keys_built = 0;
     if (!rwd_keys_built) {
         for (int i = 0; i < FC_CH_COUNT; i++) {
             snprintf(rwd_keys_total[i], 48, "rwd_%s_total", FC_CH_NAMES[i]);
-            snprintf(rwd_keys_fires[i], 48, "rwd_%s_fires", FC_CH_NAMES[i]);
         }
         rwd_keys_built = 1;
     }
     for (int i = 0; i < FC_CH_COUNT; i++) {
         dict_set(out, rwd_keys_total[i], log->rwd_sum[i]);
-        dict_set(out, rwd_keys_fires[i], log->rwd_fires[i]);
     }
 }

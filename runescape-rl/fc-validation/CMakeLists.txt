@@ -40,6 +40,36 @@ add_test(NAME phase4_safespot_reward_disabled
 set_tests_properties(phase4_safespot_reward_disabled PROPERTIES
     LABELS "phase4;guardrail")
 
+add_test(NAME revamp_npc_heal_penalty_actual_heal
+    COMMAND phase2_guardrails_core npc_heal_penalty_actual_heal)
+set_tests_properties(revamp_npc_heal_penalty_actual_heal PROPERTIES
+    LABELS "revamp;guardrail")
+
+add_test(NAME revamp_net_progress_required_work
+    COMMAND phase2_guardrails_core net_progress_required_work)
+set_tests_properties(revamp_net_progress_required_work PROPERTIES
+    LABELS "revamp;guardrail")
+
+add_test(NAME revamp_net_progress_tz_kek
+    COMMAND phase2_guardrails_core net_progress_tz_kek)
+set_tests_properties(revamp_net_progress_tz_kek PROPERTIES
+    LABELS "revamp;guardrail")
+
+add_test(NAME revamp_net_progress_jad
+    COMMAND phase2_guardrails_core net_progress_jad)
+set_tests_properties(revamp_net_progress_jad PROPERTIES
+    LABELS "revamp;guardrail")
+
+add_test(NAME revamp_net_progress_timer_clip
+    COMMAND phase2_guardrails_core net_progress_timer_clip)
+set_tests_properties(revamp_net_progress_timer_clip PROPERTIES
+    LABELS "revamp;guardrail")
+
+add_test(NAME revamp_progress_observation_fields
+    COMMAND phase2_guardrails_core progress_observation_fields)
+set_tests_properties(revamp_progress_observation_fields PROPERTIES
+    LABELS "revamp;guardrail")
+
 add_test(NAME phase3_healer_spawn_validity
     COMMAND phase2_guardrails_core healer_spawn_validity)
 set_tests_properties(phase3_healer_spawn_validity PROPERTIES
@@ -80,6 +110,13 @@ if(Python3_Interpreter_FOUND)
                 live_no_supplies_simplified_config)
     set_tests_properties(phase7_live_no_supplies_simplified_config PROPERTIES
         LABELS "phase7;guardrail")
+
+    add_test(NAME revamp_env_log_key_budget
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/../tools/validation/tests/phase2_static_guardrails.py
+                env_log_key_budget)
+    set_tests_properties(revamp_env_log_key_budget PROPERTIES
+        LABELS "revamp;guardrail")
 else()
     message(STATUS "Python3 not found — skipping phase2 static validation guardrails")
 endif()
