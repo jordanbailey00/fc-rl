@@ -29,6 +29,7 @@ int main(void) {
         env.w_player_death = defaults.w_player_death;
         env.w_correct_jad_prayer = defaults.w_correct_jad_prayer;
         env.w_correct_danger_prayer = defaults.w_correct_danger_prayer;
+        env.w_prayer_lost = defaults.w_prayer_lost;
         env.w_invalid_action = defaults.w_invalid_action;
         env.w_tick_penalty = defaults.w_tick_penalty;
 
@@ -42,9 +43,12 @@ int main(void) {
         env.shape_no_progress_penalty_1 = defaults.shape_no_progress_penalty_1;
         env.shape_no_progress_penalty_2 = defaults.shape_no_progress_penalty_2;
         env.shape_no_progress_penalty_3 = defaults.shape_no_progress_penalty_3;
+        env.shape_no_attack_base_penalty = defaults.shape_no_attack_base_penalty;
+        env.shape_no_attack_wave_scale = defaults.shape_no_attack_wave_scale;
         env.shape_no_progress_start_1 = defaults.shape_no_progress_start_1;
         env.shape_no_progress_start_2 = defaults.shape_no_progress_start_2;
         env.shape_no_progress_start_3 = defaults.shape_no_progress_start_3;
+        env.shape_no_attack_start = defaults.shape_no_attack_start;
         env.initial_sharks = 0;
         env.initial_prayer_doses = 0;
 

@@ -300,8 +300,10 @@ void fc_resolve_player_pending_hits(FcState* state) {
              * impact, separate from damage. Drains even when prayer blocks the damage.
              * (combat.toml: impact_drain = { skill = "prayer", amount = 1 }) */
             if (h->prayer_drain > 0) {
+                int prayer_before = p->current_prayer;
                 p->current_prayer -= h->prayer_drain;
                 if (p->current_prayer < 0) p->current_prayer = 0;
+                state->prayer_lost_this_tick += prayer_before - p->current_prayer;
             }
 
             /* Track prayer correctness. Jad hits and non-Jad styled hits are

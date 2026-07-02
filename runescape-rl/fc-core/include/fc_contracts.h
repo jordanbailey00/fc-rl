@@ -30,7 +30,7 @@
  * part of the default policy input.
  */
 
-/* --- Player features (17 floats) --- */
+/* --- Player features (20 floats) --- */
 #define FC_OBS_PLAYER_START     0
 #define FC_OBS_PLAYER_HP        0   /* current_hp / max_hp */
 #define FC_OBS_PLAYER_PRAYER    1   /* current_prayer / max_prayer */
@@ -49,9 +49,12 @@
 #define FC_OBS_PLAYER_IN_RNG_2T 14  /* normalized count of ranged hits landing in 2 ticks */
 #define FC_OBS_PLAYER_IN_MAG_2T 15  /* normalized count of magic hits landing in 2 ticks */
 #define FC_OBS_PLAYER_TARGET    16  /* attack_target NPC slot index / 8 (0=no target, 0.125-1.0=slot 0-7) */
-#define FC_OBS_PLAYER_SIZE      17
+#define FC_OBS_PLAYER_PRAY_DDL_MEL 17  /* style-specific prayer deadline urgency for actionable melee hits */
+#define FC_OBS_PLAYER_PRAY_DDL_RNG 18  /* style-specific prayer deadline urgency for actionable ranged hits */
+#define FC_OBS_PLAYER_PRAY_DDL_MAG 19  /* style-specific prayer deadline urgency for actionable magic hits */
+#define FC_OBS_PLAYER_SIZE      20
 
-/* --- Per-NPC features (20 floats × 8 visible NPCs = 160 floats) --- */
+/* --- Per-NPC features (22 floats × 8 visible NPCs = 176 floats) --- */
 /*
  * NPC slot ordering — deterministic rules for the 8 visible NPC slots:
  *
@@ -71,8 +74,8 @@
  * The spawn_index tiebreaker ensures deterministic ordering when distances are
  * equal, which is critical for replay consistency and debug reproducibility.
  */
-#define FC_OBS_NPC_START        FC_OBS_PLAYER_SIZE  /* 17 */
-#define FC_OBS_NPC_STRIDE       20
+#define FC_OBS_NPC_START        FC_OBS_PLAYER_SIZE  /* 20 */
+#define FC_OBS_NPC_STRIDE       22
 #define FC_OBS_NPC_SLOTS        8   /* FC_VISIBLE_NPCS */
 
 /* Per-NPC feature offsets within stride.
@@ -104,11 +107,13 @@
 #define FC_NPC_TYPE_KET_ZEK     17  /* one-hot NPC identity: Ket-Zek */
 #define FC_NPC_TYPE_TZTOK_JAD   18  /* one-hot NPC identity: TzTok-Jad */
 #define FC_NPC_TYPE_YT_HURKOT   19  /* one-hot NPC identity: Yt-HurKot */
+#define FC_NPC_PENDING_PRAYER_WINDOW   20  /* 1 if current prayer action can still affect this pending hit */
+#define FC_NPC_PENDING_PRAYER_DEADLINE 21  /* urgency until prayer locks: 1=act now, 0=no actionable hit */
 
-#define FC_OBS_NPC_TOTAL        (FC_OBS_NPC_STRIDE * FC_OBS_NPC_SLOTS)  /* 160 */
+#define FC_OBS_NPC_TOTAL        (FC_OBS_NPC_STRIDE * FC_OBS_NPC_SLOTS)  /* 176 */
 
 /* --- Wave/meta features (13 floats) --- */
-#define FC_OBS_META_START       (FC_OBS_NPC_START + FC_OBS_NPC_TOTAL)  /* 177 */
+#define FC_OBS_META_START       (FC_OBS_NPC_START + FC_OBS_NPC_TOTAL)  /* 196 */
 #define FC_OBS_META_WAVE        0   /* current_wave / NUM_WAVES */
 #define FC_OBS_META_ROTATION    1   /* rotation_id / NUM_ROTATIONS */
 #define FC_OBS_META_REMAINING   2   /* npcs_remaining / MAX_NPCS */
@@ -125,16 +130,16 @@
 #define FC_OBS_META_SIZE        13
 
 /* --- Policy observation total --- */
-#define FC_POLICY_OBS_SIZE      (FC_OBS_PLAYER_SIZE + FC_OBS_NPC_TOTAL + FC_OBS_META_SIZE)  /* 190 */
+#define FC_POLICY_OBS_SIZE      (FC_OBS_PLAYER_SIZE + FC_OBS_NPC_TOTAL + FC_OBS_META_SIZE)  /* 209 */
 
-/* --- Reward features (19 floats) --- */
+/* --- Reward features (20 floats) --- */
 /*
  * These are packed AFTER policy observations in the same buffer.
  * The trainer reads them for reward shaping and logging.
  * The policy DOES NOT consume these by default.
  * Python applies configurable shaping weights to produce the scalar reward.
  */
-#define FC_REWARD_START         FC_POLICY_OBS_SIZE  /* 190 */
+#define FC_REWARD_START         FC_POLICY_OBS_SIZE  /* 209 */
 #define FC_RWD_DAMAGE_DEALT     0   /* NPC HP reduced this tick (normalized) */
 #define FC_RWD_DAMAGE_TAKEN     1   /* player HP reduced this tick */
 #define FC_RWD_NPC_KILL         2   /* NPC death count this tick */
@@ -154,10 +159,11 @@
 #define FC_RWD_CORRECT_DANGER_PRAY 16  /* prayer matched resolved ranged/magic attack */
 #define FC_RWD_WRONG_DANGER_PRAY   17  /* prayer did not match resolved ranged/magic attack */
 #define FC_RWD_ATTACK_ATTEMPT   18  /* valid attack cycle launched this tick */
-#define FC_REWARD_FEATURES      19
+#define FC_RWD_PRAYER_LOST      19  /* prayer points lost this tick */
+#define FC_REWARD_FEATURES      20
 
 /* --- Total observation (policy obs + reward features) --- */
-#define FC_TOTAL_OBS            (FC_POLICY_OBS_SIZE + FC_REWARD_FEATURES)  /* 209 */
+#define FC_TOTAL_OBS            (FC_POLICY_OBS_SIZE + FC_REWARD_FEATURES)  /* 229 */
 
 /* ======================================================================== */
 /* Action space — 7 canonical core heads                                     */
@@ -281,6 +287,17 @@ static const int FC_MOVE_DY[17] = {
 /* Action head dimensions as a static array (for iteration in viewer/binding) */
 static const int FC_ACTION_DIMS[FC_NUM_ACTION_HEADS] = FC_ACT_SIZES;
 
+/* Puffer-facing no-supplies policy contract.
+ * This is the single source of truth for the action heads and masks consumed
+ * by Puffer training and policy replay. Core still supports all canonical
+ * action heads; the Puffer policy emits the prefix below. */
+#define FC_PUFFER_NUM_ATNS      3
+#define FC_PUFFER_ACT_SIZES     { FC_MOVE_DIM, FC_ATTACK_DIM, FC_PRAYER_DIM }
+#define FC_PUFFER_MASK_SIZE     (FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM)
+#define FC_PUFFER_OBS_SIZE      (FC_POLICY_OBS_SIZE + FC_PUFFER_MASK_SIZE)
+
+static const int FC_PUFFER_ACTION_DIMS[FC_PUFFER_NUM_ATNS] = FC_PUFFER_ACT_SIZES;
+
 /* ======================================================================== */
 /* Action mask                                                               */
 /* ======================================================================== */
@@ -308,18 +325,17 @@ static const int FC_ACTION_DIMS[FC_NUM_ACTION_HEADS] = FC_ACT_SIZES;
 
 /*
  * Total floats in the full FC backend buffer:
- *   FC_POLICY_OBS_SIZE (190) + FC_REWARD_FEATURES (19) + FC_ACTION_MASK_SIZE (166) = 375
+ *   FC_POLICY_OBS_SIZE (209) + FC_REWARD_FEATURES (20) + FC_ACTION_MASK_SIZE (166) = 395
  *
- * The PufferLib adapter does NOT expose this full buffer directly. It exposes:
- *   FC_PUFFER_OBS_SIZE = FC_POLICY_OBS_SIZE + mask(heads 0-2 only)
- *                      = 190 + 31 = 221
+ * The PufferLib adapter does NOT expose this full buffer directly. It exposes
+ * FC_PUFFER_OBS_SIZE, defined above from the Puffer policy-head contract.
  *
  * Python trainer slices:
  *   policy_obs   = obs[:FC_POLICY_OBS_SIZE]
  *   reward_feat  = full_obs[FC_REWARD_START:FC_REWARD_START + FC_REWARD_FEATURES]
  *   action_mask  = full_obs[FC_TOTAL_OBS:FC_TOTAL_OBS + FC_ACTION_MASK_SIZE]
  */
-#define FC_OBS_SIZE             (FC_TOTAL_OBS + FC_ACTION_MASK_SIZE)  /* 375 */
+#define FC_OBS_SIZE             (FC_TOTAL_OBS + FC_ACTION_MASK_SIZE)  /* 395 */
 
 /* ======================================================================== */
 /* Normalization divisors                                                     */

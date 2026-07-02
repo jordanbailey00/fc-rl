@@ -44,7 +44,7 @@ def analytics_no_global_metrics() -> int:
 
 
 def live_no_supplies_simplified_config() -> int:
-    """Live configs should stay on the local-progress no-supplies reward/action contract."""
+    """Live configs should stay on the raw-work-progress no-supplies reward/action contract."""
     paths = [
         RUNESCAPE_DIR / "config" / "fight_caves.ini",
         RUNESCAPE_DIR.parent / "pufferlib_4" / "config" / "fight_caves.ini",
@@ -99,15 +99,18 @@ def live_no_supplies_simplified_config() -> int:
                 failures.append(f"{label}: {key} must be 0")
 
         expected_floats = {
-            "w_progress": 1.0,
+            "w_progress": 0.001,
             "w_damage_taken": -0.25,
             "w_cave_complete": 1.0,
             "w_player_death": -1.0,
             "w_correct_danger_prayer": 0.005,
+            "w_prayer_lost": -0.02,
             "w_tick_penalty": -0.0001,
             "shape_no_progress_penalty_1": -0.001,
             "shape_no_progress_penalty_2": -0.005,
             "shape_no_progress_penalty_3": -0.02,
+            "shape_no_attack_base_penalty": -0.005,
+            "shape_no_attack_wave_scale": 0.05,
         }
         for key, expected in expected_floats.items():
             if not parser.has_option("env", key):
@@ -121,6 +124,7 @@ def live_no_supplies_simplified_config() -> int:
             "shape_no_progress_start_1": 800,
             "shape_no_progress_start_2": 1600,
             "shape_no_progress_start_3": 2400,
+            "shape_no_attack_start": 50,
         }
         for key, expected in expected_ints.items():
             if parser.getint("env", key, fallback=-1) != expected:
@@ -128,10 +132,10 @@ def live_no_supplies_simplified_config() -> int:
 
         if parser.get("run", "action_version", fallback="").strip("'\"") != "fight_caves_multidiscrete_3_head_no_supplies_v1":
             failures.append(f"{label}: action_version is not the 3-head no-supplies contract")
-        if parser.get("run", "observation_version", fallback="").strip("'\"") != "fight_caves_puffer_policy_obs_v4_npc_type_progress_mask_heads_0_2_no_supplies":
-            failures.append(f"{label}: observation_version is not the v4 NPC-type/progress no-supplies contract")
-        if parser.get("run", "reward_version", fallback="").strip("'\"") != "fight_caves_v38_fc_revamp_step2_local_progress_low_prayer":
-            failures.append(f"{label}: reward_version is not the fc_revamp step-2 local-progress low-prayer contract")
+        if parser.get("run", "observation_version", fallback="").strip("'\"") != "fight_caves_puffer_policy_obs_v5_npc_type_progress_prayer_deadline_mask_heads_0_2_no_supplies":
+            failures.append(f"{label}: observation_version is not the v5 NPC-type/progress/prayer-deadline no-supplies contract")
+        if parser.get("run", "reward_version", fallback="").strip("'\"") != "fight_caves_v38_fc_revamp_step2_raw_work_progress_prayer_conserve_no_attack":
+            failures.append(f"{label}: reward_version is not the fc_revamp step-2 raw-work-progress prayer-conserve/no-attack contract")
 
     if failures:
         print("FAIL: live configs are not on the simplified no-supplies contract:")
@@ -139,7 +143,7 @@ def live_no_supplies_simplified_config() -> int:
             print(f"  {failure}")
         return 1
 
-    print("PASS: live configs use the local-progress no-supplies reward/action contract")
+    print("PASS: live configs use the raw-work-progress no-supplies reward/action contract")
     return 0
 
 
@@ -151,7 +155,7 @@ def env_log_key_budget() -> int:
 
     explicit_keys = len(re.findall(r'dict_set\(out,\s*"', text))
     npc_loop_keys = 5 * (9 - 1)  # five per-NPC-type metrics for NPC types 1..8
-    reward_total_keys = 17       # FC_CH_COUNT after net-progress reward channels
+    reward_total_keys = 18       # FC_CH_COUNT minus skipped legacy damage_dealt reward log
     puffer_added_keys = 1        # static_vec_log appends "n" after my_log
     total = explicit_keys + npc_loop_keys + reward_total_keys + puffer_added_keys
 
@@ -170,9 +174,133 @@ def env_log_key_budget() -> int:
     return 0
 
 
+def viewer_policy_pipe_matches_puffer_contract() -> int:
+    """The eval viewer policy pipe must match the trainer's no-supplies heads."""
+    viewer_path = RUNESCAPE_DIR / "fc-viewer" / "src" / "viewer.c"
+    eval_path = RUNESCAPE_DIR / "fc-viewer" / "eval_viewer.py"
+    binding_path = RUNESCAPE_DIR / "fc-training" / "binding.c"
+    contract_path = RUNESCAPE_DIR / "fc-core" / "include" / "fc_contracts.h"
+    viewer = viewer_path.read_text(encoding="utf-8")
+    eval_py = eval_path.read_text(encoding="utf-8")
+    binding = binding_path.read_text(encoding="utf-8")
+    contract = contract_path.read_text(encoding="utf-8")
+    failures: list[str] = []
+
+    for token in [
+        "#define FC_PUFFER_NUM_ATNS",
+        "#define FC_PUFFER_ACT_SIZES",
+        "#define FC_PUFFER_MASK_SIZE",
+        "#define FC_PUFFER_OBS_SIZE",
+    ]:
+        if token not in contract:
+            failures.append(f"fc_contracts.h missing shared Puffer contract token: {token}")
+
+    if "#define ACT_SIZES FC_PUFFER_ACT_SIZES" not in binding:
+        failures.append("binding.c must derive ACT_SIZES from FC_PUFFER_ACT_SIZES")
+    if re.search(r"#define\s+ACT_SIZES\s+\{\s*\d", binding):
+        failures.append("binding.c still hard-codes numeric Puffer action sizes")
+
+    read_fn = re.search(
+        r"static int read_policy_actions\(ViewerState\* v\) \{.*?\n\}",
+        viewer,
+        flags=re.DOTALL,
+    )
+    write_fn = re.search(
+        r"static void write_obs_to_pipe\(ViewerState\* v\) \{.*?\n\}",
+        viewer,
+        flags=re.DOTALL,
+    )
+    if not read_fn:
+        failures.append("viewer.c: read_policy_actions function not found")
+    elif "FC_PUFFER_NUM_ATNS" not in read_fn.group(0):
+        failures.append("viewer.c: policy pipe must read FC_PUFFER_NUM_ATNS actions")
+    if read_fn and 'scanf("%d %d %d %d %d"' in read_fn.group(0):
+        failures.append("viewer.c: policy pipe still reads old eat/drink action heads")
+
+    if not write_fn:
+        failures.append("viewer.c: write_obs_to_pipe function not found")
+    else:
+        body = write_fn.group(0)
+        if "FC_PUFFER_MASK_SIZE" not in body:
+            failures.append("viewer.c: policy pipe mask must be sized from FC_PUFFER_MASK_SIZE")
+        if "FC_EAT_DIM" in body or "FC_DRINK_DIM" in body:
+            failures.append("viewer.c: policy pipe still emits supply masks")
+
+    if "FC_PUFFER_ACT_SIZES" not in eval_py:
+        failures.append("eval_viewer.py must derive decoder action dims from FC_PUFFER_ACT_SIZES")
+    if "FC_PUFFER_NUM_ATNS" not in eval_py:
+        failures.append("eval_viewer.py must validate FC_PUFFER_NUM_ATNS")
+    if '"FC_EAT_DIM"' in eval_py or '"FC_DRINK_DIM"' in eval_py:
+        failures.append("eval_viewer.py: contract loader still includes supply action heads")
+    if "mask_5head" in eval_py or "mask5" in eval_py:
+        failures.append("eval_viewer.py: stale 5-head mask naming remains")
+
+    if failures:
+        print("FAIL: eval viewer policy pipe does not match the Puffer contract:")
+        for failure in failures:
+            print(f"  {failure}")
+        return 1
+
+    print("PASS: eval viewer policy pipe matches the 3-head Puffer contract")
+    return 0
+
+
+def viewer_training_parity_contract() -> int:
+    """Viewer replay should not silently drift from training env setup."""
+    viewer_path = RUNESCAPE_DIR / "fc-viewer" / "src" / "viewer.c"
+    binding_path = RUNESCAPE_DIR / "fc-training" / "binding.c"
+    viewer = viewer_path.read_text(encoding="utf-8")
+    binding = binding_path.read_text(encoding="utf-8")
+    failures: list[str] = []
+
+    training_keys = set(re.findall(r'dict_get_unsafe\(kwargs,\s*"([^"]+)"\)', binding))
+    viewer_keys = set(re.findall(r'strcmp\(key,\s*"([^"]+)"\)', viewer))
+    missing_keys = sorted(training_keys - viewer_keys)
+    if missing_keys:
+        failures.append(
+            "viewer.c config parser is missing training env keys: " +
+            ", ".join(missing_keys)
+        )
+
+    for snippet in [
+        "v->initial_sharks = 0;",
+        "v->initial_prayer_doses = 0;",
+        "fc_reward_runtime_begin_episode(&v->reward_runtime, &v->state);",
+        "fc_reward_sync_progress_state(&v->state, &v->reward_runtime);",
+    ]:
+        if snippet not in viewer:
+            failures.append(f"viewer.c missing parity snippet: {snippet}")
+
+    reset_fn = re.search(
+        r"static void reset_ep\(ViewerState\* v\) \{.*?\n\}",
+        viewer,
+        flags=re.DOTALL,
+    )
+    if not reset_fn:
+        failures.append("viewer.c: reset_ep function not found")
+    elif "update_reward_breakdown(v);" in reset_fn.group(0):
+        failures.append("viewer.c: reset_ep should not advance reward runtime before first action")
+
+    update_calls = len(re.findall(r"\bupdate_reward_breakdown\(", viewer))
+    if update_calls != 2:
+        failures.append(
+            "viewer.c: update_reward_breakdown should appear only as its definition "
+            "and the post-fc_step training-parity call"
+        )
+
+    if failures:
+        print("FAIL: eval viewer replay is stale relative to training:")
+        for failure in failures:
+            print(f"  {failure}")
+        return 1
+
+    print("PASS: eval viewer replay setup matches training env setup")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
-        print("usage: phase2_static_guardrails.py <analytics_no_global_metrics|live_no_supplies_simplified_config|env_log_key_budget>", file=sys.stderr)
+        print("usage: phase2_static_guardrails.py <analytics_no_global_metrics|live_no_supplies_simplified_config|env_log_key_budget|viewer_policy_pipe_matches_puffer_contract|viewer_training_parity_contract>", file=sys.stderr)
         return 2
     if argv[1] == "analytics_no_global_metrics":
         return analytics_no_global_metrics()
@@ -180,6 +308,10 @@ def main(argv: list[str]) -> int:
         return live_no_supplies_simplified_config()
     if argv[1] == "env_log_key_budget":
         return env_log_key_budget()
+    if argv[1] == "viewer_policy_pipe_matches_puffer_contract":
+        return viewer_policy_pipe_matches_puffer_contract()
+    if argv[1] == "viewer_training_parity_contract":
+        return viewer_training_parity_contract()
     print(f"unknown guardrail: {argv[1]}", file=sys.stderr)
     return 2
 

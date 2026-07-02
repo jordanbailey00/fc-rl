@@ -11,7 +11,7 @@
 #define OBS_SIZE FC_PUFFER_OBS_SIZE
 #define OBS_TENSOR_T FloatTensor
 #define NUM_ATNS FC_PUFFER_NUM_ATNS
-#define ACT_SIZES {17, 9, 5}
+#define ACT_SIZES FC_PUFFER_ACT_SIZES
 #define OBS_TYPE FLOAT
 #define ACT_TYPE DOUBLE
 
@@ -44,6 +44,8 @@ void my_init(Env* env, Dict* kwargs) {
     env->w_correct_jad_prayer = item ? (float)item->value : defaults.w_correct_jad_prayer;
     item = dict_get_unsafe(kwargs, "w_correct_danger_prayer");
     env->w_correct_danger_prayer = item ? (float)item->value : defaults.w_correct_danger_prayer;
+    item = dict_get_unsafe(kwargs, "w_prayer_lost");
+    env->w_prayer_lost = item ? (float)item->value : defaults.w_prayer_lost;
     item = dict_get_unsafe(kwargs, "w_invalid_action");
     env->w_invalid_action = item ? (float)item->value : defaults.w_invalid_action;
     item = dict_get_unsafe(kwargs, "w_tick_penalty");
@@ -66,6 +68,10 @@ void my_init(Env* env, Dict* kwargs) {
     env->shape_no_progress_penalty_2 = item ? (float)item->value : defaults.shape_no_progress_penalty_2;
     item = dict_get_unsafe(kwargs, "shape_no_progress_penalty_3");
     env->shape_no_progress_penalty_3 = item ? (float)item->value : defaults.shape_no_progress_penalty_3;
+    item = dict_get_unsafe(kwargs, "shape_no_attack_base_penalty");
+    env->shape_no_attack_base_penalty = item ? (float)item->value : defaults.shape_no_attack_base_penalty;
+    item = dict_get_unsafe(kwargs, "shape_no_attack_wave_scale");
+    env->shape_no_attack_wave_scale = item ? (float)item->value : defaults.shape_no_attack_wave_scale;
     item = dict_get_unsafe(kwargs, "shape_wave_stall_start");
     env->shape_wave_stall_start = item ? (int)item->value : defaults.shape_wave_stall_start;
     item = dict_get_unsafe(kwargs, "shape_wave_stall_ramp_interval");
@@ -76,6 +82,8 @@ void my_init(Env* env, Dict* kwargs) {
     env->shape_no_progress_start_2 = item ? (int)item->value : defaults.shape_no_progress_start_2;
     item = dict_get_unsafe(kwargs, "shape_no_progress_start_3");
     env->shape_no_progress_start_3 = item ? (int)item->value : defaults.shape_no_progress_start_3;
+    item = dict_get_unsafe(kwargs, "shape_no_attack_start");
+    env->shape_no_attack_start = item ? (int)item->value : defaults.shape_no_attack_start;
     item = dict_get_unsafe(kwargs, "initial_sharks");
     env->initial_sharks = item ? (int)item->value : 0;
     item = dict_get_unsafe(kwargs, "initial_prayer_doses");
@@ -211,6 +219,7 @@ void my_log(Log* log, Dict* out) {
         rwd_keys_built = 1;
     }
     for (int i = 0; i < FC_CH_COUNT; i++) {
+        if (i == FC_CH_DAMAGE_DEALT) continue;
         dict_set(out, rwd_keys_total[i], log->rwd_sum[i]);
     }
 }

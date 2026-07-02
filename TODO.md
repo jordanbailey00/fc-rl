@@ -6,15 +6,22 @@ for project follow-ups that should not become public repo documentation yet.
 ## Current Focus
 
 - Immediate next dev tracker: `fc_revamp.md`
+- Current implementation point: Step 2 follow-up run `mzqf7iml` tested stronger
+  prayer conservation (`w_prayer_lost=-0.02`) plus the wave-scaled no-attack
+  penalty. It was a strong improvement over `n6nozx3q` (`wave_reached=40.82`
+  final), and the old wave 20-30 no-target wall is much less visible. Prayer is
+  still heavily commanded/used, so next analysis should focus on prayer policy
+  quality and conservation before deciding whether to proceed to action masks.
+- Current pause point on 2026-06-29: prayer point loss penalty run
+  `0gw22z0k` has been analyzed. It improved peak wave depth but final policy
+  regressed, and `rwd_prayer_lost_total` saturated near full-prayer depletion.
 - Current status on 2026-06-26: backend/config phases are complete enough to
   pause the old phase plan. The next work is the Fight Caves revamp experiments
   in `fc_revamp.md`, implemented one by one so each training result is
   interpretable.
-- First planned revamp target: add explicit NPC type one-hot observations per
-  visible NPC slot. After that, test reward cleanup by replacing per-hit damage
-  reward with NPC kill/progress rewards and rescaling around the `-1, 1` clamp.
-- Later revamp targets: expose prayer decision deadline, hard-apply native
-  Puffer action masks, then review target persistence and auto-pathing control.
+- Backlog revamp targets: hard-apply native Puffer action masks, then review
+  target persistence and auto-pathing control. These are not current priorities
+  after `mzqf7iml` because invalid actions are rare and target handling improved.
 - Previous work tracker: `runescape-rl/docs/fight_caves_improvement_plan.md`
 - Current status on 2026-06-25: Phase 7 simplified no-supplies retrain
   completed as W&B run `rw70szhc`; it is mechanically clean but should not be
@@ -78,13 +85,15 @@ for project follow-ups that should not become public repo documentation yet.
 ## Reward / Observation Iteration
 
 - Follow `fc_revamp.md` as the immediate reward/observation implementation plan.
-  - Start with explicit NPC type one-hot observations.
-  - Then replace per-hit damage reward with NPC kill/progress rewards.
-  - Then restructure reward weights around the `-1, 1` clamp.
-  - Then add prayer decision deadline observations.
-  - Then hard-apply action masks and remove invalid-action reward clutter once
-    validation proves masks are correct.
-  - Finally, review target persistence and auto-pathing control.
+  - NPC type observations and prayer-decision deadline observations are already
+    implemented.
+  - Current reward trial is raw net required-work progress with
+    `w_progress=0.001`, stronger prayer conservation, and wave-scaled
+    no-attack pressure. Latest run: `mzqf7iml`.
+  - Next decision: inspect/replay `mzqf7iml` prayer behavior and add
+    prayer-action diagnostics if needed.
+  - Backlog, not current priority: hard-apply action masks, then review target
+    persistence and auto-pathing control.
 
 - Longer-running cleanup: reduce and prune the reward config, then run another
   sweep.

@@ -6,7 +6,7 @@
 /* Drain prayer points based on active prayer and bonus.
  * prayer_active_at_tick_start should reflect the prayer state before the
  * current tick's input actions were applied, so 1-tick flicks do not drain. */
-void fc_prayer_drain_tick(FcPlayer* p, int prayer_active_at_tick_start);
+int fc_prayer_drain_tick(FcPlayer* p, int prayer_active_at_tick_start);
 
 /* Apply a prayer action (from FC_PRAYER_* constants in fc_contracts.h) */
 void fc_prayer_apply_action(FcPlayer* p, int prayer_action);

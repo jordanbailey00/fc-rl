@@ -317,6 +317,24 @@ static float normalize_prayer_drain_counter(const FcPlayer* p) {
     return normalized;
 }
 
+static int pending_hit_prayer_actionable(const FcPendingHit* ph) {
+    if (!ph->active) return 0;
+    if (ph->prayer_snapshot >= 0) return 0;
+    if (ph->prayer_lock_tick < 0) return 0;
+    return attack_style_summary_idx(ph->attack_style) >= 0;
+}
+
+static float pending_hit_prayer_deadline_urgency(const FcState* state,
+                                                 const FcPendingHit* ph) {
+    if (!pending_hit_prayer_actionable(ph)) return 0.0f;
+
+    int ticks_until_lock = ph->prayer_lock_tick - state->tick;
+    if (ticks_until_lock < 0) ticks_until_lock = 0;
+    if (ticks_until_lock > 3) ticks_until_lock = 3;
+
+    return (float)(4 - ticks_until_lock) / 4.0f;
+}
+
 /* Distance-only attack-style telegraph: what style would this NPC throw if it
  * attacked right now from its current position? Does NOT check LOS; the LOS
  * bit is a separate obs feature so the agent can distinguish "melee threat,
@@ -374,15 +392,24 @@ void fc_write_obs(const FcState* state, float* out) {
 
     const FcPlayer* p = &state->player;
     int incoming_counts[3][3] = {{0}};
+    float prayer_deadline_urgency[3] = {0.0f, 0.0f, 0.0f};
 
     /* Compact incoming-hit timeline summary.
      * Counts by style for hits landing in 1, 2, and 3 ticks. This gives the
-     * policy a relative timing signal without leaking absolute episode clocks. */
+     * policy a relative timing signal without leaking absolute episode clocks.
+     * Prayer deadline urgency is separate: it marks pending hits whose prayer
+     * snapshot has not locked yet, which is the actual decision window. */
     for (int hi = 0; hi < p->num_pending_hits; hi++) {
         const FcPendingHit* ph = &p->pending_hits[hi];
         if (!ph->active) continue;
-        if (ph->ticks_remaining < 1 || ph->ticks_remaining > 3) continue;
         int style_idx = attack_style_summary_idx(ph->attack_style);
+        if (style_idx >= 0 && pending_hit_prayer_actionable(ph)) {
+            float urgency = pending_hit_prayer_deadline_urgency(state, ph);
+            if (urgency > prayer_deadline_urgency[style_idx]) {
+                prayer_deadline_urgency[style_idx] = urgency;
+            }
+        }
+        if (ph->ticks_remaining < 1 || ph->ticks_remaining > 3) continue;
         if (style_idx < 0) continue;
         int bucket = ph->ticks_remaining - 1;
         if (incoming_counts[bucket][style_idx] < 4) {
@@ -410,6 +437,9 @@ void fc_write_obs(const FcState* state, float* out) {
     player[FC_OBS_PLAYER_IN_RNG_2T] = normalize_incoming_count(incoming_counts[1][1]);
     player[FC_OBS_PLAYER_IN_MAG_2T] = normalize_incoming_count(incoming_counts[1][2]);
     player[FC_OBS_PLAYER_TARGET]    = 0.0f;  /* filled after NPC slot computation below */
+    player[FC_OBS_PLAYER_PRAY_DDL_MEL] = prayer_deadline_urgency[0];
+    player[FC_OBS_PLAYER_PRAY_DDL_RNG] = prayer_deadline_urgency[1];
+    player[FC_OBS_PLAYER_PRAY_DDL_MAG] = prayer_deadline_urgency[2];
 
     /* NPC slot selection: gather active NPCs, sort, take first 8 */
     int active_indices[FC_VISIBLE_NPCS];
@@ -440,11 +470,18 @@ void fc_write_obs(const FcState* state, float* out) {
         /* Pending attack from this NPC — scan player's pending hits */
         npc_out[FC_NPC_PENDING_STYLE] = 0.0f;
         npc_out[FC_NPC_PENDING_TICKS] = 0.0f;
+        npc_out[FC_NPC_PENDING_PRAYER_WINDOW] = 0.0f;
+        npc_out[FC_NPC_PENDING_PRAYER_DEADLINE] = 0.0f;
         for (int hi = 0; hi < p->num_pending_hits; hi++) {
             const FcPendingHit* ph = &p->pending_hits[hi];
             if (ph->active && ph->source_npc_idx == active_indices[slot]) {
                 npc_out[FC_NPC_PENDING_STYLE] = (float)ph->attack_style / 3.0f;
                 npc_out[FC_NPC_PENDING_TICKS] = (float)ph->ticks_remaining / 10.0f;
+                if (pending_hit_prayer_actionable(ph)) {
+                    npc_out[FC_NPC_PENDING_PRAYER_WINDOW] = 1.0f;
+                    npc_out[FC_NPC_PENDING_PRAYER_DEADLINE] =
+                        pending_hit_prayer_deadline_urgency(state, ph);
+                }
                 break;  /* report first pending hit from this NPC */
             }
         }
@@ -534,6 +571,7 @@ void fc_write_reward_features(const FcState* state, float* out) {
     out[FC_RWD_CORRECT_DANGER_PRAY] = (float)state->correct_danger_prayer;
     out[FC_RWD_WRONG_DANGER_PRAY]   = (float)state->wrong_danger_prayer;
     out[FC_RWD_ATTACK_ATTEMPT]      = (float)state->attack_attempt_this_tick;
+    out[FC_RWD_PRAYER_LOST]         = (float)state->prayer_lost_this_tick / 10.0f;
 }
 
 void fc_action_invalid_classes(const FcState* state,

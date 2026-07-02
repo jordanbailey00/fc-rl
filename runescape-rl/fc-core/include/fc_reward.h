@@ -11,7 +11,7 @@
 
 typedef struct {
     float w_damage_dealt;      /* legacy per-hit damage shaping; active fc_revamp config sets 0 */
-    float w_progress;          /* net required-work current-wave progress delta */
+    float w_progress;          /* reward per required-work unit removed */
     float w_damage_taken;
     float w_npc_kill;
     float w_wave_clear;
@@ -20,6 +20,7 @@ typedef struct {
     float w_player_death;
     float w_correct_jad_prayer;     /* fires only on Jad hits */
     float w_correct_danger_prayer;  /* fires on non-Jad styled hits (melee/ranged/magic) */
+    float w_prayer_lost;            /* per prayer point lost from overhead drain or Tz-Kih */
     float w_invalid_action;
     float w_tick_penalty;
 
@@ -31,12 +32,15 @@ typedef struct {
     float shape_no_progress_penalty_1;
     float shape_no_progress_penalty_2;
     float shape_no_progress_penalty_3;
+    float shape_no_attack_base_penalty;
+    float shape_no_attack_wave_scale;
 
     int shape_wave_stall_start;
     int shape_wave_stall_ramp_interval;
     int shape_no_progress_start_1;
     int shape_no_progress_start_2;
     int shape_no_progress_start_3;
+    int shape_no_attack_start;
 } FcRewardParams;
 
 typedef struct {
@@ -77,9 +81,11 @@ typedef struct {
 
     float correct_jad_prayer;
     float correct_danger_prayer;
+    float prayer_lost;
     float unnecessary_prayer;
     float wave_stall;
     float no_progress;
+    float no_attack;
     float jad_heal;
     float npc_heal;
 
@@ -104,9 +110,11 @@ typedef enum {
     FC_CH_PLAYER_DEATH,
     FC_CH_CORRECT_JAD_PRAYER,
     FC_CH_CORRECT_DANGER_PRAYER,
+    FC_CH_PRAYER_LOST,
     FC_CH_UNNECESSARY_PRAYER,
     FC_CH_WAVE_STALL,
     FC_CH_NO_PROGRESS,
+    FC_CH_NO_ATTACK,
     FC_CH_JAD_HEAL,
     FC_CH_NPC_HEAL,
     FC_CH_INVALID_ACTION,
@@ -117,8 +125,8 @@ typedef enum {
 static const char* const FC_CH_NAMES[FC_CH_COUNT] = {
     "damage_dealt", "progress", "damage_taken", "npc_kill", "wave_clear",
     "jad_kill", "cave_complete", "player_death", "correct_jad_prayer",
-    "correct_danger_prayer", "unnecessary_prayer", "wave_stall",
-    "no_progress", "jad_heal", "npc_heal", "invalid_action",
+    "correct_danger_prayer", "prayer_lost", "unnecessary_prayer", "wave_stall",
+    "no_progress", "no_attack", "jad_heal", "npc_heal", "invalid_action",
     "tick_penalty"
 };
 
@@ -135,9 +143,11 @@ static inline void fc_reward_breakdown_channels(const FcRewardBreakdown* b, floa
     out[FC_CH_PLAYER_DEATH]             = b->player_death;
     out[FC_CH_CORRECT_JAD_PRAYER]       = b->correct_jad_prayer;
     out[FC_CH_CORRECT_DANGER_PRAYER]    = b->correct_danger_prayer;
+    out[FC_CH_PRAYER_LOST]              = b->prayer_lost;
     out[FC_CH_UNNECESSARY_PRAYER]       = b->unnecessary_prayer;
     out[FC_CH_WAVE_STALL]               = b->wave_stall;
     out[FC_CH_NO_PROGRESS]              = b->no_progress;
+    out[FC_CH_NO_ATTACK]                = b->no_attack;
     out[FC_CH_JAD_HEAL]                 = b->jad_heal;
     out[FC_CH_NPC_HEAL]                 = b->npc_heal;
     out[FC_CH_INVALID_ACTION]           = b->invalid_action;
@@ -149,7 +159,7 @@ static inline FcRewardParams fc_reward_default_params(void) {
     memset(&params, 0, sizeof(params));
 
     params.w_damage_dealt = 0.0f;
-    params.w_progress = 1.0f;
+    params.w_progress = 0.001f;
     params.w_damage_taken = -0.25f;
     params.w_npc_kill = 0.0f;
     params.w_wave_clear = 0.0f;
@@ -158,6 +168,7 @@ static inline FcRewardParams fc_reward_default_params(void) {
     params.w_player_death = -1.0f;
     params.w_correct_jad_prayer = 0.0f;
     params.w_correct_danger_prayer = 0.005f;
+    params.w_prayer_lost = -0.02f;
     params.w_invalid_action = -0.1f;
     params.w_tick_penalty = -0.0001f;
 
@@ -169,12 +180,15 @@ static inline FcRewardParams fc_reward_default_params(void) {
     params.shape_no_progress_penalty_1 = -0.001f;
     params.shape_no_progress_penalty_2 = -0.005f;
     params.shape_no_progress_penalty_3 = -0.02f;
+    params.shape_no_attack_base_penalty = -0.005f;
+    params.shape_no_attack_wave_scale = 0.05f;
 
     params.shape_wave_stall_start = 0;
     params.shape_wave_stall_ramp_interval = 0;
     params.shape_no_progress_start_1 = 800;
     params.shape_no_progress_start_2 = 1600;
     params.shape_no_progress_start_3 = 2400;
+    params.shape_no_attack_start = 50;
 
     return params;
 }
@@ -321,30 +335,32 @@ static inline FcRewardBreakdown fc_reward_compute_breakdown(
         float wave_progress = fc_reward_current_wave_progress(
             state, runtime, work_remaining);
         float cave_progress = fc_reward_cave_progress(state, wave_progress);
-        float progress_delta = cave_progress - runtime->cave_progress_prev;
         float start_work = runtime->required_work_at_wave_start;
+        float progress_delta = cave_progress - runtime->cave_progress_prev;
+        float net_work_removed = progress_delta * (float)FC_NUM_WAVES *
+            ((start_work > 0.0f) ? start_work : 0.0f);
 
-        /* Scalar reward uses local current-wave progress, not cave progress
-         * divided across all 63 waves. The logged progress_delta remains cave
-         * progress for continuity; multiplying by FC_NUM_WAVES converts it to
-         * the equivalent current-wave progress delta. */
-        out.progress = progress_delta * (float)FC_NUM_WAVES * params->w_progress;
+        /* Scalar reward uses raw net required-work removed. The cave-progress
+         * delta stays normalized for observations/logs, while this channel pays
+         * for actual HP/work removed and goes negative when healing restores
+         * work. Multiplying by the wave's start work preserves the existing
+         * wave-clear handling and avoids treating the next wave spawn as
+         * negative progress. */
+        out.progress = net_work_removed * params->w_progress;
 
         runtime->last_required_work_remaining = work_remaining;
         runtime->last_current_wave_progress = wave_progress;
         runtime->last_cave_progress = cave_progress;
         runtime->last_progress_delta = progress_delta;
         runtime->last_progress_reward = out.progress;
-        runtime->last_net_required_work_removed =
-            progress_delta * (float)FC_NUM_WAVES *
-            ((start_work > 0.0f) ? start_work : 0.0f);
+        runtime->last_net_required_work_removed = net_work_removed;
 
-        if (progress_delta > 0.00001f) {
+        if (net_work_removed > 0.0001f) {
             runtime->ticks_since_positive_progress = 0;
             runtime->positive_progress_ticks++;
         } else {
             runtime->ticks_since_positive_progress++;
-            if (progress_delta < -0.00001f) {
+            if (net_work_removed < -0.0001f) {
                 runtime->negative_progress_ticks++;
             } else {
                 runtime->zero_progress_ticks++;
@@ -398,6 +414,7 @@ static inline FcRewardBreakdown fc_reward_compute_breakdown(
         out.correct_danger_prayer =
             out.raw[FC_RWD_CORRECT_DANGER_PRAY] * params->w_correct_danger_prayer;
     }
+    out.prayer_lost = out.raw[FC_RWD_PRAYER_LOST] * params->w_prayer_lost;
     if (p->prayer != PRAYER_NONE && !out.threat_ctx.any_threat) {
         out.unnecessary_prayer = params->shape_unnecessary_prayer_penalty;
     }
@@ -411,6 +428,18 @@ static inline FcRewardBreakdown fc_reward_compute_breakdown(
         runtime->ticks_since_attack++;
     } else if (state->npcs_remaining <= 0) {
         runtime->ticks_since_attack = 0;
+    }
+
+    if (params->shape_no_attack_start > 0 &&
+        params->shape_no_attack_base_penalty != 0.0f &&
+        state->npcs_remaining > 0 &&
+        runtime->ticks_since_attack > params->shape_no_attack_start) {
+        float wave = (float)state->current_wave;
+        if (wave < 1.0f) wave = 1.0f;
+        float multiplier = 1.0f +
+            params->shape_no_attack_wave_scale * (wave - 1.0f);
+        if (multiplier < 0.0f) multiplier = 0.0f;
+        out.no_attack = params->shape_no_attack_base_penalty * multiplier;
     }
 
     /* Wave-stall penalty — timer-based, fires every tick past the threshold
@@ -469,9 +498,11 @@ static inline FcRewardBreakdown fc_reward_compute_breakdown(
         out.player_death +
         out.correct_jad_prayer +
         out.correct_danger_prayer +
+        out.prayer_lost +
         out.unnecessary_prayer +
         out.wave_stall +
         out.no_progress +
+        out.no_attack +
         out.jad_heal +
         out.npc_heal +
         out.invalid_action +

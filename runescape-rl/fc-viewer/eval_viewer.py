@@ -92,7 +92,7 @@ def resolve_macro(name, raw_defs, values):
     return values[name]
 
 
-def parse_header_constants(path, names, base_values=None):
+def parse_header_definitions(path):
     with open(path, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
@@ -107,66 +107,114 @@ def parse_header_constants(path, names, base_values=None):
         if body:
             raw_defs[name] = body
 
+    return raw_defs
+
+
+def parse_header_constants(path, names, base_values=None):
+    raw_defs = parse_header_definitions(path)
     values = dict(base_values or {})
     for name in names:
         values[name] = resolve_macro(name, raw_defs, values)
     return values
 
 
+def resolve_macro_list(name, raw_defs, values):
+    if name not in raw_defs:
+        raise RuntimeError(f"Missing macro definition: {name}")
+
+    body = raw_defs[name].strip()
+    if not (body.startswith("{") and body.endswith("}")):
+        raise RuntimeError(f"Expected {name} to be a brace-list macro, got: {body}")
+
+    items = []
+    for item in body[1:-1].split(","):
+        item = item.strip()
+        if item:
+            items.append(_safe_eval_macro(item, raw_defs, values))
+    return items
+
+
 def load_contract_dims():
     repo = repo_root()
     shared_header = os.path.join(repo, "fc-core", "include", "fc_contracts.h")
-    fight_caves_header = os.path.join(repo, "fc-training", "fight_caves.h")
 
-    names = [
-        "FC_POLICY_OBS_SIZE",
-        "FC_MOVE_DIM",
-        "FC_ATTACK_DIM",
-        "FC_PRAYER_DIM",
-        "FC_EAT_DIM",
-        "FC_DRINK_DIM",
-    ]
-    training_dims = parse_header_constants(shared_header, names)
+    raw_defs = parse_header_definitions(shared_header)
+    values = {}
+    training_dims = {
+        "FC_POLICY_OBS_SIZE": resolve_macro("FC_POLICY_OBS_SIZE", raw_defs, values),
+        "FC_PUFFER_OBS_SIZE": resolve_macro("FC_PUFFER_OBS_SIZE", raw_defs, values),
+        "FC_PUFFER_NUM_ATNS": resolve_macro("FC_PUFFER_NUM_ATNS", raw_defs, values),
+    }
+    act_dims = resolve_macro_list("FC_PUFFER_ACT_SIZES", raw_defs, values)
+    if len(act_dims) != training_dims["FC_PUFFER_NUM_ATNS"]:
+        raise RuntimeError(
+            f"Puffer action dim mismatch: FC_PUFFER_ACT_SIZES has {len(act_dims)} heads, "
+            f"FC_PUFFER_NUM_ATNS expects {training_dims['FC_PUFFER_NUM_ATNS']}"
+        )
+    mask_size = sum(act_dims)
+    total_line_floats = training_dims["FC_POLICY_OBS_SIZE"] + mask_size
 
-    puffer_dims = parse_header_constants(
-        fight_caves_header, ["FC_PUFFER_OBS_SIZE"], base_values=training_dims
-    )
-    act_dims = [
-        training_dims["FC_MOVE_DIM"],
-        training_dims["FC_ATTACK_DIM"],
-        training_dims["FC_PRAYER_DIM"],
-        training_dims["FC_EAT_DIM"],
-        training_dims["FC_DRINK_DIM"],
-    ]
-    mask_5head_size = sum(act_dims)
-    total_line_floats = training_dims["FC_POLICY_OBS_SIZE"] + mask_5head_size
-
-    if total_line_floats != puffer_dims["FC_PUFFER_OBS_SIZE"]:
+    if total_line_floats != training_dims["FC_PUFFER_OBS_SIZE"]:
         raise RuntimeError(
             f"Puffer obs mismatch: viewer line has {total_line_floats} floats, "
-            f"training header expects {puffer_dims['FC_PUFFER_OBS_SIZE']}"
+            f"training header expects {training_dims['FC_PUFFER_OBS_SIZE']}"
         )
 
-    return training_dims["FC_POLICY_OBS_SIZE"], act_dims, mask_5head_size, total_line_floats
+    return training_dims["FC_POLICY_OBS_SIZE"], act_dims, mask_size, total_line_floats
+
+
+def latest_source_mtime():
+    repo = repo_root()
+    patterns = [
+        os.path.join(repo, "fc-core", "include", "*.h"),
+        os.path.join(repo, "fc-core", "src", "*.c"),
+        os.path.join(repo, "fc-viewer", "src", "*.h"),
+        os.path.join(repo, "fc-viewer", "src", "*.c"),
+    ]
+    files = []
+    for pattern in patterns:
+        files.extend(glob.glob(pattern))
+    return max((os.path.getmtime(path) for path in files), default=0.0)
 
 
 def find_viewer():
     """Find the fc_viewer binary."""
+    override = os.environ.get("FC_VIEWER_PATH")
+    if override:
+        if os.path.isfile(override):
+            return override
+        raise RuntimeError(f"FC_VIEWER_PATH does not point to a file: {override}")
+
     repo = repo_root()
-    candidates = [
-        "build/fc-viewer/fc_viewer",
-        "../build/fc-viewer/fc_viewer",
-        "fc-viewer/build/fc_viewer",
+    source_mtime = latest_source_mtime()
+    preferred = [
+        os.path.join(repo, "build", "fc-viewer", "fc_viewer"),
+        os.path.join(repo, "build-phase2", "fc-viewer", "fc_viewer"),
+        os.path.join(repo, "fc-viewer", "build", "fc_viewer"),
     ]
-    for p in candidates:
-        if os.path.isfile(p):
-            return p
-    # Try from repo root
-    for p in candidates:
-        fp = os.path.join(repo, p)
-        if os.path.isfile(fp):
-            return fp
-    return None
+    candidates = [path for path in preferred if os.path.isfile(path)]
+
+    patterns = [
+        os.path.join(repo, "build*", "fc-viewer", "fc_viewer"),
+    ]
+    for pattern in patterns:
+        candidates.extend(glob.glob(pattern))
+    candidates = [path for path in candidates if os.path.isfile(path)]
+    if not candidates:
+        return None
+
+    seen = set()
+    unique = []
+    for path in candidates:
+        if path in seen:
+            continue
+        seen.add(path)
+        unique.append(path)
+
+    for path in unique:
+        if os.path.getmtime(path) >= source_mtime:
+            return path
+    return max(unique, key=os.path.getmtime)
 
 
 def find_latest_checkpoint(env_name="fight_caves"):
@@ -194,7 +242,7 @@ def read_obs_line(proc, total_line_floats):
 
 
 def send_actions(proc, actions):
-    """Write 5 space-separated ints to viewer stdin."""
+    """Write one action per Puffer action head to viewer stdin."""
     line = " ".join(str(int(a)) for a in actions) + "\n"
     proc.stdin.write(line)
     proc.stdin.flush()
@@ -248,7 +296,7 @@ def main():
     sys.argv = [sys.argv[0]]
     ensure_local_pufferlib_on_path()
 
-    policy_obs_size, act_dims, mask_5head_size, total_line_floats = load_contract_dims()
+    policy_obs_size, act_dims, mask_size, total_line_floats = load_contract_dims()
 
     # Find viewer binary
     viewer_path = find_viewer()
@@ -256,12 +304,22 @@ def main():
         print("Error: fc_viewer binary not found. Build with: cmake --build build",
               file=sys.stderr)
         sys.exit(1)
+    if os.path.getmtime(viewer_path) < latest_source_mtime():
+        print(
+            f"Error: selected fc_viewer is older than current core/viewer sources: {viewer_path}",
+            file=sys.stderr,
+        )
+        print(
+            "Rebuild it first, e.g. cmake --build runescape-rl/build-phase2 --target fc_viewer -j2",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     print(f"[eval] Viewer: {viewer_path}", file=sys.stderr)
     print(f"[eval] Replay speed: {args.speed}x", file=sys.stderr)
     if args.episodes > 0:
         print(f"[eval] Episode limit: {args.episodes}", file=sys.stderr)
     print(
-        f"[eval] Contract: policy_obs={policy_obs_size} mask5={mask_5head_size} total={total_line_floats}",
+        f"[eval] Contract: policy_obs={policy_obs_size} mask={mask_size} heads={len(act_dims)} total={total_line_floats}",
         file=sys.stderr,
     )
 
@@ -409,7 +467,7 @@ def main():
                 actions = sample_masked(
                     [np.zeros(d) for d in act_dims], mask, act_dims, deterministic=False)
             else:
-                # Policy inference — feed full puffer observation (policy obs + 5-head mask)
+                # Policy inference: feed the same Puffer observation used in training.
                 import torch
                 with torch.no_grad():
                     full_input = torch.from_numpy(obs_data).unsqueeze(0)

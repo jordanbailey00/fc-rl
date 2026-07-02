@@ -811,13 +811,16 @@ static void reward_params_apply_key(FcRewardParams* params,
                                     const char* key,
                                     const char* value) {
     if (strcmp(key, "w_damage_dealt") == 0) params->w_damage_dealt = strtof(value, NULL);
+    else if (strcmp(key, "w_progress") == 0) params->w_progress = strtof(value, NULL);
     else if (strcmp(key, "w_damage_taken") == 0) params->w_damage_taken = strtof(value, NULL);
     else if (strcmp(key, "w_npc_kill") == 0) params->w_npc_kill = strtof(value, NULL);
     else if (strcmp(key, "w_wave_clear") == 0) params->w_wave_clear = strtof(value, NULL);
     else if (strcmp(key, "w_jad_kill") == 0) params->w_jad_kill = strtof(value, NULL);
+    else if (strcmp(key, "w_cave_complete") == 0) params->w_cave_complete = strtof(value, NULL);
     else if (strcmp(key, "w_player_death") == 0) params->w_player_death = strtof(value, NULL);
     else if (strcmp(key, "w_correct_jad_prayer") == 0) params->w_correct_jad_prayer = strtof(value, NULL);
     else if (strcmp(key, "w_correct_danger_prayer") == 0) params->w_correct_danger_prayer = strtof(value, NULL);
+    else if (strcmp(key, "w_prayer_lost") == 0) params->w_prayer_lost = strtof(value, NULL);
     else if (strcmp(key, "w_invalid_action") == 0) params->w_invalid_action = strtof(value, NULL);
     else if (strcmp(key, "w_tick_penalty") == 0) params->w_tick_penalty = strtof(value, NULL);
     else if (strcmp(key, "shape_unnecessary_prayer_penalty") == 0) params->shape_unnecessary_prayer_penalty = strtof(value, NULL);
@@ -826,6 +829,16 @@ static void reward_params_apply_key(FcRewardParams* params,
     else if (strcmp(key, "shape_wave_stall_start") == 0) params->shape_wave_stall_start = (int)strtol(value, NULL, 10);
     else if (strcmp(key, "shape_wave_stall_ramp_interval") == 0) params->shape_wave_stall_ramp_interval = (int)strtol(value, NULL, 10);
     else if (strcmp(key, "shape_jad_heal_penalty") == 0) params->shape_jad_heal_penalty = strtof(value, NULL);
+    else if (strcmp(key, "shape_npc_heal_penalty") == 0) params->shape_npc_heal_penalty = strtof(value, NULL);
+    else if (strcmp(key, "shape_no_progress_penalty_1") == 0) params->shape_no_progress_penalty_1 = strtof(value, NULL);
+    else if (strcmp(key, "shape_no_progress_penalty_2") == 0) params->shape_no_progress_penalty_2 = strtof(value, NULL);
+    else if (strcmp(key, "shape_no_progress_penalty_3") == 0) params->shape_no_progress_penalty_3 = strtof(value, NULL);
+    else if (strcmp(key, "shape_no_attack_base_penalty") == 0) params->shape_no_attack_base_penalty = strtof(value, NULL);
+    else if (strcmp(key, "shape_no_attack_wave_scale") == 0) params->shape_no_attack_wave_scale = strtof(value, NULL);
+    else if (strcmp(key, "shape_no_progress_start_1") == 0) params->shape_no_progress_start_1 = (int)strtol(value, NULL, 10);
+    else if (strcmp(key, "shape_no_progress_start_2") == 0) params->shape_no_progress_start_2 = (int)strtol(value, NULL, 10);
+    else if (strcmp(key, "shape_no_progress_start_3") == 0) params->shape_no_progress_start_3 = (int)strtol(value, NULL, 10);
+    else if (strcmp(key, "shape_no_attack_start") == 0) params->shape_no_attack_start = (int)strtol(value, NULL, 10);
 }
 
 static void obs_ablation_apply_key(ViewerState* v,
@@ -860,8 +873,8 @@ static void apply_initial_supplies(ViewerState* v) {
 
 static void load_reward_params(ViewerState* v) {
     v->reward_params = fc_reward_default_params();
-    v->initial_sharks = FC_MAX_SHARKS;
-    v->initial_prayer_doses = FC_MAX_PRAYER_DOSES;
+    v->initial_sharks = 0;
+    v->initial_prayer_doses = 0;
     v->obs_ablate_npc_distance = 0;
     v->obs_ablate_incoming_aggregates = 0;
     v->obs_ablate_npc_valid = 0;
@@ -928,6 +941,7 @@ static void update_reward_breakdown(ViewerState* v) {
     if (v->reward_breakdown_tick == v->state.tick) return;
     v->reward_breakdown = fc_reward_compute_breakdown(
         &v->state, &v->reward_params, &v->reward_runtime);
+    fc_reward_sync_progress_state(&v->state, &v->reward_runtime);
     v->reward_breakdown_tick = v->state.tick;
 }
 
@@ -1165,8 +1179,8 @@ static void reset_ep(ViewerState* v) {
         v->state.player.current_prayer = v->state.player.max_prayer;
     }
     apply_initial_supplies(v);
+    fc_reward_runtime_begin_episode(&v->reward_runtime, &v->state);
     fc_fill_render_entities(&v->state, v->entities, &v->entity_count);
-    update_reward_breakdown(v);
     v->last_hash = fc_state_hash(&v->state);
     v->episode_count++;
     v->attack_target = -1;
@@ -1215,8 +1229,8 @@ static void viewer_jump_to_wave(ViewerState* v, int wave) {
     v->state.terminal = TERMINAL_NONE;
     v->state.jad_healers_spawned = 0;
     reset_reward_tracking(v);
+    fc_reward_runtime_begin_episode(&v->reward_runtime, &v->state);
     fc_fill_render_entities(&v->state, v->entities, &v->entity_count);
-    update_reward_breakdown(v);
     memset(v->hitsplats, 0, sizeof(v->hitsplats));
     clear_visuals(v);
     v->attack_target = -1;
@@ -1688,17 +1702,18 @@ static void draw_test_overlay(ViewerState* v) {
 /* ======================================================================== */
 
 static int read_policy_actions(ViewerState* v) {
-    int a[5];
-    if (scanf("%d %d %d %d %d", &a[0], &a[1], &a[2], &a[3], &a[4]) != 5)
-        return 0;
-    for (int i = 0; i < 5; i++) v->actions[i] = a[i];
-    v->actions[5] = 0;
-    v->actions[6] = 0;
+    for (int i = 0; i < FC_PUFFER_NUM_ATNS; i++) {
+        int action;
+        if (scanf("%d", &action) != 1)
+            return 0;
+        v->actions[i] = action;
+    }
+    for (int i = FC_PUFFER_NUM_ATNS; i < FC_NUM_ACTION_HEADS; i++) v->actions[i] = 0;
     return 1;
 }
 
 static void write_obs_to_pipe(ViewerState* v) {
-    /* Write policy obs + 5-head action mask = FC_POLICY_OBS_SIZE + 36 floats */
+    /* Write the same policy obs + action mask contract used by Puffer training. */
     float obs_buf[FC_OBS_SIZE];
     fc_write_obs(&v->state, obs_buf);
     /* Mirror training-time obs ablation so the policy sees the distribution
@@ -1713,9 +1728,7 @@ static void write_obs_to_pipe(ViewerState* v) {
     /* Policy obs: first FC_POLICY_OBS_SIZE floats */
     for (int i = 0; i < FC_POLICY_OBS_SIZE; i++)
         printf("%.6f ", obs_buf[i]);
-    /* 5-head mask: first 36 floats (skip walk-to-tile heads) */
-    int mask5 = FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM + FC_EAT_DIM + FC_DRINK_DIM;
-    for (int i = 0; i < mask5; i++)
+    for (int i = 0; i < FC_PUFFER_MASK_SIZE; i++)
         printf("%.6f ", mask_buf[i]);
     printf("\n");
     fflush(stdout);
@@ -3346,24 +3359,7 @@ static void draw_panel(ViewerState* v) {
                 /* Click to jump */
                 if (hover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
                     int jump = w + 1;
-                    for (int i = 0; i < FC_MAX_NPCS; i++) {
-                        v->state.npcs[i].active = 0;
-                        v->state.npcs[i].is_dead = 0;
-                    }
-                    v->state.npcs_remaining = 0;
-                    v->state.current_wave = jump;
-                    fc_wave_spawn(&v->state, jump);
-                    v->state.player.current_hp = v->state.player.max_hp;
-                    v->state.player.current_prayer = v->state.player.max_prayer;
-                    v->state.terminal = TERMINAL_NONE;
-                    v->state.jad_healers_spawned = 0;
-                    reset_reward_tracking(v);
-                    fc_fill_render_entities(&v->state, v->entities, &v->entity_count);
-                    update_reward_breakdown(v);
-                    memset(v->hitsplats, 0, sizeof(v->hitsplats));
-                    clear_visuals(v);
-                    v->attack_target = -1;
-                    dbg_log_clear();
+                    viewer_jump_to_wave(v, jump);
                     dropdown_open = 0;
                 }
             }
@@ -3425,8 +3421,8 @@ static void draw_panel(ViewerState* v) {
                     p->defence_ranged = lo->def_ranged; p->prayer_bonus = lo->prayer_bonus;
                     p->ammo_count = lo->ammo;
                     apply_initial_supplies(v);
-                    v->reward_breakdown_tick = -1;
-                    update_reward_breakdown(v);
+                    reset_reward_tracking(v);
+                    fc_reward_runtime_begin_episode(&v->reward_runtime, &v->state);
                     loadout_open = 0;
                 }
             }

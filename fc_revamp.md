@@ -31,7 +31,11 @@ gets its own run id so comparisons stay one-change-at-a-time.
 | Step 2 | Net required-work progression reward | `8dvpjsfx` | 1.5B | Step 2 attempt, tested and rejected in current scaling. It removed direct damage farming, but the reward scale made shorter early-death episodes score better than longer partial clears. |
 | Step 2 | Net required-work progression with restored correct-prayer rewards and nonzero Jad-kill reward | `cfuyizo1` | 1.5B | Tested and rejected as the active path. It improved over pure net-progress, but correct-prayer reward dominated the objective and produced no-target/no-progress prayer farming. |
 | Step 2 | Post-`cfuyizo1` low-prayer reward retry | `50xy19bw` | 1.5B | Tested and rejected as the active path. Lowering correct-prayer reward stopped prayer reward domination, but wave/NPC progress regressed and no-target/no-progress behavior remained. |
-| Step 2 | Local current-wave progress scaling with low correct-prayer reward | `7fq4f7jf` | 1.5B | Current active Step 2 basis. It fixed most no-target/no-progress stalling versus `50xy19bw`, but final wave still trails the pre-revamp benchmark. |
+| Step 2 | Local current-wave progress scaling with low correct-prayer reward | `7fq4f7jf` | 1.5B | Tested. It fixed most no-target/no-progress stalling versus `50xy19bw`, but final wave still trails the pre-revamp benchmark. Superseded by the raw required-work progress pivot. |
+| Step 3 | Prayer decision deadline observations | `lws7w8yb` | 1.5B | Tested. Final wave improved over Step 2 local-progress, but no-target/no-progress and no-prayer hits worsened. Replay peak/final/stall checkpoints before Step 4. |
+| Step 3 follow-up | Prayer point loss penalty, `w_prayer_lost=-0.005` | `0gw22z0k` | 1.5B | Tested. Peak wave improved, but final policy regressed and the penalty saturated at about full-prayer depletion every episode. |
+| Step 2 pivot | Raw net required-work progress, `w_progress=0.001` | `n6nozx3q` | 1.5B | Tested. Final behavior was cleaner than `0gw22z0k`, but peak-depth behavior still showed no-target/no-progress stalling and final wave depth remained below benchmark. |
+| Step 2 follow-up | Stronger prayer conservation plus wave-scaled no-attack penalty | `mzqf7iml` | 1.5B | Tested. Large improvement over `n6nozx3q`: final wave reached `40.82`, no-progress/no-target rates stayed low, and the wave 20-30 wall was broken. Prayer is still heavily used and not truly conserved. |
 
 ## Current Step Order
 
@@ -49,13 +53,44 @@ gets its own run id so comparisons stay one-change-at-a-time.
      `w_correct_jad_prayer`.
    - The low-prayer retry was tested with run `50xy19bw` and rejected as the
      active path.
-   - Current retry is still Step 2: make net progress use local current-wave
-     reward scaling so wave progress is valuable enough without increasing the
-     low correct-prayer reward.
-3. Step 3: expose prayer decision deadline observations.
-4. Step 4: hard-apply action masks safely.
-5. Step 5: give the policy cleaner control over target persistence and
-   auto-pathing.
+   - Current retry is still Step 2: raw net required-work progress:
+     `progress_reward = net_required_work_removed * 0.001`.
+     This keeps single-hit rewards small while making later high-work waves
+     worth more total reward than early waves.
+  - Latest tested retry added stronger prayer conservation with
+    `w_prayer_lost=-0.02` and a wave-scaled no-attack penalty after 50
+    attack-ready ticks without firing. Run `mzqf7iml` was strongly positive.
+3. Step 3: expose prayer decision deadline observations. Tested with run
+   `lws7w8yb`; replay selected checkpoints before Step 4.
+   - Follow-up prayer point loss penalty tested with run `0gw22z0k`.
+     It did not produce reliable prayer conservation; the penalty saturated at
+     roughly `-0.495`, meaning the policy still spent about the full 99 prayer
+     points per episode.
+3. Step 3: expose prayer decision deadline observations. Tested with run
+   `lws7w8yb`; current observation contract includes these fields.
+
+## Backlog / Not Prioritized Now
+
+- Hard-apply action masks safely.
+  - Reason for backlog: invalid actions are now rare in `mzqf7iml`.
+  - Final `rwd_invalid_action_total=-0.077`, roughly `0.77` invalid actions per
+    `4451` tick episode, or about `0.017%` of ticks.
+  - This is still useful cleanup later because it can remove invalid-action
+    reward noise, but it is not expected to drive the next major training gain.
+- Improve target persistence / auto-pathing control.
+  - Reason for backlog: `mzqf7iml` largely fixed the old no-target/no-attack wall.
+  - Final `target_held_ticks=93.5%`, `target_in_range_los_ticks=91.4%`,
+    `target_out_of_range_or_los_ticks=2.1%`, `attack_when_ready_rate=0.939`,
+    and `rwd_no_attack_total=-0.0005`.
+  - Revisit this only if viewer replays around waves 40+ show clear movement,
+    target switching, or pathing failure.
+
+## Current Priority
+
+- Inspect/replay `mzqf7iml` and focus on prayer behavior quality/conservation.
+- The remaining visible issue is that the policy still commands prayer on about
+  `95%` of ticks and loses about `90` prayer points per episode, even though
+  survival and wave progress improved substantially.
 
 ## Step 2 Attempt: Replace Per-Hit Reward With NPC Kill Reward
 
@@ -337,9 +372,10 @@ Implementation checklist:
 8. Training trial setup.
    - Use the same no-supplies Tbow SOTA loadout as the benchmark.
    - Use the same hparams as the pre-revamp benchmark unless explicitly changed.
-   - Use the active local-progress reward version name:
-     `fight_caves_v38_fc_revamp_step2_local_progress_low_prayer`.
-   - Use a new observation version name that includes progress observations.
+   - Use the active raw-work-progress reward version name:
+     `fight_caves_v38_fc_revamp_step2_raw_work_progress_low_prayer_prayer_loss`.
+   - Keep the current v5 observation version with NPC type, progress, and
+     prayer-deadline observations.
    - Compare the run against pre-revamp benchmark `9lqts4k1`, step 1
      `ql0yis9k`, and rejected kill-only step 2 `eifkgdut`.
    - Primary success checks: higher wave reached, higher NPCs slain, lower
@@ -355,7 +391,7 @@ Implementation notes:
 - Added scalar reward channels for `progress`, `no_progress`, and
   `cave_complete`.
 - Active configs now use:
-  - `w_progress=1.0`
+  - `w_progress=0.001`
   - `w_damage_taken=-0.25`
   - `w_tick_penalty=-0.0001`
   - `w_cave_complete=1.0`
@@ -369,12 +405,13 @@ Implementation notes:
   - normalized current-wave progress
   - normalized required-work remaining
   - normalized ticks since positive progress
-- Observation contract version changed to
-  `fight_caves_puffer_policy_obs_v4_npc_type_progress_mask_heads_0_2_no_supplies`.
-- Puffer-facing observation size changed from 217 to 221 floats.
+- Observation contract later changed to
+  `fight_caves_puffer_policy_obs_v5_npc_type_progress_prayer_deadline_mask_heads_0_2_no_supplies`.
+- Current Puffer-facing line total is 240 floats: 209 policy obs plus 31
+  action-mask floats.
 - Initial reward version was `fight_caves_v38_fc_revamp_step2_net_progress`;
-  active retry reward version is
-  `fight_caves_v38_fc_revamp_step2_local_progress_low_prayer`.
+  active retry reward version is now
+  `fight_caves_v38_fc_revamp_step2_raw_work_progress_low_prayer_prayer_loss`.
 - Added progress diagnostics for required work, progress delta/reward,
   positive/zero/negative progress ticks, gross damage, net required-work
   removed, healing totals, and preclip/postclip reward counts.
@@ -585,11 +622,158 @@ Training result:
   - The run peaked near benchmark around `1.374B` steps, then settled lower by
     the final checkpoint, so late-training stability is still a concern.
 - Decision:
-  - Keep local current-wave progress scaling as the active Step 2 reward basis.
-  - Do not revert to global cave-progress scaling.
-  - The next bottleneck is no longer the severe no-target/no-progress stall.
-    The next likely work is improving survival/prayer actionability and then
-    target/action control if it remains a measurable issue.
+  - Superseded 2026-06-29 after the `0gw22z0k` analysis and review of similar
+    PufferLib Ocean environments.
+  - Do not return to global cave-progress scaling from `8dvpjsfx`; it made
+    shorter early-death episodes too competitive.
+  - Do not keep equal full-wave reward for every wave as the final Step 2 shape;
+    it makes later, higher-work waves much less valuable per unit of combat
+    work.
+  - Current Step 2 pivot is raw net required-work progress.
+
+Raw required-work progress retry:
+
+- Status: Tested 2026-07-01 with run `n6nozx3q`.
+- Replace local current-wave progress reward with raw work removed:
+  - `net_required_work_removed = progress_delta * 63 * required_work_at_wave_start`
+  - `progress_reward = net_required_work_removed * w_progress`
+  - current `w_progress = 0.001`
+- Keep `progress_delta` cave-normalized for continuity in logs and observations.
+- Keep the existing wave-clear reset behavior so spawning the next wave is not
+  counted as negative progress.
+- Scaling examples:
+  - 30 backend work units removed: `30 * 0.001 = +0.03`
+  - 100 backend work units removed: `100 * 0.001 = +0.10`
+  - full Tz-Kih wave: `100 * 0.001 = +0.10`
+  - wave 28 required work around `2000`: about `+2.0`
+  - Jad HP `2500`: about `+2.5` before cave-complete reward
+  - 100 backend work units healed by Yt-MejKot: `-0.10`
+- Mathematical reason:
+  - Previous local-progress reward made each full wave about `+1`, regardless of
+    required work.
+  - That made later waves much less rewarding per HP/work than early waves.
+  - Raw-work progress keeps per-hit rewards small, but naturally makes harder
+    high-HP waves worth more total reward.
+- Reward version:
+  `fight_caves_v38_fc_revamp_step2_raw_work_progress_low_prayer_prayer_loss`.
+- Primary comparison target remains `0gw22z0k` for the prayer-loss follow-up and
+  `9lqts4k1` for the pre-revamp benchmark.
+
+Training result:
+
+- W&B run id: `n6nozx3q`.
+- Compared with prayer-loss follow-up `0gw22z0k`, final policy behavior was
+  cleaner:
+  - Final `wave_reached`: `22.84` to `23.60`.
+  - Final `npcs_slayed`: `83.67` to `88.21`.
+  - Final no-target rate: `27.5%` to `9.3%`.
+  - Final no-progress rate: `29.9%` to `10.2%`.
+  - Final `attack_when_ready_rate`: `0.681` to `0.878`.
+  - Final active-prayer accuracy: `66.7%` to `82.5%`.
+  - Final `wrong_prayer_hits`: `52.6` to `25.0`.
+- It did not beat the pre-revamp benchmark `9lqts4k1`:
+  - Final `wave_reached`: `28.04` benchmark vs `23.60`.
+  - Final `npcs_slayed`: `107.45` benchmark vs `88.21`.
+  - Final no-target rate: `0.55%` benchmark vs `9.3%`.
+  - Final active-prayer accuracy: `99.8%` benchmark vs `82.5%`.
+- Peak sampled wave was `27.53` at about `1.409B` steps, but that row was not a
+  clean policy:
+  - no-target rate `41.7%`
+  - no-progress rate `33.9%`
+  - `attack_when_ready_rate=0.366`
+  - `rwd_no_progress_total=-2.97`
+- The best saved checkpoint for balanced behavior appears earlier than the
+  peak-depth checkpoint:
+  - `0000000787480576.bin`: `wave_reached=24.62`, no-target rate `9.0%`,
+    no-progress rate `8.0%`, `attack_when_ready_rate=0.859`.
+  - `0000001416626176.bin`: highest saved-depth checkpoint, but no-target rate
+    `42.8%` and no-progress rate `31.2%`.
+  - `0000001499463680.bin`: final checkpoint, `wave_reached=23.60`, no-target
+    rate `9.3%`, no-progress rate `10.2%`.
+- Prayer resource conservation is still not learned:
+  - Final `rwd_prayer_lost_total=-0.495`, again indicating near-full prayer
+    depletion per episode.
+- Decision:
+  - Keep this result as a cleaner Step 2 variant, but do not treat it as a
+    breakthrough.
+  - The reward scale is not clipping or overpowering; the remaining measurable
+    failure is still target/no-target control around the wave 20-30 section.
+  - Before hard-applying action masks, run one targeted follow-up that makes
+    prayer loss more expensive and makes no-attack stalling costly enough to
+    compete with banked progress.
+
+Current follow-up implementation:
+
+- Reward version:
+  `fight_caves_v38_fc_revamp_step2_raw_work_progress_prayer_conserve_no_attack`.
+- Prayer conservation:
+  - `w_prayer_lost=-0.02`, charged per prayer point lost.
+  - Full 99-prayer depletion is now about `-1.98` instead of `-0.495`.
+  - This is intended to stop correct-prayer reward from canceling the resource
+    cost.
+- No-attack penalty:
+  - `shape_no_attack_start=50`.
+  - `shape_no_attack_base_penalty=-0.005`.
+  - `shape_no_attack_wave_scale=0.05`.
+  - Fires every tick after the reward runtime has seen more than 50 attack-ready
+    ticks without a valid attack attempt while NPCs remain.
+  - Per-tick formula:
+    `shape_no_attack_base_penalty * (1 + shape_no_attack_wave_scale * (current_wave - 1))`.
+  - Examples:
+    - wave 1: `-0.005` per tick after threshold
+    - wave 25: about `-0.011` per tick after threshold
+    - wave 63: about `-0.0205` per tick after threshold
+- Validation metrics for the next run:
+  - `rwd_prayer_lost_total`
+  - `rwd_no_attack_total`
+  - `action_attack_none_ticks`
+  - `action_attack_target_ticks`
+  - `attack_when_ready_rate`
+  - `no_target_ticks`
+  - `no_progress_ticks`
+
+Training result:
+
+- W&B run id: `mzqf7iml`.
+- Compared against raw-work baseline `n6nozx3q`.
+- Major improvement:
+  - Final `wave_reached`: `23.60` to `40.82`.
+  - Final `npcs_slayed`: `88.21` to `160.13`.
+  - Final `postclip_reward`: `18.85` to `54.71`.
+  - Final `rwd_progress_total`: `20.82` to `53.44`.
+  - Final Ket-Zek damage: `76.75` to `19549.69`, meaning the policy is now
+    actually fighting into Ket-Zek wave content instead of stopping near wave 25.
+- Stalling improved substantially:
+  - Final no-target rate: `9.3%` to `6.5%`.
+  - Final no-progress rate: `10.2%` to `4.5%`.
+  - Final `attack_when_ready_rate`: `0.878` to `0.939`.
+  - Final `max_wave_ticks`: `224.05` to `250.61`; still controlled and nowhere
+    near the old 1000+ tick stall rows.
+  - Final `rwd_no_attack_total=-0.000468`, so the final policy rarely crosses
+    the 50 attack-ready tick no-attack threshold.
+- Prayer behavior improved for survival but not true conservation:
+  - Final `rwd_prayer_lost_total=-1.80`, equivalent to about `90.2` prayer
+    points lost with `w_prayer_lost=-0.02`.
+  - This is better than full depletion, but still most of the 99 prayer pool.
+  - Final correct non-Jad prayer reward increased to `+5.63`, because the policy
+    blocks far more dangerous hits.
+  - Active-prayer accuracy improved from about `82.5%` to `87.3%`.
+  - No-prayer hit share improved from about `70.6%` to `17.0%`.
+  - Prayer command rate is still extremely high at about `95.1%` of ticks, so
+    this policy is still not cleanly conserving prayer; it is aggressively
+    managing/flicking/switching prayer.
+- Peak sampled behavior:
+  - Peak `wave_reached=42.76` around `1.332B` steps.
+  - Peak postclip reward row reached `58.77` around `1.423B` steps.
+  - Clean high saved checkpoint is around `0000001364197376.bin`
+    (`wave_reached=41.66`, no-target `6.3%`, no-progress `4.1%`,
+    `attack_when_ready_rate=0.933`).
+- Decision:
+  - Keep this change as a strong positive Step 2 result.
+  - The no-attack penalty appears to have removed the worst no-attack stall
+    behavior without dominating the final reward.
+  - The remaining issue is prayer policy quality/conservation, not the old
+    wave 20-30 no-target wall.
 
 Expected benefit:
 
@@ -716,7 +900,7 @@ Risk:
 
 ## Step 3: Expose Prayer Decision Deadline
 
-Status: Not started
+Status: Tested 2026-06-28 with run `lws7w8yb`
 
 Current issue:
 
@@ -728,6 +912,122 @@ Proposed change:
 
 - Add observation features that expose prayer decision deadline information.
 - Keep this as observation state, not reward logic.
+
+Implementation notes:
+
+- Added three player-level style deadline urgency fields:
+  - `FC_OBS_PLAYER_PRAY_DDL_MEL`
+  - `FC_OBS_PLAYER_PRAY_DDL_RNG`
+  - `FC_OBS_PLAYER_PRAY_DDL_MAG`
+- Added two per-visible-NPC pending-hit fields:
+  - `FC_NPC_PENDING_PRAYER_WINDOW`: `1` if the pending hit's prayer snapshot
+    has not locked yet, meaning the current prayer action can still affect it.
+  - `FC_NPC_PENDING_PRAYER_DEADLINE`: urgency until prayer lock. `1.0` means
+    the policy must act on the current decision; `0.0` means no actionable
+    prayer window for that pending hit.
+- Deadline obs are derived from existing pending-hit backend state:
+  `prayer_snapshot` and `prayer_lock_tick`.
+- Already-locked normal NPC hits still expose pending impact style/timing, but
+  do not expose an actionable prayer window.
+- Jad ranged/magic pending hits expose the delayed prayer-lock window that the
+  policy can still act on.
+- No reward weights, reward logic, combat mechanics, action heads, or action
+  masks were changed.
+- Observation contract changed to
+  `fight_caves_puffer_policy_obs_v5_npc_type_progress_prayer_deadline_mask_heads_0_2_no_supplies`.
+- Policy observation size changed from `190` to `209` floats.
+- Puffer-facing observation size changed from `221` to `240` floats.
+- Debug overlay now displays player prayer-deadline urgency and per-NPC pending
+  prayer window/deadline values.
+- Added guardrail test `step3_prayer_deadline_observation_fields`, which proves:
+  - an actionable delayed-lock Jad ranged hit exposes style deadline urgency and
+    per-NPC prayer window fields;
+  - an already-locked pending hit still exposes impact style/timing but does not
+    expose a prayer action window.
+
+Validation:
+
+- `cmake --build runescape-rl/build-phase2 --target phase2_guardrails_core phase2_guardrails_training fc_viewer -j2`
+- `ctest --test-dir runescape-rl/build-phase2 --output-on-failure`
+- Result: 21/21 tests passed.
+- Short `1,048,576`-step `--no-wandb` GPU smoke with
+  `FORCE_BACKEND_REBUILD=1` passed after rebuilding the native backend.
+
+Training result:
+
+- W&B run id: `lws7w8yb`.
+- Compared against Step 2 local-progress run `7fq4f7jf`, final wave depth
+  improved:
+  - Final `wave_reached`: `22.99` to `24.54`.
+  - Final `npcs_slayed`: `84.61` to `91.65`.
+  - Final `rwd_progress_total`: `22.40` to `24.02`.
+  - Final `postclip_reward`: `20.93` to `22.14`.
+- Prayer behavior was mixed:
+  - Final `wrong_prayer_hits`: `36.28` to `28.49`, which improved.
+  - Final `no_prayer_hits`: `298.8` to `326.7`, which worsened.
+  - Final `correct_prayer`: `139.3` to `116.3`.
+  - Final `prayer_switches`: `160.1` to `77.9`.
+- Targeting and progress behavior regressed versus Step 2:
+  - Final no-target rate: `14.2%` to `27.9%`.
+  - Final no-progress rate: `20.4%` to `30.2%`.
+  - Final `attack_when_ready_rate`: `0.80` to `0.66`.
+  - Final attack-target action rate: `50.4%` to `43.2%`.
+- Peak checkpoint was closer to benchmark than the final policy:
+  - Peak `wave_reached=28.16` at `1.138B` sampled steps.
+  - Peak `npcs_slayed=106.43`, `postclip_reward=25.37`,
+    no-target rate `33.4%`, no-progress rate `33.6%`, and
+    `attack_when_ready_rate=0.48`.
+- Remaining behavior to inspect visually:
+  - Is the policy waiting with no target when visible NPCs exist?
+  - Is it overusing prayer commands without switching to useful prayers?
+  - Are no-prayer hits coming from missed deadline windows, prayer off, or
+    prayer being switched too rarely?
+  - Is it losing target after wave transitions or around Yt-MejKot/Tok-Xil
+    pressure?
+- Replay checkpoints:
+  - Peak/nearest-to-best sampled row:
+    `pufferlib_4/checkpoints/fight_caves/lws7w8yb/0000001154482176.bin`.
+  - Final logged checkpoint:
+    `pufferlib_4/checkpoints/fight_caves/lws7w8yb/0000001499463680.bin`.
+  - High no-progress/no-target checkpoint:
+    `pufferlib_4/checkpoints/fight_caves/lws7w8yb/0000000315621376.bin`.
+- Decision:
+  - Do not proceed directly to Step 4 until these checkpoints have been watched.
+  - Step 3 may have improved some prayer correctness, but it also appears to
+    have made the policy less aggressive about target/attack actions.
+
+Prayer point loss follow-up:
+
+- W&B run id: `0gw22z0k`.
+- Change from `lws7w8yb`: added `w_prayer_lost=-0.005`, charged per prayer
+  point lost from overhead drain or Tz-Kih drain.
+- Peak behavior improved on wave depth:
+  - Peak `wave_reached`: `28.16` in `lws7w8yb` to `28.78` in `0gw22z0k`.
+  - Peak `npcs_slayed`: `106.43` to `109.08`.
+  - Peak happened around `1.082B` sampled steps.
+- Final behavior regressed:
+  - Final `wave_reached`: `24.54` to `22.84`.
+  - Final `npcs_slayed`: `91.65` to `83.67`.
+  - Final `postclip_reward`: `22.14` to `19.84`.
+- The prayer-loss reward saturated almost immediately:
+  - Final `rwd_prayer_lost_total=-0.495`.
+  - Since the penalty is `-0.005` per prayer point, this means the policy still
+    loses about 99 prayer points per episode.
+  - The full-history log first reached about full-prayer depletion by roughly
+    `4.2M` sampled steps, so the penalty became a near-fixed episode tax rather
+    than a learned conservation signal.
+- Prayer quality worsened by the final policy:
+  - Final `correct_prayer`: `116.3` to `105.2`.
+  - Final `wrong_prayer_hits`: `28.5` to `52.6`.
+  - Final `no_prayer_hits`: `326.7` to `359.4`.
+  - Final correctness when a prayer was active fell from about `80.3%` to
+    `66.7%`.
+- Decision:
+  - Do not treat `w_prayer_lost=-0.005` as a clean improvement.
+  - The signal may be useful, but this value and placement did not teach
+    reliable prayer conservation.
+  - Next decision is either tune the resource penalty/reward balance further or
+    proceed to Step 4 action-mask hard-application.
 
 Expected benefit:
 

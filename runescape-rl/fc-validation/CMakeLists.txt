@@ -45,9 +45,24 @@ add_test(NAME revamp_npc_heal_penalty_actual_heal
 set_tests_properties(revamp_npc_heal_penalty_actual_heal PROPERTIES
     LABELS "revamp;guardrail")
 
+add_test(NAME revamp_prayer_loss_penalty
+    COMMAND phase2_guardrails_core prayer_loss_penalty)
+set_tests_properties(revamp_prayer_loss_penalty PROPERTIES
+    LABELS "revamp;guardrail")
+
+add_test(NAME revamp_no_attack_penalty_wave_scaled
+    COMMAND phase2_guardrails_core no_attack_penalty_wave_scaled)
+set_tests_properties(revamp_no_attack_penalty_wave_scaled PROPERTIES
+    LABELS "revamp;guardrail")
+
 add_test(NAME revamp_net_progress_required_work
     COMMAND phase2_guardrails_core net_progress_required_work)
 set_tests_properties(revamp_net_progress_required_work PROPERTIES
+    LABELS "revamp;guardrail")
+
+add_test(NAME revamp_net_progress_wave_clear
+    COMMAND phase2_guardrails_core net_progress_wave_clear)
+set_tests_properties(revamp_net_progress_wave_clear PROPERTIES
     LABELS "revamp;guardrail")
 
 add_test(NAME revamp_net_progress_tz_kek
@@ -69,6 +84,11 @@ add_test(NAME revamp_progress_observation_fields
     COMMAND phase2_guardrails_core progress_observation_fields)
 set_tests_properties(revamp_progress_observation_fields PROPERTIES
     LABELS "revamp;guardrail")
+
+add_test(NAME step3_prayer_deadline_observation_fields
+    COMMAND phase2_guardrails_core prayer_deadline_observation_fields)
+set_tests_properties(step3_prayer_deadline_observation_fields PROPERTIES
+    LABELS "phase3;revamp;guardrail")
 
 add_test(NAME phase3_healer_spawn_validity
     COMMAND phase2_guardrails_core healer_spawn_validity)
@@ -116,6 +136,20 @@ if(Python3_Interpreter_FOUND)
                 ${CMAKE_CURRENT_SOURCE_DIR}/../tools/validation/tests/phase2_static_guardrails.py
                 env_log_key_budget)
     set_tests_properties(revamp_env_log_key_budget PROPERTIES
+        LABELS "revamp;guardrail")
+
+    add_test(NAME revamp_viewer_policy_pipe_contract
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/../tools/validation/tests/phase2_static_guardrails.py
+                viewer_policy_pipe_matches_puffer_contract)
+    set_tests_properties(revamp_viewer_policy_pipe_contract PROPERTIES
+        LABELS "revamp;guardrail")
+
+    add_test(NAME revamp_viewer_training_parity_contract
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/../tools/validation/tests/phase2_static_guardrails.py
+                viewer_training_parity_contract)
+    set_tests_properties(revamp_viewer_training_parity_contract PROPERTIES
         LABELS "revamp;guardrail")
 else()
     message(STATUS "Python3 not found — skipping phase2 static validation guardrails")

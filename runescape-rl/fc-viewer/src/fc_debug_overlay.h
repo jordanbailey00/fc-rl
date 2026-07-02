@@ -499,6 +499,11 @@ static void dbg_draw_obs(const FcState* state, int dbg_flags) {
                  obs[FC_OBS_PLAYER_IN_MAG_2T],
                  obs[FC_OBS_PLAYER_TARGET]);
         DrawText(buf, rx + 4, y, 9, DBG_COL_LABEL); y += lh;
+        snprintf(buf, sizeof(buf), "PrayDDL: M%.2f R%.2f G%.2f",
+                 obs[FC_OBS_PLAYER_PRAY_DDL_MEL],
+                 obs[FC_OBS_PLAYER_PRAY_DDL_RNG],
+                 obs[FC_OBS_PLAYER_PRAY_DDL_MAG]);
+        DrawText(buf, rx + 4, y, 9, DBG_COL_LABEL); y += lh;
 
         /* NPC slots summary */
         y += 4;
@@ -511,14 +516,16 @@ static void dbg_draw_obs(const FcState* state, int dbg_flags) {
             if (obs[base + FC_NPC_TELE_MELEE]  > 0.5f) tele = 'M';
             else if (obs[base + FC_NPC_TELE_RANGED] > 0.5f) tele = 'R';
             else if (obs[base + FC_NPC_TELE_MAGIC]  > 0.5f) tele = 'A';
-            snprintf(buf, sizeof(buf), " [%d] hp:%.2f dist:%.2f tele:%c los:%.0f pend:%.1f@%.1f",
+            snprintf(buf, sizeof(buf), " [%d] hp:%.2f dist:%.2f tele:%c los:%.0f pend:%.1f@%.1f ddl:%.0f/%.2f",
                      s,
                      obs[base + FC_NPC_HP],
                      obs[base + FC_NPC_DISTANCE],
                      tele,
                      obs[base + FC_NPC_LOS],
                      obs[base + FC_NPC_PENDING_STYLE],
-                     obs[base + FC_NPC_PENDING_TICKS]);
+                     obs[base + FC_NPC_PENDING_TICKS],
+                     obs[base + FC_NPC_PENDING_PRAYER_WINDOW],
+                     obs[base + FC_NPC_PENDING_PRAYER_DEADLINE]);
             DrawText(buf, rx + 4, y, 8, DBG_COL_LABEL); y += lh - 1;
         }
 
@@ -542,6 +549,13 @@ static void dbg_draw_obs(const FcState* state, int dbg_flags) {
                  obs[mbase + FC_OBS_META_DMG_T_TICK],
                  obs[mbase + FC_OBS_META_WAVE_CLR],
                  state->npcs_killed_this_tick);
+        DrawText(buf, rx + 4, y, 9, DBG_COL_LABEL);
+        y += lh;
+        snprintf(buf, sizeof(buf), "Prog C%.2f W%.2f Rem%.2f NoP%.2f",
+                 obs[mbase + FC_OBS_META_CAVE_PROG],
+                 obs[mbase + FC_OBS_META_WAVE_PROG],
+                 obs[mbase + FC_OBS_META_WORK_REM],
+                 obs[mbase + FC_OBS_META_NO_PROG]);
         DrawText(buf, rx + 4, y, 9, DBG_COL_LABEL);
 
         ry += ph + 4;
@@ -718,6 +732,11 @@ static int dbg_draw_panel_tabs(const FcState* state,
                  obs[FC_OBS_PLAYER_PRAY_MAG],
                  obs[FC_OBS_PLAYER_TARGET]);
         DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        snprintf(buf, sizeof(buf), "PrayDDL M%.2f R%.2f G%.2f",
+                 obs[FC_OBS_PLAYER_PRAY_DDL_MEL],
+                 obs[FC_OBS_PLAYER_PRAY_DDL_RNG],
+                 obs[FC_OBS_PLAYER_PRAY_DDL_MAG]);
+        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
         snprintf(buf, sizeof(buf), "In1 M%.2f R%.2f G%.2f",
                  obs[FC_OBS_PLAYER_IN_MEL_1T],
                  obs[FC_OBS_PLAYER_IN_RNG_1T],
@@ -743,6 +762,12 @@ static int dbg_draw_panel_tabs(const FcState* state,
                  obs[mbase + FC_OBS_META_IN_RNG_3T],
                  obs[mbase + FC_OBS_META_IN_MAG_3T]);
         DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        snprintf(buf, sizeof(buf), "Prog C%.2f W%.2f Rem%.2f NoP%.2f",
+                 obs[mbase + FC_OBS_META_CAVE_PROG],
+                 obs[mbase + FC_OBS_META_WAVE_PROG],
+                 obs[mbase + FC_OBS_META_WORK_REM],
+                 obs[mbase + FC_OBS_META_NO_PROG]);
+        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
 
         by += 2;
         DrawText("NPC slots:", x, by, 7, DBG_COL_DIM); by += lh - 1;
@@ -753,13 +778,15 @@ static int dbg_draw_panel_tabs(const FcState* state,
             if (obs[base + FC_NPC_TELE_MELEE]  > 0.5f) tele = 'M';
             else if (obs[base + FC_NPC_TELE_RANGED] > 0.5f) tele = 'R';
             else if (obs[base + FC_NPC_TELE_MAGIC]  > 0.5f) tele = 'A';
-            snprintf(buf, sizeof(buf), "[%d] hp:%.2f d:%.2f tele:%c los:%.0f pd:%.2f",
+            snprintf(buf, sizeof(buf), "[%d] hp:%.2f d:%.2f tele:%c los:%.0f pd:%.2f ddl:%.0f/%.2f",
                      s,
                      obs[base + FC_NPC_HP],
                      obs[base + FC_NPC_DISTANCE],
                      tele,
                      obs[base + FC_NPC_LOS],
-                     obs[base + FC_NPC_PENDING_STYLE]);
+                     obs[base + FC_NPC_PENDING_STYLE],
+                     obs[base + FC_NPC_PENDING_PRAYER_WINDOW],
+                     obs[base + FC_NPC_PENDING_PRAYER_DEADLINE]);
             DrawText(buf, x, by, 7, DBG_COL_LABEL); by += lh - 2;
         }
 
@@ -831,16 +858,22 @@ static int dbg_draw_panel_tabs(const FcState* state,
                 float value;
             } terms[] = {
                 {"dmg_dealt", b->damage_dealt},
+                {"progress", b->progress},
                 {"dmg_taken", b->damage_taken},
                 {"npc_kill", b->npc_kill},
                 {"wave_clear", b->wave_clear},
                 {"jad_kill", b->jad_kill},
+                {"complete", b->cave_complete},
                 {"death", b->player_death},
                 {"jad_ok", b->correct_jad_prayer},
                 {"danger_ok", b->correct_danger_prayer},
+                {"pray_lost", b->prayer_lost},
                 {"pray_waste", b->unnecessary_prayer},
                 {"wave_stall", b->wave_stall},
+                {"no_progress", b->no_progress},
+                {"no_attack", b->no_attack},
                 {"jad_heal", b->jad_heal},
+                {"npc_heal", b->npc_heal},
                 {"invalid", b->invalid_action},
                 {"tick_pen", b->tick_penalty},
             };

@@ -34,6 +34,7 @@ static void clear_per_tick_flags(FcState* state) {
     state->damage_dealt_this_tick = 0;
     state->hits_landed_this_tick = 0;
     state->damage_taken_this_tick = 0;
+    state->prayer_lost_this_tick = 0;
     state->npcs_killed_this_tick = 0;
     state->wave_just_cleared = 0;
     state->jad_damage_this_tick = 0;
@@ -594,7 +595,8 @@ void fc_tick(FcState* state, const int actions[FC_NUM_ACTION_HEADS]) {
     decrement_player_timers(&state->player);
 
     /* 4. Prayer drain */
-    fc_prayer_drain_tick(&state->player, prayer_active_at_tick_start);
+    state->prayer_lost_this_tick +=
+        fc_prayer_drain_tick(&state->player, prayer_active_at_tick_start);
 
     /* 4b. HP regen (1 HP = 10 tenths every FC_HP_REGEN_INTERVAL ticks) */
     if (state->player.current_hp > 0 && state->player.current_hp < state->player.max_hp) {

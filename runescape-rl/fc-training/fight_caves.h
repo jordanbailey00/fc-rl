@@ -128,15 +128,6 @@ typedef struct {
 /* PufferLib Environment struct                                              */
 /* ======================================================================== */
 
-/* Puffer-facing observation size:
- *   policy obs + masks for heads 0-2 only (move/attack/prayer)
- *   = 190 + 31 = 221
- */
-#define FC_PUFFER_OBS_SIZE (FC_POLICY_OBS_SIZE + FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM)
-
-/* Number of action heads for PufferLib: move, attack, prayer. */
-#define FC_PUFFER_NUM_ATNS 3
-
 typedef struct FightCaves {
     Log log;                    /* required by PufferLib */
     float* observations;        /* required: FC_PUFFER_OBS_SIZE per agent */
@@ -160,6 +151,7 @@ typedef struct FightCaves {
     float w_player_death;
     float w_correct_jad_prayer;      /* fires only on Jad hits */
     float w_correct_danger_prayer;   /* fires on non-Jad styled hits (melee/ranged/magic) */
+    float w_prayer_lost;             /* per prayer point lost from overhead drain or Tz-Kih */
     float w_invalid_action;
     float w_tick_penalty;
 
@@ -172,11 +164,14 @@ typedef struct FightCaves {
     float shape_no_progress_penalty_1;
     float shape_no_progress_penalty_2;
     float shape_no_progress_penalty_3;
+    float shape_no_attack_base_penalty;
+    float shape_no_attack_wave_scale;
     int shape_wave_stall_start;
     int shape_wave_stall_ramp_interval;
     int shape_no_progress_start_1;
     int shape_no_progress_start_2;
     int shape_no_progress_start_3;
+    int shape_no_attack_start;
     int initial_sharks;
     int initial_prayer_doses;
     FcRewardRuntime reward_runtime;
@@ -241,11 +236,10 @@ static void fc_puffer_write_obs(FightCaves* env) {
                           env->obs_ablate_incoming_aggregates,
                           env->obs_ablate_npc_valid);
 
-    /* Action mask: 31 floats (move/attack/prayer only). */
+    /* Action mask: Puffer policy heads only. */
     float full_mask[FC_ACTION_MASK_SIZE];
     fc_write_mask(&env->state, full_mask);
-    int mask_size = FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM;
-    memcpy(obs + FC_POLICY_OBS_SIZE, full_mask, sizeof(float) * mask_size);
+    memcpy(obs + FC_POLICY_OBS_SIZE, full_mask, sizeof(float) * FC_PUFFER_MASK_SIZE);
 }
 
 static FcRewardParams fc_reward_params_from_env(const FightCaves* env) {
@@ -262,6 +256,7 @@ static FcRewardParams fc_reward_params_from_env(const FightCaves* env) {
     params.w_player_death = env->w_player_death;
     params.w_correct_jad_prayer = env->w_correct_jad_prayer;
     params.w_correct_danger_prayer = env->w_correct_danger_prayer;
+    params.w_prayer_lost = env->w_prayer_lost;
     params.w_invalid_action = env->w_invalid_action;
     params.w_tick_penalty = env->w_tick_penalty;
 
@@ -273,12 +268,15 @@ static FcRewardParams fc_reward_params_from_env(const FightCaves* env) {
     params.shape_no_progress_penalty_1 = env->shape_no_progress_penalty_1;
     params.shape_no_progress_penalty_2 = env->shape_no_progress_penalty_2;
     params.shape_no_progress_penalty_3 = env->shape_no_progress_penalty_3;
+    params.shape_no_attack_base_penalty = env->shape_no_attack_base_penalty;
+    params.shape_no_attack_wave_scale = env->shape_no_attack_wave_scale;
 
     params.shape_wave_stall_start = env->shape_wave_stall_start;
     params.shape_wave_stall_ramp_interval = env->shape_wave_stall_ramp_interval;
     params.shape_no_progress_start_1 = env->shape_no_progress_start_1;
     params.shape_no_progress_start_2 = env->shape_no_progress_start_2;
     params.shape_no_progress_start_3 = env->shape_no_progress_start_3;
+    params.shape_no_attack_start = env->shape_no_attack_start;
 
     return params;
 }

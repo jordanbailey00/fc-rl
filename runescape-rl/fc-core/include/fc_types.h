@@ -365,6 +365,7 @@ typedef struct {
     int damage_dealt_this_tick;
     int hits_landed_this_tick;   /* count of player pending-hits that dealt damage this tick */
     int damage_taken_this_tick;
+    int prayer_lost_this_tick;   /* prayer points lost this tick, in tenths */
     int npcs_killed_this_tick;
     int wave_just_cleared;
     int jad_damage_this_tick;

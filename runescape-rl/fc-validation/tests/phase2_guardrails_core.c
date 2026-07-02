@@ -401,6 +401,106 @@ static int test_npc_heal_penalty_actual_heal(void) {
     return fail(msg);
 }
 
+static int test_prayer_loss_penalty(void) {
+    FcState state;
+    FcRewardParams params;
+    FcRewardRuntime runtime;
+    FcRewardBreakdown breakdown;
+
+    make_open_manual_state(&state, 10, 10);
+    params = fc_reward_default_params();
+    params.w_progress = 0.0f;
+    params.w_tick_penalty = 0.0f;
+
+    fc_reward_runtime_reset(&runtime);
+    state.prayer_lost_this_tick = 10;
+    breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
+    if (fabsf(breakdown.raw[FC_RWD_PRAYER_LOST] - 1.0f) > 0.0001f ||
+        fabsf(breakdown.prayer_lost + 0.02f) > 0.0001f ||
+        fabsf(breakdown.total + 0.02f) > 0.0001f) {
+        char msg[192];
+        snprintf(msg, sizeof(msg),
+                 "1pt prayer loss wrong: raw=%.4f prayer_lost=%.4f total=%.4f",
+                 breakdown.raw[FC_RWD_PRAYER_LOST],
+                 breakdown.prayer_lost,
+                 breakdown.total);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_reward_runtime_reset(&runtime);
+    state.prayer_lost_this_tick = 30;
+    breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
+    if (fabsf(breakdown.raw[FC_RWD_PRAYER_LOST] - 3.0f) < 0.0001f &&
+        fabsf(breakdown.prayer_lost + 0.06f) < 0.0001f &&
+        fabsf(breakdown.total + 0.06f) < 0.0001f) {
+        fc_destroy(&state);
+        return pass("prayer loss penalty scales per prayer point lost");
+    }
+
+    char msg[192];
+    snprintf(msg, sizeof(msg),
+             "3pt prayer loss wrong: raw=%.4f prayer_lost=%.4f total=%.4f",
+             breakdown.raw[FC_RWD_PRAYER_LOST],
+             breakdown.prayer_lost,
+             breakdown.total);
+    fc_destroy(&state);
+    return fail(msg);
+}
+
+static int test_no_attack_penalty_wave_scaled(void) {
+    FcState state;
+    FcRewardParams params;
+    FcRewardRuntime runtime;
+    FcRewardBreakdown breakdown;
+    float expected;
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_TOK_XIL, 12, 10, 0);
+    state.npcs_remaining = 1;
+    state.current_wave = 25;
+    state.player.attack_timer = 0;
+
+    params = fc_reward_default_params();
+    params.w_progress = 0.0f;
+    params.w_tick_penalty = 0.0f;
+    params.shape_no_progress_start_1 = 0;
+    params.shape_no_progress_start_2 = 0;
+    params.shape_no_progress_start_3 = 0;
+
+    fc_reward_runtime_begin_episode(&runtime, &state);
+    runtime.ticks_since_attack = params.shape_no_attack_start - 1;
+    breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
+    if (breakdown.no_attack != 0.0f) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "no-attack penalty fired too early: timer=%d no_attack=%.6f",
+                 runtime.ticks_since_attack, breakdown.no_attack);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_reward_runtime_begin_episode(&runtime, &state);
+    runtime.ticks_since_attack = params.shape_no_attack_start;
+    breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
+    expected = params.shape_no_attack_base_penalty *
+        (1.0f + params.shape_no_attack_wave_scale *
+         ((float)state.current_wave - 1.0f));
+    if (fabsf(breakdown.no_attack - expected) < 0.0001f &&
+        fabsf(breakdown.total - expected) < 0.0001f) {
+        fc_destroy(&state);
+        return pass("no-attack penalty starts after threshold and scales by wave");
+    }
+
+    char msg[192];
+    snprintf(msg, sizeof(msg),
+             "wave-scaled no-attack wrong: timer=%d no_attack=%.6f expected=%.6f total=%.6f",
+             runtime.ticks_since_attack, breakdown.no_attack, expected,
+             breakdown.total);
+    fc_destroy(&state);
+    return fail(msg);
+}
+
 static int test_net_progress_required_work(void) {
     FcState state;
     FcRewardParams params;
@@ -412,7 +512,7 @@ static int test_net_progress_required_work(void) {
     state.npcs_remaining = 1;
 
     memset(&params, 0, sizeof(params));
-    params.w_progress = 1.0f;
+    params.w_progress = 0.001f;
     fc_reward_runtime_begin_episode(&runtime, &state);
 
     if (fabsf(runtime.required_work_at_wave_start - 100.0f) > 0.0001f) {
@@ -426,13 +526,13 @@ static int test_net_progress_required_work(void) {
     state.npcs[0].current_hp = 90;
     breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
     if (fabsf(runtime.last_required_work_remaining - 90.0f) > 0.0001f ||
-        runtime.last_progress_delta <= 0.0f ||
-        breakdown.progress <= 0.0f) {
+        fabsf(runtime.last_net_required_work_removed - 10.0f) > 0.0001f ||
+        fabsf(breakdown.progress - 0.01f) > 0.0001f) {
         char msg[192];
         snprintf(msg, sizeof(msg),
-                 "damage progress wrong: work=%.4f delta=%.6f progress=%.6f",
+                 "damage progress wrong: work=%.4f net=%.4f progress=%.6f",
                  runtime.last_required_work_remaining,
-                 runtime.last_progress_delta,
+                 runtime.last_net_required_work_removed,
                  breakdown.progress);
         fc_destroy(&state);
         return fail(msg);
@@ -441,14 +541,14 @@ static int test_net_progress_required_work(void) {
     state.npcs[0].current_hp = 100;
     breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
     if (fabsf(runtime.last_required_work_remaining - 100.0f) > 0.0001f ||
-        runtime.last_progress_delta >= 0.0f ||
-        breakdown.progress >= 0.0f ||
+        fabsf(runtime.last_net_required_work_removed + 10.0f) > 0.0001f ||
+        fabsf(breakdown.progress + 0.01f) > 0.0001f ||
         runtime.ticks_since_positive_progress <= 0) {
         char msg[192];
         snprintf(msg, sizeof(msg),
-                 "healed progress wrong: work=%.4f delta=%.6f progress=%.6f timer=%d",
+                 "healed progress wrong: work=%.4f net=%.4f progress=%.6f timer=%d",
                  runtime.last_required_work_remaining,
-                 runtime.last_progress_delta,
+                 runtime.last_net_required_work_removed,
                  breakdown.progress,
                  runtime.ticks_since_positive_progress);
         fc_destroy(&state);
@@ -457,6 +557,46 @@ static int test_net_progress_required_work(void) {
 
     fc_destroy(&state);
     return pass("net required-work progress rewards damage and penalizes healing");
+}
+
+static int test_net_progress_wave_clear_transition(void) {
+    FcState state;
+    FcRewardParams params;
+    FcRewardRuntime runtime;
+    FcRewardBreakdown breakdown;
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 12, 10, 0);
+    state.npcs_remaining = 1;
+
+    memset(&params, 0, sizeof(params));
+    params.w_progress = 0.001f;
+    fc_reward_runtime_begin_episode(&runtime, &state);
+
+    state.npcs[0].is_dead = 1;
+    state.npcs[0].active = 0;
+    state.npcs_remaining = 0;
+    fc_wave_check_advance(&state);
+
+    breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
+    if (!state.wave_just_cleared ||
+        state.current_wave != 2 ||
+        fabsf(runtime.last_net_required_work_removed - 100.0f) > 0.0001f ||
+        fabsf(breakdown.progress - 0.1f) > 0.0001f ||
+        runtime.last_required_work_remaining <= 100.0f) {
+        char msg[192];
+        snprintf(msg, sizeof(msg),
+                 "wave clear progress wrong wave=%d net=%.4f progress=%.6f next_work=%.4f",
+                 state.current_wave,
+                 runtime.last_net_required_work_removed,
+                 breakdown.progress,
+                 runtime.last_required_work_remaining);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("net progress pays old-wave work without penalizing next-wave spawn");
 }
 
 static int test_net_progress_tz_kek_accounting(void) {
@@ -505,7 +645,7 @@ static int test_net_progress_jad_accounting(void) {
     state.npcs_remaining = 2;
 
     memset(&params, 0, sizeof(params));
-    params.w_progress = 1.0f;
+    params.w_progress = 0.001f;
     fc_reward_runtime_begin_episode(&runtime, &state);
 
     if (fabsf(runtime.required_work_at_wave_start - 2500.0f) > 0.0001f) {
@@ -518,24 +658,30 @@ static int test_net_progress_jad_accounting(void) {
 
     state.npcs[0].current_hp = 2400;
     breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
-    if (runtime.last_progress_delta <= 0.0f || breakdown.progress <= 0.0f) {
-        char msg[128];
-        snprintf(msg, sizeof(msg), "Jad damage did not create progress delta=%.6f",
-                 runtime.last_progress_delta);
+    if (fabsf(runtime.last_net_required_work_removed - 100.0f) > 0.01f ||
+        fabsf(breakdown.progress - 0.1f) > 0.0001f) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "Jad damage progress wrong net=%.4f progress=%.6f",
+                 runtime.last_net_required_work_removed,
+                 breakdown.progress);
         fc_destroy(&state);
         return fail(msg);
     }
 
     state.npcs[0].current_hp = 2450;
     breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
-    if (runtime.last_progress_delta < 0.0f && breakdown.progress < 0.0f) {
+    if (fabsf(runtime.last_net_required_work_removed + 50.0f) < 0.01f &&
+        fabsf(breakdown.progress + 0.05f) < 0.0001f) {
         fc_destroy(&state);
         return pass("Jad healer HP is ignored while Jad healing raises work");
     }
 
-    char msg[128];
-    snprintf(msg, sizeof(msg), "Jad healing did not create negative progress delta=%.6f",
-             runtime.last_progress_delta);
+    char msg[160];
+    snprintf(msg, sizeof(msg),
+             "Jad healing progress wrong net=%.4f progress=%.6f",
+             runtime.last_net_required_work_removed,
+             breakdown.progress);
     fc_destroy(&state);
     return fail(msg);
 }
@@ -611,7 +757,7 @@ static int test_progress_observation_fields(void) {
     state.npcs_remaining = 1;
 
     memset(&params, 0, sizeof(params));
-    params.w_progress = 1.0f;
+    params.w_progress = 0.001f;
     fc_reward_runtime_begin_episode(&runtime, &state);
     state.npcs[0].current_hp = 50;
     (void)fc_reward_compute_breakdown(&state, &params, &runtime);
@@ -635,6 +781,97 @@ static int test_progress_observation_fields(void) {
     snprintf(msg, sizeof(msg),
              "progress obs wrong: cave=%.6f wave=%.6f work=%.6f timer=%.6f",
              cave, wave, work, timer);
+    fc_destroy(&state);
+    return fail(msg);
+}
+
+static int test_prayer_deadline_observation_fields(void) {
+    FcState state;
+    float obs[FC_OBS_SIZE];
+
+    make_open_manual_state(&state, 10, 10);
+    state.current_wave = FC_NUM_WAVES;
+    state.tick = 100;
+    fc_npc_spawn(&state.npcs[0], NPC_TZTOK_JAD, 12, 10, 0);
+    state.npcs_remaining = 1;
+
+    fc_queue_pending_hit(state.player.pending_hits,
+                         &state.player.num_pending_hits,
+                         FC_MAX_PENDING_HITS,
+                         500,
+                         2,
+                         ATTACK_RANGED,
+                         0,
+                         0);
+    state.player.pending_hits[0].prayer_snapshot = -1;
+    state.player.pending_hits[0].prayer_lock_tick = state.tick;
+
+    fc_write_obs(&state, obs);
+
+    int base = FC_OBS_NPC_START;
+    float ranged_deadline = obs[FC_OBS_PLAYER_START + FC_OBS_PLAYER_PRAY_DDL_RNG];
+    float melee_deadline = obs[FC_OBS_PLAYER_START + FC_OBS_PLAYER_PRAY_DDL_MEL];
+    float magic_deadline = obs[FC_OBS_PLAYER_START + FC_OBS_PLAYER_PRAY_DDL_MAG];
+    float npc_window = obs[base + FC_NPC_PENDING_PRAYER_WINDOW];
+    float npc_deadline = obs[base + FC_NPC_PENDING_PRAYER_DEADLINE];
+    float pending_style = obs[base + FC_NPC_PENDING_STYLE];
+    float pending_ticks = obs[base + FC_NPC_PENDING_TICKS];
+
+    if (!(fabsf(ranged_deadline - 1.0f) < 0.0001f &&
+          fabsf(melee_deadline) < 0.0001f &&
+          fabsf(magic_deadline) < 0.0001f &&
+          fabsf(npc_window - 1.0f) < 0.0001f &&
+          fabsf(npc_deadline - 1.0f) < 0.0001f &&
+          fabsf(pending_style - ((float)ATTACK_RANGED / 3.0f)) < 0.0001f &&
+          fabsf(pending_ticks - 0.2f) < 0.0001f)) {
+        char msg[256];
+        snprintf(msg, sizeof(msg),
+                 "actionable deadline obs wrong: rng=%.3f mel=%.3f mag=%.3f window=%.3f deadline=%.3f style=%.3f ticks=%.3f",
+                 ranged_deadline, melee_deadline, magic_deadline,
+                 npc_window, npc_deadline, pending_style, pending_ticks);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    state.player.num_pending_hits = 0;
+    memset(state.player.pending_hits, 0, sizeof(state.player.pending_hits));
+    memset(obs, 0, sizeof(obs));
+    state.tick = 200;
+    state.npcs[0].npc_type = NPC_TOK_XIL;
+    state.npcs[0].attack_style = ATTACK_RANGED;
+
+    fc_queue_pending_hit(state.player.pending_hits,
+                         &state.player.num_pending_hits,
+                         FC_MAX_PENDING_HITS,
+                         120,
+                         2,
+                         ATTACK_RANGED,
+                         0,
+                         0);
+    state.player.pending_hits[0].prayer_snapshot = PRAYER_NONE;
+    state.player.pending_hits[0].prayer_lock_tick = -1;
+
+    fc_write_obs(&state, obs);
+
+    ranged_deadline = obs[FC_OBS_PLAYER_START + FC_OBS_PLAYER_PRAY_DDL_RNG];
+    npc_window = obs[base + FC_NPC_PENDING_PRAYER_WINDOW];
+    npc_deadline = obs[base + FC_NPC_PENDING_PRAYER_DEADLINE];
+    pending_style = obs[base + FC_NPC_PENDING_STYLE];
+    pending_ticks = obs[base + FC_NPC_PENDING_TICKS];
+
+    if (fabsf(ranged_deadline) < 0.0001f &&
+        fabsf(npc_window) < 0.0001f &&
+        fabsf(npc_deadline) < 0.0001f &&
+        fabsf(pending_style - ((float)ATTACK_RANGED / 3.0f)) < 0.0001f &&
+        fabsf(pending_ticks - 0.2f) < 0.0001f) {
+        fc_destroy(&state);
+        return pass("prayer deadline obs distinguishes actionable and locked pending hits");
+    }
+
+    char msg[256];
+    snprintf(msg, sizeof(msg),
+             "locked pending hit deadline obs wrong: rng=%.3f window=%.3f deadline=%.3f style=%.3f ticks=%.3f",
+             ranged_deadline, npc_window, npc_deadline, pending_style, pending_ticks);
     fc_destroy(&state);
     return fail(msg);
 }
@@ -712,9 +949,11 @@ static int test_safespot_los(void) {
     return pass("blocked LOS prevents attacks through the safespot");
 }
 
+
+
 int main(int argc, char** argv) {
     if (argc != 2) {
-        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|safespot_reward_disabled|npc_heal_penalty_actual_heal|net_progress_required_work|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|healer_spawn_validity|safespot_los|invalid_action_classes>\n",
+        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|safespot_reward_disabled|npc_heal_penalty_actual_heal|prayer_loss_penalty|no_attack_penalty_wave_scaled|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|safespot_los|invalid_action_classes>\n",
                 argv[0]);
         return 2;
     }
@@ -725,11 +964,15 @@ int main(int argc, char** argv) {
     if (strcmp(argv[1], "zero_damage_reward") == 0) return test_zero_damage_reward();
     if (strcmp(argv[1], "safespot_reward_disabled") == 0) return test_safespot_reward_disabled();
     if (strcmp(argv[1], "npc_heal_penalty_actual_heal") == 0) return test_npc_heal_penalty_actual_heal();
+    if (strcmp(argv[1], "prayer_loss_penalty") == 0) return test_prayer_loss_penalty();
+    if (strcmp(argv[1], "no_attack_penalty_wave_scaled") == 0) return test_no_attack_penalty_wave_scaled();
     if (strcmp(argv[1], "net_progress_required_work") == 0) return test_net_progress_required_work();
+    if (strcmp(argv[1], "net_progress_wave_clear") == 0) return test_net_progress_wave_clear_transition();
     if (strcmp(argv[1], "net_progress_tz_kek") == 0) return test_net_progress_tz_kek_accounting();
     if (strcmp(argv[1], "net_progress_jad") == 0) return test_net_progress_jad_accounting();
     if (strcmp(argv[1], "net_progress_timer_clip") == 0) return test_net_progress_timer_and_clip_sanity();
     if (strcmp(argv[1], "progress_observation_fields") == 0) return test_progress_observation_fields();
+    if (strcmp(argv[1], "prayer_deadline_observation_fields") == 0) return test_prayer_deadline_observation_fields();
     if (strcmp(argv[1], "healer_spawn_validity") == 0) return test_healer_spawn_validity();
     if (strcmp(argv[1], "safespot_los") == 0) return test_safespot_los();
 

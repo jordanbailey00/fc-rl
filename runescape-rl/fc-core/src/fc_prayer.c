@@ -19,15 +19,17 @@
 
 #define PRAYER_OVERHEAD_DRAIN_RATE 12
 
-void fc_prayer_drain_tick(FcPlayer* p, int prayer_active_at_tick_start) {
+int fc_prayer_drain_tick(FcPlayer* p, int prayer_active_at_tick_start) {
+    int prayer_before = p->current_prayer;
+
     /* Perfect 1-tick flicks should be free: only accrue drain when some prayer
      * was active both before and after this tick's action processing. */
-    if (!prayer_active_at_tick_start || p->prayer == PRAYER_NONE) return;
+    if (!prayer_active_at_tick_start || p->prayer == PRAYER_NONE) return 0;
     if (p->current_prayer <= 0) {
         /* Auto-deactivate if prayer points depleted */
         p->prayer = PRAYER_NONE;
         p->prayer_drain_counter = 0;
-        return;
+        return 0;
     }
 
     /* Counter-based drain matching OSRS PrayerDrain.kt exactly:
@@ -45,9 +47,11 @@ void fc_prayer_drain_tick(FcPlayer* p, int prayer_active_at_tick_start) {
             p->current_prayer = 0;
             p->prayer = PRAYER_NONE;
             p->prayer_drain_counter = 0;
-            return;
+            return prayer_before;
         }
     }
+
+    return prayer_before - p->current_prayer;
 }
 
 void fc_prayer_apply_action(FcPlayer* p, int prayer_action) {
