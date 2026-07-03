@@ -31,6 +31,16 @@ int fc_footprint_walkable(int x, int y, int size,
     return 1;
 }
 
+static int fc_step_walkable(int x, int y, int dx, int dy, int size,
+                            const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
+    if (dx != 0 && dy != 0) {
+        return fc_footprint_walkable(x + dx, y + dy, size, walkable) &&
+               fc_footprint_walkable(x + dx, y, size, walkable) &&
+               fc_footprint_walkable(x, y + dy, size, walkable);
+    }
+    return fc_footprint_walkable(x + dx, y + dy, size, walkable);
+}
+
 /* ======================================================================== */
 /* Size-1 movement (player, small NPCs)                                      */
 /* ======================================================================== */
@@ -49,7 +59,7 @@ int fc_move_toward(int* x, int* y, int dx, int dy, int max_steps,
         if (ty > *y) sy = 1; else if (ty < *y) sy = -1;
 
         /* Try diagonal first, then x-only, then y-only */
-        if (sx != 0 && sy != 0 && fc_tile_walkable(*x + sx, *y + sy, walkable)) {
+        if (sx != 0 && sy != 0 && fc_step_walkable(*x, *y, sx, sy, 1, walkable)) {
             *x += sx; *y += sy; steps++;
         } else if (sx != 0 && fc_tile_walkable(*x + sx, *y, walkable)) {
             *x += sx; steps++;
@@ -78,7 +88,7 @@ int fc_npc_step_toward_sized(int* x, int* y, int target_x, int target_y,
     /* Try diagonal, then x-only, then y-only.
      * Each candidate must have the full footprint walkable. */
     if (dx != 0 && dy != 0 &&
-        fc_footprint_walkable(*x + dx, *y + dy, size, walkable)) {
+        fc_step_walkable(*x, *y, dx, dy, size, walkable)) {
         *x += dx; *y += dy; return 1;
     }
     if (dx != 0 && fc_footprint_walkable(*x + dx, *y, size, walkable)) {

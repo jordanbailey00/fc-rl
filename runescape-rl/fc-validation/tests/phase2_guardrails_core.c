@@ -949,11 +949,114 @@ static int test_safespot_los(void) {
     return pass("blocked LOS prevents attacks through the safespot");
 }
 
+static int test_diagonal_corner_clipping(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+    int invalid[FC_INVALID_ACTION_CLASS_COUNT] = {0};
 
+    if (FC_MOVE_DX[FC_MOVE_RUN_NE] != 2 || FC_MOVE_DY[FC_MOVE_RUN_NE] != 2 ||
+        FC_MOVE_DX[FC_MOVE_RUN_SE] != 2 || FC_MOVE_DY[FC_MOVE_RUN_SE] != -2 ||
+        FC_MOVE_DX[FC_MOVE_RUN_SW] != -2 || FC_MOVE_DY[FC_MOVE_RUN_SW] != -2 ||
+        FC_MOVE_DX[FC_MOVE_RUN_NW] != -2 || FC_MOVE_DY[FC_MOVE_RUN_NW] != 2) {
+        return fail("diagonal run actions are not true two-tile diagonals");
+    }
+
+    make_open_manual_state(&state, 10, 10);
+    state.walkable[11][10] = 0;
+    actions[0] = FC_MOVE_WALK_NE;
+    fc_step(&state, actions);
+    if (state.player.x == 11 && state.player.y == 11) {
+        fc_destroy(&state);
+        return fail("player diagonal movement cut through a blocked corner");
+    }
+    if (state.player.x != 10 || state.player.y != 11) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "expected player fallback to north, got (%d,%d)",
+                 state.player.x, state.player.y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    fc_destroy(&state);
+
+    make_open_manual_state(&state, 10, 10);
+    state.walkable[11][10] = 0;
+    state.walkable[10][11] = 0;
+    actions[0] = FC_MOVE_WALK_NE;
+    fc_action_invalid_classes(&state, actions, invalid);
+    if (!invalid[FC_INVALID_ACTION_MOVE]) {
+        fc_destroy(&state);
+        return fail("blocked diagonal move was not masked invalid");
+    }
+    fc_step(&state, actions);
+    if (state.player.x != 10 || state.player.y != 10) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "blocked diagonal moved player to (%d,%d)",
+                 state.player.x, state.player.y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    fc_destroy(&state);
+
+    make_open_manual_state(&state, 10, 10);
+    int nx = 10;
+    int ny = 10;
+    state.walkable[11][10] = 0;
+    if (!fc_npc_step_toward_sized(&nx, &ny, 12, 12, 2, state.walkable)) {
+        fc_destroy(&state);
+        return fail("sized NPC failed to take cardinal fallback around blocked corner");
+    }
+    if (nx == 11 && ny == 11) {
+        fc_destroy(&state);
+        return fail("sized NPC diagonal movement cut through a blocked side footprint");
+    }
+    fc_destroy(&state);
+
+    return pass("diagonal movement obeys side-tile clipping");
+}
+
+static int test_npc_moves_when_attack_blocked(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    state.walkable[11][10] = 0;
+    fc_npc_spawn(&state.npcs[0], NPC_TOK_XIL, 12, 11, 0);
+    state.npcs[0].size = 1;
+    state.npcs_remaining = 1;
+
+    fc_step(&state, actions);
+    if (state.npcs[0].x != 11 || state.npcs[0].y != 11) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "ranged NPC with blocked LOS did not move toward a valid firing tile; got (%d,%d)",
+                 state.npcs[0].x, state.npcs[0].y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    fc_destroy(&state);
+
+    make_open_manual_state(&state, 10, 10);
+    state.walkable[11][10] = 0;
+    fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 11, 11, 0);
+    state.npcs_remaining = 1;
+
+    fc_step(&state, actions);
+    if (state.npcs[0].x != 10 || state.npcs[0].y != 11) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "melee NPC with blocked diagonal contact did not step to cardinal contact; got (%d,%d)",
+                 state.npcs[0].x, state.npcs[0].y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    fc_destroy(&state);
+
+    return pass("NPCs keep moving when attack position is blocked");
+}
 
 int main(int argc, char** argv) {
     if (argc != 2) {
-        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|safespot_reward_disabled|npc_heal_penalty_actual_heal|prayer_loss_penalty|no_attack_penalty_wave_scaled|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|safespot_los|invalid_action_classes>\n",
+        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|safespot_reward_disabled|npc_heal_penalty_actual_heal|prayer_loss_penalty|no_attack_penalty_wave_scaled|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|safespot_los|diagonal_corner_clipping|npc_moves_when_attack_blocked|invalid_action_classes>\n",
                 argv[0]);
         return 2;
     }
@@ -975,6 +1078,8 @@ int main(int argc, char** argv) {
     if (strcmp(argv[1], "prayer_deadline_observation_fields") == 0) return test_prayer_deadline_observation_fields();
     if (strcmp(argv[1], "healer_spawn_validity") == 0) return test_healer_spawn_validity();
     if (strcmp(argv[1], "safespot_los") == 0) return test_safespot_los();
+    if (strcmp(argv[1], "diagonal_corner_clipping") == 0) return test_diagonal_corner_clipping();
+    if (strcmp(argv[1], "npc_moves_when_attack_blocked") == 0) return test_npc_moves_when_attack_blocked();
 
     fprintf(stderr, "unknown guardrail: %s\n", argv[1]);
     return 2;

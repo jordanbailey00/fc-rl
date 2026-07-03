@@ -235,6 +235,16 @@ typedef struct {
     uint16_t player_anim_seq;
     int player_anim_frame;
     float player_anim_timer;
+    uint16_t player_pose_anim_seq;
+    int player_pose_anim_frame;
+    float player_pose_anim_timer;
+    uint16_t player_action_anim_seq;
+    int player_action_anim_frame;
+    float player_action_anim_timer;
+    uint16_t player_visual_lock_seq;
+    float player_visual_lock_timer;
+    float player_visual_lock_face_angle;
+    int player_attack_visual_target_idx;
     /* Per-NPC animation state */
     AnimModelState* npc_anim_states[FC_MAX_NPCS];
     uint16_t npc_anim_seq[FC_MAX_NPCS];
@@ -299,6 +309,10 @@ typedef struct {
     int obs_ablate_npc_valid;
     /* Smooth movement interpolation — stored by stable slot (player + NPC array index) */
     float prev_player_x, prev_player_y;
+    int prev_player_route_idx;
+    int prev_player_route_len;
+    int prev_player_route_x;
+    int prev_player_route_y;
     float prev_npc_x[FC_MAX_NPCS];
     float prev_npc_y[FC_MAX_NPCS];
     int prev_npc_active[FC_MAX_NPCS];  /* was this NPC active last tick? */
@@ -651,6 +665,103 @@ static void apply_anim_frame_to_entry(NpcModelEntry* entry,
                      evc * 3 * sizeof(float), 0);
 }
 
+static void upload_anim_state_to_entry(NpcModelEntry* entry,
+                                       AnimModelState* state) {
+    if (!entry || !entry->loaded || !state) return;
+    models_recompute_texture_uvs_from_vertices(entry, state->verts);
+
+    float* mesh_verts = entry->model.meshes[0].vertices;
+    anim_update_mesh(mesh_verts, state, entry->face_indices, entry->face_count);
+
+    int evc = entry->face_count * 3;
+    for (int vi = 0; vi < evc; vi++) {
+        mesh_verts[vi*3+0] /=  128.0f;
+        mesh_verts[vi*3+1] /=  128.0f;
+        mesh_verts[vi*3+2] /= -128.0f;
+    }
+
+    UpdateMeshBuffer(entry->model.meshes[0], 0, mesh_verts,
+                     evc * 3 * sizeof(float), 0);
+}
+
+static AnimSequence* advance_anim_track(AnimCache* cache,
+                                        uint16_t desired_seq,
+                                        uint16_t* current_seq,
+                                        int* frame_index,
+                                        float* frame_timer,
+                                        float dt) {
+    if (!cache || desired_seq == 0 || !current_seq ||
+        !frame_index || !frame_timer)
+        return NULL;
+
+    AnimSequence* seq = anim_get_sequence(cache, desired_seq);
+    if (!seq || seq->frame_count <= 0) return NULL;
+
+    if (*current_seq != desired_seq) {
+        *current_seq = desired_seq;
+        *frame_index = 0;
+        *frame_timer = 0.0f;
+    }
+    if (*frame_index < 0 || *frame_index >= seq->frame_count)
+        *frame_index = 0;
+
+    *frame_timer -= dt;
+    if (*frame_timer <= 0.0f) {
+        *frame_index = (*frame_index + 1) % seq->frame_count;
+        float frame_delay = (float)seq->frames[*frame_index].delay * 0.02f;
+        if (frame_delay < 0.016f) frame_delay = 0.016f;
+        *frame_timer = frame_delay;
+    }
+
+    return seq;
+}
+
+static AnimSequence* advance_anim_track_once(AnimCache* cache,
+                                             uint16_t desired_seq,
+                                             uint16_t* current_seq,
+                                             int* frame_index,
+                                             float* frame_timer,
+                                             float dt) {
+    if (!cache || desired_seq == 0 || !current_seq ||
+        !frame_index || !frame_timer)
+        return NULL;
+
+    AnimSequence* seq = anim_get_sequence(cache, desired_seq);
+    if (!seq || seq->frame_count <= 0) return NULL;
+
+    if (*current_seq != desired_seq) {
+        *current_seq = desired_seq;
+        *frame_index = 0;
+        *frame_timer = 0.0f;
+    }
+    if (*frame_index < 0 || *frame_index >= seq->frame_count)
+        *frame_index = 0;
+
+    *frame_timer -= dt;
+    while (*frame_timer <= 0.0f && *frame_index < seq->frame_count - 1) {
+        *frame_index += 1;
+        float frame_delay = (float)seq->frames[*frame_index].delay * 0.02f;
+        if (frame_delay < 0.016f) frame_delay = 0.016f;
+        *frame_timer += frame_delay;
+    }
+    if (*frame_timer <= 0.0f)
+        *frame_timer = 0.016f;
+
+    return seq;
+}
+
+static float anim_sequence_duration_seconds(const AnimSequence* seq) {
+    if (!seq || seq->frame_count <= 0) return 0.45f;
+    float total = 0.0f;
+    for (int i = 0; i < seq->frame_count; i++) {
+        float frame_delay = (float)seq->frames[i].delay * 0.02f;
+        if (frame_delay < 0.016f) frame_delay = 0.016f;
+        total += frame_delay;
+    }
+    if (total < 0.35f) total = 0.35f;
+    return total;
+}
+
 static void update_entry_animation(NpcModelEntry* entry,
                                    AnimCache* cache,
                                    AnimModelState** state,
@@ -736,6 +847,16 @@ static void recreate_player_anim_state(ViewerState* v, NpcModelEntry* pm) {
     v->player_anim_seq = PLAYER_ANIM_IDLE;
     v->player_anim_frame = 0;
     v->player_anim_timer = 0.0f;
+    v->player_pose_anim_seq = PLAYER_ANIM_IDLE;
+    v->player_pose_anim_frame = 0;
+    v->player_pose_anim_timer = 0.0f;
+    v->player_action_anim_seq = 0;
+    v->player_action_anim_frame = 0;
+    v->player_action_anim_timer = 0.0f;
+    v->player_visual_lock_seq = 0;
+    v->player_visual_lock_timer = 0.0f;
+    v->player_visual_lock_face_angle = 0.0f;
+    v->player_attack_visual_target_idx = -1;
     fprintf(stderr, "Player animation state created (%d base verts, model %u)\n",
             pm->base_vert_count, pm->model_id);
 }
@@ -775,6 +896,72 @@ static void mark_npc_attack_visual(ViewerState* v, int npc_idx,
         return;
     v->npc_attack_visual_style[npc_idx] = attack_style;
     v->npc_attack_visual_timer[npc_idx] = 1.15f;
+}
+
+static float lerp_f(float a, float b, float t);
+static float face_angle_between_tiles(float ax, float ay, float bx, float by);
+static int player_visual_lock_active(const ViewerState* v);
+
+static float policy_replay_time_scale(const ViewerState* v) {
+    if (!v || !v->policy_pipe || v->tps <= 0.0f) return 1.0f;
+    float scale = v->tps / (float)POLICY_REPLAY_BASE_TPS;
+    if (scale < 1.0f) scale = 1.0f;
+    return scale;
+}
+
+static float policy_replay_anim_dt(const ViewerState* v, float dt) {
+    return dt * policy_replay_time_scale(v);
+}
+
+static float policy_replay_duration(const ViewerState* v, float seconds) {
+    float scale = policy_replay_time_scale(v);
+    if (scale > 1.0f)
+        seconds /= scale;
+    float min_seconds = 0.02f;
+    if (v && v->policy_pipe && v->tps > 0.0f) {
+        float max_seconds = 0.45f / v->tps;
+        min_seconds = 0.15f / v->tps;
+        if (seconds > max_seconds)
+            seconds = max_seconds;
+    }
+    if (seconds < min_seconds)
+        seconds = min_seconds;
+    return seconds;
+}
+
+static void mark_player_attack_visual(ViewerState* v) {
+    if (!v) return;
+    AnimSequence* seq = v->anim_cache
+        ? anim_get_sequence(v->anim_cache, PLAYER_ANIM_ATTACK) : NULL;
+    float attack_x = (float)v->state.player.x;
+    float attack_y = (float)v->state.player.y;
+    if (v->policy_pipe) {
+        attack_x = v->prev_player_x;
+        attack_y = v->prev_player_y;
+    }
+    v->player_visual_lock_seq = PLAYER_ANIM_ATTACK;
+    v->player_visual_lock_timer = policy_replay_duration(
+        v, anim_sequence_duration_seconds(seq));
+    v->player_attack_visual_target_idx = v->state.player.attack_target_idx;
+    v->player_visual_lock_face_angle = v->state.player.facing_angle;
+    if (v->player_attack_visual_target_idx >= 0 &&
+        v->player_attack_visual_target_idx < FC_MAX_NPCS) {
+        FcNpc* target = &v->state.npcs[v->player_attack_visual_target_idx];
+        if (target->active && !target->is_dead) {
+            float tx = (float)target->x + (float)target->size * 0.5f;
+            float ty = (float)target->y + (float)target->size * 0.5f;
+            v->player_visual_lock_face_angle = face_angle_between_tiles(
+                attack_x + 0.5f, attack_y + 0.5f, tx, ty);
+        }
+    }
+    v->player_action_anim_seq = 0;
+    v->player_action_anim_frame = 0;
+    v->player_action_anim_timer = 0.0f;
+}
+
+static int player_visual_lock_active(const ViewerState* v) {
+    return v && v->player_visual_lock_seq != 0 &&
+           v->player_visual_lock_timer > 0.0f;
 }
 
 static void text_s(const char* t, int x, int y, int sz, Color c) {
@@ -1195,6 +1382,20 @@ static void reset_ep(ViewerState* v) {
     /* Initialize prev positions */
     v->prev_player_x = (float)v->state.player.x;
     v->prev_player_y = (float)v->state.player.y;
+    v->prev_player_route_idx = v->state.player.route_idx;
+    v->prev_player_route_len = v->state.player.route_len;
+    v->prev_player_route_x = v->state.player.x;
+    v->prev_player_route_y = v->state.player.y;
+    v->player_pose_anim_seq = PLAYER_ANIM_IDLE;
+    v->player_pose_anim_frame = 0;
+    v->player_pose_anim_timer = 0.0f;
+    v->player_action_anim_seq = 0;
+    v->player_action_anim_frame = 0;
+    v->player_action_anim_timer = 0.0f;
+    v->player_visual_lock_seq = 0;
+    v->player_visual_lock_timer = 0.0f;
+    v->player_visual_lock_face_angle = 0.0f;
+    v->player_attack_visual_target_idx = -1;
     /* Reset NPC animation states */
     for (int i = 0; i < FC_MAX_NPCS; i++) {
         v->prev_npc_x[i] = (float)v->state.npcs[i].x;
@@ -1236,6 +1437,22 @@ static void viewer_jump_to_wave(ViewerState* v, int wave) {
     v->attack_target = -1;
     v->tick_frac = 1.0f;
     dbg_log_clear();
+    v->prev_player_x = (float)v->state.player.x;
+    v->prev_player_y = (float)v->state.player.y;
+    v->prev_player_route_idx = v->state.player.route_idx;
+    v->prev_player_route_len = v->state.player.route_len;
+    v->prev_player_route_x = v->state.player.x;
+    v->prev_player_route_y = v->state.player.y;
+    v->player_pose_anim_seq = PLAYER_ANIM_IDLE;
+    v->player_pose_anim_frame = 0;
+    v->player_pose_anim_timer = 0.0f;
+    v->player_action_anim_seq = 0;
+    v->player_action_anim_frame = 0;
+    v->player_action_anim_timer = 0.0f;
+    v->player_visual_lock_seq = 0;
+    v->player_visual_lock_timer = 0.0f;
+    v->player_visual_lock_face_angle = 0.0f;
+    v->player_attack_visual_target_idx = -1;
 
     for (int i = 0; i < FC_MAX_NPCS; i++) {
         v->prev_npc_x[i] = (float)v->state.npcs[i].x;
@@ -1742,17 +1959,141 @@ static float ground_y(ViewerState* v, int tile_x, int tile_y) {
     return 0.0f;
 }
 
+typedef struct {
+    float x;
+    float y;
+    float face_angle;
+    int moving;
+} EntityRenderPose;
+
+static int sign_i(int v) {
+    return (v > 0) - (v < 0);
+}
+
+static int max_i(int a, int b) {
+    return a > b ? a : b;
+}
+
+static float lerp_f(float a, float b, float t) {
+    return a + (b - a) * t;
+}
+
+static float face_angle_between_tiles(float ax, float ay, float bx, float by) {
+    float dx = bx - ax;
+    float dy = by - ay;
+    if (dx == 0.0f && dy == 0.0f) return 0.0f;
+    return atan2f(dx, -dy) * (180.0f / 3.14159f);
+}
+
+static int player_route_midpoint(const ViewerState* v,
+                                 int prev_x, int prev_y,
+                                 int cur_x, int cur_y,
+                                 int* mid_x, int* mid_y) {
+    if (!v || !mid_x || !mid_y) return 0;
+    if (v->prev_player_route_idx < 0 ||
+        v->prev_player_route_idx >= v->prev_player_route_len) {
+        return 0;
+    }
+
+    int rx = v->prev_player_route_x;
+    int ry = v->prev_player_route_y;
+    int step_dx = rx - prev_x;
+    int step_dy = ry - prev_y;
+    if (max_i(abs(step_dx), abs(step_dy)) != 1) return 0;
+    if (rx == cur_x && ry == cur_y) return 0;
+
+    *mid_x = rx;
+    *mid_y = ry;
+    return 1;
+}
+
+static EntityRenderPose entity_render_pose(const ViewerState* v,
+                                           const FcRenderEntity* e) {
+    EntityRenderPose pose = {0};
+    if (!v || !e) return pose;
+
+    float prev_fx;
+    float prev_fy;
+    if (e->entity_type == ENTITY_PLAYER) {
+        prev_fx = v->prev_player_x;
+        prev_fy = v->prev_player_y;
+    } else {
+        prev_fx = v->prev_npc_x[e->npc_slot];
+        prev_fy = v->prev_npc_y[e->npc_slot];
+    }
+
+    int prev_x = (int)prev_fx;
+    int prev_y = (int)prev_fy;
+    int cur_x = e->x;
+    int cur_y = e->y;
+    int dx = cur_x - prev_x;
+    int dy = cur_y - prev_y;
+    int steps = max_i(abs(dx), abs(dy));
+    float t = v->tick_frac;
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+    if (e->entity_type == ENTITY_PLAYER && v->policy_pipe &&
+        player_visual_lock_active(v) && (dx != 0 || dy != 0)) {
+        const float hold = 0.45f;
+        t = (t < hold) ? 0.0f : (t - hold) / (1.0f - hold);
+    }
+
+    float tile_x = prev_fx;
+    float tile_y = prev_fy;
+    float seg_ax = prev_fx;
+    float seg_ay = prev_fy;
+    float seg_bx = (float)cur_x;
+    float seg_by = (float)cur_y;
+
+    pose.moving = (dx != 0 || dy != 0);
+    if (pose.moving && steps > 1) {
+        int mid_x;
+        int mid_y;
+        int has_mid = 0;
+        if (e->entity_type == ENTITY_PLAYER) {
+            has_mid = player_route_midpoint(v, prev_x, prev_y, cur_x, cur_y,
+                                            &mid_x, &mid_y);
+        }
+        if (!has_mid) {
+            mid_x = prev_x + sign_i(dx);
+            mid_y = prev_y + sign_i(dy);
+        }
+
+        if (t < 0.5f) {
+            float st = t * 2.0f;
+            tile_x = lerp_f(prev_fx, (float)mid_x, st);
+            tile_y = lerp_f(prev_fy, (float)mid_y, st);
+            seg_ax = prev_fx;
+            seg_ay = prev_fy;
+            seg_bx = (float)mid_x;
+            seg_by = (float)mid_y;
+        } else {
+            float st = (t - 0.5f) * 2.0f;
+            tile_x = lerp_f((float)mid_x, (float)cur_x, st);
+            tile_y = lerp_f((float)mid_y, (float)cur_y, st);
+            seg_ax = (float)mid_x;
+            seg_ay = (float)mid_y;
+            seg_bx = (float)cur_x;
+            seg_by = (float)cur_y;
+        }
+    } else {
+        tile_x = lerp_f(prev_fx, (float)cur_x, t);
+        tile_y = lerp_f(prev_fy, (float)cur_y, t);
+    }
+
+    pose.x = tile_x + (float)e->size * 0.5f;
+    pose.y = tile_y + (float)e->size * 0.5f;
+    pose.face_angle = face_angle_between_tiles(seg_ax, seg_ay, seg_bx, seg_by);
+    return pose;
+}
+
 static Vector3 camera_follow_target(const ViewerState* v) {
     float cx = FC_ARENA_WIDTH * 0.5f;
     float cy = -(FC_ARENA_HEIGHT * 0.5f);
     if (v->entity_count > 0) {
-        float t = v->tick_frac;
-        float pcx = v->prev_player_x + 0.5f;
-        float pcy = v->prev_player_y + 0.5f;
-        float ccx = (float)v->entities[0].x + 0.5f;
-        float ccy = (float)v->entities[0].y + 0.5f;
-        cx = pcx + (ccx - pcx) * t;
-        cy = -(pcy + (ccy - pcy) * t);
+        EntityRenderPose pose = entity_render_pose(v, &v->entities[0]);
+        cx = pose.x;
+        cy = -pose.y;
     }
     return (Vector3){cx, 0.5f, cy};
 }
@@ -1840,23 +2181,16 @@ static void draw_scene(ViewerState* v) {
 
     /* Entities */
     int target_entity_idx = -1;  /* for highlight ring */
+    EntityRenderPose player_pose = {0};
+    if (v->entity_count > 0) {
+        player_pose = entity_render_pose(v, &v->entities[0]);
+    }
     for (int i = 0; i < v->entity_count; i++) {
         FcRenderEntity* e = &v->entities[i];
 
-        /* Interpolate position using stable slot-based prev positions */
-        float cur_x = (float)e->x + (float)e->size*0.5f;
-        float cur_y = (float)e->y + (float)e->size*0.5f;
-        float prv_x, prv_y;
-        if (e->entity_type == ENTITY_PLAYER) {
-            prv_x = v->prev_player_x + (float)e->size*0.5f;
-            prv_y = v->prev_player_y + (float)e->size*0.5f;
-        } else {
-            prv_x = v->prev_npc_x[e->npc_slot] + (float)e->size*0.5f;
-            prv_y = v->prev_npc_y[e->npc_slot] + (float)e->size*0.5f;
-        }
-        float t = v->tick_frac;
-        float ex = prv_x + (cur_x - prv_x) * t;
-        float ey = -(prv_y + (cur_y - prv_y) * t);
+        EntityRenderPose pose = entity_render_pose(v, e);
+        float ex = pose.x;
+        float ey = -pose.y;
 
         /* Sample terrain height at entity position */
         float gy = ground_y(v, e->x, e->y);
@@ -1866,8 +2200,13 @@ static void draw_scene(ViewerState* v) {
             NpcModelEntry* pm = viewer_player_model_entry(v);
             if (pm && pm->loaded) {
                 Vector3 pos = {ex, gy, ey};
-                /* Use the backend-computed facing angle (set per movement step or when targeting) */
-                float face_angle = v->state.player.facing_angle;
+                float face_angle = player_visual_lock_active(v)
+                    ? v->player_visual_lock_face_angle
+                    : v->state.player.facing_angle;
+                if (!player_visual_lock_active(v) &&
+                    pose.moving && v->tick_frac < 0.98f) {
+                    face_angle = pose.face_angle;
+                }
                 rlDisableBackfaceCulling();
                 DrawModelEx(pm->model, pos, (Vector3){0,1,0}, face_angle, (Vector3){1,1,1}, WHITE);
                 rlEnableBackfaceCulling();
@@ -1884,11 +2223,14 @@ static void draw_scene(ViewerState* v) {
             NpcModelEntry* nme = v->npc_models ? fc_npc_model_find(v->npc_models, mid) : NULL;
 
             if (nme) {
-                /* Render NPC model facing toward player */
+                /* Render NPC model facing movement while walking, otherwise toward player. */
                 Vector3 pos = {ex, gy, ey};
-                float player_ex = (float)v->entities[0].x + 0.5f;
-                float player_ey = -((float)v->entities[0].y + 0.5f);
+                float player_ex = player_pose.x;
+                float player_ey = -player_pose.y;
                 float face_angle = atan2f(player_ex - ex, player_ey - ey) * (180.0f / 3.14159f);
+                if (pose.moving && v->tick_frac < 0.98f) {
+                    face_angle = pose.face_angle;
+                }
                 rlDisableBackfaceCulling();
                 DrawModelEx(nme->model, pos, (Vector3){0,1,0}, face_angle, (Vector3){1,1,1}, WHITE);
                 rlEnableBackfaceCulling();
@@ -2103,12 +2445,10 @@ static void draw_scene(ViewerState* v) {
     }
 
     /* Prayer overhead icon — 2D projected from player head position */
-    if (v->entities[0].prayer != PRAYER_NONE && v->entity_count > 0) {
-        float t = v->tick_frac;
-        float p_cx = v->prev_player_x + 0.5f + ((float)v->entities[0].x - v->prev_player_x) * t;
-        float p_cy = v->prev_player_y + 0.5f + ((float)v->entities[0].y - v->prev_player_y) * t;
+    if (v->entity_count > 0 && v->entities[0].prayer != PRAYER_NONE) {
+        EntityRenderPose pose = entity_render_pose(v, &v->entities[0]);
         float p_gy = ground_y(v, v->entities[0].x, v->entities[0].y);
-        Vector3 head_pos = {p_cx, p_gy + 3.0f, -p_cy};
+        Vector3 head_pos = {pose.x, p_gy + 3.0f, -pose.y};
         Vector2 scr = GetWorldToScreen(head_pos, v->camera);
         int px = (int)scr.x, py = (int)scr.y;
 
@@ -3796,13 +4136,9 @@ int main(int argc, char** argv) {
         /* Capture clicks and key presses EVERY frame (60fps).
          * These set routes/targets/buffers on the player struct.
          * The tick loop reads them when the next tick fires. */
-        if (!v.auto_mode && v.state.terminal == TERMINAL_NONE) {
+        if (!v.auto_mode && !v.policy_pipe && v.state.terminal == TERMINAL_NONE) {
             process_human_clicks(&v, ui_capture);
-            /* In policy_pipe mode, allow UI clicks (tabs, panels) but
-             * don't process gameplay keys (prayer/eat/drink) since
-             * the policy controls those via stdin actions. */
-            if (!v.policy_pipe)
-                process_human_keys(&v);
+            process_human_keys(&v);
         }
 
         if (tick && v.state.terminal == TERMINAL_NONE) {
@@ -3825,6 +4161,15 @@ int main(int argc, char** argv) {
             /* Save previous positions by stable NPC array index */
             v.prev_player_x = (float)v.state.player.x;
             v.prev_player_y = (float)v.state.player.y;
+            v.prev_player_route_idx = v.state.player.route_idx;
+            v.prev_player_route_len = v.state.player.route_len;
+            v.prev_player_route_x = v.state.player.x;
+            v.prev_player_route_y = v.state.player.y;
+            if (v.state.player.route_idx < v.state.player.route_len) {
+                int ri = v.state.player.route_idx;
+                v.prev_player_route_x = v.state.player.route_x[ri];
+                v.prev_player_route_y = v.state.player.route_y[ri];
+            }
             for (int ni = 0; ni < FC_MAX_NPCS; ni++) {
                 v.prev_npc_x[ni] = (float)v.state.npcs[ni].x;
                 v.prev_npc_y[ni] = (float)v.state.npcs[ni].y;
@@ -3840,6 +4185,8 @@ int main(int argc, char** argv) {
             /* Step simulation */
             fc_step(&v.state, v.actions);
             update_reward_breakdown(&v);
+            if (v.state.attack_attempt_this_tick)
+                mark_player_attack_visual(&v);
             v.tick_frac = 0.0f;
 
             /* Debug event log — record events from this tick */
@@ -3865,10 +4212,18 @@ int main(int argc, char** argv) {
 
             /* Generate hitsplats and projectiles from per-tick events */
             {
-                float gy_p = ground_y(&v, v.state.player.x, v.state.player.y);
-                float p3x = (float)v.state.player.x + 0.5f;
+                float vis_px = (float)v.state.player.x;
+                float vis_py = (float)v.state.player.y;
+                int vis_tile_x = (int)floorf(vis_px);
+                int vis_tile_y = (int)floorf(vis_py);
+                if (vis_tile_x < 0) vis_tile_x = 0;
+                if (vis_tile_y < 0) vis_tile_y = 0;
+                if (vis_tile_x >= FC_ARENA_WIDTH) vis_tile_x = FC_ARENA_WIDTH - 1;
+                if (vis_tile_y >= FC_ARENA_HEIGHT) vis_tile_y = FC_ARENA_HEIGHT - 1;
+                float gy_p = ground_y(&v, vis_tile_x, vis_tile_y);
+                float p3x = vis_px + 0.5f;
                 float p3y = gy_p + 1.5f;
-                float p3z = -((float)v.state.player.y + 0.5f);
+                float p3z = -(vis_py + 0.5f);
                 float tick_sec = (v.tps > 0) ? (1.0f / (float)v.tps) : 0.5f;
 
                 /* Player hitsplat: only show when an incoming NPC hit resolved.
@@ -4076,6 +4431,17 @@ int main(int argc, char** argv) {
         /* Update visual projectiles */
         {
             float dt = GetFrameTime();
+            if (v.player_visual_lock_timer > 0.0f) {
+                v.player_visual_lock_timer -= dt;
+                if (v.player_visual_lock_timer <= 0.0f) {
+                    v.player_visual_lock_timer = 0.0f;
+                    v.player_visual_lock_seq = 0;
+                    v.player_attack_visual_target_idx = -1;
+                    v.player_action_anim_seq = 0;
+                    v.player_action_anim_frame = 0;
+                    v.player_action_anim_timer = 0.0f;
+                }
+            }
             objects_update_texture_anims(v.objects, dt);
             models_update_texture_anims(v.object_anim_models, dt);
             models_update_texture_anims(v.projectile_models, dt);
@@ -4112,49 +4478,93 @@ int main(int argc, char** argv) {
         if (v.anim_cache && v.player_model && v.player_model->count > 0) {
             NpcModelEntry* pm = viewer_player_model_entry(&v);
             float dt = GetFrameTime();
+            float anim_dt = policy_replay_anim_dt(&v, dt);
             recreate_player_anim_state(&v, pm);
             if (!v.player_anim_state || !pm) goto skip_player_anim_update;
 
-            /* Select animation based on player state.
-             * Attack anim plays while attack_timer > 2 (first 3 ticks of the 5-tick cooldown).
-             * This gives the animation time to play before returning to idle. */
-            uint16_t desired_seq = PLAYER_ANIM_IDLE;
+            int visual_locked = player_visual_lock_active(&v);
+            int player_moved = ((int)v.prev_player_x != v.state.player.x ||
+                                (int)v.prev_player_y != v.state.player.y);
+            uint16_t pose_seq = PLAYER_ANIM_IDLE;
+            if (player_moved)
+                pose_seq = v.state.player.is_running
+                    ? PLAYER_ANIM_RUN : PLAYER_ANIM_WALK;
+
+            /* OSRS applies movement pose and action sequence independently.
+             * In policy replay, movement and attack can be valid on the same
+             * tick, so attack visuals are driven by the actual attack event. */
+            uint16_t action_seq = 0;
             if (v.state.terminal == TERMINAL_PLAYER_DEATH) {
-                desired_seq = PLAYER_ANIM_DEATH;
+                action_seq = PLAYER_ANIM_DEATH;
             } else if (v.state.player.food_eaten_this_tick) {
-                desired_seq = PLAYER_ANIM_EAT;
-            } else if (v.state.player.attack_timer > 2) {
-                desired_seq = PLAYER_ANIM_ATTACK;
-            } else if (v.state.movement_this_tick) {
-                desired_seq = v.state.player.is_running ? PLAYER_ANIM_RUN : PLAYER_ANIM_WALK;
+                action_seq = PLAYER_ANIM_EAT;
+            } else if (visual_locked) {
+                action_seq = v.player_visual_lock_seq;
             }
 
-            /* Switch animation if needed */
-            if (desired_seq != v.player_anim_seq) {
-                v.player_anim_seq = desired_seq;
-                v.player_anim_frame = 0;
-                v.player_anim_timer = 0;
+            AnimSequence* pose = advance_anim_track(
+                v.anim_cache, pose_seq,
+                &v.player_pose_anim_seq, &v.player_pose_anim_frame,
+                &v.player_pose_anim_timer, anim_dt);
+            AnimSequence* action = NULL;
+            if (action_seq != 0) {
+                action = visual_locked
+                    ? advance_anim_track_once(
+                        v.anim_cache, action_seq,
+                        &v.player_action_anim_seq,
+                        &v.player_action_anim_frame,
+                        &v.player_action_anim_timer, anim_dt)
+                    : advance_anim_track(
+                        v.anim_cache, action_seq,
+                        &v.player_action_anim_seq,
+                        &v.player_action_anim_frame,
+                        &v.player_action_anim_timer, anim_dt);
+            } else {
+                v.player_action_anim_seq = 0;
+                v.player_action_anim_frame = 0;
+                v.player_action_anim_timer = 0.0f;
             }
 
-            /* Advance frame timer */
-            AnimSequence* seq = anim_get_sequence(v.anim_cache, v.player_anim_seq);
-            if (seq && seq->frame_count > 0) {
-                v.player_anim_timer -= dt;
-                if (v.player_anim_timer <= 0) {
-                    v.player_anim_frame = (v.player_anim_frame + 1) % seq->frame_count;
-                    /* Delay in game ticks → seconds: delay * 0.6 / game_speed
-                     * At TPS=2, each game tick = 0.5s; at TPS=1 = 1s. Use 0.02s per frame for smooth playback. */
-                    float frame_delay = (float)seq->frames[v.player_anim_frame].delay * 0.02f;
-                    if (frame_delay < 0.016f) frame_delay = 0.016f;
-                    v.player_anim_timer = frame_delay;
-                }
+            v.player_anim_seq = action ? action_seq : pose_seq;
+            v.player_anim_frame = action
+                ? v.player_action_anim_frame : v.player_pose_anim_frame;
 
-                /* Apply animation frame to model */
-                AnimFrameData* frame_data = &seq->frames[v.player_anim_frame].frame;
-                AnimFrameBase* fb = anim_get_framebase(v.anim_cache, frame_data->framebase_id);
-                if (fb) {
+            int applied = 0;
+            if (action) {
+                AnimFrameData* action_fd =
+                    &action->frames[v.player_action_anim_frame].frame;
+                AnimFrameBase* action_fb =
+                    anim_get_framebase(v.anim_cache, action_fd->framebase_id);
+                if (action_fb && player_moved && !visual_locked && pose &&
+                    action->interleave_count > 0 && action->interleave_order) {
+                    AnimFrameData* pose_fd =
+                        &pose->frames[v.player_pose_anim_frame].frame;
+                    AnimFrameBase* pose_fb =
+                        anim_get_framebase(v.anim_cache, pose_fd->framebase_id);
+                    if (pose_fb) {
+                        anim_apply_frame_interleaved(
+                            v.player_anim_state, pm->base_verts,
+                            pose_fd, pose_fb, action_fd, action_fb,
+                            action->interleave_order,
+                            action->interleave_count);
+                        upload_anim_state_to_entry(pm, v.player_anim_state);
+                        applied = 1;
+                    }
+                } else if (action_fb) {
                     apply_anim_frame_to_entry(pm, v.player_anim_state,
-                                              frame_data, fb);
+                                              action_fd, action_fb);
+                    applied = 1;
+                }
+            }
+
+            if (!applied && pose) {
+                AnimFrameData* pose_fd =
+                    &pose->frames[v.player_pose_anim_frame].frame;
+                AnimFrameBase* pose_fb =
+                    anim_get_framebase(v.anim_cache, pose_fd->framebase_id);
+                if (pose_fb) {
+                    apply_anim_frame_to_entry(pm, v.player_anim_state,
+                                              pose_fd, pose_fb);
                 }
             }
         }
@@ -4163,6 +4573,7 @@ skip_player_anim_update:
         /* Update NPC animations */
         if (v.anim_cache && v.npc_models) {
             float dt = GetFrameTime();
+            float anim_dt = policy_replay_anim_dt(&v, dt);
             for (int ni = 0; ni < FC_MAX_NPCS; ni++) {
                 FcNpc* n = &v.state.npcs[ni];
                 if (!n->active && !n->died_this_tick) {
@@ -4195,12 +4606,17 @@ skip_player_anim_update:
                     v.npc_anim_timer[ni] = 0;
                 }
 
-                /* Select animation based on NPC state */
+                /* Select animation based on this NPC's own movement/state. */
                 uint16_t desired = (n->npc_type > 0 && n->npc_type < 9)
                     ? NPC_ANIM_IDLE[n->npc_type] : 0;
+                int npc_moved = ((int)v.prev_npc_x[ni] != n->x ||
+                                 (int)v.prev_npc_y[ni] != n->y);
                 if (n->is_dead || n->died_this_tick) {
                     desired = (n->npc_type > 0 && n->npc_type < 9)
                         ? NPC_ANIM_DEATH[n->npc_type] : 0;
+                } else if (npc_moved) {
+                    desired = (n->npc_type > 0 && n->npc_type < 9)
+                        ? NPC_ANIM_WALK[n->npc_type] : 0;
                 } else if (v.npc_attack_visual_timer[ni] > 0.0f) {
                     desired = npc_attack_animation_id(
                         n->npc_type, v.npc_attack_visual_style[ni]);
@@ -4210,56 +4626,19 @@ skip_player_anim_update:
                     /* NPC just attacked */
                     desired = npc_attack_animation_id(n->npc_type,
                                                       n->attack_style);
-                } else if (v.state.movement_this_tick) {
-                    /* Check if this NPC moved (compare prev position) */
-                    if (v.prev_npc_x[ni] != (float)n->x || v.prev_npc_y[ni] != (float)n->y) {
-                        desired = (n->npc_type > 0 && n->npc_type < 9)
-                            ? NPC_ANIM_WALK[n->npc_type] : 0;
-                    }
                 }
 
-                if (desired != v.npc_anim_seq[ni] && desired != 0) {
-                    v.npc_anim_seq[ni] = desired;
-                    v.npc_anim_frame[ni] = 0;
-                    v.npc_anim_timer[ni] = 0;
-                }
-
-                /* Always start from base pose so missing frame data can't leave stale mesh data. */
-                memcpy(v.npc_anim_states[ni]->verts, nme->base_verts,
-                       nme->base_vert_count * 3 * sizeof(int16_t));
-
-                /* Advance frame and apply animation */
-                AnimSequence* seq = anim_get_sequence(v.anim_cache, v.npc_anim_seq[ni]);
-                if (seq && seq->frame_count > 0) {
-                    v.npc_anim_timer[ni] -= dt;
-                    if (v.npc_anim_timer[ni] <= 0) {
-                        v.npc_anim_frame[ni] = (v.npc_anim_frame[ni] + 1) % seq->frame_count;
-                        float frame_delay = (float)seq->frames[v.npc_anim_frame[ni]].delay * 0.02f;
-                        if (frame_delay < 0.016f) frame_delay = 0.016f;
-                        v.npc_anim_timer[ni] = frame_delay;
-                    }
-
+                AnimSequence* seq = advance_anim_track(
+                    v.anim_cache, desired,
+                    &v.npc_anim_seq[ni], &v.npc_anim_frame[ni],
+                    &v.npc_anim_timer[ni], anim_dt);
+                if (seq) {
                     AnimFrameData* fd = &seq->frames[v.npc_anim_frame[ni]].frame;
                     AnimFrameBase* fb = anim_get_framebase(v.anim_cache, fd->framebase_id);
                     if (fb) {
-                        anim_apply_frame(v.npc_anim_states[ni], nme->base_verts, fd, fb);
+                        apply_anim_frame_to_entry(nme, v.npc_anim_states[ni],
+                                                  fd, fb);
                     }
-                }
-
-                {
-                    models_recompute_texture_uvs_from_vertices(
-                        nme, v.npc_anim_states[ni]->verts);
-                    float* mv = nme->model.meshes[0].vertices;
-                    anim_update_mesh(mv, v.npc_anim_states[ni],
-                                     nme->face_indices, nme->face_count);
-                    int evc = nme->face_count * 3;
-                    for (int vi = 0; vi < evc; vi++) {
-                        mv[vi*3+0] /=  128.0f;
-                        mv[vi*3+1] /=  128.0f;
-                        mv[vi*3+2] /= -128.0f;
-                    }
-                    UpdateMeshBuffer(nme->model.meshes[0], 0, mv,
-                                     evc * 3 * sizeof(float), 0);
                 }
 
                 if (v.npc_attack_visual_timer[ni] > 0.0f) {

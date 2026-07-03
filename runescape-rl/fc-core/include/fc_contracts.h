@@ -215,7 +215,7 @@
 static const int FC_MOVE_DX[17] = {
     0,                             /* idle */
     0, 1, 1, 1, 0, -1, -1, -1,    /* walk: N, NE, E, SE, S, SW, W, NW */
-    0, 1, 2, 1, 0, -1, -2, -1     /* run:  N, NE, E, SE, S, SW, W, NW (2-tile target) */
+    0, 2, 2, 2, 0, -2, -2, -2     /* run:  N, NE, E, SE, S, SW, W, NW (2-tile target) */
 };
 static const int FC_MOVE_DY[17] = {
     0,

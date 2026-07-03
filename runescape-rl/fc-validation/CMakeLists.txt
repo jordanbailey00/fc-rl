@@ -15,6 +15,16 @@ add_test(NAME phase2_safespot_los_preserved
 set_tests_properties(phase2_safespot_los_preserved PROPERTIES
     LABELS "phase2;guardrail")
 
+add_test(NAME phase2_diagonal_corner_clipping
+    COMMAND phase2_guardrails_core diagonal_corner_clipping)
+set_tests_properties(phase2_diagonal_corner_clipping PROPERTIES
+    LABELS "phase2;guardrail;movement")
+
+add_test(NAME phase2_npc_moves_when_attack_blocked
+    COMMAND phase2_guardrails_core npc_moves_when_attack_blocked)
+set_tests_properties(phase2_npc_moves_when_attack_blocked PROPERTIES
+    LABELS "phase2;guardrail;movement;combat")
+
 add_test(NAME phase5_invalid_action_classes
     COMMAND phase2_guardrails_core invalid_action_classes)
 set_tests_properties(phase5_invalid_action_classes PROPERTIES

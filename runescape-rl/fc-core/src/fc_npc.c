@@ -381,6 +381,25 @@ static void npc_generic_attack(FcState* state, FcNpc* npc, int npc_idx) {
     npc->attack_timer = npc->attack_speed;
 }
 
+static int npc_has_attack_position(FcState* state, FcNpc* npc) {
+    const FcNpcStats* stats = fc_npc_get_stats(npc->npc_type);
+    FcPlayer* p = &state->player;
+    int dist = fc_distance_to_npc(p->x, p->y, npc);
+    int can_melee = fc_npc_can_melee_player(p->x, p->y, npc->x, npc->y,
+                                            npc->size, state->walkable);
+
+    if (can_melee && (stats->melee_max_hit > 0 || npc->attack_style == ATTACK_MELEE)) {
+        return 1;
+    }
+
+    if (npc->attack_style != ATTACK_MELEE && dist <= npc->attack_range) {
+        return fc_has_los_to_npc(p->x, p->y, npc->x, npc->y, npc->size,
+                                 state->walkable);
+    }
+
+    return 0;
+}
+
 /* ======================================================================== */
 /* NPC AI tick — type dispatch                                               */
 /* ======================================================================== */
@@ -409,8 +428,7 @@ void fc_npc_tick(FcState* state, int npc_idx) {
 
     /* Jad: move into range, then choose its attack style when the hit is queued */
     if (npc->npc_type == NPC_TZTOK_JAD) {
-        int dist = fc_distance_to_npc(p->x, p->y, npc);
-        if (dist > npc->attack_range) {
+        if (!npc_has_attack_position(state, npc)) {
             for (int step = 0; step < npc->movement_speed; step++) {
                 fc_npc_step_toward_sized(&npc->x, &npc->y, p->x, p->y,
                                          npc->size, state->walkable);
@@ -422,10 +440,8 @@ void fc_npc_tick(FcState* state, int npc_idx) {
 
     /* --- Generic movement + attack for all other types --- */
 
-    int dist = fc_distance_to_npc(p->x, p->y, npc);
-
-    /* Movement: if not in attack range, walk toward player (size-aware) */
-    if (dist > npc->attack_range) {
+    /* Movement: keep walking until this tile can actually attack. */
+    if (!npc_has_attack_position(state, npc)) {
         for (int step = 0; step < npc->movement_speed; step++) {
             fc_npc_step_toward_sized(&npc->x, &npc->y, p->x, p->y,
                                      npc->size, state->walkable);

@@ -263,8 +263,16 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
         int dx = FC_MOVE_DX[act_move];
         int dy = FC_MOVE_DY[act_move];
         int max_steps = (act_move >= FC_MOVE_RUN_N) ? 2 : 1;
+        int old_x = p->x;
+        int old_y = p->y;
         int moved = fc_move_toward(&p->x, &p->y, dx, dy, max_steps, state->walkable);
         if (moved > 0) {
+            int moved_dx = p->x - old_x;
+            int moved_dy = p->y - old_y;
+            if (moved_dx != 0 || moved_dy != 0) {
+                p->facing_angle = atan2f((float)moved_dx, (float)(-moved_dy)) *
+                                  (180.0f / 3.14159f);
+            }
             state->movement_this_tick = 1;
             p->is_running = (moved >= 2) ? 1 : 0;
         }

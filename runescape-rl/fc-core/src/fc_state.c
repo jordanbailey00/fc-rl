@@ -220,23 +220,18 @@ int fc_visible_npc_indices(const FcState* state, int out_indices[FC_VISIBLE_NPCS
 
 static int move_action_valid(const FcState* state, int action) {
     const FcPlayer* p = &state->player;
-    int dest_x;
-    int dest_y;
 
     if (action < 0 || action >= FC_MOVE_DIM) return 0;
     if (action == FC_MOVE_IDLE) return 1;
-
-    dest_x = p->x + FC_MOVE_DX[action];
-    dest_y = p->y + FC_MOVE_DY[action];
-    if (dest_x < 0 || dest_x >= FC_ARENA_WIDTH ||
-        dest_y < 0 || dest_y >= FC_ARENA_HEIGHT ||
-        !state->walkable[dest_x][dest_y]) {
-        return 0;
-    }
     if (action >= FC_MOVE_RUN_N && p->run_energy <= 0) {
         return 0;
     }
-    return 1;
+
+    int tx = p->x;
+    int ty = p->y;
+    int max_steps = (action >= FC_MOVE_RUN_N) ? 2 : 1;
+    return fc_move_toward(&tx, &ty, FC_MOVE_DX[action], FC_MOVE_DY[action],
+                          max_steps, state->walkable) > 0;
 }
 
 static int attack_action_valid(const FcState* state, int action) {

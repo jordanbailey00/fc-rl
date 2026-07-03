@@ -36,6 +36,7 @@ gets its own run id so comparisons stay one-change-at-a-time.
 | Step 3 follow-up | Prayer point loss penalty, `w_prayer_lost=-0.005` | `0gw22z0k` | 1.5B | Tested. Peak wave improved, but final policy regressed and the penalty saturated at about full-prayer depletion every episode. |
 | Step 2 pivot | Raw net required-work progress, `w_progress=0.001` | `n6nozx3q` | 1.5B | Tested. Final behavior was cleaner than `0gw22z0k`, but peak-depth behavior still showed no-target/no-progress stalling and final wave depth remained below benchmark. |
 | Step 2 follow-up | Stronger prayer conservation plus wave-scaled no-attack penalty | `mzqf7iml` | 1.5B | Tested. Large improvement over `n6nozx3q`: final wave reached `40.82`, no-progress/no-target rates stayed low, and the wave 20-30 wall was broken. Prayer is still heavily used and not truly conserved. |
+| Backend movement/positioning fix | OSRS-style diagonal movement, stricter clipping/masks, and NPCs continue moving when LOS or diagonal contact blocks attacks | `7mxnrzua` | 1.5B | Tested. Strong improvement over `mzqf7iml`: final wave reached `49.17`, cave progress reached `0.770`, and roughly 9 of 10,021 final-summary episodes reached wave 63. Jad kill rate remained `0`. |
 
 ## Current Step Order
 
@@ -91,6 +92,12 @@ gets its own run id so comparisons stay one-change-at-a-time.
 - The remaining visible issue is that the policy still commands prayer on about
   `95%` of ticks and loses about `90` prayer points per episode, even though
   survival and wave progress improved substantially.
+- Inspect/replay movement-positioning run `7mxnrzua`.
+  - This run used the same train/vector/policy hyperparameters as `mzqf7iml`.
+  - Final average wave improved from `40.82` to `49.17`.
+  - Final cave progress improved from `0.637` to `0.770`.
+  - Late-wave stalling is not solved: no-progress ticks rose to `336.64` per
+    episode and Jad kill rate is still `0`.
 
 ## Step 2 Attempt: Replace Per-Hit Reward With NPC Kill Reward
 
