@@ -1,0 +1,614 @@
+# Fight Caves Movement Combat Correction
+
+Source: `/home/joe/Downloads/osrs_fight_caves_backend_action_semantics_correction_plan.md`
+
+This planning doc contains the Option B-focused details copied from the source plan. It intentionally excludes the unrelated full-interaction-state rewrite and strict movement-cancels-attack path except where the source text directly mentions the Option B contrast.
+
+## Purpose
+
+This document summarizes the current backend issue, why it matters for RL training, and a practical correction path. The goal is not to perfectly clone every detail of rsmod/2009scape immediately. The goal is to remove the biggest unrealistic advantage currently available to the policy: freely combining arbitrary movement and target selection in the same tick, then attacking from the post-movement tile.
+
+## Executive Summary
+
+The current backend tick order is internally consistent, but it gives the RL policy a stronger-than-OSRS control surface.
+
+Current order:
+
+```text
+1. Prayer
+2. Food/potion
+3. Walk-to-tile route setup
+4. Movement
+5. Attack target selection
+6. Auto-attack current target
+```
+
+The main problem is that when the policy submits movement and attack in the same tick, the backend moves the player first and then evaluates the attack from the new post-movement tile. This allows the agent to move into range or line-of-sight and fire in the same tick.
+
+That is too permissive for an OSRS-like Fight Caves environment.
+
+The fix should focus on action semantics, not merely a tiny ordering patch. The RL action contract should distinguish arbitrary movement from combat interaction. A newly selected attack should not benefit from movement that also happened in the same tick.
+
+Recommended core rule:
+
+```text
+A newly selected attack is checked from the pre-movement tile.
+Arbitrary movement should cancel or conflict with a newly selected combat interaction.
+Already-queued hits/projectiles continue resolving even if the player moves afterward.
+```
+
+## Important Framing: The Agent Is Not Literally Clicking
+
+The RL agent is not using a normal OSRS client. It is not literally clicking an NPC and then clicking a tile. It is issuing a backend action, likely something like:
+
+```text
+movement_action = direction or tile
+attack_action   = NPC slot / target index
+utility_actions = prayer, food, potion, etc.
+```
+
+Because of that, there is no natural client-side ordering unless the environment defines one. The backend action contract is the game mechanic.
+
+So the question is not:
+
+```text
+What did the human click first?
+```
+
+The question is:
+
+```text
+What should it mean when the policy chooses movement and attack in the same environment step?
+```
+
+The current meaning is:
+
+```text
+Move first, then attack from the new tile.
+```
+
+That is learnable, but it is not OSRS-like and gives the agent free tempo.
+
+## Current Backend Behavior
+
+Current player tick order:
+
+```text
+1. Prayer
+2. Food/potion
+3. Walk-to-tile route setup
+4. Movement
+5. Attack target selection
+6. Auto-attack current target
+```
+
+Implication:
+
+```text
+If movement and attack are both selected in the same policy step:
+    player moves first
+    target is selected afterward
+    attack is evaluated from the post-movement tile
+    if range/LOS/cooldown are valid, a hit is queued
+```
+
+This lets the agent do:
+
+```text
+same tick:
+    choose movement that improves position
+    choose target
+    fire from the improved position
+```
+
+That should be treated as the main mismatch.
+
+## Main Mismatches
+
+### 1. Movement and Attack Are Too Independent
+
+In a more OSRS-like interaction model, a fresh movement command normally conflicts with or cancels a pending interaction. Movement and combat are not independent low-level heads that can always both be honored in full.
+
+Current backend:
+
+```text
+movement head can be active
+attack head can also be active
+both can be processed in the same tick
+```
+
+Better model:
+
+```text
+fresh arbitrary movement and fresh attack selection should conflict
+```
+
+Allowed:
+
+```text
+attack already committed -> projectile/hit delay continues while player moves later
+```
+
+Not allowed:
+
+```text
+new arbitrary movement + new target selection -> move first, then fire from new tile
+```
+
+### 2. Same-Tick Move-Then-Attack Is Too Permissive
+
+This is the highest-impact issue.
+
+Current behavior allows:
+
+```text
+start tick out of range or blocked by LOS
+move into valid position
+attack from the new tile in the same tick
+```
+
+This gives the agent an unrealistic one-tick advantage. It can learn kiting and positioning patterns that depend on mechanics a normal OSRS interaction model would not provide.
+
+Recommended correction:
+
+```text
+New attack checks should use the player's pre-movement true tile.
+Movement may happen afterward.
+```
+
+### 3. Combat Continuation Is Simplified
+
+The backend keeps something like:
+
+```text
+attack_target_idx
+```
+
+and auto-fires when cooldown, range, and LOS allow.
+
+This is not necessarily bad for RL. Persistent target state can be a good abstraction. The problem is not persistence by itself. The problem is persistence combined with arbitrary movement that never meaningfully interacts with or cancels the combat state.
+
+Better semantics:
+
+```text
+already active/committed combat target can continue if the player remains eligible
+fresh movement can clear pending/new attack intent
+already queued hit/projectile still resolves
+```
+
+## Target Design Principles
+
+Use these as the correction rules.
+
+### Rule 1: New Attack Eligibility Should Not Use Post-Movement Tile
+
+Bad:
+
+```text
+move player
+select target
+check range/LOS from post-move tile
+fire
+```
+
+Better:
+
+```text
+select/continue target
+check range/LOS from pre-move tile
+fire if valid
+then move
+```
+
+### Rule 2: Fresh Arbitrary Movement Should Conflict With Fresh Combat Selection
+
+If the policy selects both movement and a new attack target in the same step, define explicit conflict semantics.
+
+Alternative acceptable version:
+
+```text
+if fresh movement and fresh attack are both selected:
+    attack may fire only if valid from pre-movement tile
+    movement happens afterward
+```
+
+Do not allow:
+
+```text
+fresh movement improves tile
+fresh attack fires from improved tile
+```
+
+### Rule 3: Already-Queued Hits Continue
+
+Movement should not delete damage that was already committed.
+
+Allowed:
+
+```text
+tick N: ranged attack fires and projectile/hit is queued
+tick N+1: player moves
+tick N+k: delayed hit resolves
+```
+
+This is important for ranged kiting. Do not create an artificial animation lock that prevents movement until the visual attack animation is done.
+
+### Rule 4: Target Persistence Is Fine Only With Clear Semantics
+
+Persistent target state is okay if it means:
+
+```text
+continue attacking the same target when not interrupted and when cooldown/range/LOS allow
+```
+
+It is not okay if it means:
+
+```text
+arbitrary movement every tick while auto-fire opportunistically shoots whenever post-move position is good
+```
+
+### Rule 5: Keep RL Slot Identity Stable
+
+This is worth keeping:
+
+```text
+resolve attack slot identity before movement/NPC updates
+```
+
+The action should bind to the NPC represented in the previous observation, not whatever happens to occupy that slot after movement/list updates.
+
+## Recommended Minimal Fix
+
+The smallest useful correction is:
+
+```text
+Do not evaluate newly selected attacks from the post-movement tile.
+```
+
+A practical replacement tick order:
+
+```text
+1. Resolve attack slot identity from previous observation.
+2. Apply prayer.
+3. Apply food/potion.
+4. Determine action conflict semantics:
+       - movement-only: clear/block new attack intent
+       - attack-only: set/continue target interaction
+       - movement + attack: do not allow post-move attack advantage
+5. Evaluate new/continued attack from current pre-movement tile.
+6. Queue ranged hit if range, LOS, and cooldown are valid.
+7. Apply walk-to-tile route setup or directional movement.
+8. Move the player.
+9. Resolve pending hits/projectiles according to their scheduled delay.
+```
+
+The key change is that combat eligibility for a newly selected attack happens before player movement.
+
+## Option B: Attack Before Movement Semantics
+
+This is a good compromise.
+
+```text
+If attack and movement are both selected:
+    check attack from pre-movement tile
+    if valid and cooldown ready, queue hit
+    then apply movement
+```
+
+Under this rule:
+
+```text
+Already in range before moving -> can attack, then move.
+Not in range before moving -> cannot move into range and fire that same tick.
+```
+
+This preserves useful ranged kiting behavior without giving the agent free move-into-range tempo.
+
+Recommended for your Fight Caves RL environment:
+
+```text
+Use Option B first.
+```
+
+It is less disruptive than strict conflict semantics and still fixes the biggest exploit.
+
+## Suggested Implementation Model
+
+Add explicit state around attack intent.
+
+Possible state fields:
+
+```c
+// Current target identity, resolved from the previous observation/action slot.
+int attack_target_npc_id;
+
+// Whether the target was newly selected this tick.
+bool attack_selected_this_tick;
+
+// Whether arbitrary movement was selected this tick.
+bool movement_selected_this_tick;
+
+// Whether an attack was already committed and has a pending hit/projectile.
+// Pending hit events should be independent of later movement.
+struct pending_hit_queue pending_hits;
+```
+
+Important: if using Option B, do not clear the target before the pre-movement attack check. If using strict conflict semantics, movement can block a newly selected attack before the attack check.
+
+## Preferred Tick Order For Fight Caves RL
+
+Recommended practical ordering:
+
+```text
+1. Resolve attack slot identity from previous observation.
+2. Apply prayer.
+3. Apply food/potion.
+4. Read action heads and classify:
+       - utility only
+       - movement only
+       - attack only
+       - attack + movement
+5. Apply attack target selection or continuation.
+6. Evaluate attack from pre-movement tile.
+7. Queue ranged hit if valid.
+8. Apply movement route/directional intent.
+9. Move player normally.
+10. Resolve pending hit/projectile events.
+11. Move/attack NPCs according to their tick order.
+```
+
+Depending on your engine architecture, NPC movement and hit resolution may occur in different places. The important player-side invariant is:
+
+```text
+new attack does not use post-movement tile
+```
+
+## Behavioral Examples
+
+### Example 1: Agent Is Already In Range, Chooses Attack + Move
+
+Start of tick:
+
+```text
+player is in range and LOS
+attack timer is ready
+agent selects target and movement
+```
+
+Recommended result:
+
+```text
+attack fires from current tile
+ranged hit/projectile is queued
+player then moves normally
+```
+
+This allows attack-then-step kiting.
+
+### Example 2: Agent Is Out Of Range, Chooses Move Into Range + Attack
+
+Start of tick:
+
+```text
+player is out of range
+agent selects movement that would enter range
+agent also selects attack
+```
+
+Current backend result:
+
+```text
+player moves into range
+attack fires from new tile
+```
+
+Recommended result:
+
+```text
+attack check fails from pre-movement tile
+player moves into range
+agent can attack on a later tick
+```
+
+### Example 3: Agent Fires, Then Moves While Projectile Is Pending
+
+Tick N:
+
+```text
+player attacks from valid tile
+pending hit/projectile is queued
+```
+
+Tick N+1:
+
+```text
+agent moves away
+```
+
+Tick N+k:
+
+```text
+pending hit resolves
+```
+
+Recommended result:
+
+```text
+hit still lands/resolves according to normal pending-hit logic
+```
+
+Do not cancel already-queued hits just because the player moved later.
+
+## Test Cases To Add
+
+These tests should be added before/alongside the correction so the action contract is explicit.
+
+### Test 1: Cannot Move Into Range And Fire Same Tick
+
+Setup:
+
+```text
+player starts out of range
+NPC is targetable if player moves 1 or 2 tiles closer
+attack cooldown ready
+policy selects movement toward NPC and attack target same tick
+```
+
+Expected:
+
+```text
+player moves
+no hit is queued this tick
+```
+
+### Test 2: Can Attack Then Move If Already In Range
+
+Setup:
+
+```text
+player starts in range and LOS
+attack cooldown ready
+policy selects attack target and movement same tick
+```
+
+Expected under Option B:
+
+```text
+hit is queued
+player moves afterward
+```
+
+### Test 3: Post-Move LOS Does Not Enable Same-Tick New Attack
+
+Setup:
+
+```text
+player starts without LOS
+movement would create LOS
+attack cooldown ready
+policy selects movement and attack same tick
+```
+
+Expected:
+
+```text
+no hit is queued this tick
+```
+
+### Test 4: Pre-Move LOS Allows Attack Before Movement
+
+Setup:
+
+```text
+player starts with LOS and range
+movement would later break LOS
+attack cooldown ready
+policy selects attack and movement same tick
+```
+
+Expected under Option B:
+
+```text
+hit is queued before movement
+player moves afterward
+```
+
+### Test 5: Already Queued Projectile Survives Later Movement
+
+Setup:
+
+```text
+tick N: player fires ranged attack and hit is queued for later
+tick N+1: player moves
+```
+
+Expected:
+
+```text
+pending hit still resolves at scheduled tick
+```
+
+### Test 6: Directional Movement Clears Or Blocks New Attack Intent
+
+Setup:
+
+```text
+player has no committed attack this tick
+policy selects directional movement and a new target
+```
+
+Expected:
+
+```text
+new target does not fire from post-movement tile
+```
+
+### Test 7: Attack Slot Identity Is Stable
+
+Setup:
+
+```text
+previous observation shows NPC A in attack slot 1
+movement/NPC updates would reorder slots
+policy selects attack slot 1
+```
+
+Expected:
+
+```text
+attack resolves against NPC A, not the new occupant of slot 1
+```
+
+Keep this behavior.
+
+## Recommended Phased Correction Plan
+
+### Phase 1: Remove The Biggest Exploit
+
+Goal:
+
+```text
+Prevent same-tick move-then-attack from post-movement tile.
+```
+
+Changes:
+
+```text
+- Resolve attack slot identity before movement.
+- Evaluate new/continued attacks before player movement.
+- Or explicitly block new attacks when movement is also selected.
+- Add tests for move-into-range and move-into-LOS cases.
+```
+
+This phase should be the priority.
+
+## Suggested Config Flag For Ablation
+
+Recommended default after validation:
+
+```text
+fc_action_semantics = osrs_like_attack_before_move
+```
+
+Use the legacy mode only for comparison against old checkpoints.
+
+## Final Recommendation
+
+Do not start by rewriting the entire backend into a perfect rsmod clone.
+
+Start with the smallest correction that removes the unrealistic advantage:
+
+```text
+A newly selected attack must not be evaluated from the post-movement tile when arbitrary movement was also selected in the same policy step.
+```
+
+The best practical rule for this environment is:
+
+```text
+Attack eligibility is checked from the pre-movement tile.
+If valid, queue the hit.
+Then movement happens normally.
+Already-queued hits continue resolving later.
+```
+
+This preserves useful ranged kiting behavior while preventing the agent from learning a non-OSRS superpower: moving into range or LOS and firing from that improved tile in the same tick.
