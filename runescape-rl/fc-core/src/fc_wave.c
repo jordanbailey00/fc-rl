@@ -1212,11 +1212,10 @@ int fc_wave_spawn_dir(int wave_num, int rotation, int npc_index) {
 /* ======================================================================== */
 
 /* Find a valid spawn position for an NPC of given size near (sx,sy).
- * Checks footprint walkability. If the base position doesn't fit,
+ * Checks terrain and live entity occupancy. If the base position doesn't fit,
  * searches nearby tiles in expanding rings (up to radius 5). */
-static void find_valid_spawn(int* sx, int* sy, int size,
-                             const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
-    if (fc_footprint_walkable(*sx, *sy, size, walkable)) return;
+static void find_valid_spawn(const FcState* state, int* sx, int* sy, int size) {
+    if (fc_footprint_available_for_entity(state, *sx, *sy, size, -1, 0)) return;
 
     /* Search nearby in expanding rings */
     for (int r = 1; r <= 5; r++) {
@@ -1224,7 +1223,7 @@ static void find_valid_spawn(int* sx, int* sy, int size,
             for (int dy = -r; dy <= r; dy++) {
                 if (dx != -r && dx != r && dy != -r && dy != r) continue; /* ring only */
                 int nx = *sx + dx, ny = *sy + dy;
-                if (fc_footprint_walkable(nx, ny, size, walkable)) {
+                if (fc_footprint_available_for_entity(state, nx, ny, size, -1, 0)) {
                     *sx = nx; *sy = ny;
                     return;
                 }
@@ -1246,7 +1245,7 @@ void fc_wave_spawn(FcState* state, int wave_num) {
 
         /* Validate footprint for large NPCs */
         const FcNpcStats* stats = fc_npc_get_stats(npc_type);
-        find_valid_spawn(&sx, &sy, stats->size, state->walkable);
+        find_valid_spawn(state, &sx, &sy, stats->size);
 
         /* Find a free NPC slot */
         for (int slot = 0; slot < FC_MAX_NPCS; slot++) {

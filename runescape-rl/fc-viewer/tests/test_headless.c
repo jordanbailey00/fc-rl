@@ -18,6 +18,7 @@
 #include "fc_combat.h"
 #include "fc_npc.h"
 #include "fc_pathfinding.h"
+#include "fc_player_init.h"
 #include "fc_reward.h"
 #include "fc_wave.h"
 #include <stdio.h>
@@ -57,6 +58,12 @@ static void init_manual_test_state(FcState* state) {
     state->player.defence_crush = FC_EQUIP_DEF_CRUSH;
     state->player.defence_magic = FC_EQUIP_DEF_MAGIC;
     state->player.defence_ranged = FC_EQUIP_DEF_RANGED;
+    state->player.ranged_level = FC_PLAYER_RANGED_LVL;
+    state->player.weapon_uses_ammo = FC_PLAYER_WEAPON_USES_AMMO;
+    state->player.weapon_speed = FC_PLAYER_WEAPON_SPEED;
+    state->player.weapon_range = FC_PLAYER_WEAPON_RANGE;
+    state->player.ranged_attack_bonus = FC_EQUIP_RANGED_ATK;
+    state->player.ranged_strength_bonus = FC_EQUIP_RANGED_STR;
     state->player.attack_target_idx = -1;
 }
 

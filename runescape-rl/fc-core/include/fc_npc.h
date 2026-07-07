@@ -30,6 +30,12 @@ const FcNpcStats* fc_npc_get_stats(int npc_type);
 /* Initialize an NPC slot from type and spawn position */
 void fc_npc_spawn(FcNpc* npc, int npc_type, int x, int y, int spawn_index);
 
+/* True when the NPC could attack the player if its top-left footprint stood
+ * at candidate_x,candidate_y. This checks attack style, range, melee contact,
+ * and static LOS. */
+int fc_npc_position_can_attack_player(const FcState* state, const FcNpc* npc,
+                                      int candidate_x, int candidate_y);
+
 /* Run NPC AI for one tick: movement + attack decision */
 void fc_npc_tick(FcState* state, int npc_idx);
 

@@ -130,6 +130,176 @@ void fc_npc_spawn(FcNpc* npc, int npc_type, int x, int y, int spawn_index) {
     npc->num_pending_hits = 0;
 }
 
+static void build_npc_movement_occupancy(
+    const FcState* state,
+    int npc_idx,
+    uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
+    fc_build_occupancy(state, occupied, npc_idx, 0);
+    if (state->movement_start_occupied_valid) {
+        fc_overlay_occupancy(occupied, state->movement_start_occupied);
+        if (npc_idx >= 0 && npc_idx < FC_MAX_NPCS &&
+            state->movement_start_npc_active[npc_idx]) {
+            fc_unmark_footprint_occupied(
+                occupied,
+                state->movement_start_npc_x[npc_idx],
+                state->movement_start_npc_y[npc_idx],
+                state->movement_start_npc_size[npc_idx]);
+        }
+    }
+}
+
+static int npc_dynamic_step_toward(FcState* state, int npc_idx,
+                                   int target_x, int target_y) {
+    FcNpc* npc = &state->npcs[npc_idx];
+    uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+    build_npc_movement_occupancy(state, npc_idx, occupied);
+    return fc_npc_step_toward_sized_dynamic(&npc->x, &npc->y,
+                                            target_x, target_y, npc->size,
+                                            state->walkable, occupied);
+}
+
+static int min_i(int a, int b) {
+    return a < b ? a : b;
+}
+
+static int max_i(int a, int b) {
+    return a > b ? a : b;
+}
+
+static void npc_naive_player_chase_destination(const FcNpc* npc,
+                                               const FcPlayer* player,
+                                               int* out_x, int* out_y) {
+    int source_width = npc->size;
+    int source_length = npc->size;
+    int target_width = 1;
+    int target_length = 1;
+    int diagonal = (npc->x - player->x) + (npc->y - player->y);
+    int anti = (npc->x - player->x) - (npc->y - player->y);
+    int south_west_clockwise = anti < 0;
+    int north_west_clockwise =
+        diagonal >= (target_length - 1) - (source_width - 1);
+    int north_east_clockwise = anti > source_width - source_length;
+    int south_east_clockwise =
+        diagonal <= (target_width - 1) - (source_length - 1);
+
+    if (south_west_clockwise && !north_west_clockwise) {
+        int off_y;
+        if (diagonal >= -source_width) {
+            off_y = min_i(diagonal + source_width, target_length - 1);
+        } else if (anti > -source_width) {
+            off_y = -(source_width + anti);
+        } else {
+            off_y = 0;
+        }
+        *out_x = player->x - source_width;
+        *out_y = player->y + off_y;
+    } else if (north_west_clockwise && !north_east_clockwise) {
+        int off_x;
+        if (anti >= -target_length) {
+            off_x = min_i(anti + target_length, target_width - 1);
+        } else if (diagonal < target_length) {
+            off_x = max_i(diagonal - target_length, -(source_width - 1));
+        } else {
+            off_x = 0;
+        }
+        *out_x = player->x + off_x;
+        *out_y = player->y + target_length;
+    } else if (north_east_clockwise && !south_east_clockwise) {
+        int off_y;
+        if (anti <= target_width) {
+            off_y = target_length - anti;
+        } else if (diagonal < target_width) {
+            off_y = max_i(diagonal - target_width, -(source_length - 1));
+        } else {
+            off_y = 0;
+        }
+        *out_x = player->x + target_width;
+        *out_y = player->y + off_y;
+    } else {
+        int off_x;
+        if (diagonal > -source_length) {
+            off_x = min_i(diagonal + source_length, target_width - 1);
+        } else if (anti < source_length) {
+            off_x = max_i(anti - source_length, -(source_length - 1));
+        } else {
+            off_x = 0;
+        }
+        *out_x = player->x + off_x;
+        *out_y = player->y - source_length;
+    }
+}
+
+int fc_npc_position_can_attack_player(const FcState* state, const FcNpc* npc,
+                                      int candidate_x, int candidate_y) {
+    if (!state || !npc || !npc->active || npc->is_dead) return 0;
+
+    const FcNpcStats* stats = fc_npc_get_stats(npc->npc_type);
+    const FcPlayer* p = &state->player;
+    FcNpc candidate = *npc;
+    candidate.x = candidate_x;
+    candidate.y = candidate_y;
+
+    int can_melee = fc_npc_can_melee_player(p->x, p->y,
+                                            candidate.x, candidate.y,
+                                            candidate.size, state->walkable);
+    if (can_melee &&
+        (stats->melee_max_hit > 0 || candidate.attack_style == ATTACK_MELEE)) {
+        return 1;
+    }
+
+    if (candidate.attack_style != ATTACK_MELEE &&
+        fc_distance_to_npc(p->x, p->y, &candidate) <= candidate.attack_range) {
+        return fc_has_los_to_npc(p->x, p->y,
+                                 candidate.x, candidate.y, candidate.size,
+                                 state->walkable);
+    }
+
+    return 0;
+}
+
+static int npc_dynamic_step_toward_player_bounds(FcState* state, int npc_idx) {
+    FcNpc* npc = &state->npcs[npc_idx];
+    int target_x;
+    int target_y;
+
+    npc_naive_player_chase_destination(npc, &state->player,
+                                       &target_x, &target_y);
+    if (target_x == npc->x && target_y == npc->y) return 0;
+
+    return npc_dynamic_step_toward(state, npc_idx, target_x, target_y);
+}
+
+static int split_spawn_tile_valid(const FcState* state, int x, int y, int size) {
+    return fc_footprint_available_for_entity(state, x, y, size, -1, 0);
+}
+
+static int find_valid_split_spawn(const FcState* state,
+                                  int preferred_x, int preferred_y, int size,
+                                  int* out_x, int* out_y) {
+    if (split_spawn_tile_valid(state, preferred_x, preferred_y, size)) {
+        *out_x = preferred_x;
+        *out_y = preferred_y;
+        return 1;
+    }
+
+    for (int r = 1; r < FC_ARENA_WIDTH; r++) {
+        for (int dx = -r; dx <= r; dx++) {
+            for (int dy = -r; dy <= r; dy++) {
+                if (dx != -r && dx != r && dy != -r && dy != r) continue;
+                int nx = preferred_x + dx;
+                int ny = preferred_y + dy;
+                if (split_spawn_tile_valid(state, nx, ny, size)) {
+                    *out_x = nx;
+                    *out_y = ny;
+                    return 1;
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
 /* ======================================================================== */
 /* Tz-Kek: split on death — spawn 2 small Tz-Kek                            */
 /* ======================================================================== */
@@ -140,6 +310,7 @@ void fc_npc_tz_kek_split(FcState* state, int dead_x, int dead_y) {
      * at wave spawn time. These children inherit that count and decrement normally
      * when they die. (Matches RSPS: parent not in npcDespawn list, children are.) */
     int spawned = 0;
+    const FcNpcStats* child_stats = fc_npc_get_stats(NPC_TZ_KEK_SM);
     for (int i = 0; i < FC_MAX_NPCS && spawned < 2; i++) {
         if (!state->npcs[i].active) {
             int sx = dead_x + (spawned == 0 ? 0 : 1);
@@ -147,6 +318,10 @@ void fc_npc_tz_kek_split(FcState* state, int dead_x, int dead_y) {
             /* Clamp to arena */
             if (sx >= FC_ARENA_WIDTH - 1) sx = dead_x - 1;
             if (sx < 1) sx = 1;
+
+            if (!find_valid_split_spawn(state, sx, sy, child_stats->size, &sx, &sy)) {
+                continue;
+            }
 
             fc_npc_spawn(&state->npcs[i], NPC_TZ_KEK_SM, sx, sy,
                          state->next_spawn_index++);
@@ -271,7 +446,7 @@ static void yt_mejkot_heal_tick(FcState* state, FcNpc* npc) {
 /* Yt-HurKot: heal Jad unless distracted                                     */
 /* ======================================================================== */
 
-static void yt_hurkot_tick(FcState* state, FcNpc* npc) {
+static void yt_hurkot_tick(FcState* state, FcNpc* npc, int npc_idx) {
     if (npc->healer_distracted) return;  /* player attacked us, stop healing */
 
     if (npc->heal_timer > 0) {
@@ -309,8 +484,7 @@ static void yt_hurkot_tick(FcState* state, FcNpc* npc) {
                 }
             } else {
                 /* Walk toward Jad instead of player (size-aware) */
-                fc_npc_step_toward_sized(&npc->x, &npc->y, jad->x, jad->y,
-                                         npc->size, state->walkable);
+                npc_dynamic_step_toward(state, npc_idx, jad->x, jad->y);
             }
             return;
         }
@@ -382,22 +556,7 @@ static void npc_generic_attack(FcState* state, FcNpc* npc, int npc_idx) {
 }
 
 static int npc_has_attack_position(FcState* state, FcNpc* npc) {
-    const FcNpcStats* stats = fc_npc_get_stats(npc->npc_type);
-    FcPlayer* p = &state->player;
-    int dist = fc_distance_to_npc(p->x, p->y, npc);
-    int can_melee = fc_npc_can_melee_player(p->x, p->y, npc->x, npc->y,
-                                            npc->size, state->walkable);
-
-    if (can_melee && (stats->melee_max_hit > 0 || npc->attack_style == ATTACK_MELEE)) {
-        return 1;
-    }
-
-    if (npc->attack_style != ATTACK_MELEE && dist <= npc->attack_range) {
-        return fc_has_los_to_npc(p->x, p->y, npc->x, npc->y, npc->size,
-                                 state->walkable);
-    }
-
-    return 0;
+    return fc_npc_position_can_attack_player(state, npc, npc->x, npc->y);
 }
 
 /* ======================================================================== */
@@ -408,8 +567,6 @@ void fc_npc_tick(FcState* state, int npc_idx) {
     FcNpc* npc = &state->npcs[npc_idx];
     if (!npc->active || npc->is_dead) return;
 
-    FcPlayer* p = &state->player;
-
     /* Decrement attack timer */
     if (npc->attack_timer > 0) npc->attack_timer--;
 
@@ -417,7 +574,7 @@ void fc_npc_tick(FcState* state, int npc_idx) {
 
     /* Yt-HurKot: heal Jad instead of normal AI (unless distracted) */
     if (npc->npc_type == NPC_YT_HURKOT && !npc->healer_distracted) {
-        yt_hurkot_tick(state, npc);
+        yt_hurkot_tick(state, npc, npc_idx);
         return;  /* healers don't attack when healing Jad */
     }
 
@@ -430,8 +587,7 @@ void fc_npc_tick(FcState* state, int npc_idx) {
     if (npc->npc_type == NPC_TZTOK_JAD) {
         if (!npc_has_attack_position(state, npc)) {
             for (int step = 0; step < npc->movement_speed; step++) {
-                fc_npc_step_toward_sized(&npc->x, &npc->y, p->x, p->y,
-                                         npc->size, state->walkable);
+                if (!npc_dynamic_step_toward_player_bounds(state, npc_idx)) break;
             }
         }
         jad_attack(state, npc, npc_idx);
@@ -443,8 +599,7 @@ void fc_npc_tick(FcState* state, int npc_idx) {
     /* Movement: keep walking until this tile can actually attack. */
     if (!npc_has_attack_position(state, npc)) {
         for (int step = 0; step < npc->movement_speed; step++) {
-            fc_npc_step_toward_sized(&npc->x, &npc->y, p->x, p->y,
-                                     npc->size, state->walkable);
+            if (!npc_dynamic_step_toward_player_bounds(state, npc_idx)) break;
         }
     }
 

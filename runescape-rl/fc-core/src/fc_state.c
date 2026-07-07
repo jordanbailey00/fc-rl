@@ -230,8 +230,10 @@ static int move_action_valid(const FcState* state, int action) {
     int tx = p->x;
     int ty = p->y;
     int max_steps = (action >= FC_MOVE_RUN_N) ? 2 : 1;
-    return fc_move_toward(&tx, &ty, FC_MOVE_DX[action], FC_MOVE_DY[action],
-                          max_steps, state->walkable) > 0;
+    uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+    fc_build_occupancy(state, occupied, -1, 1);
+    return fc_move_toward_dynamic(&tx, &ty, FC_MOVE_DX[action], FC_MOVE_DY[action],
+                                  max_steps, state->walkable, occupied) > 0;
 }
 
 static int attack_action_valid(const FcState* state, int action) {

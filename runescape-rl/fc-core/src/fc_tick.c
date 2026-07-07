@@ -16,8 +16,8 @@
  *   2. Process player actions:
  *      a. Prayer toggle (instant)
  *      b. Eat food / drink potion (if timer ready)
- *      c. Movement (walk/run via directional head)
- *      d. Attack initiation (if target valid and timer ready)
+ *      c. Attack initiation from the pre-movement tile
+ *      d. Movement (route or directional head)
  *   3. Decrement player timers (attack, food, potion, combo)
  *   4. Prayer drain (only if prayer stayed active across the tick boundary)
  *   5. NPC AI tick (movement + attack) for all active NPCs
@@ -79,6 +79,46 @@ static void clear_per_tick_flags(FcState* state) {
 }
 
 /* ======================================================================== */
+/* Movement start reservations                                               */
+/* ======================================================================== */
+
+static void build_movement_start_reservations(FcState* state) {
+    fc_clear_occupancy(state->movement_start_occupied);
+    state->movement_start_player_x = state->player.x;
+    state->movement_start_player_y = state->player.y;
+    fc_mark_footprint_occupied(state->movement_start_occupied,
+                               state->player.x, state->player.y, 1);
+
+    for (int i = 0; i < FC_MAX_NPCS; i++) {
+        FcNpc* npc = &state->npcs[i];
+        int active = npc->active && !npc->is_dead;
+        state->movement_start_npc_active[i] = active;
+        state->movement_start_npc_x[i] = npc->x;
+        state->movement_start_npc_y[i] = npc->y;
+        state->movement_start_npc_size[i] = npc->size;
+        if (active) {
+            fc_mark_footprint_occupied(state->movement_start_occupied,
+                                       npc->x, npc->y, npc->size);
+        }
+    }
+
+    state->movement_start_occupied_valid = 1;
+}
+
+static void build_player_movement_occupancy(
+    const FcState* state,
+    uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
+    fc_build_occupancy(state, occupied, -1, 1);
+    if (state->movement_start_occupied_valid) {
+        fc_overlay_occupancy(occupied, state->movement_start_occupied);
+        fc_unmark_footprint_occupied(occupied,
+                                     state->movement_start_player_x,
+                                     state->movement_start_player_y,
+                                     1);
+    }
+}
+
+/* ======================================================================== */
 /* Resolve NPC visible-slot index to NPC array index                         */
 /* ======================================================================== */
 
@@ -105,9 +145,15 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
     int act_drink    = actions[4];
     int act_target_x = actions[5];
     int act_target_y = actions[6];
+    int explicit_directional_move = (act_move != FC_MOVE_IDLE);
+    int explicit_tile_move = (act_target_x > 0 && act_target_y > 0);
+    int explicit_move = explicit_directional_move || explicit_tile_move;
+    int explicit_attack = (act_attack > FC_ATTACK_NONE);
     int requested_attack_idx = -1;
     int invalid_classes[FC_INVALID_ACTION_CLASS_COUNT];
     int target_metrics_recorded = 0;
+    uint8_t player_occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+    build_player_movement_occupancy(state, player_occupied);
 
     if (state->npcs_remaining > 0) {
         if (act_move == FC_MOVE_IDLE) {
@@ -143,7 +189,7 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
     /* Resolve attack slots against the pre-action NPC slot ordering. The action
      * was chosen from the previous observation, so movement later in this tick
      * must not rebind slot N to a different NPC identity. */
-    if (act_attack > FC_ATTACK_NONE) {
+    if (explicit_attack) {
         requested_attack_idx = npc_slot_to_index(state, act_attack - 1);
     }
 
@@ -211,80 +257,26 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
         state->prayer_potion_used_this_tick = 1;
     }
 
-    /* ---- Walk-to-tile (high-level pathfinding, heads 5+6) ---- */
-    /* When both target_x and target_y are non-zero, BFS pathfind to that tile.
-     * This is identical to a human clicking a tile in the viewer. The route is
-     * consumed one step per tick by the movement code below. */
-    if (act_target_x > 0 && act_target_y > 0) {
-        int tx = act_target_x - 1;  /* 1-64 → 0-63 */
-        int ty = act_target_y - 1;
-        if (tx >= 0 && tx < FC_ARENA_WIDTH && ty >= 0 && ty < FC_ARENA_HEIGHT &&
-            state->walkable[tx][ty]) {
-            int steps = fc_pathfind_bfs(p->x, p->y, tx, ty, state->walkable,
-                                        p->route_x, p->route_y, FC_MAX_ROUTE);
-            p->route_len = steps;
-            p->route_idx = 0;
-            /* Clear attack target — walking to tile cancels combat approach */
+    /* Explicit movement starts a fresh movement intent. Clear stale routes and
+     * combat approach before auto-attack can consume old state this tick. */
+    if (explicit_move) {
+        p->route_len = 0;
+        p->route_idx = 0;
+        p->approach_target = 0;
+        if (!explicit_attack) {
             p->attack_target_idx = -1;
-            p->approach_target = 0;
-        }
-    }
-
-    /* ---- Movement ---- */
-    /* Three modes (priority order):
-     * 1. Route-based (from walk-to-tile action or viewer click): consume steps
-     * 2. Directional (RL action head 0): immediate step in direction
-     * 3. Idle
-     * Route takes priority. If route active, directional input is ignored. */
-    if (p->route_idx < p->route_len) {
-        /* Consume steps from the route: 1 if walking, 2 if running */
-        int steps = p->is_running ? 2 : 1;
-        for (int s = 0; s < steps && p->route_idx < p->route_len; s++) {
-            int nx = p->route_x[p->route_idx];
-            int ny = p->route_y[p->route_idx];
-            if (fc_tile_walkable(nx, ny, state->walkable)) {
-                /* Update facing based on movement direction */
-                int dx = nx - p->x;
-                int dy = ny - p->y;
-                if (dx != 0 || dy != 0) {
-                    /* atan2 of world X delta and negated world Y delta (for Raylib Z) */
-                    p->facing_angle = atan2f((float)dx, (float)(-dy)) * (180.0f / 3.14159f);
-                }
-                p->x = nx;
-                p->y = ny;
-                state->movement_this_tick = 1;
-            }
-            p->route_idx++;
-        }
-    } else if (act_move == FC_MOVE_IDLE) {
-        state->idle_this_tick = 1;
-    } else if (act_move >= FC_MOVE_WALK_N && act_move <= FC_MOVE_RUN_NW) {
-        /* Directional movement (for RL agents) */
-        int dx = FC_MOVE_DX[act_move];
-        int dy = FC_MOVE_DY[act_move];
-        int max_steps = (act_move >= FC_MOVE_RUN_N) ? 2 : 1;
-        int old_x = p->x;
-        int old_y = p->y;
-        int moved = fc_move_toward(&p->x, &p->y, dx, dy, max_steps, state->walkable);
-        if (moved > 0) {
-            int moved_dx = p->x - old_x;
-            int moved_dy = p->y - old_y;
-            if (moved_dx != 0 || moved_dy != 0) {
-                p->facing_angle = atan2f((float)moved_dx, (float)(-moved_dy)) *
-                                  (180.0f / 3.14159f);
-            }
-            state->movement_this_tick = 1;
-            p->is_running = (moved >= 2) ? 1 : 0;
         }
     }
 
     /* ---- Attack target selection ---- */
-    if (act_attack > FC_ATTACK_NONE) {
+    /* Option B action semantics: select and evaluate attacks before movement,
+     * so a same-tick move cannot create range or LOS for a new shot. */
+    if (explicit_attack) {
         if (requested_attack_idx >= 0 &&
             state->npcs[requested_attack_idx].active &&
             !state->npcs[requested_attack_idx].is_dead) {
             p->attack_target_idx = requested_attack_idx;
-            p->approach_target = 1;  /* auto-walk into range, same as human click */
+            p->approach_target = explicit_move ? 0 : 1;
         }
     }
 
@@ -319,17 +311,23 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
             }
 
             if ((dist > weapon_range || !has_los) &&
-                p->approach_target && p->route_idx >= p->route_len) {
+                p->approach_target && p->route_idx >= p->route_len &&
+                !explicit_directional_move && !explicit_tile_move) {
                 /* Walk toward the NPC center. The greedy pathfinder will head
                  * straight toward the target. The route consumer in the movement
                  * section will stop once we're in range with LOS (checked next tick). */
                 int npc_cx = target->x + target->size / 2;
                 int npc_cy = target->y + target->size / 2;
-                p->route_len = fc_pathfind_bfs(p->x, p->y, npc_cx, npc_cy,
-                                                state->walkable, p->route_x, p->route_y, FC_MAX_ROUTE);
+                int static_route_x[FC_MAX_ROUTE];
+                int static_route_y[FC_MAX_ROUTE];
+                int static_route_len = fc_pathfind_bfs(p->x, p->y, npc_cx, npc_cy,
+                                                       state->walkable,
+                                                       static_route_x, static_route_y,
+                                                       FC_MAX_ROUTE);
+                p->route_len = 0;
                 /* Trim the route to the first tile that can actually fire. */
-                for (int ri = 0; ri < p->route_len; ri++) {
-                    int rx = p->route_x[ri], ry = p->route_y[ri];
+                for (int ri = 0; ri < static_route_len; ri++) {
+                    int rx = static_route_x[ri], ry = static_route_y[ri];
                     /* Chebyshev distance to nearest NPC footprint tile */
                     int nx = (rx < target->x) ? target->x : (rx > target->x + target->size - 1) ? target->x + target->size - 1 : rx;
                     int ny = (ry < target->y) ? target->y : (ry > target->y + target->size - 1) ? target->y + target->size - 1 : ry;
@@ -339,7 +337,9 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
                     if (rdist <= weapon_range &&
                         fc_has_los_to_npc(rx, ry, target->x, target->y,
                                           target->size, state->walkable)) {
-                        p->route_len = ri + 1;  /* stop here */
+                        p->route_len = fc_pathfind_bfs_sized_dynamic(
+                            p->x, p->y, rx, ry, 1, state->walkable,
+                            player_occupied, p->route_x, p->route_y, FC_MAX_ROUTE);
                         break;
                     }
                 }
@@ -400,6 +400,89 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
         }
     }
 
+    /* Attack+move is a single attack opportunity from the pre-movement tile.
+     * Future shots require the policy to explicitly select/continue attack. */
+    if (explicit_move) {
+        p->approach_target = 0;
+        if (explicit_attack) {
+            p->attack_target_idx = -1;
+        }
+    }
+
+    /* ---- Walk-to-tile (high-level pathfinding, heads 5+6) ---- */
+    /* When both target_x and target_y are non-zero, BFS pathfind to that tile.
+     * This is identical to a human clicking a tile in the viewer. The route is
+     * consumed one step per tick by the movement code below. */
+    if (act_target_x > 0 && act_target_y > 0) {
+        int tx = act_target_x - 1;  /* 1-64 → 0-63 */
+        int ty = act_target_y - 1;
+        if (tx >= 0 && tx < FC_ARENA_WIDTH && ty >= 0 && ty < FC_ARENA_HEIGHT &&
+            state->walkable[tx][ty]) {
+            int steps = fc_pathfind_bfs_sized_dynamic(
+                p->x, p->y, tx, ty, 1, state->walkable, player_occupied,
+                p->route_x, p->route_y, FC_MAX_ROUTE);
+            p->route_len = steps;
+            p->route_idx = 0;
+            /* Clear attack target — walking to tile cancels combat approach */
+            p->attack_target_idx = -1;
+            p->approach_target = 0;
+        }
+    }
+
+    /* ---- Movement ---- */
+    /* Three modes (priority order):
+     * 1. Route-based (from walk-to-tile action or combat approach): consume steps
+     * 2. Directional (RL action head 0): immediate step in direction
+     * 3. Idle
+     * Route takes priority. If route active, directional input is ignored. */
+    if (p->route_idx < p->route_len) {
+        /* Consume steps from the route: 1 if walking, 2 if running */
+        int steps = p->is_running ? 2 : 1;
+        for (int s = 0; s < steps && p->route_idx < p->route_len; s++) {
+            int nx = p->route_x[p->route_idx];
+            int ny = p->route_y[p->route_idx];
+            if (fc_footprint_available_dynamic(nx, ny, 1,
+                                               state->walkable,
+                                               player_occupied)) {
+                /* Update facing based on movement direction */
+                int dx = nx - p->x;
+                int dy = ny - p->y;
+                if (dx != 0 || dy != 0) {
+                    /* atan2 of world X delta and negated world Y delta (for Raylib Z) */
+                    p->facing_angle = atan2f((float)dx, (float)(-dy)) * (180.0f / 3.14159f);
+                }
+                p->x = nx;
+                p->y = ny;
+                state->movement_this_tick = 1;
+            } else {
+                p->route_len = p->route_idx;
+                break;
+            }
+            p->route_idx++;
+        }
+    } else if (act_move == FC_MOVE_IDLE) {
+        state->idle_this_tick = 1;
+    } else if (act_move >= FC_MOVE_WALK_N && act_move <= FC_MOVE_RUN_NW) {
+        /* Directional movement (for RL agents) */
+        int dx = FC_MOVE_DX[act_move];
+        int dy = FC_MOVE_DY[act_move];
+        int max_steps = (act_move >= FC_MOVE_RUN_N) ? 2 : 1;
+        int old_x = p->x;
+        int old_y = p->y;
+        int moved = fc_move_toward_dynamic(&p->x, &p->y, dx, dy, max_steps,
+                                           state->walkable, player_occupied);
+        if (moved > 0) {
+            int moved_dx = p->x - old_x;
+            int moved_dy = p->y - old_y;
+            if (moved_dx != 0 || moved_dy != 0) {
+                p->facing_angle = atan2f((float)moved_dx, (float)(-moved_dy)) *
+                                  (180.0f / 3.14159f);
+            }
+            state->movement_this_tick = 1;
+            p->is_running = (moved >= 2) ? 1 : 0;
+        }
+    }
+
     if (state->npcs_remaining > 0) {
         int target_active = 0;
         if (p->attack_target_idx >= 0) {
@@ -407,7 +490,9 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
             target_active = current_target->active && !current_target->is_dead;
         }
         if (!target_active) {
-            state->ep_no_target_ticks++;
+            if (!target_metrics_recorded) {
+                state->ep_no_target_ticks++;
+            }
         } else if (!target_metrics_recorded) {
             FcNpc* current_target = &state->npcs[p->attack_target_idx];
             if (current_target->npc_type > NPC_NONE &&
@@ -445,28 +530,8 @@ static void decrement_player_timers(FcPlayer* p) {
 /* Jad healer auto-spawn                                                     */
 /* ======================================================================== */
 
-static int footprints_overlap(int ax, int ay, int asize,
-                              int bx, int by, int bsize) {
-    return ax < bx + bsize && ax + asize > bx &&
-           ay < by + bsize && ay + asize > by;
-}
-
 static int healer_spawn_tile_valid(const FcState* state, int x, int y, int size) {
-    if (!fc_footprint_walkable(x, y, size, state->walkable)) return 0;
-
-    if (footprints_overlap(x, y, size, state->player.x, state->player.y, 1)) {
-        return 0;
-    }
-
-    for (int i = 0; i < FC_MAX_NPCS; i++) {
-        const FcNpc* npc = &state->npcs[i];
-        if (!npc->active || npc->is_dead) continue;
-        if (footprints_overlap(x, y, size, npc->x, npc->y, npc->size)) {
-            return 0;
-        }
-    }
-
-    return 1;
+    return fc_footprint_available_for_entity(state, x, y, size, -1, 0);
 }
 
 static int find_valid_healer_spawn(const FcState* state,
@@ -595,6 +660,7 @@ void fc_tick(FcState* state, const int actions[FC_NUM_ACTION_HEADS]) {
 
     /* 1. Clear per-tick flags */
     clear_per_tick_flags(state);
+    build_movement_start_reservations(state);
 
     /* 2. Process player actions */
     process_player_actions(state, actions);

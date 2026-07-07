@@ -1,0 +1,554 @@
+# Fight Caves Backend Combat Movement Collision Plan
+
+Source: `/home/joe/Downloads/fc_backend_combat_movement_collision_correction(1).md`
+
+This is the implementation plan for the remaining backend fidelity work after the initial Option B attack-before-movement correction.
+
+## Current Status
+
+The initial Option B correction is implemented locally:
+
+```text
+New player attacks are checked from the pre-movement tile.
+Movement cannot create same-tick range or LOS for that attack.
+Already queued hits/projectiles still resolve normally.
+```
+
+Current local guardrails cover:
+
+```text
+cannot move into range and fire same tick
+cannot move into LOS and fire same tick
+can attack then move if already in range/LOS
+queued projectile survives later movement
+attack slot identity stays stable
+movement-only clears stale target without auto-firing
+pending projectile survives movement target-cancel
+attack+move clears continued target intent after one attack opportunity
+explicit directional movement cancels old approach/walk routes
+attack approach still works when no explicit movement is selected
+dynamic occupancy marks player and full NPC footprints
+dynamic occupancy ignore flags work for moving NPC/player cases
+dynamic footprint checks reject static terrain and occupied tiles
+dynamic diagonal steps reject occupied corner clipping
+dynamic sized BFS avoids occupied intermediate route steps
+dynamic sized BFS validates full destination footprints
+start-of-tick reservation occupancy blocks swap-through target tiles
+player movement uses dynamic occupancy
+NPC movement uses dynamic occupancy
+NPC wave/split/healer placement avoids live footprints
+ranged/magic NPCs chase player bounds instead of solving for LOS attack tiles
+large NPC chase steps validate full footprints
+NPCs stay put when their current footprint can already attack
+```
+
+Implementation is complete locally through Step 4. Remaining work is scenario
+validation and training validation:
+
+```text
+run viewer/debug scenarios from Step 5
+rebuild the native PufferLib backend before training
+compare training behavior against the latest pre-correction run
+```
+
+## Non-Negotiable Invariants
+
+Do not reintroduce the old bug:
+
+```text
+move first -> attack from post-movement tile
+```
+
+Do not cancel committed attacks:
+
+```text
+queued pending hits/projectiles resolve even after later movement or target clearing
+```
+
+Keep LOS static for this pass:
+
+```text
+dynamic occupancy affects movement/pathing, not projectile LOS
+```
+
+Keep validation separate:
+
+```text
+guardrail tests live under runescape-rl/fc-validation
+core logic stays in runescape-rl/fc-core
+```
+
+## Step 1: Fix Stale Target And Route Override
+
+Status:
+
+```text
+Complete locally.
+Implemented in runescape-rl/fc-core/src/fc_tick.c.
+Guardrails registered under the step1 CTest label.
+Full local validation passed: 40/40 tests.
+Training/viewer validation still requires rebuilding native binaries.
+```
+
+Goal:
+
+```text
+Fresh movement should cancel stale combat intent and stale routes.
+Movement-only ticks should not auto-fire from an old target.
+Explicit directional movement should not be overridden by an old approach/walk route.
+```
+
+Planned semantics:
+
+```text
+Attack only:
+    select or continue target
+    if range/LOS/cooldown are valid from current tile, fire
+    if not valid and no explicit movement exists, approach may create/follow a route
+
+Movement only:
+    clear route_len/route_idx
+    clear approach_target
+    clear attack_target_idx
+    move according to selected direction or tile route
+    do not fire from stale target state
+
+Attack + movement:
+    resolve attack slot identity from previous observation
+    check attack from pre-movement tile
+    queue hit if valid
+    clear approach route
+    apply movement
+    clear continued target intent after the attack opportunity
+    require explicit future attack selection for future shots
+
+Pending hits:
+    remain independent from target clearing
+```
+
+Implementation notes:
+
+```c
+int explicit_directional_move = (act_move != FC_MOVE_IDLE);
+int explicit_tile_move = (act_target_x > 0 && act_target_y > 0);
+int explicit_move = explicit_directional_move || explicit_tile_move;
+int explicit_attack = (act_attack > FC_ATTACK_NONE);
+```
+
+Exact ordering for Step 1:
+
+```text
+1. Detect explicit movement and explicit attack intent.
+2. Clear only old stale route/approach state caused by prior ticks.
+3. Process a fresh attack from the pre-movement tile if an attack was selected.
+4. Build the new explicit tile route if tile movement was selected this tick.
+5. Move using the new explicit tile route or directional action.
+```
+
+Reason:
+
+```text
+Old routes must not override new movement.
+New explicit tile routes must not be accidentally cleared after they are built.
+Attack eligibility must still be checked before movement.
+```
+
+Before auto-attack can use stale state:
+
+```c
+if (explicit_move) {
+    p->route_len = 0;
+    p->route_idx = 0;
+    p->approach_target = 0;
+    if (!explicit_attack) {
+        p->attack_target_idx = -1;
+    }
+}
+```
+
+When selecting a fresh attack:
+
+```c
+if (explicit_attack && requested target is valid) {
+    p->attack_target_idx = requested_attack_idx;
+    p->approach_target = explicit_move ? 0 : 1;
+}
+```
+
+After pre-movement attack evaluation:
+
+```c
+if (explicit_move) {
+    p->approach_target = 0;
+    /* Do not clear route_len/route_idx here after a new explicit tile route
+     * has been built. Old route clearing happens before attack evaluation. */
+    if (explicit_attack) {
+        p->attack_target_idx = -1;
+    }
+}
+```
+
+Guardrails to add first:
+
+```text
+1A movement-only does not auto-fire stale target
+1B queued projectile still lands after movement cancels combat intent
+1C attack+move fires only from pre-movement tile
+1D attack+move cannot move into range and fire
+2A directional movement cancels old approach route
+2B directional movement beats old walk-to-tile route
+2C attack approach still works when no explicit movement is selected
+```
+
+Expected files:
+
+```text
+runescape-rl/fc-core/src/fc_tick.c
+runescape-rl/fc-validation/tests/phase2_guardrails_core.c
+runescape-rl/fc-validation/CMakeLists.txt
+```
+
+Validation:
+
+```bash
+cmake --build runescape-rl/build --target phase2_guardrails_core -j2
+ctest --test-dir runescape-rl/build -L option_b --output-on-failure
+ctest --test-dir runescape-rl/build --output-on-failure
+```
+
+## Step 2: Add Dynamic Occupancy Helpers
+
+Status:
+
+```text
+Complete locally.
+Implemented in runescape-rl/fc-core/include/fc_pathfinding.h.
+Implemented in runescape-rl/fc-core/src/fc_pathfinding.c.
+Direct guardrails registered under the step2 CTest label.
+Full local validation passed: 47/47 tests.
+Live movement behavior is now switched to these helpers by Step 3.
+```
+
+Goal:
+
+```text
+Movement and placement should check static map collision plus live entity occupancy.
+```
+
+Add shared helpers instead of scattered one-off overlap logic:
+
+```c
+void fc_build_occupancy(const FcState* state,
+                        uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+                        int ignore_npc_idx,
+                        int ignore_player);
+
+int fc_footprint_available_dynamic(
+    int x, int y, int size,
+    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
+
+int fc_footprint_available_for_entity(
+    const FcState* state,
+    int x, int y, int size,
+    int moving_npc_idx,
+    int ignore_player);
+```
+
+Rules:
+
+```text
+player tile blocks movement unless ignore_player is set
+active non-dead NPC footprints block movement unless ignored by moving_npc_idx
+the moving NPC must ignore its own current footprint
+start-of-tick footprints remain reserved for the movement pass
+diagonal movement must check final, horizontal intermediate, and vertical intermediate footprints
+LOS remains based on static map collision
+```
+
+Static and dynamic collision must be separate concepts:
+
+```text
+static collision:
+    walls, rocks, cave obstacles, cave boundaries
+
+dynamic collision:
+    player tile
+    live NPC footprints
+    reserved start-of-tick footprints
+```
+
+Start-of-tick reservation rule:
+
+```text
+Treat every live entity's starting footprint as blocked for the duration of the movement pass.
+This prevents same-tick body-swap behavior where NPC A moves into NPC B's old tile
+while NPC B moves into NPC A's old tile.
+```
+
+Add dynamic-aware sized pathing, not only final destination checks:
+
+```c
+int fc_move_toward_dynamic(...);
+int fc_npc_step_toward_sized_dynamic(...);
+int fc_pathfind_bfs_sized_dynamic(...);
+```
+
+Requirements:
+
+```text
+BFS/pathfinding candidates must reject terrain-blocked tiles.
+BFS/pathfinding candidates must reject occupied or reserved footprints.
+Large NPC BFS must validate the full footprint at every candidate step.
+Diagonal BFS/path steps must reject dynamic corner clipping, not only static corner clipping.
+Do not only check the final route destination; every route step must be valid.
+```
+
+Expected files:
+
+```text
+runescape-rl/fc-core/include/fc_pathfinding.h
+runescape-rl/fc-core/src/fc_pathfinding.c
+runescape-rl/fc-validation/tests/phase2_guardrails_core.c
+runescape-rl/fc-validation/CMakeLists.txt
+```
+
+Guardrails:
+
+```text
+3A player cannot step into NPC footprint
+3B NPC cannot step into player tile
+5A NPC cannot step into another NPC footprint
+5C two NPCs cannot swap through each other in one tick
+6A Jad cannot overlap healer footprint
+6B Ket-Zek cannot overlap player tile
+```
+
+## Step 3: Apply Dynamic Occupancy To Movement And Placement
+
+Status:
+
+```text
+Complete locally.
+Implemented in runescape-rl/fc-core/include/fc_types.h.
+Implemented in runescape-rl/fc-core/src/fc_tick.c.
+Implemented in runescape-rl/fc-core/src/fc_npc.c.
+Implemented in runescape-rl/fc-core/src/fc_state.c.
+Implemented in runescape-rl/fc-core/src/fc_wave.c.
+Guardrails registered under the step3 CTest label.
+Full local validation passed: 52/52 tests.
+Viewer rebuilt against updated fc-core.
+Training validation still requires rebuilding the native PufferLib backend before the next run.
+```
+
+Goal:
+
+```text
+No player/NPC/NPC footprint overlap from normal movement, approach movement, or spawn placement.
+```
+
+Update:
+
+```text
+player directional movement
+NPC movement
+combat approach route generation
+route validation/path candidates
+Tz-Kek split child placement
+Jad healer spawn placement
+Yt-HurKot movement toward Jad
+```
+
+Implementation direction:
+
+```text
+keep static functions for pure map checks
+add dynamic movement wrappers for entity movement
+rebuild occupancy per moving NPC for simple sequential resolution
+also carry start-of-tick reservations through the movement pass
+reject final footprint overlaps
+reject diagonal pass-through via occupied corners
+use dynamic-aware sized BFS/pathfinding for route generation and route candidates
+```
+
+Expected files:
+
+```text
+runescape-rl/fc-core/src/fc_tick.c
+runescape-rl/fc-core/src/fc_npc.c
+runescape-rl/fc-core/src/fc_pathfinding.c
+runescape-rl/fc-core/include/fc_pathfinding.h
+runescape-rl/fc-validation/tests/phase2_guardrails_core.c
+```
+
+Guardrails:
+
+```text
+3C large NPCs cannot overlap each other
+3D NPC behind another NPC is body-blocked
+3E Tz-Kek split children do not spawn inside blocked/occupied tiles
+5B large NPC body-blocks smaller NPC
+5D player tile blocks NPC movement
+6C Tz-Kek split children use dynamic placement
+```
+
+## Step 4: Replace Greedy NPC Movement With RSMod-Style Player-Bounds Chase
+
+Status:
+
+```text
+Complete locally.
+Implemented in runescape-rl/fc-core/include/fc_npc.h.
+Implemented in runescape-rl/fc-core/include/fc_pathfinding.h.
+Implemented in runescape-rl/fc-core/src/fc_npc.c.
+Implemented in runescape-rl/fc-core/src/fc_pathfinding.c.
+Guardrails registered under the step4 CTest label.
+Full local validation passed: 55/55 tests.
+Follow-up correction: removed global attack-position search after RSMod/2009scape
+audit showed it was too smart for OSRS-like NPC chase. NPCs now chase the
+player's live bounds using a naive pathing-entity destination and one validated
+dynamic step per tick.
+Viewer rebuilt against updated fc-core.
+Training validation still requires rebuilding the native PufferLib backend before the next run.
+```
+
+Goal:
+
+```text
+NPCs should attack only when their current footprint can already attack.
+If they cannot attack, they should chase the player's live bounds, matching
+RSMod's `RouteRequestPathingEntity` / `naiveDestination` behavior, instead of
+globally searching for a better LOS/ranged firing tile.
+```
+
+Add current-position attack helper:
+
+```c
+int fc_npc_position_can_attack_player(
+    const FcState* state,
+    const FcNpc* npc,
+    int candidate_x,
+    int candidate_y);
+```
+
+Behavior:
+
+```text
+if NPC can attack from current footprint:
+    stay and attack/wait for cooldown
+
+if NPC cannot attack:
+    compute the naive pathing-entity destination around the player's bounds
+    take one dynamic, full-footprint validated step toward that destination
+
+Do not pathfind/search for a separate ranged/magic LOS firing tile.
+```
+
+Attack-position rules:
+
+```text
+melee NPCs need valid adjacent melee contact
+ranged/magic NPCs need range and static LOS
+Tok-Xil/Ket-Zek/Jad may melee when adjacent if their mechanics allow it
+large NPC chase movement must fit the full footprint at the direct step
+large NPC chase movement must reject occupied/reserved start-of-tick footprints
+```
+
+Large-footprint chase requirement:
+
+```text
+When a large NPC steps while chasing, validate the whole top-left footprint.
+Do not choose or validate movement by center point alone.
+The direct step is valid only if every tile in the NPC footprint is statically
+walkable and dynamically unoccupied/unreserved.
+```
+
+Expected files:
+
+```text
+runescape-rl/fc-core/src/fc_npc.c
+runescape-rl/fc-core/src/fc_pathfinding.c
+runescape-rl/fc-core/include/fc_npc.h
+runescape-rl/fc-core/include/fc_pathfinding.h
+runescape-rl/fc-validation/tests/phase2_guardrails_core.c
+```
+
+Guardrails:
+
+```text
+4A ranged/magic NPC chases player bounds instead of solving for LOS
+4B large NPC chase movement checks full direct-step footprint
+4C NPC stays still when the current footprint can attack
+```
+
+## Step 5: Scenario Validation
+
+Status:
+
+```text
+In progress.
+Post-restart NVIDIA driver check passed: driver 580.173.02, CUDA 13.0, RTX 5070 Ti visible.
+Automated local validation passed after restart: 55/55 tests.
+Automated local validation after RSMod-style chase correction passed: 55/55 tests.
+git diff --check passed after RSMod-style chase correction.
+Viewer binary rebuilt after RSMod-style chase correction.
+Manual viewer scenario validation is still pending on the user's display.
+Native PufferLib backend rebuild/training validation should wait until viewer scenarios pass.
+```
+
+Run local tests after every step:
+
+```bash
+cmake --build runescape-rl/build --target phase2_guardrails_core -j2
+ctest --test-dir runescape-rl/build --output-on-failure
+git diff --check
+```
+
+Rebuild before viewer checks:
+
+```bash
+cmake --build runescape-rl/build --target fc_viewer -j2
+./runescape-rl/build/fc-viewer/fc_viewer
+```
+
+Viewer/debug scenarios:
+
+```text
+Italy rock safespot
+player kiting with attack+move
+movement-only after prior target selection
+old route overridden by new directional movement
+large NPC body-blocking
+melee NPC trapped behind larger NPC
+healer positioning around Jad
+Tok-Xil/Ket-Zek melee fallback when adjacent
+ranged/magic NPC routing to LOS
+large NPC footprint-valid attack positions
+```
+
+Training validation:
+
+```text
+Only train after the local tests and viewer checks pass.
+Use FORCE_BACKEND_REBUILD=1 because backend source changes affect the native extension.
+Compare against the most recent pre-correction benchmark before drawing conclusions.
+```
+
+## Completion Criteria
+
+This work is complete when all of these are true:
+
+```text
+movement-only never auto-fires from stale target state
+explicit movement cancels old routes before route priority can consume them
+attack+move still uses pre-movement attack eligibility
+pending hits survive target/route clearing
+player cannot move into NPC footprints
+NPCs cannot move into the player tile
+NPCs cannot overlap other active NPC footprints
+large NPCs validate full footprints against terrain and entities
+Tz-Kek/healer placement avoids terrain and live entities
+NPCs move toward valid attack positions when direct greedy movement is insufficient
+full local validation passes
+viewer scenarios look mechanically correct enough to train
+```

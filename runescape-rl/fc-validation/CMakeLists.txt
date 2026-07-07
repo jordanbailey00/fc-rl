@@ -35,6 +35,141 @@ add_test(NAME phase3_target_identity_stable
 set_tests_properties(phase3_target_identity_stable PROPERTIES
     LABELS "phase3;guardrail")
 
+add_test(NAME option_b_no_move_into_range_fire_same_tick
+    COMMAND phase2_guardrails_core option_b_no_move_into_range_fire_same_tick)
+set_tests_properties(option_b_no_move_into_range_fire_same_tick PROPERTIES
+    LABELS "option_b;guardrail;movement;combat")
+
+add_test(NAME option_b_no_move_into_los_fire_same_tick
+    COMMAND phase2_guardrails_core option_b_no_move_into_los_fire_same_tick)
+set_tests_properties(option_b_no_move_into_los_fire_same_tick PROPERTIES
+    LABELS "option_b;guardrail;movement;combat")
+
+add_test(NAME option_b_attack_then_move_when_already_valid
+    COMMAND phase2_guardrails_core option_b_attack_then_move_when_already_valid)
+set_tests_properties(option_b_attack_then_move_when_already_valid PROPERTIES
+    LABELS "option_b;guardrail;movement;combat")
+
+add_test(NAME option_b_queued_projectile_survives_later_movement
+    COMMAND phase2_guardrails_core option_b_queued_projectile_survives_later_movement)
+set_tests_properties(option_b_queued_projectile_survives_later_movement PROPERTIES
+    LABELS "option_b;guardrail;movement;combat")
+
+add_test(NAME option_b_attack_slot_identity_stable
+    COMMAND phase2_guardrails_core target_identity)
+set_tests_properties(option_b_attack_slot_identity_stable PROPERTIES
+    LABELS "option_b;guardrail;movement;combat")
+
+add_test(NAME step1_movement_only_clears_stale_target
+    COMMAND phase2_guardrails_core step1_movement_only_clears_stale_target)
+set_tests_properties(step1_movement_only_clears_stale_target PROPERTIES
+    LABELS "step1;option_b;guardrail;movement;combat")
+
+add_test(NAME step1_projectile_survives_movement_cancel
+    COMMAND phase2_guardrails_core step1_projectile_survives_movement_cancel)
+set_tests_properties(step1_projectile_survives_movement_cancel PROPERTIES
+    LABELS "step1;option_b;guardrail;movement;combat")
+
+add_test(NAME step1_attack_move_clears_continued_target
+    COMMAND phase2_guardrails_core step1_attack_move_clears_continued_target)
+set_tests_properties(step1_attack_move_clears_continued_target PROPERTIES
+    LABELS "step1;option_b;guardrail;movement;combat")
+
+add_test(NAME step1_attack_move_out_of_range_clears_target
+    COMMAND phase2_guardrails_core step1_attack_move_out_of_range_clears_target)
+set_tests_properties(step1_attack_move_out_of_range_clears_target PROPERTIES
+    LABELS "step1;option_b;guardrail;movement;combat")
+
+add_test(NAME step1_directional_cancels_old_approach_route
+    COMMAND phase2_guardrails_core step1_directional_cancels_old_approach_route)
+set_tests_properties(step1_directional_cancels_old_approach_route PROPERTIES
+    LABELS "step1;option_b;guardrail;movement;combat")
+
+add_test(NAME step1_directional_beats_old_tile_route
+    COMMAND phase2_guardrails_core step1_directional_beats_old_tile_route)
+set_tests_properties(step1_directional_beats_old_tile_route PROPERTIES
+    LABELS "step1;option_b;guardrail;movement;combat")
+
+add_test(NAME step1_attack_approach_without_explicit_movement
+    COMMAND phase2_guardrails_core step1_attack_approach_without_explicit_movement)
+set_tests_properties(step1_attack_approach_without_explicit_movement PROPERTIES
+    LABELS "step1;option_b;guardrail;movement;combat")
+
+add_test(NAME step2_occupancy_marks_and_ignores_entities
+    COMMAND phase2_guardrails_core step2_occupancy_marks_and_ignores_entities)
+set_tests_properties(step2_occupancy_marks_and_ignores_entities PROPERTIES
+    LABELS "step2;guardrail;movement;collision")
+
+add_test(NAME step2_dynamic_footprint_static_and_occupied
+    COMMAND phase2_guardrails_core step2_dynamic_footprint_static_and_occupied)
+set_tests_properties(step2_dynamic_footprint_static_and_occupied PROPERTIES
+    LABELS "step2;guardrail;movement;collision")
+
+add_test(NAME step2_entity_wrapper_ignores_self_blocks_others
+    COMMAND phase2_guardrails_core step2_entity_wrapper_ignores_self_blocks_others)
+set_tests_properties(step2_entity_wrapper_ignores_self_blocks_others PROPERTIES
+    LABELS "step2;guardrail;movement;collision")
+
+add_test(NAME step2_dynamic_diagonal_blocks_occupied_corner
+    COMMAND phase2_guardrails_core step2_dynamic_diagonal_blocks_occupied_corner)
+set_tests_properties(step2_dynamic_diagonal_blocks_occupied_corner PROPERTIES
+    LABELS "step2;guardrail;movement;collision")
+
+add_test(NAME step2_dynamic_bfs_avoids_occupied_steps
+    COMMAND phase2_guardrails_core step2_dynamic_bfs_avoids_occupied_steps)
+set_tests_properties(step2_dynamic_bfs_avoids_occupied_steps PROPERTIES
+    LABELS "step2;guardrail;movement;collision")
+
+add_test(NAME step2_dynamic_sized_bfs_checks_full_footprint
+    COMMAND phase2_guardrails_core step2_dynamic_sized_bfs_checks_full_footprint)
+set_tests_properties(step2_dynamic_sized_bfs_checks_full_footprint PROPERTIES
+    LABELS "step2;guardrail;movement;collision")
+
+add_test(NAME step2_start_reservation_blocks_swap_tile
+    COMMAND phase2_guardrails_core step2_start_reservation_blocks_swap_tile)
+set_tests_properties(step2_start_reservation_blocks_swap_tile PROPERTIES
+    LABELS "step2;guardrail;movement;collision")
+
+add_test(NAME step3_player_directional_blocked_by_npc
+    COMMAND phase2_guardrails_core step3_player_directional_blocked_by_npc)
+set_tests_properties(step3_player_directional_blocked_by_npc PROPERTIES
+    LABELS "step3;guardrail;movement;collision")
+
+add_test(NAME step3_player_tile_route_rejects_occupied_target
+    COMMAND phase2_guardrails_core step3_player_tile_route_rejects_occupied_target)
+set_tests_properties(step3_player_tile_route_rejects_occupied_target PROPERTIES
+    LABELS "step3;guardrail;movement;collision")
+
+add_test(NAME step3_npc_blocked_by_other_npc
+    COMMAND phase2_guardrails_core step3_npc_blocked_by_other_npc)
+set_tests_properties(step3_npc_blocked_by_other_npc PROPERTIES
+    LABELS "step3;guardrail;movement;collision")
+
+add_test(NAME step3_large_npc_blocked_by_healer_footprint
+    COMMAND phase2_guardrails_core step3_large_npc_blocked_by_healer_footprint)
+set_tests_properties(step3_large_npc_blocked_by_healer_footprint PROPERTIES
+    LABELS "step3;guardrail;movement;collision")
+
+add_test(NAME step3_tz_kek_split_avoids_occupied_tiles
+    COMMAND phase2_guardrails_core step3_tz_kek_split_avoids_occupied_tiles)
+set_tests_properties(step3_tz_kek_split_avoids_occupied_tiles PROPERTIES
+    LABELS "step3;guardrail;movement;collision")
+
+add_test(NAME step4_ranged_npc_chases_player_bounds_not_los_tile
+    COMMAND phase2_guardrails_core step4_ranged_npc_chases_player_bounds_not_los_tile)
+set_tests_properties(step4_ranged_npc_chases_player_bounds_not_los_tile PROPERTIES
+    LABELS "step4;guardrail;movement;combat;collision")
+
+add_test(NAME step4_large_npc_chase_checks_full_footprint
+    COMMAND phase2_guardrails_core step4_large_npc_chase_checks_full_footprint)
+set_tests_properties(step4_large_npc_chase_checks_full_footprint PROPERTIES
+    LABELS "step4;guardrail;movement;combat;collision")
+
+add_test(NAME step4_npc_stays_when_current_position_can_attack
+    COMMAND phase2_guardrails_core step4_npc_stays_when_current_position_can_attack)
+set_tests_properties(step4_npc_stays_when_current_position_can_attack PROPERTIES
+    LABELS "step4;guardrail;movement;combat")
+
 add_test(NAME revamp_npc_type_obs_one_hot
     COMMAND phase2_guardrails_core npc_type_obs_one_hot)
 set_tests_properties(revamp_npc_type_obs_one_hot PROPERTIES

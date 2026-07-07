@@ -108,6 +108,28 @@ static int check_invalid_case(const char* label,
     return 0;
 }
 
+static void configure_option_b_player(FcState* state, int weapon_range) {
+    state->player.weapon_range = weapon_range;
+    state->player.weapon_speed = 4;
+    state->player.weapon_uses_ammo = 0;
+    state->player.attack_timer = 0;
+    state->player.attack_target_idx = -1;
+    state->player.approach_target = 0;
+}
+
+static void spawn_static_guardrail_target(FcState* state, int x, int y) {
+    fc_npc_spawn(&state->npcs[0], NPC_TOK_XIL, x, y, 0);
+    state->npcs[0].movement_speed = 0;
+    state->npcs[0].attack_timer = 999;
+    state->npcs_remaining = 1;
+}
+
+static int guardrail_footprints_overlap(int ax, int ay, int asize,
+                                        int bx, int by, int bsize) {
+    return ax < bx + bsize && ax + asize > bx &&
+           ay < by + bsize && ay + asize > by;
+}
+
 static int test_invalid_action_classes(void) {
     FcState state;
     int actions[FC_NUM_ACTION_HEADS] = {0};
@@ -186,14 +208,18 @@ static int test_target_identity(void) {
     actions[1] = 1;               /* attack observed slot 0 */
     fc_step(&state, actions);
 
-    if (state.player.attack_target_idx == 0) {
+    if (state.attack_attempt_this_tick &&
+        state.ep_attack_cycles_to_npc_type[NPC_TZ_KIH] == 1 &&
+        state.ep_attack_cycles_to_npc_type[NPC_TZTOK_JAD] == 0) {
         fc_destroy(&state);
         return pass("attack slot stayed bound to the observed NPC identity");
     }
 
     char msg[160];
     snprintf(msg, sizeof(msg),
-             "attack slot drifted: expected NPC index 0, got %d after movement",
+             "attack slot drifted or failed: Tz-Kih cycles=%d Jad cycles=%d target_idx=%d",
+             state.ep_attack_cycles_to_npc_type[NPC_TZ_KIH],
+             state.ep_attack_cycles_to_npc_type[NPC_TZTOK_JAD],
              state.player.attack_target_idx);
     fc_destroy(&state);
     return fail(msg);
@@ -1054,9 +1080,933 @@ static int test_npc_moves_when_attack_blocked(void) {
     return pass("NPCs keep moving when attack position is blocked");
 }
 
+static int test_option_b_no_move_into_range_fire_same_tick(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    configure_option_b_player(&state, 3);
+    spawn_static_guardrail_target(&state, 14, 10);
+
+    int pre_dist = fc_distance_to_npc(state.player.x, state.player.y, &state.npcs[0]);
+    int post_dist = fc_distance_to_npc(11, 10, &state.npcs[0]);
+    if (pre_dist <= state.player.weapon_range || post_dist > state.player.weapon_range) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "setup expected out-of-range before move and in-range after move, got pre=%d post=%d range=%d",
+                 pre_dist, post_dist, state.player.weapon_range);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    actions[0] = FC_MOVE_WALK_E;
+    actions[1] = 1;
+    fc_step(&state, actions);
+
+    if (state.attack_attempt_this_tick) {
+        fc_destroy(&state);
+        return fail("player moved into range and fired in the same tick");
+    }
+    if (state.player.x != 11 || state.player.y != 10) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "expected player movement to still apply, got (%d,%d)",
+                 state.player.x, state.player.y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("moving into range does not allow same-tick firing");
+}
+
+static int test_option_b_no_move_into_los_fire_same_tick(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 5, 5);
+    configure_option_b_player(&state, 5);
+    spawn_static_guardrail_target(&state, 5, 7);
+    state.walkable[5][6] = 0;
+
+    int pre_los = fc_has_los_to_npc(5, 5, state.npcs[0].x, state.npcs[0].y,
+                                    state.npcs[0].size, state.walkable);
+    int post_los = fc_has_los_to_npc(6, 5, state.npcs[0].x, state.npcs[0].y,
+                                     state.npcs[0].size, state.walkable);
+    if (pre_los || !post_los) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "setup expected blocked LOS before move and clear LOS after move, got pre=%d post=%d",
+                 pre_los, post_los);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    actions[0] = FC_MOVE_WALK_E;
+    actions[1] = 1;
+    fc_step(&state, actions);
+
+    if (state.attack_attempt_this_tick) {
+        fc_destroy(&state);
+        return fail("player moved into LOS and fired in the same tick");
+    }
+    if (state.player.x != 6 || state.player.y != 5) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "expected player movement to still apply, got (%d,%d)",
+                 state.player.x, state.player.y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("moving into LOS does not allow same-tick firing");
+}
+
+static int test_option_b_attack_then_move_when_already_valid(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    configure_option_b_player(&state, 2);
+    spawn_static_guardrail_target(&state, 12, 10);
+
+    int pre_dist = fc_distance_to_npc(state.player.x, state.player.y, &state.npcs[0]);
+    int pre_los = fc_has_los_to_npc(state.player.x, state.player.y,
+                                    state.npcs[0].x, state.npcs[0].y,
+                                    state.npcs[0].size, state.walkable);
+    int post_dist = fc_distance_to_npc(9, 10, &state.npcs[0]);
+    if (pre_dist > state.player.weapon_range || !pre_los ||
+        post_dist <= state.player.weapon_range) {
+        char msg[192];
+        snprintf(msg, sizeof(msg),
+                 "setup expected valid attack before move and out-of-range after move, got pre_dist=%d pre_los=%d post_dist=%d range=%d",
+                 pre_dist, pre_los, post_dist, state.player.weapon_range);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    actions[0] = FC_MOVE_WALK_W;
+    actions[1] = 1;
+    fc_step(&state, actions);
+
+    if (!state.attack_attempt_this_tick) {
+        fc_destroy(&state);
+        return fail("player failed to attack before later same-tick movement");
+    }
+    if (state.player.x != 9 || state.player.y != 10) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "expected player movement after attack, got (%d,%d)",
+                 state.player.x, state.player.y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("attack can fire before later same-tick movement when already valid");
+}
+
+static int test_option_b_queued_projectile_survives_later_movement(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    configure_option_b_player(&state, 5);
+    spawn_static_guardrail_target(&state, 12, 10);
+
+    if (!fc_queue_pending_hit(state.npcs[0].pending_hits,
+                              &state.npcs[0].num_pending_hits,
+                              FC_MAX_PENDING_HITS,
+                              50, 3, ATTACK_RANGED, -1, 0)) {
+        fc_destroy(&state);
+        return fail("setup failed to queue delayed player projectile");
+    }
+
+    actions[0] = FC_MOVE_WALK_W;
+    fc_step(&state, actions);
+
+    if (state.player.x != 9 || state.player.y != 10) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "expected player movement while projectile in flight, got (%d,%d)",
+                 state.player.x, state.player.y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    if (state.npcs[0].num_pending_hits != 1) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "queued projectile was lost after movement; pending hits=%d",
+                 state.npcs[0].num_pending_hits);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    if (state.npcs[0].pending_hits[0].ticks_remaining != 2) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "queued projectile did not tick down predictably; ticks_remaining=%d",
+                 state.npcs[0].pending_hits[0].ticks_remaining);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("queued projectile remains in flight after later movement");
+}
+
+static int test_step1_movement_only_clears_stale_target(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    configure_option_b_player(&state, 5);
+    spawn_static_guardrail_target(&state, 12, 10);
+    state.player.attack_target_idx = 0;
+    state.player.approach_target = 1;
+
+    actions[0] = FC_MOVE_WALK_W;
+    fc_step(&state, actions);
+
+    if (state.attack_attempt_this_tick || state.npcs[0].num_pending_hits != 0) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "movement-only auto-fired stale target: attack=%d pending=%d",
+                 state.attack_attempt_this_tick, state.npcs[0].num_pending_hits);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    if (state.player.x != 9 || state.player.y != 10) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "movement-only did not move west, got (%d,%d)",
+                 state.player.x, state.player.y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    if (state.player.attack_target_idx != -1 || state.player.approach_target != 0) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "stale combat state not cleared: target=%d approach=%d",
+                 state.player.attack_target_idx, state.player.approach_target);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("movement-only clears stale target without auto-firing");
+}
+
+static int test_step1_projectile_survives_movement_cancel(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    configure_option_b_player(&state, 5);
+    spawn_static_guardrail_target(&state, 12, 10);
+    state.player.attack_target_idx = 0;
+    state.player.approach_target = 1;
+
+    int before_hp = state.npcs[0].current_hp;
+    if (!fc_queue_pending_hit(state.npcs[0].pending_hits,
+                              &state.npcs[0].num_pending_hits,
+                              FC_MAX_PENDING_HITS,
+                              50, 1, ATTACK_RANGED, -1, 0)) {
+        fc_destroy(&state);
+        return fail("setup failed to queue committed projectile");
+    }
+
+    actions[0] = FC_MOVE_WALK_W;
+    fc_step(&state, actions);
+
+    if (state.attack_attempt_this_tick) {
+        fc_destroy(&state);
+        return fail("movement cancel created a new attack while projectile was pending");
+    }
+    if (state.npcs[0].current_hp != before_hp - 50 ||
+        state.damage_dealt_this_tick != 50 ||
+        state.npcs[0].num_pending_hits != 0) {
+        char msg[192];
+        snprintf(msg, sizeof(msg),
+                 "committed projectile did not resolve: hp_before=%d hp_after=%d damage=%d pending=%d",
+                 before_hp, state.npcs[0].current_hp,
+                 state.damage_dealt_this_tick, state.npcs[0].num_pending_hits);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    if (state.player.attack_target_idx != -1 || state.player.approach_target != 0) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "movement cancel did not clear combat intent: target=%d approach=%d",
+                 state.player.attack_target_idx, state.player.approach_target);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("movement cancel clears intent but committed projectile still lands");
+}
+
+static int test_step1_attack_move_clears_continued_target(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    configure_option_b_player(&state, 2);
+    spawn_static_guardrail_target(&state, 12, 10);
+
+    actions[0] = FC_MOVE_WALK_W;
+    actions[1] = 1;
+    fc_step(&state, actions);
+
+    if (!state.attack_attempt_this_tick) {
+        fc_destroy(&state);
+        return fail("attack+move failed to fire from valid pre-movement tile");
+    }
+    if (state.player.x != 9 || state.player.y != 10) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "attack+move did not apply movement, got (%d,%d)",
+                 state.player.x, state.player.y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    if (state.player.attack_target_idx != -1 || state.player.approach_target != 0 ||
+        state.player.route_idx != 0 || state.player.route_len != 0) {
+        char msg[192];
+        snprintf(msg, sizeof(msg),
+                 "attack+move kept continued intent: target=%d approach=%d route=%d/%d",
+                 state.player.attack_target_idx, state.player.approach_target,
+                 state.player.route_idx, state.player.route_len);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("attack+move fires once then clears continued target intent");
+}
+
+static int test_step1_attack_move_out_of_range_clears_target(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    configure_option_b_player(&state, 3);
+    spawn_static_guardrail_target(&state, 14, 10);
+
+    actions[0] = FC_MOVE_WALK_E;
+    actions[1] = 1;
+    fc_step(&state, actions);
+
+    if (state.attack_attempt_this_tick) {
+        fc_destroy(&state);
+        return fail("attack+move fired after moving into range");
+    }
+    if (state.player.x != 11 || state.player.y != 10) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "attack+move did not apply movement, got (%d,%d)",
+                 state.player.x, state.player.y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    if (state.player.attack_target_idx != -1 || state.player.approach_target != 0 ||
+        state.player.route_idx != 0 || state.player.route_len != 0) {
+        char msg[192];
+        snprintf(msg, sizeof(msg),
+                 "failed attack+move kept continued intent: target=%d approach=%d route=%d/%d",
+                 state.player.attack_target_idx, state.player.approach_target,
+                 state.player.route_idx, state.player.route_len);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("attack+move cannot move into range and clears continued target intent");
+}
+
+static int test_step1_directional_cancels_old_approach_route(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    configure_option_b_player(&state, 3);
+    spawn_static_guardrail_target(&state, 14, 10);
+    state.player.is_running = 0;
+    state.player.attack_target_idx = 0;
+    state.player.approach_target = 1;
+    state.player.route_x[0] = 11;
+    state.player.route_y[0] = 10;
+    state.player.route_len = 1;
+    state.player.route_idx = 0;
+
+    actions[0] = FC_MOVE_WALK_W;
+    fc_step(&state, actions);
+
+    if (state.player.x != 9 || state.player.y != 10) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "directional move followed old approach route instead; got (%d,%d)",
+                 state.player.x, state.player.y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    if (state.player.route_len != 0 || state.player.route_idx != 0 ||
+        state.player.approach_target != 0 || state.player.attack_target_idx != -1) {
+        char msg[192];
+        snprintf(msg, sizeof(msg),
+                 "old approach state not cleared: route=%d/%d approach=%d target=%d",
+                 state.player.route_idx, state.player.route_len,
+                 state.player.approach_target, state.player.attack_target_idx);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("directional movement cancels old combat approach route");
+}
+
+static int test_step1_directional_beats_old_tile_route(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    state.player.is_running = 0;
+    state.player.route_x[0] = 11;
+    state.player.route_y[0] = 10;
+    state.player.route_len = 1;
+    state.player.route_idx = 0;
+
+    actions[0] = FC_MOVE_WALK_N;
+    fc_step(&state, actions);
+
+    if (state.player.x != 10 || state.player.y != 11) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "directional move followed old tile route instead; got (%d,%d)",
+                 state.player.x, state.player.y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    if (state.player.route_len != 0 || state.player.route_idx != 0) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "old tile route not cleared: route=%d/%d",
+                 state.player.route_idx, state.player.route_len);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("directional movement overrides old walk-to-tile route");
+}
+
+static int test_step1_attack_approach_without_explicit_movement(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    configure_option_b_player(&state, 3);
+    state.player.is_running = 0;
+    spawn_static_guardrail_target(&state, 16, 10);
+    int pre_dist = fc_distance_to_npc(state.player.x, state.player.y, &state.npcs[0]);
+
+    actions[1] = 1;
+    fc_step(&state, actions);
+
+    if (state.attack_attempt_this_tick) {
+        fc_destroy(&state);
+        return fail("out-of-range attack approach fired immediately");
+    }
+    int post_dist = fc_distance_to_npc(state.player.x, state.player.y, &state.npcs[0]);
+    if ((state.player.x == 10 && state.player.y == 10) || post_dist >= pre_dist) {
+        char msg[128];
+        snprintf(msg, sizeof(msg),
+                 "attack approach did not move closer, got (%d,%d) dist %d -> %d",
+                 state.player.x, state.player.y, pre_dist, post_dist);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    if (state.player.attack_target_idx != 0 || state.player.approach_target != 1 ||
+        state.player.route_len <= state.player.route_idx) {
+        char msg[192];
+        snprintf(msg, sizeof(msg),
+                 "attack approach state wrong: target=%d approach=%d route=%d/%d",
+                 state.player.attack_target_idx, state.player.approach_target,
+                 state.player.route_idx, state.player.route_len);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("attack approach still works without explicit movement");
+}
+
+static int test_step2_occupancy_marks_and_ignores_entities(void) {
+    FcState state;
+    uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_TOK_XIL, 12, 12, 0);
+    state.npcs[0].size = 2;
+    state.npcs_remaining = 1;
+
+    fc_build_occupancy(&state, occupied, -1, 0);
+    if (!occupied[10][10] ||
+        !occupied[12][12] || !occupied[13][12] ||
+        !occupied[12][13] || !occupied[13][13] ||
+        occupied[14][14]) {
+        fc_destroy(&state);
+        return fail("occupancy did not mark player and full NPC footprint correctly");
+    }
+
+    fc_build_occupancy(&state, occupied, 0, 0);
+    if (!occupied[10][10] || occupied[12][12] || occupied[13][13]) {
+        fc_destroy(&state);
+        return fail("occupancy did not ignore moving NPC footprint");
+    }
+
+    fc_build_occupancy(&state, occupied, -1, 1);
+    if (occupied[10][10] || !occupied[12][12] || !occupied[13][13]) {
+        fc_destroy(&state);
+        return fail("occupancy did not ignore player while preserving NPC footprint");
+    }
+
+    fc_destroy(&state);
+    return pass("occupancy marks player/NPC footprints and supports ignore flags");
+}
+
+static int test_step2_dynamic_footprint_static_and_occupied(void) {
+    FcState state;
+    uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+
+    make_open_manual_state(&state, 10, 10);
+    fc_clear_occupancy(occupied);
+    state.walkable[5][5] = 0;
+    fc_mark_footprint_occupied(occupied, 6, 6, 1);
+
+    if (fc_footprint_available_dynamic(4, 4, 2, state.walkable, occupied)) {
+        fc_destroy(&state);
+        return fail("dynamic footprint allowed static blocked terrain");
+    }
+    if (fc_footprint_available_dynamic(6, 6, 1, state.walkable, occupied)) {
+        fc_destroy(&state);
+        return fail("dynamic footprint allowed occupied tile");
+    }
+    if (!fc_footprint_available_dynamic(7, 7, 2, state.walkable, occupied)) {
+        fc_destroy(&state);
+        return fail("dynamic footprint rejected clear static+dynamic area");
+    }
+
+    fc_destroy(&state);
+    return pass("dynamic footprint checks static terrain and occupancy");
+}
+
+static int test_step2_entity_wrapper_ignores_self_blocks_others(void) {
+    FcState state;
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_TOK_XIL, 12, 12, 0);
+    state.npcs[0].size = 2;
+    fc_npc_spawn(&state.npcs[1], NPC_TZ_KIH, 15, 12, 1);
+    state.npcs_remaining = 2;
+
+    if (!fc_footprint_available_for_entity(&state, 12, 12, 2, 0, 0)) {
+        fc_destroy(&state);
+        return fail("entity availability did not ignore moving NPC's own footprint");
+    }
+    if (fc_footprint_available_for_entity(&state, 15, 12, 2, 0, 0)) {
+        fc_destroy(&state);
+        return fail("entity availability allowed overlap with another NPC");
+    }
+    if (fc_footprint_available_for_entity(&state, 10, 10, 1, 0, 0)) {
+        fc_destroy(&state);
+        return fail("entity availability allowed overlap with player tile");
+    }
+    if (!fc_footprint_available_for_entity(&state, 10, 10, 1, 0, 1)) {
+        fc_destroy(&state);
+        return fail("entity availability did not honor ignore_player");
+    }
+
+    fc_destroy(&state);
+    return pass("entity availability ignores self while blocking player/other NPCs");
+}
+
+static int test_step2_dynamic_diagonal_blocks_occupied_corner(void) {
+    FcState state;
+    uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+    int x = 10;
+    int y = 10;
+
+    make_open_manual_state(&state, 10, 10);
+    fc_clear_occupancy(occupied);
+    fc_mark_footprint_occupied(occupied, 11, 10, 1);
+    fc_mark_footprint_occupied(occupied, 10, 11, 1);
+
+    int moved = fc_npc_step_toward_sized_dynamic(&x, &y, 11, 11, 1,
+                                                 state.walkable, occupied);
+    if (moved || x != 10 || y != 10) {
+        char msg[128];
+        snprintf(msg, sizeof(msg),
+                 "dynamic diagonal clipped through occupied corner to (%d,%d)",
+                 x, y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("dynamic diagonal movement rejects occupied corner clipping");
+}
+
+static int test_step2_dynamic_bfs_avoids_occupied_steps(void) {
+    FcState state;
+    uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+    int out_x[FC_MAX_ROUTE];
+    int out_y[FC_MAX_ROUTE];
+
+    make_open_manual_state(&state, 10, 10);
+    fc_clear_occupancy(occupied);
+    fc_mark_footprint_occupied(occupied, 11, 10, 1);
+
+    int steps = fc_pathfind_bfs_sized_dynamic(10, 10, 12, 10, 1,
+                                              state.walkable, occupied,
+                                              out_x, out_y, FC_MAX_ROUTE);
+    if (steps <= 0 || out_x[steps - 1] != 12 || out_y[steps - 1] != 10) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "dynamic BFS failed to route around occupied tile, steps=%d last=(%d,%d)",
+                 steps, steps > 0 ? out_x[steps - 1] : -1,
+                 steps > 0 ? out_y[steps - 1] : -1);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    for (int i = 0; i < steps; i++) {
+        if (out_x[i] == 11 && out_y[i] == 10) {
+            fc_destroy(&state);
+            return fail("dynamic BFS route included occupied intermediate tile");
+        }
+    }
+
+    fc_destroy(&state);
+    return pass("dynamic sized BFS avoids occupied route steps");
+}
+
+static int test_step2_dynamic_sized_bfs_checks_full_footprint(void) {
+    FcState state;
+    uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+    int out_x[FC_MAX_ROUTE];
+    int out_y[FC_MAX_ROUTE];
+
+    make_open_manual_state(&state, 10, 10);
+    fc_clear_occupancy(occupied);
+    fc_mark_footprint_occupied(occupied, 13, 10, 1);
+
+    int steps = fc_pathfind_bfs_sized_dynamic(10, 10, 12, 10, 2,
+                                              state.walkable, occupied,
+                                              out_x, out_y, FC_MAX_ROUTE);
+    if (steps != 0) {
+        char msg[128];
+        snprintf(msg, sizeof(msg),
+                 "sized dynamic BFS accepted occupied destination footprint, steps=%d",
+                 steps);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_clear_occupancy(occupied);
+    steps = fc_pathfind_bfs_sized_dynamic(10, 10, 12, 10, 2,
+                                          state.walkable, occupied,
+                                          out_x, out_y, FC_MAX_ROUTE);
+    if (steps <= 0 || out_x[steps - 1] != 12 || out_y[steps - 1] != 10) {
+        fc_destroy(&state);
+        return fail("sized dynamic BFS rejected clear full-footprint route");
+    }
+
+    fc_destroy(&state);
+    return pass("dynamic sized BFS validates full destination footprint");
+}
+
+static int test_step2_start_reservation_blocks_swap_tile(void) {
+    FcState state;
+    uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+    int x = 11;
+    int y = 10;
+
+    make_open_manual_state(&state, 10, 10);
+    fc_clear_occupancy(occupied);
+    fc_mark_footprint_occupied(occupied, 10, 10, 1);
+
+    int moved = fc_npc_step_toward_sized_dynamic(&x, &y, 10, 10, 1,
+                                                 state.walkable, occupied);
+    if (moved || x != 11 || y != 10) {
+        char msg[128];
+        snprintf(msg, sizeof(msg),
+                 "dynamic movement entered reserved start tile, moved=%d pos=(%d,%d)",
+                 moved, x, y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("start-of-tick reservation occupancy blocks swap-through tile");
+}
+
+static int test_step3_player_directional_blocked_by_npc(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 11, 10, 0);
+    state.npcs[0].movement_speed = 0;
+    state.npcs[0].attack_timer = 999;
+    state.npcs_remaining = 1;
+
+    actions[0] = FC_MOVE_WALK_E;
+    fc_step(&state, actions);
+
+    if (state.player.x != 10 || state.player.y != 10) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "player moved into NPC footprint, got player=(%d,%d) npc=(%d,%d)",
+                 state.player.x, state.player.y, state.npcs[0].x, state.npcs[0].y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("player directional movement is blocked by NPC footprint");
+}
+
+static int test_step3_player_tile_route_rejects_occupied_target(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 11, 10, 0);
+    state.npcs[0].movement_speed = 0;
+    state.npcs[0].attack_timer = 999;
+    state.npcs_remaining = 1;
+
+    actions[5] = 12;  /* target x = 11 */
+    actions[6] = 11;  /* target y = 10 */
+    fc_step(&state, actions);
+
+    if (state.player.x == 11 && state.player.y == 10) {
+        fc_destroy(&state);
+        return fail("walk-to-tile route moved player onto occupied NPC tile");
+    }
+    if (state.player.route_len != 0 || state.player.route_idx != 0) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "occupied tile route was retained: route=%d/%d",
+                 state.player.route_idx, state.player.route_len);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("walk-to-tile routing rejects occupied target tile");
+}
+
+static int test_step3_npc_blocked_by_other_npc(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    state.walkable[12][11] = 0;
+    state.walkable[12][9] = 0;
+    state.walkable[13][10] = 0;
+    fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 11, 10, 0);
+    fc_npc_spawn(&state.npcs[1], NPC_TZ_KIH, 12, 10, 1);
+    state.npcs[0].attack_timer = 999;
+    state.npcs[1].attack_timer = 999;
+    state.npcs_remaining = 2;
+
+    fc_step(&state, actions);
+
+    if (state.npcs[1].x == state.npcs[0].x &&
+        state.npcs[1].y == state.npcs[0].y) {
+        fc_destroy(&state);
+        return fail("back NPC stepped into front NPC footprint");
+    }
+    if (state.npcs[1].x != 12 || state.npcs[1].y != 10) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "back NPC should be body-blocked at (12,10), got (%d,%d)",
+                 state.npcs[1].x, state.npcs[1].y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("NPC movement is blocked by another NPC footprint");
+}
+
+static int test_step3_large_npc_blocked_by_healer_footprint(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 30, 10);
+    state.current_wave = FC_NUM_WAVES;
+    state.walkable[10][15] = 0;
+    state.walkable[10][9] = 0;
+    state.walkable[9][10] = 0;
+    fc_npc_spawn(&state.npcs[0], NPC_TZTOK_JAD, 10, 10, 0);
+    fc_npc_spawn(&state.npcs[1], NPC_YT_HURKOT, 15, 10, 1);
+    state.npcs[0].attack_timer = 999;
+    state.npcs[1].attack_timer = 999;
+    state.npcs_remaining = 2;
+
+    fc_step(&state, actions);
+
+    if (guardrail_footprints_overlap(state.npcs[0].x, state.npcs[0].y,
+                                     state.npcs[0].size,
+                                     state.npcs[1].x, state.npcs[1].y,
+                                     state.npcs[1].size)) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "large NPC overlapped healer footprint: jad=(%d,%d) healer=(%d,%d)",
+                 state.npcs[0].x, state.npcs[0].y,
+                 state.npcs[1].x, state.npcs[1].y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    if (state.npcs[0].x != 10 || state.npcs[0].y != 10) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "Jad should be blocked by healer, got (%d,%d)",
+                 state.npcs[0].x, state.npcs[0].y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("large NPC movement is blocked by healer footprint");
+}
+
+static int test_step3_tz_kek_split_avoids_occupied_tiles(void) {
+    FcState state;
+    int child_count = 0;
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 11, 10, 0);
+    state.npcs_remaining = 1;
+    state.next_spawn_index = 1;
+
+    fc_npc_tz_kek_split(&state, 10, 10);
+
+    for (int i = 0; i < FC_MAX_NPCS; i++) {
+        FcNpc* n = &state.npcs[i];
+        if (!n->active || n->is_dead || n->npc_type != NPC_TZ_KEK_SM) continue;
+        child_count++;
+        if (guardrail_footprints_overlap(n->x, n->y, n->size,
+                                         state.player.x, state.player.y, 1)) {
+            fc_destroy(&state);
+            return fail("Tz-Kek split child spawned on player tile");
+        }
+        if (guardrail_footprints_overlap(n->x, n->y, n->size,
+                                         state.npcs[0].x, state.npcs[0].y,
+                                         state.npcs[0].size)) {
+            fc_destroy(&state);
+            return fail("Tz-Kek split child spawned on occupied NPC tile");
+        }
+        if (!fc_footprint_walkable(n->x, n->y, n->size, state.walkable)) {
+            fc_destroy(&state);
+            return fail("Tz-Kek split child spawned on blocked terrain");
+        }
+    }
+
+    if (child_count != 2) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "expected 2 split children, got %d", child_count);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("Tz-Kek split children avoid player/NPC/wall occupancy");
+}
+
+static int test_step4_ranged_npc_chases_player_bounds_not_los_tile(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    state.walkable[12][10] = 0;  /* blocks direct LOS on the horizontal lane */
+    state.walkable[13][9] = 0;   /* old attack-position search would sidestep south */
+    fc_npc_spawn(&state.npcs[0], NPC_TOK_XIL, 14, 10, 0);
+    state.npcs[0].size = 1;
+    state.npcs[0].attack_timer = 999;
+    state.npcs_remaining = 1;
+
+    fc_step(&state, actions);
+
+    if (state.npcs[0].x != 13 || state.npcs[0].y != 10) {
+        char msg[192];
+        snprintf(msg, sizeof(msg),
+                 "ranged NPC did not chase player bounds; got (%d,%d)",
+                 state.npcs[0].x, state.npcs[0].y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    if (state.player.num_pending_hits != 0) {
+        fc_destroy(&state);
+        return fail("ranged NPC attacked after chasing to a blocked-LOS tile");
+    }
+
+    fc_destroy(&state);
+    return pass("ranged NPC chases player bounds instead of solving for LOS tile");
+}
+
+static int test_step4_large_npc_chase_checks_full_footprint(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    state.walkable[24][10] = 0;  /* direct west step footprint is blocked */
+    fc_npc_spawn(&state.npcs[0], NPC_KET_ZEK, 25, 10, 0);
+    state.npcs[0].attack_timer = 999;
+    state.npcs_remaining = 1;
+
+    fc_step(&state, actions);
+
+    if (state.npcs[0].x != 25 || state.npcs[0].y != 10) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "large NPC moved despite blocked direct chase footprint; got (%d,%d)",
+                 state.npcs[0].x, state.npcs[0].y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("large NPC chase movement checks the full direct-step footprint");
+}
+
+static int test_step4_npc_stays_when_current_position_can_attack(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_TOK_XIL, 20, 10, 0);
+    state.npcs[0].size = 1;
+    state.npcs[0].attack_timer = 999;
+    state.npcs_remaining = 1;
+
+    if (!fc_npc_position_can_attack_player(&state, &state.npcs[0],
+                                           state.npcs[0].x, state.npcs[0].y)) {
+        fc_destroy(&state);
+        return fail("setup expected current NPC position to be attack-capable");
+    }
+
+    fc_step(&state, actions);
+
+    if (state.npcs[0].x != 20 || state.npcs[0].y != 10) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "NPC moved even though current tile could attack; got (%d,%d)",
+                 state.npcs[0].x, state.npcs[0].y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("NPCs stay put when their current footprint can attack");
+}
+
 int main(int argc, char** argv) {
     if (argc != 2) {
-        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|safespot_reward_disabled|npc_heal_penalty_actual_heal|prayer_loss_penalty|no_attack_penalty_wave_scaled|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|safespot_los|diagonal_corner_clipping|npc_moves_when_attack_blocked|invalid_action_classes>\n",
+        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|safespot_reward_disabled|npc_heal_penalty_actual_heal|prayer_loss_penalty|no_attack_penalty_wave_scaled|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|safespot_los|diagonal_corner_clipping|npc_moves_when_attack_blocked|option_b_no_move_into_range_fire_same_tick|option_b_no_move_into_los_fire_same_tick|option_b_attack_then_move_when_already_valid|option_b_queued_projectile_survives_later_movement|step1_movement_only_clears_stale_target|step1_projectile_survives_movement_cancel|step1_attack_move_clears_continued_target|step1_attack_move_out_of_range_clears_target|step1_directional_cancels_old_approach_route|step1_directional_beats_old_tile_route|step1_attack_approach_without_explicit_movement|step2_occupancy_marks_and_ignores_entities|step2_dynamic_footprint_static_and_occupied|step2_entity_wrapper_ignores_self_blocks_others|step2_dynamic_diagonal_blocks_occupied_corner|step2_dynamic_bfs_avoids_occupied_steps|step2_dynamic_sized_bfs_checks_full_footprint|step2_start_reservation_blocks_swap_tile|step3_player_directional_blocked_by_npc|step3_player_tile_route_rejects_occupied_target|step3_npc_blocked_by_other_npc|step3_large_npc_blocked_by_healer_footprint|step3_tz_kek_split_avoids_occupied_tiles|step4_ranged_npc_chases_player_bounds_not_los_tile|step4_large_npc_chase_checks_full_footprint|step4_npc_stays_when_current_position_can_attack|invalid_action_classes>\n",
                 argv[0]);
         return 2;
     }
@@ -1080,6 +2030,32 @@ int main(int argc, char** argv) {
     if (strcmp(argv[1], "safespot_los") == 0) return test_safespot_los();
     if (strcmp(argv[1], "diagonal_corner_clipping") == 0) return test_diagonal_corner_clipping();
     if (strcmp(argv[1], "npc_moves_when_attack_blocked") == 0) return test_npc_moves_when_attack_blocked();
+    if (strcmp(argv[1], "option_b_no_move_into_range_fire_same_tick") == 0) return test_option_b_no_move_into_range_fire_same_tick();
+    if (strcmp(argv[1], "option_b_no_move_into_los_fire_same_tick") == 0) return test_option_b_no_move_into_los_fire_same_tick();
+    if (strcmp(argv[1], "option_b_attack_then_move_when_already_valid") == 0) return test_option_b_attack_then_move_when_already_valid();
+    if (strcmp(argv[1], "option_b_queued_projectile_survives_later_movement") == 0) return test_option_b_queued_projectile_survives_later_movement();
+    if (strcmp(argv[1], "step1_movement_only_clears_stale_target") == 0) return test_step1_movement_only_clears_stale_target();
+    if (strcmp(argv[1], "step1_projectile_survives_movement_cancel") == 0) return test_step1_projectile_survives_movement_cancel();
+    if (strcmp(argv[1], "step1_attack_move_clears_continued_target") == 0) return test_step1_attack_move_clears_continued_target();
+    if (strcmp(argv[1], "step1_attack_move_out_of_range_clears_target") == 0) return test_step1_attack_move_out_of_range_clears_target();
+    if (strcmp(argv[1], "step1_directional_cancels_old_approach_route") == 0) return test_step1_directional_cancels_old_approach_route();
+    if (strcmp(argv[1], "step1_directional_beats_old_tile_route") == 0) return test_step1_directional_beats_old_tile_route();
+    if (strcmp(argv[1], "step1_attack_approach_without_explicit_movement") == 0) return test_step1_attack_approach_without_explicit_movement();
+    if (strcmp(argv[1], "step2_occupancy_marks_and_ignores_entities") == 0) return test_step2_occupancy_marks_and_ignores_entities();
+    if (strcmp(argv[1], "step2_dynamic_footprint_static_and_occupied") == 0) return test_step2_dynamic_footprint_static_and_occupied();
+    if (strcmp(argv[1], "step2_entity_wrapper_ignores_self_blocks_others") == 0) return test_step2_entity_wrapper_ignores_self_blocks_others();
+    if (strcmp(argv[1], "step2_dynamic_diagonal_blocks_occupied_corner") == 0) return test_step2_dynamic_diagonal_blocks_occupied_corner();
+    if (strcmp(argv[1], "step2_dynamic_bfs_avoids_occupied_steps") == 0) return test_step2_dynamic_bfs_avoids_occupied_steps();
+    if (strcmp(argv[1], "step2_dynamic_sized_bfs_checks_full_footprint") == 0) return test_step2_dynamic_sized_bfs_checks_full_footprint();
+    if (strcmp(argv[1], "step2_start_reservation_blocks_swap_tile") == 0) return test_step2_start_reservation_blocks_swap_tile();
+    if (strcmp(argv[1], "step3_player_directional_blocked_by_npc") == 0) return test_step3_player_directional_blocked_by_npc();
+    if (strcmp(argv[1], "step3_player_tile_route_rejects_occupied_target") == 0) return test_step3_player_tile_route_rejects_occupied_target();
+    if (strcmp(argv[1], "step3_npc_blocked_by_other_npc") == 0) return test_step3_npc_blocked_by_other_npc();
+    if (strcmp(argv[1], "step3_large_npc_blocked_by_healer_footprint") == 0) return test_step3_large_npc_blocked_by_healer_footprint();
+    if (strcmp(argv[1], "step3_tz_kek_split_avoids_occupied_tiles") == 0) return test_step3_tz_kek_split_avoids_occupied_tiles();
+    if (strcmp(argv[1], "step4_ranged_npc_chases_player_bounds_not_los_tile") == 0) return test_step4_ranged_npc_chases_player_bounds_not_los_tile();
+    if (strcmp(argv[1], "step4_large_npc_chase_checks_full_footprint") == 0) return test_step4_large_npc_chase_checks_full_footprint();
+    if (strcmp(argv[1], "step4_npc_stays_when_current_position_can_attack") == 0) return test_step4_npc_stays_when_current_position_can_attack();
 
     fprintf(stderr, "unknown guardrail: %s\n", argv[1]);
     return 2;

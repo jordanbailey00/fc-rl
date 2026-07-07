@@ -358,6 +358,18 @@ typedef struct {
     /* Arena walkability (1 = walkable, 0 = obstacle) */
     uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
 
+    /* Start-of-movement occupancy reservations. Built once near the beginning
+     * of each tick and merged into dynamic movement checks so entities cannot
+     * pass through tiles occupied at tick start. */
+    uint8_t movement_start_occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+    int movement_start_occupied_valid;
+    int movement_start_player_x;
+    int movement_start_player_y;
+    int movement_start_npc_x[FC_MAX_NPCS];
+    int movement_start_npc_y[FC_MAX_NPCS];
+    int movement_start_npc_size[FC_MAX_NPCS];
+    int movement_start_npc_active[FC_MAX_NPCS];
+
     /* Jad healer state */
     int jad_healers_spawned;  /* 1 until Jad has been healed back to full HP */
 

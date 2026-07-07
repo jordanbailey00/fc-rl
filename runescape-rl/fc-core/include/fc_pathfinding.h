@@ -17,6 +17,55 @@ int fc_footprint_walkable(int x, int y, int size,
                           const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 
 /* ======================================================================== */
+/* Dynamic occupancy                                                         */
+/* ======================================================================== */
+
+/* Clear an occupancy grid to all-free. */
+void fc_clear_occupancy(uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
+
+/* Mark all in-bounds tiles in a footprint occupied. Out-of-bounds tiles are
+ * ignored here; availability checks still reject out-of-bounds footprints via
+ * the static walkability check. */
+void fc_mark_footprint_occupied(uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+                                int x, int y, int size);
+
+/* Clear all in-bounds tiles in a footprint from an occupancy grid. */
+void fc_unmark_footprint_occupied(uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+                                  int x, int y, int size);
+
+/* OR all occupied cells from src into dst. */
+void fc_overlay_occupancy(uint8_t dst[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+                          const uint8_t src[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
+
+/* Build an occupancy grid from the current live entities. Pass ignore_npc_idx
+ * to omit the moving NPC's own current footprint. Set ignore_player when
+ * validating player movement or intentionally ignoring the player. */
+void fc_build_occupancy(const FcState* state,
+                        uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+                        int ignore_npc_idx,
+                        int ignore_player);
+
+/* Check static terrain plus a caller-provided dynamic occupancy grid. */
+int fc_footprint_available_dynamic(
+    int x, int y, int size,
+    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
+
+/* Check whether one sized movement step is available. Diagonal movement checks
+ * the final footprint and both cardinal side footprints. */
+int fc_footprint_step_available_dynamic(
+    int x, int y, int dx, int dy, int size,
+    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
+
+/* Convenience wrapper that builds current occupancy from the state before
+ * checking the requested footprint. */
+int fc_footprint_available_for_entity(const FcState* state,
+                                      int x, int y, int size,
+                                      int moving_npc_idx,
+                                      int ignore_player);
+
+/* ======================================================================== */
 /* Movement                                                                  */
 /* ======================================================================== */
 
@@ -25,6 +74,14 @@ int fc_footprint_walkable(int x, int y, int size,
 int fc_move_toward(int* x, int* y, int dx, int dy, int max_steps,
                    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 
+/* Dynamic-aware size-1 movement. The occupied grid should already omit the
+ * moving entity's own current footprint and include any start-of-tick
+ * reservations that should remain blocked for this movement pass. */
+int fc_move_toward_dynamic(
+    int* x, int* y, int dx, int dy, int max_steps,
+    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
+
 /* Move an NPC of given size one tile closer to (target_x, target_y).
  * Checks that the full NPC footprint fits at the destination.
  * Diagonal-first, then cardinal fallback.
@@ -32,6 +89,13 @@ int fc_move_toward(int* x, int* y, int dx, int dy, int max_steps,
 int fc_npc_step_toward_sized(int* x, int* y, int target_x, int target_y,
                              int size,
                              const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
+
+/* Dynamic-aware sized step. Diagonal movement checks the final footprint and
+ * both cardinal side footprints to prevent static or dynamic corner clipping. */
+int fc_npc_step_toward_sized_dynamic(
+    int* x, int* y, int target_x, int target_y, int size,
+    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 
 /* Legacy size-1 wrapper (used by existing code). */
 int fc_npc_step_toward(int* x, int* y, int target_x, int target_y,
@@ -70,5 +134,14 @@ int fc_npc_can_melee_player(int player_x, int player_y,
 int fc_pathfind_bfs(int sx, int sy, int dx, int dy,
                     const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
                     int out_x[], int out_y[], int max_steps);
+
+/* Dynamic-aware sized route finder. Every candidate route step must satisfy
+ * static terrain, dynamic occupancy, full-footprint availability, and diagonal
+ * corner checks. This is helper infrastructure for later movement integration. */
+int fc_pathfind_bfs_sized_dynamic(
+    int sx, int sy, int dx, int dy, int size,
+    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    int out_x[], int out_y[], int max_steps);
 
 #endif /* FC_PATHFINDING_H */

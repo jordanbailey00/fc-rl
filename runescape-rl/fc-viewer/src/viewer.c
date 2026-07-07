@@ -1136,7 +1136,7 @@ static const float MANUAL_TPS_PRESETS[] = {
     0.25f, 0.50f, NORMAL_TPS, 4.0f, 10.0f, 15.0f, 30.0f, 60.0f
 };
 static const char* MANUAL_TPS_LABELS[] = {
-    "0.25", "0.5", "1.67", "4", "10", "15", "30", "60"
+    "0.25", "0.5", "5/3", "4", "10", "15", "30", "60"
 };
 #define NUM_MANUAL_TPS_PRESETS ((int)(sizeof(MANUAL_TPS_PRESETS) / sizeof(MANUAL_TPS_PRESETS[0])))
 
@@ -1218,11 +1218,17 @@ static void set_manual_speed(ViewerState* v, float tps) {
 static void format_speed_label(const ViewerState* v, char* buf, size_t buf_size) {
     if (v->policy_pipe) {
         int multiplier = policy_replay_tps_to_multiplier(v->tps);
-        if (multiplier > 0) {
+        if (float_near(v->tps, NORMAL_TPS)) {
+            snprintf(buf, buf_size, "Replay:5/3 TPS");
+        } else if (multiplier > 0) {
             snprintf(buf, buf_size, "Replay:%dx", multiplier);
         } else {
             snprintf(buf, buf_size, "Replay:%.2f TPS", v->tps);
         }
+        return;
+    }
+    if (float_near(v->tps, NORMAL_TPS)) {
+        snprintf(buf, buf_size, "TPS:5/3");
         return;
     }
     if (float_near(v->tps, roundf(v->tps))) {
