@@ -218,7 +218,29 @@ int fc_visible_npc_indices(const FcState* state, int out_indices[FC_VISIBLE_NPCS
     return visible;
 }
 
+static int move_action_valid_with_occupancy(
+    const FcState* state,
+    int action,
+    const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
+
 static int move_action_valid(const FcState* state, int action) {
+    const FcPlayer* p = &state->player;
+    uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+
+    if (action < 0 || action >= FC_MOVE_DIM) return 0;
+    if (action == FC_MOVE_IDLE) return 1;
+    if (action >= FC_MOVE_RUN_N && p->run_energy <= 0) {
+        return 0;
+    }
+
+    fc_build_occupancy(state, occupied, -1, 1);
+    return move_action_valid_with_occupancy(state, action, occupied);
+}
+
+static int move_action_valid_with_occupancy(
+    const FcState* state,
+    int action,
+    const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
     const FcPlayer* p = &state->player;
 
     if (action < 0 || action >= FC_MOVE_DIM) return 0;
@@ -230,8 +252,6 @@ static int move_action_valid(const FcState* state, int action) {
     int tx = p->x;
     int ty = p->y;
     int max_steps = (action >= FC_MOVE_RUN_N) ? 2 : 1;
-    uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
-    fc_build_occupancy(state, occupied, -1, 1);
     return fc_move_toward_dynamic(&tx, &ty, FC_MOVE_DX[action], FC_MOVE_DY[action],
                                   max_steps, state->walkable, occupied) > 0;
 }
@@ -599,8 +619,10 @@ void fc_write_mask(const FcState* state, float* out) {
     }
 
     /* MOVE: idle always valid. Walk/run directions masked if destination not walkable */
+    uint8_t movement_occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+    fc_build_occupancy(state, movement_occupied, -1, 1);
     for (int m = 1; m < FC_MOVE_DIM; m++) {
-        if (!move_action_valid(state, m)) {
+        if (!move_action_valid_with_occupancy(state, m, movement_occupied)) {
             out[FC_MASK_MOVE_START + m] = 0.0f;
         }
     }

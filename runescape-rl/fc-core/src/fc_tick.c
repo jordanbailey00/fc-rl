@@ -83,11 +83,8 @@ static void clear_per_tick_flags(FcState* state) {
 /* ======================================================================== */
 
 static void build_movement_start_reservations(FcState* state) {
-    fc_clear_occupancy(state->movement_start_occupied);
     state->movement_start_player_x = state->player.x;
     state->movement_start_player_y = state->player.y;
-    fc_mark_footprint_occupied(state->movement_start_occupied,
-                               state->player.x, state->player.y, 1);
 
     for (int i = 0; i < FC_MAX_NPCS; i++) {
         FcNpc* npc = &state->npcs[i];
@@ -96,26 +93,38 @@ static void build_movement_start_reservations(FcState* state) {
         state->movement_start_npc_x[i] = npc->x;
         state->movement_start_npc_y[i] = npc->y;
         state->movement_start_npc_size[i] = npc->size;
-        if (active) {
-            fc_mark_footprint_occupied(state->movement_start_occupied,
-                                       npc->x, npc->y, npc->size);
-        }
     }
 
     state->movement_start_occupied_valid = 1;
+}
+
+static void mark_movement_start_npcs(
+    const FcState* state,
+    uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
+    if (!state->movement_start_occupied_valid) return;
+    for (int i = 0; i < FC_MAX_NPCS; i++) {
+        if (!state->movement_start_npc_active[i]) continue;
+        fc_mark_footprint_occupied(occupied,
+                                   state->movement_start_npc_x[i],
+                                   state->movement_start_npc_y[i],
+                                   state->movement_start_npc_size[i]);
+    }
 }
 
 static void build_player_movement_occupancy(
     const FcState* state,
     uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
     fc_build_occupancy(state, occupied, -1, 1);
-    if (state->movement_start_occupied_valid) {
-        fc_overlay_occupancy(occupied, state->movement_start_occupied);
-        fc_unmark_footprint_occupied(occupied,
-                                     state->movement_start_player_x,
-                                     state->movement_start_player_y,
-                                     1);
-    }
+    mark_movement_start_npcs(state, occupied);
+}
+
+static void ensure_player_movement_occupancy(
+    const FcState* state,
+    uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    int* valid) {
+    if (*valid) return;
+    build_player_movement_occupancy(state, occupied);
+    *valid = 1;
 }
 
 /* ======================================================================== */
@@ -153,7 +162,7 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
     int invalid_classes[FC_INVALID_ACTION_CLASS_COUNT];
     int target_metrics_recorded = 0;
     uint8_t player_occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
-    build_player_movement_occupancy(state, player_occupied);
+    int player_occupied_valid = 0;
 
     if (state->npcs_remaining > 0) {
         if (act_move == FC_MOVE_IDLE) {
@@ -337,6 +346,8 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
                     if (rdist <= weapon_range &&
                         fc_has_los_to_npc(rx, ry, target->x, target->y,
                                           target->size, state->walkable)) {
+                        ensure_player_movement_occupancy(
+                            state, player_occupied, &player_occupied_valid);
                         p->route_len = fc_pathfind_bfs_sized_dynamic(
                             p->x, p->y, rx, ry, 1, state->walkable,
                             player_occupied, p->route_x, p->route_y, FC_MAX_ROUTE);
@@ -418,6 +429,8 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
         int ty = act_target_y - 1;
         if (tx >= 0 && tx < FC_ARENA_WIDTH && ty >= 0 && ty < FC_ARENA_HEIGHT &&
             state->walkable[tx][ty]) {
+            ensure_player_movement_occupancy(
+                state, player_occupied, &player_occupied_valid);
             int steps = fc_pathfind_bfs_sized_dynamic(
                 p->x, p->y, tx, ty, 1, state->walkable, player_occupied,
                 p->route_x, p->route_y, FC_MAX_ROUTE);
@@ -441,6 +454,8 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
         for (int s = 0; s < steps && p->route_idx < p->route_len; s++) {
             int nx = p->route_x[p->route_idx];
             int ny = p->route_y[p->route_idx];
+            ensure_player_movement_occupancy(
+                state, player_occupied, &player_occupied_valid);
             if (fc_footprint_available_dynamic(nx, ny, 1,
                                                state->walkable,
                                                player_occupied)) {
@@ -469,6 +484,8 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
         int max_steps = (act_move >= FC_MOVE_RUN_N) ? 2 : 1;
         int old_x = p->x;
         int old_y = p->y;
+        ensure_player_movement_occupancy(
+            state, player_occupied, &player_occupied_valid);
         int moved = fc_move_toward_dynamic(&p->x, &p->y, dx, dy, max_steps,
                                            state->walkable, player_occupied);
         if (moved > 0) {

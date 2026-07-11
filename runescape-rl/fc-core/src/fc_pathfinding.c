@@ -57,29 +57,6 @@ void fc_mark_footprint_occupied(uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT
     }
 }
 
-void fc_unmark_footprint_occupied(uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-                                  int x, int y, int size) {
-    for (int dx = 0; dx < size; dx++) {
-        for (int dy = 0; dy < size; dy++) {
-            int tx = x + dx;
-            int ty = y + dy;
-            if (tx >= 0 && tx < FC_ARENA_WIDTH &&
-                ty >= 0 && ty < FC_ARENA_HEIGHT) {
-                occupied[tx][ty] = 0;
-            }
-        }
-    }
-}
-
-void fc_overlay_occupancy(uint8_t dst[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-                          const uint8_t src[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
-    for (int x = 0; x < FC_ARENA_WIDTH; x++) {
-        for (int y = 0; y < FC_ARENA_HEIGHT; y++) {
-            if (src[x][y]) dst[x][y] = 1;
-        }
-    }
-}
-
 void fc_build_occupancy(const FcState* state,
                         uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
                         int ignore_npc_idx,

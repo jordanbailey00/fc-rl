@@ -136,14 +136,17 @@ static void build_npc_movement_occupancy(
     uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
     fc_build_occupancy(state, occupied, npc_idx, 0);
     if (state->movement_start_occupied_valid) {
-        fc_overlay_occupancy(occupied, state->movement_start_occupied);
-        if (npc_idx >= 0 && npc_idx < FC_MAX_NPCS &&
-            state->movement_start_npc_active[npc_idx]) {
-            fc_unmark_footprint_occupied(
+        fc_mark_footprint_occupied(occupied,
+                                   state->movement_start_player_x,
+                                   state->movement_start_player_y,
+                                   1);
+        for (int i = 0; i < FC_MAX_NPCS; i++) {
+            if (i == npc_idx || !state->movement_start_npc_active[i]) continue;
+            fc_mark_footprint_occupied(
                 occupied,
-                state->movement_start_npc_x[npc_idx],
-                state->movement_start_npc_y[npc_idx],
-                state->movement_start_npc_size[npc_idx]);
+                state->movement_start_npc_x[i],
+                state->movement_start_npc_y[i],
+                state->movement_start_npc_size[i]);
         }
     }
 }

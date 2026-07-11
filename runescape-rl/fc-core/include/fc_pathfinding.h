@@ -29,14 +29,6 @@ void fc_clear_occupancy(uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 void fc_mark_footprint_occupied(uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
                                 int x, int y, int size);
 
-/* Clear all in-bounds tiles in a footprint from an occupancy grid. */
-void fc_unmark_footprint_occupied(uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-                                  int x, int y, int size);
-
-/* OR all occupied cells from src into dst. */
-void fc_overlay_occupancy(uint8_t dst[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-                          const uint8_t src[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
-
 /* Build an occupancy grid from the current live entities. Pass ignore_npc_idx
  * to omit the moving NPC's own current footprint. Set ignore_player when
  * validating player movement or intentionally ignoring the player. */

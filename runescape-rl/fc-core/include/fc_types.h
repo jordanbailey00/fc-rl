@@ -358,10 +358,9 @@ typedef struct {
     /* Arena walkability (1 = walkable, 0 = obstacle) */
     uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
 
-    /* Start-of-movement occupancy reservations. Built once near the beginning
+    /* Start-of-movement footprint reservations. Built once near the beginning
      * of each tick and merged into dynamic movement checks so entities cannot
      * pass through tiles occupied at tick start. */
-    uint8_t movement_start_occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
     int movement_start_occupied_valid;
     int movement_start_player_x;
     int movement_start_player_y;
