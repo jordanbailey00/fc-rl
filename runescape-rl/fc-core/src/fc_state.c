@@ -334,6 +334,29 @@ static float normalize_prayer_drain_counter(const FcPlayer* p) {
     return normalized;
 }
 
+static float normalize_npc_prayer_drain(const FcNpc* npc) {
+    const FcNpcStats* stats = fc_npc_get_stats(npc->npc_type);
+    int maximum = stats->prayer_drain;
+    if (npc->npc_type == NPC_TZ_KIH) maximum += stats->max_hit;
+    if (maximum <= 0) return 0.0f;
+    return clamp01((float)npc->prayer_drain_dealt_this_tick / (float)maximum);
+}
+
+static float normalize_npc_heal_cooldown(const FcNpc* npc) {
+    if (npc->npc_type == NPC_YT_MEJKOT) {
+        if (npc->attack_speed <= 0) return 0.0f;
+        return clamp01((float)npc->attack_timer / (float)npc->attack_speed);
+    }
+
+    if (npc->npc_type == NPC_YT_HURKOT && !npc->healer_distracted) {
+        const FcNpcStats* stats = fc_npc_get_stats(npc->npc_type);
+        if (stats->heal_interval <= 0) return 0.0f;
+        return clamp01((float)npc->heal_timer / (float)stats->heal_interval);
+    }
+
+    return 0.0f;
+}
+
 static int pending_hit_prayer_actionable(const FcPendingHit* ph) {
     if (!ph->active) return 0;
     if (ph->prayer_snapshot >= 0) return 0;
@@ -356,12 +379,13 @@ static float pending_hit_prayer_deadline_urgency(const FcState* state,
  * attacked right now from its current position? Does NOT check LOS; the LOS
  * bit is a separate obs feature so the agent can distinguish "melee threat,
  * safespotted" (style=MELEE, LOS=0) from "melee threat, can hit me" (style=MELEE,
- * LOS=1). Returns ATTACK_NONE for empty slots, dead NPCs, Yt-HurKot (healer,
- * don't want policy praying for it), and Jad before it has committed a
- * pending_hit (style is stochastic until commit). */
+ * LOS=1). Returns ATTACK_NONE for empty slots, an untagged Yt-HurKot, and
+ * stochastic style choices before the NPC has committed an attack. */
 static int npc_telegraph_style(const FcState* state, const FcNpc* npc) {
     if (!npc->active || npc->is_dead) return ATTACK_NONE;
-    if (npc->npc_type == NPC_YT_HURKOT) return ATTACK_NONE;
+    if (npc->npc_type == NPC_YT_HURKOT) {
+        return npc->healer_distracted ? ATTACK_MELEE : ATTACK_NONE;
+    }
 
     if (npc->npc_type == NPC_TZTOK_JAD) {
         /* Jad alternates magic/ranged randomly at commit; read the committed
@@ -381,8 +405,14 @@ static int npc_telegraph_style(const FcState* state, const FcNpc* npc) {
     int can_melee = fc_npc_can_melee_player(state->player.x, state->player.y,
                                             npc->x, npc->y, npc->size,
                                             state->walkable);
-    /* Dual-mode NPCs (Tok-Xil, Ket-Zek): melee when adjacent, primary otherwise.
-     * Pure melee NPCs (Yt-MejKot, Tz-Kih, Tz-Kek): telegraph MELEE even when far
+    if (npc->npc_type == NPC_KET_ZEK && can_melee &&
+        fc_has_los_to_npc(state->player.x, state->player.y,
+                          npc->x, npc->y, npc->size, state->walkable)) {
+        return ATTACK_NONE;
+    }
+    /* Tok-Xil telegraphs melee when adjacent. Ket-Zek returns NONE above while
+     * both adjacent styles remain possible. Pure melee NPCs (Yt-MejKot,
+     * Tz-Kih, Tz-Kek) telegraph MELEE even when far
      * — they'll close the gap and that's what they'll hit with. */
     if (can_melee && (stats->melee_max_hit > 0 || npc->attack_style == ATTACK_MELEE)) {
         return ATTACK_MELEE;
@@ -457,6 +487,11 @@ void fc_write_obs(const FcState* state, float* out) {
     player[FC_OBS_PLAYER_PRAY_DDL_MEL] = prayer_deadline_urgency[0];
     player[FC_OBS_PLAYER_PRAY_DDL_RNG] = prayer_deadline_urgency[1];
     player[FC_OBS_PLAYER_PRAY_DDL_MAG] = prayer_deadline_urgency[2];
+    player[FC_OBS_PLAYER_PRAYER_LOST] = (p->max_prayer > 0)
+        ? clamp01((float)state->prayer_lost_this_tick / (float)p->max_prayer)
+        : 0.0f;
+    player[FC_OBS_PLAYER_OVERHEAD_PRAYER_LOST] =
+        state->overhead_prayer_lost_this_tick > 0 ? 1.0f : 0.0f;
 
     /* NPC slot selection: gather active NPCs, sort, take first 8 */
     int active_indices[FC_VISIBLE_NPCS];
@@ -479,6 +514,21 @@ void fc_write_obs(const FcState* state, float* out) {
         npc_out[FC_NPC_TELE_MAGIC]    = (tele == ATTACK_MAGIC)  ? 1.0f : 0.0f;
         npc_out[FC_NPC_ATK_TIMER]     = (n->attack_speed > 0) ? (float)n->attack_timer / (float)n->attack_speed : 0.0f;
         npc_out[FC_NPC_LOS]           = has_los;
+        npc_out[FC_NPC_PRAYER_DRAIN_DEALT] = normalize_npc_prayer_drain(n);
+        npc_out[FC_NPC_HEAL_RECEIVED] = (n->max_hp > 0)
+            ? clamp01((float)n->healing_received_this_tick / (float)n->max_hp)
+            : 0.0f;
+        npc_out[FC_NPC_HEAL_GIVEN] = (n->heal_amount > 0)
+            ? clamp01((float)n->healing_given_this_tick / (float)n->heal_amount)
+            : 0.0f;
+        npc_out[FC_NPC_HEALED_BY_MEJKOT] =
+            n->healed_by_mejkot_this_tick ? 1.0f : 0.0f;
+        npc_out[FC_NPC_HEALED_BY_HURKOT] =
+            n->healed_by_hurkot_this_tick ? 1.0f : 0.0f;
+        npc_out[FC_NPC_HEALED_SELF] = n->healed_self_this_tick ? 1.0f : 0.0f;
+        npc_out[FC_NPC_TARGETS_PLAYER] =
+            (n->npc_type != NPC_YT_HURKOT || n->healer_distracted) ? 1.0f : 0.0f;
+        npc_out[FC_NPC_HEAL_COOLDOWN] = normalize_npc_heal_cooldown(n);
         int type_offset = npc_type_obs_offset(n->npc_type);
         if (type_offset >= 0) {
             npc_out[type_offset] = 1.0f;
@@ -533,6 +583,10 @@ void fc_write_obs(const FcState* state, float* out) {
                   state->progress_required_work_start)
         : 0.0f;
     meta[FC_OBS_META_NO_PROG]    = clamp01((float)state->progress_ticks_since_positive / 2400.0f);
+    meta[FC_OBS_META_NPC_HEALING] = (state->progress_required_work_start > 0.0f)
+        ? clamp01((float)state->npc_heal_amount_this_tick /
+                  state->progress_required_work_start)
+        : 0.0f;
 
     /* Reward features (at offset FC_REWARD_START) — written by fc_write_reward_features */
     fc_write_reward_features(state, out + FC_REWARD_START);
@@ -698,6 +752,7 @@ void fc_fill_render_entities(const FcState* state, FcRenderEntity* entities, int
         ne->attack_style = n->attack_style;
         ne->is_dead = n->is_dead;
         ne->damage_taken_this_tick = n->damage_taken_this_tick;
+        ne->healing_received_this_tick = n->healing_received_this_tick;
         ne->died_this_tick = n->died_this_tick;
         ne->npc_slot = i;
     }

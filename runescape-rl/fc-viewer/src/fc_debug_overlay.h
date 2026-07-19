@@ -84,6 +84,11 @@ static void dbg_log_tick(const FcState* state) {
         dbg_log_event(t, CLITERAL(Color){255,120,120,255},
                       "Player took %d damage", p->damage_taken_this_tick / 10);
     }
+    if (state->tz_kih_prayer_drain_this_tick > 0) {
+        dbg_log_event(t, CLITERAL(Color){100,190,255,255},
+                      "Tz-Kih drained %d Prayer",
+                      (state->tz_kih_prayer_drain_this_tick + 9) / 10);
+    }
 
     /* Player ate food */
     if (p->food_eaten_this_tick) {
@@ -122,6 +127,12 @@ static void dbg_log_tick(const FcState* state) {
             dbg_log_event(t, CLITERAL(Color){255,200,100,255},
                           "%s[%d] took %d dmg (%d HP left)",
                           nm, i, n->damage_taken_this_tick / 10, n->current_hp / 10);
+        }
+        if (n->healing_received_this_tick > 0) {
+            const char* nm = (n->npc_type > 0 && n->npc_type < 9) ? npc_names[n->npc_type] : "?";
+            dbg_log_event(t, CLITERAL(Color){120,255,140,255},
+                          "%s[%d] healed %d HP",
+                          nm, i, (n->healing_received_this_tick + 9) / 10);
         }
 
         /* NPC died */
@@ -431,7 +442,7 @@ static void dbg_draw_entity_info(const FcState* state, Camera3D camera) {
         DrawText(buf, panel_x + 4, ny, 10, DBG_COL_LABEL); ny += lh;
 
         if (n->npc_type == NPC_YT_HURKOT) {
-            snprintf(buf, sizeof(buf), "Healer: distracted=%d heal_target=%d",
+            snprintf(buf, sizeof(buf), "Healer: targets_player=%d heal_target=%d",
                      n->healer_distracted, n->heal_target_idx);
             DrawText(buf, panel_x + 4, ny, 10, DBG_COL_LABEL);
         } else {

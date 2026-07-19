@@ -30,7 +30,7 @@
  * part of the default policy input.
  */
 
-/* --- Player features (20 floats) --- */
+/* --- Player features (22 floats) --- */
 #define FC_OBS_PLAYER_START     0
 #define FC_OBS_PLAYER_HP        0   /* current_hp / max_hp */
 #define FC_OBS_PLAYER_PRAYER    1   /* current_prayer / max_prayer */
@@ -52,9 +52,11 @@
 #define FC_OBS_PLAYER_PRAY_DDL_MEL 17  /* style-specific prayer deadline urgency for actionable melee hits */
 #define FC_OBS_PLAYER_PRAY_DDL_RNG 18  /* style-specific prayer deadline urgency for actionable ranged hits */
 #define FC_OBS_PLAYER_PRAY_DDL_MAG 19  /* style-specific prayer deadline urgency for actionable magic hits */
-#define FC_OBS_PLAYER_SIZE      20
+#define FC_OBS_PLAYER_PRAYER_LOST 20   /* total prayer lost this tick / max_prayer */
+#define FC_OBS_PLAYER_OVERHEAD_PRAYER_LOST 21 /* 1 if passive overhead drain removed prayer this tick */
+#define FC_OBS_PLAYER_SIZE      22
 
-/* --- Per-NPC features (22 floats × 8 visible NPCs = 176 floats) --- */
+/* --- Per-NPC features (30 floats x 8 visible NPCs = 240 floats) --- */
 /*
  * NPC slot ordering — deterministic rules for the 8 visible NPC slots:
  *
@@ -74,16 +76,16 @@
  * The spawn_index tiebreaker ensures deterministic ordering when distances are
  * equal, which is critical for replay consistency and debug reproducibility.
  */
-#define FC_OBS_NPC_START        FC_OBS_PLAYER_SIZE  /* 20 */
-#define FC_OBS_NPC_STRIDE       22
+#define FC_OBS_NPC_START        FC_OBS_PLAYER_SIZE  /* 22 */
+#define FC_OBS_NPC_STRIDE       30
 #define FC_OBS_NPC_SLOTS        8   /* FC_VISIBLE_NPCS */
 
 /* Per-NPC feature offsets within stride.
  *
  * Telegraph bits (TELE_MELEE/RANGED/MAGIC) are one-hot: the style this NPC
  * would use RIGHT NOW based on distance (no LOS check). Stays on even when
- * LOS=0 so the agent can prepare prayer for when LOS resumes. Yt-HurKot
- * never telegraphs (healer — don't want the policy praying for it). Jad
+ * LOS=0 so the agent can prepare prayer for when LOS resumes. Untagged
+ * Yt-HurKot does not telegraph; a tagged healer telegraphs melee. Jad
  * telegraphs only after it commits a pending_hit (style is stochastic).
  * All zero when NPC slot is empty/dead.
  */
@@ -109,11 +111,19 @@
 #define FC_NPC_TYPE_YT_HURKOT   19  /* one-hot NPC identity: Yt-HurKot */
 #define FC_NPC_PENDING_PRAYER_WINDOW   20  /* 1 if current prayer action can still affect this pending hit */
 #define FC_NPC_PENDING_PRAYER_DEADLINE 21  /* urgency until prayer locks: 1=act now, 0=no actionable hit */
+#define FC_NPC_PRAYER_DRAIN_DEALT      22  /* actual prayer drained this tick / source maximum */
+#define FC_NPC_HEAL_RECEIVED           23  /* HP restored to this NPC this tick / max_hp */
+#define FC_NPC_HEAL_GIVEN              24  /* HP this NPC restored this tick / configured heal_amount */
+#define FC_NPC_HEALED_BY_MEJKOT        25  /* 1 if Yt-MejKot restored this NPC's HP this tick */
+#define FC_NPC_HEALED_BY_HURKOT        26  /* 1 if Yt-HurKot restored this NPC's HP this tick */
+#define FC_NPC_HEALED_SELF             27  /* 1 if this NPC restored its own HP this tick */
+#define FC_NPC_TARGETS_PLAYER          28  /* 1 if the NPC's current movement/combat target is the player */
+#define FC_NPC_HEAL_COOLDOWN           29  /* normalized time until the next possible healing cycle */
 
-#define FC_OBS_NPC_TOTAL        (FC_OBS_NPC_STRIDE * FC_OBS_NPC_SLOTS)  /* 176 */
+#define FC_OBS_NPC_TOTAL        (FC_OBS_NPC_STRIDE * FC_OBS_NPC_SLOTS)  /* 240 */
 
-/* --- Wave/meta features (13 floats) --- */
-#define FC_OBS_META_START       (FC_OBS_NPC_START + FC_OBS_NPC_TOTAL)  /* 196 */
+/* --- Wave/meta features (14 floats) --- */
+#define FC_OBS_META_START       (FC_OBS_NPC_START + FC_OBS_NPC_TOTAL)  /* 262 */
 #define FC_OBS_META_WAVE        0   /* current_wave / NUM_WAVES */
 #define FC_OBS_META_ROTATION    1   /* rotation_id / NUM_ROTATIONS */
 #define FC_OBS_META_REMAINING   2   /* npcs_remaining / MAX_NPCS */
@@ -127,10 +137,11 @@
 #define FC_OBS_META_WAVE_PROG   10  /* derived current-wave progress, [0,1] */
 #define FC_OBS_META_WORK_REM    11  /* required_work_remaining / required_work_start */
 #define FC_OBS_META_NO_PROG     12  /* ticks_since_positive_progress / 2400 */
-#define FC_OBS_META_SIZE        13
+#define FC_OBS_META_NPC_HEALING 13  /* HP restored this tick / required work at wave start */
+#define FC_OBS_META_SIZE        14
 
 /* --- Policy observation total --- */
-#define FC_POLICY_OBS_SIZE      (FC_OBS_PLAYER_SIZE + FC_OBS_NPC_TOTAL + FC_OBS_META_SIZE)  /* 209 */
+#define FC_POLICY_OBS_SIZE      (FC_OBS_PLAYER_SIZE + FC_OBS_NPC_TOTAL + FC_OBS_META_SIZE)  /* 276 */
 
 /* --- Reward features (20 floats) --- */
 /*
@@ -139,7 +150,7 @@
  * The policy DOES NOT consume these by default.
  * Python applies configurable shaping weights to produce the scalar reward.
  */
-#define FC_REWARD_START         FC_POLICY_OBS_SIZE  /* 209 */
+#define FC_REWARD_START         FC_POLICY_OBS_SIZE  /* 276 */
 #define FC_RWD_DAMAGE_DEALT     0   /* NPC HP reduced this tick (normalized) */
 #define FC_RWD_DAMAGE_TAKEN     1   /* player HP reduced this tick */
 #define FC_RWD_NPC_KILL         2   /* NPC death count this tick */
@@ -163,7 +174,7 @@
 #define FC_REWARD_FEATURES      20
 
 /* --- Total observation (policy obs + reward features) --- */
-#define FC_TOTAL_OBS            (FC_POLICY_OBS_SIZE + FC_REWARD_FEATURES)  /* 229 */
+#define FC_TOTAL_OBS            (FC_POLICY_OBS_SIZE + FC_REWARD_FEATURES)  /* 296 */
 
 /* ======================================================================== */
 /* Action space — 7 canonical core heads                                     */
@@ -325,7 +336,7 @@ static const int FC_PUFFER_ACTION_DIMS[FC_PUFFER_NUM_ATNS] = FC_PUFFER_ACT_SIZES
 
 /*
  * Total floats in the full FC backend buffer:
- *   FC_POLICY_OBS_SIZE (209) + FC_REWARD_FEATURES (20) + FC_ACTION_MASK_SIZE (166) = 395
+ *   FC_POLICY_OBS_SIZE (276) + FC_REWARD_FEATURES (20) + FC_ACTION_MASK_SIZE (166) = 462
  *
  * The PufferLib adapter does NOT expose this full buffer directly. It exposes
  * FC_PUFFER_OBS_SIZE, defined above from the Puffer policy-head contract.
@@ -335,7 +346,7 @@ static const int FC_PUFFER_ACTION_DIMS[FC_PUFFER_NUM_ATNS] = FC_PUFFER_ACT_SIZES
  *   reward_feat  = full_obs[FC_REWARD_START:FC_REWARD_START + FC_REWARD_FEATURES]
  *   action_mask  = full_obs[FC_TOTAL_OBS:FC_TOTAL_OBS + FC_ACTION_MASK_SIZE]
  */
-#define FC_OBS_SIZE             (FC_TOTAL_OBS + FC_ACTION_MASK_SIZE)  /* 395 */
+#define FC_OBS_SIZE             (FC_TOTAL_OBS + FC_ACTION_MASK_SIZE)  /* 462 */
 
 /* ======================================================================== */
 /* Normalization divisors                                                     */

@@ -18,9 +18,9 @@ typedef struct {
     int magic_level;        /* used by Twisted bow scaling */
     int size;               /* tile footprint */
     int movement_speed;     /* 1=walk, 2=run */
-    int prayer_drain;       /* prayer drain on hit (Tz-Kih specific) */
-    int heal_amount;        /* HP healed per proc (Yt-MejKot) */
-    int heal_interval;      /* ticks between heals (Yt-MejKot) */
+    int prayer_drain;       /* base prayer drain in tenths (Tz-Kih specific) */
+    int heal_amount;        /* HP healed per proc */
+    int heal_interval;      /* ticks between independent Yt-HurKot heals */
     int jad_ranged_max_hit; /* Jad ranged max hit (0 for non-Jad) */
 } FcNpcStats;
 

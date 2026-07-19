@@ -131,11 +131,18 @@ static const uint16_t NPC_ANIM_DEATH[] = {
 #define VIEWER_RUNEC_TOP_SIDE_CONTAINER \
     VIEWER_RUNEC_UI_COMPONENT_ID(161u, 73u)
 
-/* Hitsplat — OSRS-style damage splat rendered as 2D overlay */
+typedef enum {
+    HITSPLAT_DAMAGE = 0,
+    HITSPLAT_HEAL = 1,
+    HITSPLAT_PRAYER_DRAIN = 2,
+} HitsplatKind;
+
+/* Hitsplat/status splat rendered as a 2D overlay. */
 typedef struct {
     int active;
     float world_x, world_y, world_z;  /* 3D position (entity center) */
     int damage;           /* damage in tenths (0 = miss) */
+    int kind;             /* HitsplatKind */
     int frames_left;      /* lifetime in render frames */
 } Hitsplat;
 
@@ -1538,18 +1545,25 @@ static void apply_projectile_profile(VisualProjectile* vp,
     vp->projectile_progress = projectile_progress;
 }
 
-static void spawn_hitsplat(ViewerState* v, float wx, float wy, float wz, int damage_tenths) {
+static void spawn_status_splat(ViewerState* v, float wx, float wy, float wz,
+                               int amount_tenths, int kind) {
     for (int i = 0; i < MAX_HITSPLATS; i++) {
         if (!v->hitsplats[i].active) {
             v->hitsplats[i].active = 1;
             v->hitsplats[i].world_x = wx;
             v->hitsplats[i].world_y = wy;
             v->hitsplats[i].world_z = wz;
-            v->hitsplats[i].damage = damage_tenths;
+            v->hitsplats[i].damage = amount_tenths;
+            v->hitsplats[i].kind = kind;
             v->hitsplats[i].frames_left = 60;  /* 1 second at 60fps */
             return;
         }
     }
+}
+
+static void spawn_hitsplat(ViewerState* v, float wx, float wy, float wz,
+                           int damage_tenths) {
+    spawn_status_splat(v, wx, wy, wz, damage_tenths, HITSPLAT_DAMAGE);
 }
 
 /* Terrain loader — the terrain mesh is the floor heightmap.
@@ -2406,7 +2420,7 @@ static void draw_scene(ViewerState* v) {
     /* Debug overlays — 2D screen-space (LOS, path, range — after EndMode3D) */
     if (v->dbg_flags) debug_overlay_screen(&v->state, v->camera, v->dbg_flags);
 
-    /* Hitsplats — 2D screen-space damage numbers projected from 3D.
+    /* Hitsplats — 2D screen-space damage/status numbers projected from 3D.
      * Drawn AFTER EndMode3D so they render on top of everything.
      * Red circle + white number for damage, blue circle + "0" for miss. */
     for (int i = 0; i < MAX_HITSPLATS; i++) {
@@ -2425,13 +2439,21 @@ static void draw_scene(ViewerState* v) {
         if (screen.x < -50 || screen.x > WINDOW_W + 50 ||
             screen.y < -50 || screen.y > WINDOW_H + 50) continue;
 
-        int dmg = h->damage / 10;  /* convert tenths to whole HP */
+        int value = h->kind == HITSPLAT_DAMAGE
+            ? h->damage / 10
+            : (h->damage + 9) / 10;
         int sx = (int)screen.x;
         int sy = (int)screen.y;
 
         /* Draw OSRS-style splat: colored circle background + damage number */
         Color bg_col, text_col;
-        if (h->damage > 0) {
+        if (h->kind == HITSPLAT_HEAL) {
+            bg_col = (Color){24, 130, 42, (unsigned char)(alpha * 230)};
+            text_col = (Color){255, 255, 255, (unsigned char)(alpha * 255)};
+        } else if (h->kind == HITSPLAT_PRAYER_DRAIN) {
+            bg_col = (Color){28, 104, 170, (unsigned char)(alpha * 230)};
+            text_col = (Color){255, 255, 255, (unsigned char)(alpha * 255)};
+        } else if (h->damage > 0) {
             bg_col = (Color){187, 0, 0, (unsigned char)(alpha * 230)};      /* dark red */
             text_col = (Color){255, 255, 255, (unsigned char)(alpha * 255)}; /* white */
         } else {
@@ -2445,7 +2467,13 @@ static void draw_scene(ViewerState* v) {
 
         /* Damage number centered in circle */
         char dmg_str[16];
-        snprintf(dmg_str, sizeof(dmg_str), "%d", dmg);
+        if (h->kind == HITSPLAT_HEAL) {
+            snprintf(dmg_str, sizeof(dmg_str), "+%d", value);
+        } else if (h->kind == HITSPLAT_PRAYER_DRAIN) {
+            snprintf(dmg_str, sizeof(dmg_str), "-%d", value);
+        } else {
+            snprintf(dmg_str, sizeof(dmg_str), "%d", value);
+        }
         int tw = MeasureText(dmg_str, 14);
         DrawText(dmg_str, sx - tw/2, sy - 7, 14, text_col);
     }
@@ -4240,6 +4268,11 @@ int main(int argc, char** argv) {
                     spawn_hitsplat(&v, p3x, gy_p + 2.5f, p3z,
                                    v.state.player.damage_taken_this_tick);
                 }
+                if (v.state.tz_kih_prayer_drain_this_tick > 0) {
+                    spawn_status_splat(&v, p3x + 0.3f, gy_p + 3.0f, p3z,
+                                       v.state.tz_kih_prayer_drain_this_tick,
+                                       HITSPLAT_PRAYER_DRAIN);
+                }
 
                 /* Player fired ranged attack → ONE crossbow bolt projectile.
                  * Detect: attack_timer just reset to 5 (player fired this tick). */
@@ -4272,6 +4305,15 @@ int main(int argc, char** argv) {
                         float nz = -((float)n->y + (float)n->size*0.5f);
                         float nh = gy_n + 1.0f + (float)n->size*0.5f;
                         spawn_hitsplat(&v, nx, nh, nz, n->damage_taken_this_tick);
+                    }
+                    if (n->healing_received_this_tick > 0) {
+                        float gy_n = ground_y(&v, n->x, n->y);
+                        float nx = (float)n->x + (float)n->size*0.5f;
+                        float nz = -((float)n->y + (float)n->size*0.5f);
+                        float nh = gy_n + 1.4f + (float)n->size*0.5f;
+                        spawn_status_splat(&v, nx, nh, nz,
+                                           n->healing_received_this_tick,
+                                           HITSPLAT_HEAL);
                     }
                 }
 

@@ -35,6 +35,8 @@ static void clear_per_tick_flags(FcState* state) {
     state->hits_landed_this_tick = 0;
     state->damage_taken_this_tick = 0;
     state->prayer_lost_this_tick = 0;
+    state->overhead_prayer_lost_this_tick = 0;
+    state->tz_kih_prayer_drain_this_tick = 0;
     state->npcs_killed_this_tick = 0;
     state->wave_just_cleared = 0;
     state->jad_damage_this_tick = 0;
@@ -74,6 +76,12 @@ static void clear_per_tick_flags(FcState* state) {
 
     for (int i = 0; i < FC_MAX_NPCS; i++) {
         state->npcs[i].damage_taken_this_tick = 0;
+        state->npcs[i].prayer_drain_dealt_this_tick = 0;
+        state->npcs[i].healing_received_this_tick = 0;
+        state->npcs[i].healing_given_this_tick = 0;
+        state->npcs[i].healed_by_mejkot_this_tick = 0;
+        state->npcs[i].healed_by_hurkot_this_tick = 0;
+        state->npcs[i].healed_self_this_tick = 0;
         state->npcs[i].died_this_tick = 0;
     }
 }
@@ -581,7 +589,8 @@ static int find_valid_healer_spawn(const FcState* state,
 /*
  * Jad healer spawn (from TzhaarFightCave.kt npcLevelChanged handler):
  *   Trigger: Jad HP drops below 150 HP.
- *   Spawns up to 4 Yt-HurKot (fills missing slots: 4 - currently_alive).
+ *   Spawns up to 4 Yt-HurKot in the five Fight Cave spawn regions other than
+ *   north-east (fills missing slots: 4 - currently_alive).
  *   Respawn: Only after healers restore Jad to full HP and he crosses the
  *   threshold again. Crossing back above the threshold is not enough to re-arm.
  */
@@ -615,12 +624,24 @@ static void check_jad_healers(FcState* state) {
 
         /* Spawn up to 4 total (fill missing slots) */
         int to_spawn = FC_JAD_NUM_HEALERS - alive_healers;
-        int offsets[4][2] = {{-2, 0}, {2, 0}, {0, -2}, {0, 2}};
+        int spawn_dirs[5] = {
+            SPAWN_NORTH_WEST,
+            SPAWN_SOUTH_WEST,
+            SPAWN_SOUTH,
+            SPAWN_SOUTH_EAST,
+            SPAWN_CENTER,
+        };
+        for (int i = 4; i > 0; i--) {
+            int j = fc_rng_int(state, i + 1);
+            int tmp = spawn_dirs[i];
+            spawn_dirs[i] = spawn_dirs[j];
+            spawn_dirs[j] = tmp;
+        }
         const FcNpcStats* healer_stats = fc_npc_get_stats(NPC_YT_HURKOT);
         int spawned = 0;
         for (int h = 0; h < to_spawn; h++) {
-            int hx = jad->x + offsets[(alive_healers + h) % 4][0];
-            int hy = jad->y + offsets[(alive_healers + h) % 4][1];
+            int hx, hy;
+            fc_spawn_position(spawn_dirs[h], &hx, &hy);
 
             if (!find_valid_healer_spawn(state, hx, hy, healer_stats->size, &hx, &hy)) {
                 continue;
@@ -686,8 +707,9 @@ void fc_tick(FcState* state, const int actions[FC_NUM_ACTION_HEADS]) {
     decrement_player_timers(&state->player);
 
     /* 4. Prayer drain */
-    state->prayer_lost_this_tick +=
+    state->overhead_prayer_lost_this_tick =
         fc_prayer_drain_tick(&state->player, prayer_active_at_tick_start);
+    state->prayer_lost_this_tick += state->overhead_prayer_lost_this_tick;
 
     /* 4b. HP regen (1 HP = 10 tenths every FC_HP_REGEN_INTERVAL ticks) */
     if (state->player.current_hp > 0 && state->player.current_hp < state->player.max_hp) {

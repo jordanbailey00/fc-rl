@@ -104,6 +104,12 @@ static uint32_t hash_npc(uint32_t h, const FcNpc* n) {
     h = fnv_feed_int(h, n->healer_distracted);
     h = fnv_feed_int(h, n->heal_target_idx);
     h = fnv_feed_int(h, n->damage_taken_this_tick);
+    h = fnv_feed_int(h, n->prayer_drain_dealt_this_tick);
+    h = fnv_feed_int(h, n->healing_received_this_tick);
+    h = fnv_feed_int(h, n->healing_given_this_tick);
+    h = fnv_feed_int(h, n->healed_by_mejkot_this_tick);
+    h = fnv_feed_int(h, n->healed_by_hurkot_this_tick);
+    h = fnv_feed_int(h, n->healed_self_this_tick);
     h = fnv_feed_int(h, n->died_this_tick);
     h = fnv_feed_int(h, n->num_pending_hits);
     h = hash_pending_hits(h, n->pending_hits, FC_MAX_PENDING_HITS);
@@ -143,6 +149,10 @@ uint32_t fc_state_hash(const FcState* state) {
     /* Per-tick event flags */
     h = fnv_feed_int(h, state->damage_dealt_this_tick);
     h = fnv_feed_int(h, state->damage_taken_this_tick);
+    h = fnv_feed_int(h, state->prayer_lost_this_tick);
+    h = fnv_feed_int(h, state->overhead_prayer_lost_this_tick);
+    h = fnv_feed_int(h, state->tz_kih_prayer_drain_this_tick);
+    h = fnv_feed_int(h, state->npc_heal_amount_this_tick);
     h = fnv_feed_int(h, state->npcs_killed_this_tick);
     h = fnv_feed_int(h, state->wave_just_cleared);
 

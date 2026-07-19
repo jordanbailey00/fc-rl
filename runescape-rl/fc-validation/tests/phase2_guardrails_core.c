@@ -64,6 +64,15 @@ static int expected_npc_type_obs_offset(int npc_type) {
     }
 }
 
+static int observation_slot_for_npc(const FcState* state, int npc_idx) {
+    int active_indices[FC_VISIBLE_NPCS];
+    int visible = fc_visible_npc_indices(state, active_indices);
+    for (int slot = 0; slot < visible; slot++) {
+        if (active_indices[slot] == npc_idx) return slot;
+    }
+    return -1;
+}
+
 static int check_invalid_case(const char* label,
                               FcState* state,
                               const int actions[FC_NUM_ACTION_HEADS],
@@ -384,6 +393,7 @@ static int test_npc_heal_penalty_actual_heal(void) {
     fc_npc_spawn(&state.npcs[0], NPC_YT_MEJKOT, 11, 11, 0);
     fc_npc_spawn(&state.npcs[1], NPC_TZ_KIH, 15, 11, 1);
     state.npcs_remaining = 2;
+    state.npcs[0].attack_timer = 0;
     state.npcs[0].heal_timer = 0;
     state.npcs[1].current_hp = state.npcs[1].max_hp / 4;
 
@@ -906,6 +916,14 @@ static int test_healer_spawn_validity(void) {
     FcState state;
     int actions[FC_NUM_ACTION_HEADS] = {0};
     int healer_count = 0;
+    int regions_seen[5] = {0};
+    const int spawn_dirs[5] = {
+        SPAWN_NORTH_WEST,
+        SPAWN_SOUTH_WEST,
+        SPAWN_SOUTH,
+        SPAWN_SOUTH_EAST,
+        SPAWN_CENTER,
+    };
 
     make_open_manual_state(&state, 20, 20);
     state.current_wave = FC_NUM_WAVES;
@@ -913,7 +931,7 @@ static int test_healer_spawn_validity(void) {
     state.npcs[0].current_hp = FC_JAD_HEALER_THRESHOLD_HP_TENTHS - 10;
     state.npcs_remaining = 1;
     state.next_spawn_index = 1;
-    state.walkable[8][10] = 0;  /* first preferred healer tile */
+    state.walkable[13][49] = 0;  /* force one regional spawn to relocate */
 
     fc_step(&state, actions);
 
@@ -928,16 +946,42 @@ static int test_healer_spawn_validity(void) {
             fc_destroy(&state);
             return fail(msg);
         }
+
+        int best_region = -1;
+        int best_distance = FC_ARENA_WIDTH;
+        for (int region = 0; region < 5; region++) {
+            int sx, sy;
+            fc_spawn_position(spawn_dirs[region], &sx, &sy);
+            int dx = abs(n->x - sx);
+            int dy = abs(n->y - sy);
+            int distance = dx > dy ? dx : dy;
+            if (distance < best_distance) {
+                best_distance = distance;
+                best_region = region;
+            }
+        }
+        if (best_region < 0 || best_distance > 5) {
+            char msg[192];
+            snprintf(msg, sizeof(msg),
+                     "healer spawned outside Fight Cave regions at (%d,%d), nearest=%d",
+                     n->x, n->y, best_distance);
+            fc_destroy(&state);
+            return fail(msg);
+        }
+        regions_seen[best_region] = 1;
     }
 
-    if (healer_count == FC_JAD_NUM_HEALERS) {
+    int distinct_regions = 0;
+    for (int i = 0; i < 5; i++) distinct_regions += regions_seen[i];
+
+    if (healer_count == FC_JAD_NUM_HEALERS && distinct_regions == FC_JAD_NUM_HEALERS) {
         fc_destroy(&state);
-        return pass("Jad healers spawned only on valid walkable footprints");
+        return pass("Jad healers use four valid non-north-east Fight Cave regions");
     }
 
-    char msg[128];
-    snprintf(msg, sizeof(msg), "expected %d healers, found %d",
-             FC_JAD_NUM_HEALERS, healer_count);
+    char msg[160];
+    snprintf(msg, sizeof(msg), "expected %d healers in distinct regions, found %d in %d",
+             FC_JAD_NUM_HEALERS, healer_count, distinct_regions);
     fc_destroy(&state);
     return fail(msg);
 }
@@ -2004,9 +2048,446 @@ static int test_step4_npc_stays_when_current_position_can_attack(void) {
     return pass("NPCs stay put when their current footprint can attack");
 }
 
+static int test_special_tz_kih_prayer_drain(void) {
+    FcState state;
+    const FcNpcStats* stats = fc_npc_get_stats(NPC_TZ_KIH);
+    int prayer_before;
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 11, 10, 0);
+    state.player.prayer = PRAYER_NONE;
+    prayer_before = state.player.current_prayer;
+    fc_queue_pending_hit(state.player.pending_hits,
+                         &state.player.num_pending_hits,
+                         FC_MAX_PENDING_HITS,
+                         30, 1, ATTACK_MELEE, 0, stats->prayer_drain);
+    fc_resolve_player_pending_hits(&state);
+
+    if (prayer_before - state.player.current_prayer != 40 ||
+        state.prayer_lost_this_tick != 40 ||
+        state.tz_kih_prayer_drain_this_tick != 40) {
+        char msg[192];
+        snprintf(msg, sizeof(msg),
+                 "3.0 damage should drain 4.0 prayer; actual=%d aggregate=%d Tz-Kih=%d",
+                 prayer_before - state.player.current_prayer,
+                 state.prayer_lost_this_tick,
+                 state.tz_kih_prayer_drain_this_tick);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    fc_destroy(&state);
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 11, 10, 0);
+    state.player.prayer = PRAYER_PROTECT_MELEE;
+    prayer_before = state.player.current_prayer;
+    fc_queue_pending_hit(state.player.pending_hits,
+                         &state.player.num_pending_hits,
+                         FC_MAX_PENDING_HITS,
+                         30, 1, ATTACK_MELEE, 0, stats->prayer_drain);
+    state.player.pending_hits[0].prayer_snapshot = PRAYER_PROTECT_MELEE;
+    fc_resolve_player_pending_hits(&state);
+
+    if (prayer_before - state.player.current_prayer != 10 ||
+        state.player.damage_taken_this_tick != 0 ||
+        state.tz_kih_prayer_drain_this_tick != 10) {
+        char msg[192];
+        snprintf(msg, sizeof(msg),
+                 "blocked Tz-Kih hit should deal 0 and drain 1.0 prayer; damage=%d drain=%d",
+                 state.player.damage_taken_this_tick,
+                 prayer_before - state.player.current_prayer);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("Tz-Kih drains damage dealt plus one prayer point");
+}
+
+static int test_special_mejkot_heal_replaces_attack(void) {
+    FcState state;
+    int hp_before;
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_YT_MEJKOT, 11, 10, 0);
+    state.npcs[0].current_hp = state.npcs[0].max_hp / 4;
+    state.npcs[0].attack_timer = 0;
+    state.npcs[0].heal_timer = 0;
+    hp_before = state.npcs[0].current_hp;
+    fc_npc_tick(&state, 0);
+
+    if (state.npcs[0].current_hp != hp_before + state.npcs[0].heal_amount ||
+        state.npcs[0].healing_received_this_tick != state.npcs[0].heal_amount ||
+        state.player.num_pending_hits != 0 ||
+        state.npcs[0].attack_timer != state.npcs[0].attack_speed) {
+        char msg[224];
+        snprintf(msg, sizeof(msg),
+                 "self heal did not replace attack: hp=%d expected=%d hits=%d timer=%d",
+                 state.npcs[0].current_hp, hp_before + state.npcs[0].heal_amount,
+                 state.player.num_pending_hits, state.npcs[0].attack_timer);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    fc_destroy(&state);
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_YT_MEJKOT, 11, 10, 0);
+    fc_npc_spawn(&state.npcs[1], NPC_TOK_XIL, 16, 10, 1);
+    state.npcs[0].attack_timer = 0;
+    state.npcs[0].heal_timer = 0;
+    state.npcs[1].current_hp = state.npcs[1].max_hp / 4;
+    hp_before = state.npcs[1].current_hp;
+    fc_npc_tick(&state, 0);
+
+    if (state.npcs[1].current_hp != hp_before + state.npcs[0].heal_amount ||
+        state.npcs[1].healing_received_this_tick != state.npcs[0].heal_amount ||
+        state.player.num_pending_hits != 0) {
+        char msg[224];
+        snprintf(msg, sizeof(msg),
+                 "other-NPC heal did not replace attack: hp=%d expected=%d hits=%d",
+                 state.npcs[1].current_hp, hp_before + state.npcs[0].heal_amount,
+                 state.player.num_pending_hits);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    fc_destroy(&state);
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_YT_MEJKOT, 11, 10, 0);
+    state.npcs[0].attack_timer = 0;
+    state.npcs[0].heal_timer = 0;
+    fc_npc_tick(&state, 0);
+    if (state.player.num_pending_hits != 1) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "healthy MejKot queued %d melee hits, expected 1",
+                 state.player.num_pending_hits);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("Yt-MejKot self/other healing consumes its attack cycle");
+}
+
+static int count_adjacent_styles(int npc_type, int counts[4]) {
+    FcState state;
+
+    memset(counts, 0, sizeof(int) * 4);
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], npc_type, 11, 10, 0);
+
+    for (int i = 0; i < 256; i++) {
+        state.npcs[0].attack_timer = 0;
+        state.player.num_pending_hits = 0;
+        memset(state.player.pending_hits, 0, sizeof(state.player.pending_hits));
+        fc_npc_tick(&state, 0);
+        if (state.player.num_pending_hits != 1) {
+            fc_destroy(&state);
+            return 1;
+        }
+        int style = state.player.pending_hits[0].attack_style;
+        if (style >= ATTACK_NONE && style <= ATTACK_MAGIC) counts[style]++;
+    }
+
+    fc_destroy(&state);
+    return 0;
+}
+
+static int test_special_adjacent_style_selection(void) {
+    int ket[4];
+    int jad[4];
+
+    if (count_adjacent_styles(NPC_KET_ZEK, ket)) {
+        return fail("Ket-Zek did not queue exactly one adjacent attack per cycle");
+    }
+    if (ket[ATTACK_MELEE] == 0 || ket[ATTACK_MAGIC] == 0 ||
+        ket[ATTACK_RANGED] != 0) {
+        char msg[160];
+        snprintf(msg, sizeof(msg), "adjacent Ket-Zek M/R/A=%d/%d/%d",
+                 ket[ATTACK_MELEE], ket[ATTACK_RANGED], ket[ATTACK_MAGIC]);
+        return fail(msg);
+    }
+
+    if (count_adjacent_styles(NPC_TZTOK_JAD, jad)) {
+        return fail("Jad did not queue exactly one adjacent attack per cycle");
+    }
+    if (jad[ATTACK_MELEE] == 0 || jad[ATTACK_RANGED] == 0 ||
+        jad[ATTACK_MAGIC] == 0) {
+        char msg[160];
+        snprintf(msg, sizeof(msg), "adjacent Jad M/R/A=%d/%d/%d",
+                 jad[ATTACK_MELEE], jad[ATTACK_RANGED], jad[ATTACK_MAGIC]);
+        return fail(msg);
+    }
+    if (fc_npc_hit_delay(NPC_TZTOK_JAD, ATTACK_MAGIC, 1) < 2) {
+        return fail("adjacent Jad Magic resolves before a prayer decision tick");
+    }
+
+    return pass("Ket-Zek and Jad retain all valid styles in melee range");
+}
+
+static int test_special_hurkot_behavior(void) {
+    FcState state;
+    float obs[FC_OBS_SIZE];
+    int hp_before;
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_TZTOK_JAD, 12, 10, 0);
+    fc_npc_spawn(&state.npcs[1], NPC_YT_HURKOT, 11, 10, 1);
+    state.npcs[0].current_hp = 1000;
+    state.npcs[1].attack_timer = 0;
+    state.npcs[1].heal_timer = 1;
+    fc_queue_pending_hit(state.npcs[1].pending_hits,
+                         &state.npcs[1].num_pending_hits,
+                         FC_MAX_PENDING_HITS,
+                         0, 1, ATTACK_RANGED, -1, 0);
+    fc_resolve_npc_pending_hits(&state, 1);
+    hp_before = state.npcs[0].current_hp;
+    fc_npc_tick(&state, 1);
+
+    if (!state.npcs[1].healer_distracted ||
+        state.player.num_pending_hits != 1 ||
+        state.npcs[0].current_hp != hp_before ||
+        state.npc_heal_procs_this_tick != 0) {
+        char msg[224];
+        snprintf(msg, sizeof(msg),
+                 "tagged healer aggro/no-heal wrong: aggro=%d hits=%d jad_hp=%d expected=%d",
+                 state.npcs[1].healer_distracted, state.player.num_pending_hits,
+                 state.npcs[0].current_hp, hp_before);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    fc_destroy(&state);
+
+    make_open_manual_state(&state, 30, 30);
+    fc_npc_spawn(&state.npcs[0], NPC_YT_HURKOT, 10, 10, 0);
+    state.npcs[0].healer_distracted = 1;
+    fc_write_obs(&state, obs);
+    if (obs[FC_OBS_NPC_START + FC_NPC_TELE_MELEE] < 0.5f) {
+        fc_destroy(&state);
+        return fail("tagged Yt-HurKot does not expose its melee threat");
+    }
+    fc_destroy(&state);
+
+    make_open_manual_state(&state, 40, 40);
+    fc_npc_spawn(&state.npcs[0], NPC_TZTOK_JAD, 10, 10, 0);
+    fc_npc_spawn(&state.npcs[1], NPC_YT_HURKOT, 15, 10, 1);
+    state.npcs[1].healer_distracted = 1;
+    state.npcs[0].current_hp = 1000;
+    state.npcs[1].heal_timer = 1;
+    state.npcs[1].attack_timer = 999;
+    hp_before = state.npcs[0].current_hp;
+    fc_npc_tick(&state, 1);
+    if (!state.npcs[1].healer_distracted ||
+        state.npcs[0].current_hp != hp_before) {
+        fc_destroy(&state);
+        return fail("distant tagged healer lost permanent aggro or healed Jad");
+    }
+    fc_destroy(&state);
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_YT_HURKOT, 12, 10, 0);
+    state.npcs[0].healer_distracted = 1;
+    state.walkable[11][10] = 0;
+    fc_npc_tick(&state, 0);
+    if (state.npcs[0].x != 12 || state.npcs[0].y != 10 ||
+        !state.npcs[0].healer_distracted) {
+        fc_destroy(&state);
+        return fail("tagged healer routed around a blocking pillar or lost aggro");
+    }
+    fc_destroy(&state);
+
+    make_open_manual_state(&state, 30, 30);
+    fc_npc_spawn(&state.npcs[0], NPC_TZTOK_JAD, 10, 10, 0);
+    fc_npc_spawn(&state.npcs[1], NPC_YT_HURKOT, 15, 10, 1);
+    state.npcs[0].current_hp = 1000;
+    state.npcs[1].heal_timer = 4;
+    hp_before = state.npcs[0].current_hp;
+    for (int tick = 0; tick < 4; tick++) fc_npc_tick(&state, 1);
+    if (state.npcs[0].current_hp != hp_before + state.npcs[1].heal_amount) {
+        char msg[160];
+        snprintf(msg, sizeof(msg), "four-tick healer restored %d, expected %d",
+                 state.npcs[0].current_hp - hp_before, state.npcs[1].heal_amount);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("Yt-HurKot aggro is permanent, pillar-trappable, and disables healing");
+}
+
+static int test_mechanics_observation_events(void) {
+    FcState state;
+    float obs[FC_OBS_SIZE];
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+    const float eps = 0.0001f;
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 11, 10, 0);
+    state.npcs_remaining = 1;
+    state.player.prayer = PRAYER_NONE;
+    fc_queue_pending_hit(state.player.pending_hits,
+                         &state.player.num_pending_hits,
+                         FC_MAX_PENDING_HITS,
+                         30, 1, ATTACK_MELEE, 0,
+                         fc_npc_get_stats(NPC_TZ_KIH)->prayer_drain);
+    fc_resolve_player_pending_hits(&state);
+    fc_write_obs(&state, obs);
+
+    float expected_total = 40.0f / (float)state.player.max_prayer;
+    float expected_source = 40.0f / 50.0f;
+    if (fabsf(obs[FC_OBS_PLAYER_PRAYER_LOST] - expected_total) > eps ||
+        obs[FC_OBS_PLAYER_OVERHEAD_PRAYER_LOST] != 0.0f ||
+        fabsf(obs[FC_OBS_NPC_START + FC_NPC_PRAYER_DRAIN_DEALT] -
+              expected_source) > eps) {
+        char msg[224];
+        snprintf(msg, sizeof(msg),
+                 "Tz-Kih obs wrong: total=%.4f/%.4f overhead=%.1f source=%.4f/%.4f",
+                 obs[FC_OBS_PLAYER_PRAYER_LOST], expected_total,
+                 obs[FC_OBS_PLAYER_OVERHEAD_PRAYER_LOST],
+                 obs[FC_OBS_NPC_START + FC_NPC_PRAYER_DRAIN_DEALT],
+                 expected_source);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    fc_destroy(&state);
+
+    make_open_manual_state(&state, 10, 10);
+    state.npcs_remaining = 1;
+    state.player.prayer = PRAYER_PROTECT_MELEE;
+    state.player.prayer_drain_counter = 60 + 2 * state.player.prayer_bonus;
+    fc_step(&state, actions);
+    fc_write_obs(&state, obs);
+    expected_total = 10.0f / (float)state.player.max_prayer;
+    if (fabsf(obs[FC_OBS_PLAYER_PRAYER_LOST] - expected_total) > eps ||
+        obs[FC_OBS_PLAYER_OVERHEAD_PRAYER_LOST] != 1.0f) {
+        fc_destroy(&state);
+        return fail("passive Prayer loss was not separated from NPC drain");
+    }
+    fc_step(&state, actions);
+    fc_write_obs(&state, obs);
+    if (obs[FC_OBS_PLAYER_PRAYER_LOST] != 0.0f ||
+        obs[FC_OBS_PLAYER_OVERHEAD_PRAYER_LOST] != 0.0f) {
+        fc_destroy(&state);
+        return fail("Prayer loss event observations did not clear next tick");
+    }
+    fc_destroy(&state);
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_YT_MEJKOT, 11, 10, 0);
+    state.npcs_remaining = 1;
+    state.npcs[0].current_hp = state.npcs[0].max_hp / 4;
+    state.npcs[0].attack_timer = 0;
+    state.progress_required_work_start = (float)state.npcs[0].max_hp;
+    fc_npc_tick(&state, 0);
+    fc_write_obs(&state, obs);
+
+    int base = FC_OBS_NPC_START;
+    float expected_received = (float)state.npcs[0].heal_amount /
+                              (float)state.npcs[0].max_hp;
+    if (fabsf(obs[base + FC_NPC_HEAL_RECEIVED] - expected_received) > eps ||
+        fabsf(obs[base + FC_NPC_HEAL_GIVEN] - 1.0f) > eps ||
+        obs[base + FC_NPC_HEALED_BY_MEJKOT] != 1.0f ||
+        obs[base + FC_NPC_HEALED_BY_HURKOT] != 0.0f ||
+        obs[base + FC_NPC_HEALED_SELF] != 1.0f ||
+        obs[base + FC_NPC_TARGETS_PLAYER] != 1.0f ||
+        fabsf(obs[base + FC_NPC_HEAL_COOLDOWN] - 1.0f) > eps ||
+        fabsf(obs[FC_OBS_META_START + FC_OBS_META_NPC_HEALING] -
+              expected_received) > eps) {
+        fc_destroy(&state);
+        return fail("Yt-MejKot source, target, self-heal, cooldown, or total-heal obs wrong");
+    }
+
+    fc_step(&state, actions);
+    fc_write_obs(&state, obs);
+    if (obs[base + FC_NPC_HEAL_RECEIVED] != 0.0f ||
+        obs[base + FC_NPC_HEAL_GIVEN] != 0.0f ||
+        obs[base + FC_NPC_HEALED_BY_MEJKOT] != 0.0f ||
+        obs[base + FC_NPC_HEALED_SELF] != 0.0f ||
+        obs[FC_OBS_META_START + FC_OBS_META_NPC_HEALING] != 0.0f) {
+        fc_destroy(&state);
+        return fail("healing event observations did not clear next tick");
+    }
+    fc_destroy(&state);
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_YT_MEJKOT, 11, 10, 0);
+    fc_npc_spawn(&state.npcs[1], NPC_TOK_XIL, 15, 10, 1);
+    state.npcs_remaining = 2;
+    state.npcs[0].attack_timer = 0;
+    state.npcs[1].current_hp = state.npcs[1].max_hp / 4;
+    fc_npc_tick(&state, 0);
+    fc_write_obs(&state, obs);
+    int source_slot = observation_slot_for_npc(&state, 0);
+    int target_slot = observation_slot_for_npc(&state, 1);
+    if (source_slot < 0 || target_slot < 0) {
+        fc_destroy(&state);
+        return fail("MejKot healing source or target was not visible");
+    }
+    int source_base = FC_OBS_NPC_START + source_slot * FC_OBS_NPC_STRIDE;
+    int target_base = FC_OBS_NPC_START + target_slot * FC_OBS_NPC_STRIDE;
+    expected_received = (float)state.npcs[0].heal_amount /
+                        (float)state.npcs[1].max_hp;
+    if (obs[source_base + FC_NPC_HEAL_GIVEN] != 1.0f ||
+        obs[source_base + FC_NPC_HEALED_SELF] != 0.0f ||
+        fabsf(obs[target_base + FC_NPC_HEAL_RECEIVED] - expected_received) > eps ||
+        obs[target_base + FC_NPC_HEALED_BY_MEJKOT] != 1.0f ||
+        obs[target_base + FC_NPC_HEALED_SELF] != 0.0f) {
+        fc_destroy(&state);
+        return fail("MejKot-to-other source and recipient observations are not paired");
+    }
+    fc_destroy(&state);
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_TZTOK_JAD, 12, 10, 0);
+    fc_npc_spawn(&state.npcs[1], NPC_YT_HURKOT, 11, 10, 1);
+    state.npcs_remaining = 2;
+    state.npcs[0].current_hp = 1000;
+    state.npcs[1].heal_timer = 1;
+    state.progress_required_work_start = (float)state.npcs[0].max_hp;
+    fc_npc_tick(&state, 1);
+    fc_write_obs(&state, obs);
+    source_slot = observation_slot_for_npc(&state, 1);
+    target_slot = observation_slot_for_npc(&state, 0);
+    if (source_slot < 0 || target_slot < 0) {
+        fc_destroy(&state);
+        return fail("HurKot healing source or Jad target was not visible");
+    }
+    source_base = FC_OBS_NPC_START + source_slot * FC_OBS_NPC_STRIDE;
+    target_base = FC_OBS_NPC_START + target_slot * FC_OBS_NPC_STRIDE;
+    expected_received = (float)state.npcs[1].heal_amount /
+                        (float)state.npcs[0].max_hp;
+    if (obs[source_base + FC_NPC_HEAL_GIVEN] != 1.0f ||
+        obs[source_base + FC_NPC_TARGETS_PLAYER] != 0.0f ||
+        fabsf(obs[source_base + FC_NPC_HEAL_COOLDOWN] - 1.0f) > eps ||
+        fabsf(obs[target_base + FC_NPC_HEAL_RECEIVED] - expected_received) > eps ||
+        obs[target_base + FC_NPC_HEALED_BY_HURKOT] != 1.0f ||
+        obs[target_base + FC_NPC_HEALED_BY_MEJKOT] != 0.0f) {
+        fc_destroy(&state);
+        return fail("untagged HurKot source, Jad recipient, or cooldown observations are wrong");
+    }
+    fc_destroy(&state);
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_YT_HURKOT, 11, 10, 0);
+    fc_queue_pending_hit(state.npcs[0].pending_hits,
+                         &state.npcs[0].num_pending_hits,
+                         FC_MAX_PENDING_HITS,
+                         0, 1, ATTACK_RANGED, -1, 0);
+    fc_resolve_npc_pending_hits(&state, 0);
+    fc_write_obs(&state, obs);
+    if (obs[FC_OBS_NPC_START + FC_NPC_TARGETS_PLAYER] != 1.0f ||
+        obs[FC_OBS_NPC_START + FC_NPC_HEAL_COOLDOWN] != 0.0f) {
+        fc_destroy(&state);
+        return fail("tagged HurKot does not expose permanent player targeting");
+    }
+
+    fc_destroy(&state);
+    return pass("Prayer loss, healing source/target, aggro, and cooldown observations are explicit");
+}
+
 int main(int argc, char** argv) {
     if (argc != 2) {
-        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|safespot_reward_disabled|npc_heal_penalty_actual_heal|prayer_loss_penalty|no_attack_penalty_wave_scaled|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|safespot_los|diagonal_corner_clipping|npc_moves_when_attack_blocked|option_b_no_move_into_range_fire_same_tick|option_b_no_move_into_los_fire_same_tick|option_b_attack_then_move_when_already_valid|option_b_queued_projectile_survives_later_movement|step1_movement_only_clears_stale_target|step1_projectile_survives_movement_cancel|step1_attack_move_clears_continued_target|step1_attack_move_out_of_range_clears_target|step1_directional_cancels_old_approach_route|step1_directional_beats_old_tile_route|step1_attack_approach_without_explicit_movement|step2_occupancy_marks_and_ignores_entities|step2_dynamic_footprint_static_and_occupied|step2_entity_wrapper_ignores_self_blocks_others|step2_dynamic_diagonal_blocks_occupied_corner|step2_dynamic_bfs_avoids_occupied_steps|step2_dynamic_sized_bfs_checks_full_footprint|step2_start_reservation_blocks_swap_tile|step3_player_directional_blocked_by_npc|step3_player_tile_route_rejects_occupied_target|step3_npc_blocked_by_other_npc|step3_large_npc_blocked_by_healer_footprint|step3_tz_kek_split_avoids_occupied_tiles|step4_ranged_npc_chases_player_bounds_not_los_tile|step4_large_npc_chase_checks_full_footprint|step4_npc_stays_when_current_position_can_attack|invalid_action_classes>\n",
+        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|safespot_reward_disabled|npc_heal_penalty_actual_heal|prayer_loss_penalty|no_attack_penalty_wave_scaled|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|special_tz_kih_prayer_drain|special_mejkot_heal_replaces_attack|special_adjacent_style_selection|special_hurkot_behavior|mechanics_observation_events|safespot_los|diagonal_corner_clipping|npc_moves_when_attack_blocked|option_b_no_move_into_range_fire_same_tick|option_b_no_move_into_los_fire_same_tick|option_b_attack_then_move_when_already_valid|option_b_queued_projectile_survives_later_movement|step1_movement_only_clears_stale_target|step1_projectile_survives_movement_cancel|step1_attack_move_clears_continued_target|step1_attack_move_out_of_range_clears_target|step1_directional_cancels_old_approach_route|step1_directional_beats_old_tile_route|step1_attack_approach_without_explicit_movement|step2_occupancy_marks_and_ignores_entities|step2_dynamic_footprint_static_and_occupied|step2_entity_wrapper_ignores_self_blocks_others|step2_dynamic_diagonal_blocks_occupied_corner|step2_dynamic_bfs_avoids_occupied_steps|step2_dynamic_sized_bfs_checks_full_footprint|step2_start_reservation_blocks_swap_tile|step3_player_directional_blocked_by_npc|step3_player_tile_route_rejects_occupied_target|step3_npc_blocked_by_other_npc|step3_large_npc_blocked_by_healer_footprint|step3_tz_kek_split_avoids_occupied_tiles|step4_ranged_npc_chases_player_bounds_not_los_tile|step4_large_npc_chase_checks_full_footprint|step4_npc_stays_when_current_position_can_attack|invalid_action_classes>\n",
                 argv[0]);
         return 2;
     }
@@ -2027,6 +2508,11 @@ int main(int argc, char** argv) {
     if (strcmp(argv[1], "progress_observation_fields") == 0) return test_progress_observation_fields();
     if (strcmp(argv[1], "prayer_deadline_observation_fields") == 0) return test_prayer_deadline_observation_fields();
     if (strcmp(argv[1], "healer_spawn_validity") == 0) return test_healer_spawn_validity();
+    if (strcmp(argv[1], "special_tz_kih_prayer_drain") == 0) return test_special_tz_kih_prayer_drain();
+    if (strcmp(argv[1], "special_mejkot_heal_replaces_attack") == 0) return test_special_mejkot_heal_replaces_attack();
+    if (strcmp(argv[1], "special_adjacent_style_selection") == 0) return test_special_adjacent_style_selection();
+    if (strcmp(argv[1], "special_hurkot_behavior") == 0) return test_special_hurkot_behavior();
+    if (strcmp(argv[1], "mechanics_observation_events") == 0) return test_mechanics_observation_events();
     if (strcmp(argv[1], "safespot_los") == 0) return test_safespot_los();
     if (strcmp(argv[1], "diagonal_corner_clipping") == 0) return test_diagonal_corner_clipping();
     if (strcmp(argv[1], "npc_moves_when_attack_blocked") == 0) return test_npc_moves_when_attack_blocked();

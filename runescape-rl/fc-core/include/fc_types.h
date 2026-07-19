@@ -37,7 +37,7 @@ typedef enum {
     NPC_YT_MEJKOT  = 5,  /* Lv 180, melee + heals nearby NPCs */
     NPC_KET_ZEK    = 6,  /* Lv 360, magic (primary) + melee */
     NPC_TZTOK_JAD  = 7,  /* Lv 702, magic + ranged, prayer switching */
-    NPC_YT_HURKOT  = 8,  /* Jad healer, heals Jad if not distracted */
+    NPC_YT_HURKOT  = 8,  /* Jad healer, permanently targets player once tagged */
     NPC_TYPE_COUNT  = 9
 } FcNpcType;
 
@@ -140,7 +140,7 @@ typedef struct {
     int ticks_remaining;  /* ticks until hit resolves */
     int attack_style;     /* FcAttackStyle of the incoming hit */
     int source_npc_idx;   /* index into FcState.npcs[] of the attacker */
-    int prayer_drain;     /* prayer points drained on hit (Tz-Kih) */
+    int prayer_drain;     /* base prayer drain in tenths (Tz-Kih adds final damage) */
     int prayer_snapshot;  /* prayer locked for this hit; -1 = snapshot pending */
     int prayer_lock_tick; /* first tick on which prayer_snapshot should be filled */
 } FcPendingHit;
@@ -273,16 +273,22 @@ typedef struct {
     /* AI */
     int movement_speed;     /* 1 = walk, 2 = run */
 
-    /* Yt-MejKot healing */
-    int heal_timer;         /* ticks until next heal attempt */
+    /* NPC healing */
+    int heal_timer;         /* ticks until next independent heal attempt (Yt-HurKot) */
     int heal_amount;        /* HP healed per proc */
 
     /* Yt-HurKot (Jad healer) */
-    int healer_distracted;  /* 1 if player has attacked this healer */
+    int healer_distracted;  /* permanent player aggro after the healer is tagged */
     int heal_target_idx;    /* NPC index of the entity being healed (Jad) */
 
     /* Per-tick event flags */
     int damage_taken_this_tick;
+    int prayer_drain_dealt_this_tick;
+    int healing_received_this_tick;
+    int healing_given_this_tick;
+    int healed_by_mejkot_this_tick;
+    int healed_by_hurkot_this_tick;
+    int healed_self_this_tick;
     int died_this_tick;
 
     /* Pending hits (player attacks in flight toward this NPC) */
@@ -322,6 +328,7 @@ typedef struct {
 
     /* Per-tick events for hitsplat/animation rendering */
     int damage_taken_this_tick;
+    int healing_received_this_tick;
     int hit_landed_this_tick;
     int died_this_tick;
 
@@ -377,6 +384,8 @@ typedef struct {
     int hits_landed_this_tick;   /* count of player pending-hits that dealt damage this tick */
     int damage_taken_this_tick;
     int prayer_lost_this_tick;   /* prayer points lost this tick, in tenths */
+    int overhead_prayer_lost_this_tick; /* passive overhead drain, in tenths */
+    int tz_kih_prayer_drain_this_tick; /* Tz-Kih share of prayer loss, in tenths */
     int npcs_killed_this_tick;
     int wave_just_cleared;
     int jad_damage_this_tick;

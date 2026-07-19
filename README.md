@@ -173,7 +173,7 @@ runescape-rl/
 
 **Backend (`fc-core/`):** Pure C, zero allocations per tick. Deterministic game simulation — combat, pathfinding, prayer, waves, NPC AI. Both the viewer and trainer call into the same `fc_step()` function.
 
-**Training (`fc-training/`):** PufferLib 4.0 wrapper. Compiles the C backend into a shared library with CUDA-accelerated vectorized environments. 4096 parallel agents, ~2M steps/sec on a single GPU.
+**Training (`fc-training/`):** PufferLib 4.0 wrapper. Compiles the C backend into a shared library with CUDA-accelerated vectorized environments. The canonical 4096-agent b5 baseline runs at roughly 1.2M steps/sec on the current test machine.
 
 **Viewer (`fc-viewer/`):** Raylib-based 3D viewer for human play and policy replay. Debug overlay shows reward breakdown, NPC stats, prayer state, threat context.
 
@@ -183,30 +183,27 @@ runescape-rl/
 
 ## RL Config
 
-Current live config uses the v35.1/v34 top-pick PPO recipe with the Phase 7
-simplified no-supplies contract: `initial_sharks=0`,
-`initial_prayer_doses=0`, and only move/attack/prayer exposed to the Puffer
-policy.
-The old v36 no-consumables diagnostic is archived at
-[`runescape-rl/config/archive/fight_caves_v36_no_consumables.ini`](runescape-rl/config/archive/fight_caves_v36_no_consumables.ini).
-
-Base recipe (v35.1 hparams with Phase 7 reward simplification):
+The live config is `v1.0`, derived from W&B run `b5m07qqr` and selected by the
+July 2026 48-run Protein sweep plus two-new-seed finalist confirmation. It keeps the
+current no-supplies Fight Caves task unchanged and promotes only the selected
+trainer hyperparameters. Historical INIs were retired after their exact values,
+run IDs, results, and recovery hashes were recorded in
+[`run_history.md`](runescape-rl/docs/run_history.md).
 
 | Category | Key params |
 |----------|-----------|
-| **Combat rewards** | `w_damage_dealt=0.9`, `w_npc_kill=3.5`, `w_wave_clear=15.0`, `w_jad_kill=2000.0` |
-| **Survival penalties** | `w_damage_taken=-1.9` (squared, 70x amplified), `w_player_death=-11.0` |
-| **Prayer shaping** | `w_correct_danger_prayer=0.25`, `w_correct_jad_prayer=1.5`, `shape_unnecessary_prayer_penalty=0.0` |
-| **Supplies/actions** | no food, no prayer potion doses, no eat/drink policy heads |
-| **Removed shaping** | consumable waste, wrong-prayer penalty, melee-pressure penalty, wasted-attack penalty, kiting reward, direct safespot key, resource threat window |
-| **Wave-stall pressure** | disabled: start/ramp/base/cap are all `0` |
-| **Procedural penalties** | `w_invalid_action=-0.1`, `w_tick_penalty=-0.005`, `shape_jad_heal_penalty=-0.3` |
-| **PPO (swept)** | `lr=9e-4`, `gamma=0.9963`, `gae_lambda=0.9641`, `ent_coef=0.0242`, `clip_coef=0.178`, `vf_coef=1.0`, `max_grad_norm=0.25` |
-| **VTrace / prio replay (swept)** | `replay_ratio=1.568`, `vtrace_rho_clip=0.5`, `vtrace_c_clip=0.504`, `prio_alpha=0.968` |
-| **Adam (swept)** | `beta1=0.95`, `beta2=0.9996`, `eps=1e-10` |
-| **Schedule** | `horizon=256`, `minibatch=4096`, `total_timesteps=3B`, `anneal_lr=off` |
-| **Policy** | MinGRU, 3 layers, 256 hidden |
-| **Vector** | `4096 agents`, `2 buffers` |
+| **Loadout** | SOTA Twisted Bow / fortified Masori profile (`FC_LOADOUT_SOTA_TBOW`) |
+| **Supplies/actions** | zero sharks, zero prayer-potion doses, three heads: movement, attack, prayer |
+| **Progress/outcomes** | `w_progress=0.001`, `w_cave_complete=1.0`, `w_player_death=-1.0` |
+| **Damage/prayer** | `w_damage_taken=-0.25`, `w_correct_danger_prayer=0.005`, `w_prayer_lost=-0.02` |
+| **Pressure** | `w_tick_penalty=-0.0001`; staged no-progress penalties after 800/1600/2400 ticks; wave-scaled no-attack penalty after 50 ticks |
+| **Disabled channels** | damage-dealt, NPC/wave/Jad kill, Jad prayer, healer, unnecessary-prayer, and old wave-stall shaping are zero |
+| **Reward contract** | scalar reward clamped to `[-1, 1]` per environment step |
+| **v1.0 trainer** | `lr=0.0012501122`, `entropy=0.0126193685`, `gamma=0.9977806603`, `gae_lambda=0.9944084419`, `replay_ratio=1.1570637170` |
+| **Fixed optimizer** | `clip=0.178306`, `vf_coef=1`, `vf_clip=0.151240`, `max_grad_norm=0.25`, `prio_alpha=0.968236` |
+| **Schedule** | horizon 256, minibatch 4096, default budget 750M, LR annealing off |
+| **Policy/vector** | 3-layer 256-hidden MinGRU (676,608 weights with the 307-float Puffer input), 4096 agents, 2 buffers, 16 threads |
+| **Seed** | top-level native trainer seed 73; episode RNG derives from env slot/episode count |
 
 Full config: [`runescape-rl/config/fight_caves.ini`](runescape-rl/config/fight_caves.ini).
 

@@ -528,8 +528,8 @@ static void test_melee_safespot_gating(void) {
     fc_npc_tick(&open, 0);
     fc_write_obs(&open, obs);
 
-    TEST("Open-corner Yt-MejKot still queues a melee swing");
-    if (open.player.num_pending_hits == 1) PASS();
+    TEST("Open-corner Yt-MejKot heal replaces its melee swing");
+    if (open.player.num_pending_hits == 0) PASS();
     else {
         snprintf(err, sizeof(err), "queued %d pending hits", open.player.num_pending_hits);
         FAIL(err);

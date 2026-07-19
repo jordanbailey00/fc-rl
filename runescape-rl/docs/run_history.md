@@ -45,6 +45,484 @@ attribution-matrix style used from v28.5 onward.
 
 ---
 
+## v1.0 current baseline - source run `b5m07qqr` (2026-07-17, selected after multi-seed confirmation)
+
+`v1.0` is the official name of the primary Fight Caves training configuration
+from this point forward. Its source recipe is W&B run `b5m07qqr`, selected
+because it combined the strongest cave-completion
+result in the original 48-run Protein sweep with the best progress robustness
+across the two additional trainer seeds. This is a trainer-hyperparameter
+promotion only: the backend, core combat rules, SOTA TBow loadout, no-supplies
+environment, rewards, observations, action heads, reward clamp, and policy
+architecture remain unchanged from commit `856573792`.
+
+Selection caveat: the original seed-73 policy completed 56 caves, but the new
+seed-101 and seed-202 policies completed none at 750M steps. The configuration
+is therefore the best current baseline, not a seed-robust solved policy. Jad
+conversion and healer handling remain the main unresolved behavior.
+
+### Exact canonical configuration
+
+This snapshot is the source for both `runescape-rl/config/fight_caves.ini` and
+the synchronized `pufferlib_4/config/fight_caves.ini`:
+
+```ini
+[base]
+env_name = fight_caves
+checkpoint_interval = 50
+eval_episodes = 10000
+cudagraphs = 10
+reset_state = True
+seed = 73
+
+[env]
+initial_sharks = 0
+initial_prayer_doses = 0
+w_damage_dealt = 0.0
+w_progress = 0.001
+w_damage_taken = -0.25
+w_npc_kill = 0.0
+w_wave_clear = 0.0
+w_jad_kill = 0.0
+w_cave_complete = 1.0
+w_player_death = -1.0
+w_correct_jad_prayer = 0.0
+w_correct_danger_prayer = 0.005
+w_prayer_lost = -0.02
+w_invalid_action = -0.1
+w_tick_penalty = -0.0001
+shape_unnecessary_prayer_penalty = 0.0
+shape_wave_stall_start = 0
+shape_wave_stall_ramp_interval = 0
+shape_wave_stall_base_penalty = 0.0
+shape_wave_stall_cap = 0.0
+shape_jad_heal_penalty = 0.0
+shape_npc_heal_penalty = 0.0
+shape_no_progress_start_1 = 800
+shape_no_progress_penalty_1 = -0.001
+shape_no_progress_start_2 = 1600
+shape_no_progress_penalty_2 = -0.005
+shape_no_progress_start_3 = 2400
+shape_no_progress_penalty_3 = -0.02
+shape_no_attack_start = 50
+shape_no_attack_base_penalty = -0.005
+shape_no_attack_wave_scale = 0.05
+obs_ablate_npc_distance = 0
+obs_ablate_incoming_aggregates = 1
+obs_ablate_npc_valid = 0
+
+[vec]
+total_agents = 4096
+num_buffers = 2
+num_threads = 16
+
+[train]
+gpus = 1
+total_timesteps = 750_000_000
+anneal_lr = 0
+learning_rate = 0.0012501122189793278
+ent_coef = 0.01261936845511762
+gamma = 0.9977806603387215
+gae_lambda = 0.9944084418817187
+horizon = 256
+minibatch_size = 4096
+replay_ratio = 1.1570637170225382
+clip_coef = 0.17830599245832296
+vf_coef = 1
+vf_clip_coef = 0.15124043205980495
+max_grad_norm = 0.25
+vtrace_rho_clip = 0.5
+vtrace_c_clip = 0.5037274754757021
+prio_alpha = 0.9682355928752012
+prio_beta0 = 0
+beta1 = 0.95
+beta2 = 0.9995810484472892
+eps = 1e-10
+
+[policy]
+hidden_size = 256
+num_layers = 3
+expansion_factor = 1
+
+[run]
+manifest_path = ''
+observation_version = 'fight_caves_puffer_policy_obs_v5_npc_type_progress_prayer_deadline_mask_heads_0_2_no_supplies'
+action_version = 'fight_caves_multidiscrete_3_head_no_supplies_v1'
+reward_version = 'fight_caves_v38_fc_revamp_step2_raw_work_progress_prayer_conserve_no_attack'
+reward_clip_enabled = 1
+reward_clip_min = -1.0
+reward_clip_max = 1.0
+
+[sweep]
+metric = cave_progress
+```
+
+The default budget remains the 750M budget at which the configuration was
+selected. Longer confirmations should override only
+`--train.total-timesteps`; they should not fork another INI.
+
+### Alignment checks
+
+- Default compile-time loadout: `FC_LOADOUT_SOTA_TBOW`.
+- Policy: 256 hidden units, 3 MinGRU layers, about 654.6K parameters.
+- Supplies: zero sharks and zero prayer-potion doses; only movement, attack,
+  and prayer action heads are exposed.
+- Observation contract includes NPC type one-hot fields, progress, prayer
+  decision deadlines, and the three-head mask.
+- Per-step scalar reward is clamped to `[-1, 1]`.
+- Top-level `base.seed=73` controls native trainer/policy randomness. The old
+  inherited `train.seed=42` does not control the native CUDA trainer.
+- Fight Caves episode RNG is derived from environment slot and episode count,
+  so changing trainer seed does not change the base episode sequence.
+
+---
+
+## v38 finalist trainer-seed confirmation (2026-07-17, completed - 6 runs)
+
+This sequential confirmation reran the three Protein finalists at the same
+750M budget with native trainer seeds 101 and 202. The original seed-73 sweep
+run was reused analytically. All six new jobs finished normally, logged the
+same 145 finite metrics, used source commit `856573792`, used the SOTA TBow
+loadout, and saved 17 checkpoints each. Config comparison against the original
+candidate W&B configs found no gameplay, vector, policy, optimizer, or runtime
+contract drift other than the intended top-level seed and run metadata.
+
+### Candidate definitions
+
+Only these seven trainer values differed between candidates:
+
+| Candidate | Learning rate | Entropy | Gamma | GAE lambda | Horizon | Minibatch | Replay ratio |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `b5m07qqr` | 0.001250112219 | 0.012619368455 | 0.997780660339 | 0.994408441882 | 256 | 4096 | 1.157063717023 |
+| `8q93t1vq` | 0.001064972620 | 0.013845886142 | 0.997833378290 | 0.994966699651 | 256 | 4096 | 0.949680904271 |
+| `hsfj3i5p` | 0.000910163720 | 0.013735875271 | 0.998837361320 | 0.995000000000 | 256 | 4096 | 0.644525331013 |
+
+### Every new run
+
+| Candidate | Seed | W&B run | Eval episodes | Progress | Avg wave | Reach wave 63 | Cave completions | Episode ticks | Longest wave | NPC healing |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `b5m07qqr` | 101 | `slj5jsvg` | 10,062 | 0.869819 | 55.456 | 7.553% | 0 | 6,988.5 | 301.9 | 822.1 |
+| `b5m07qqr` | 202 | `a4itjqyq` | 10,085 | 0.874639 | 55.710 | 4.660% | 0 | 7,316.7 | 497.4 | 3,994.1 |
+| `8q93t1vq` | 101 | `snjmo0qq` | 10,147 | 0.838814 | 53.496 | 7.066% | 1 | 6,575.0 | 300.1 | 432.7 |
+| `8q93t1vq` | 202 | `esi8phbj` | 10,135 | 0.822102 | 52.466 | 0.000% | 0 | 6,504.6 | 329.5 | 648.6 |
+| `hsfj3i5p` | 101 | `7b86gn3o` | 10,013 | 0.818069 | 52.147 | 0.270% | 0 | 6,558.0 | 494.0 | 576.0 |
+| `hsfj3i5p` | 202 | `my8dpjy2` | 10,179 | 0.630504 | 40.328 | 0.000% | 0 | 4,335.0 | 246.6 | 303.0 |
+
+### Two-new-seed aggregate
+
+| Candidate | Episodes | Mean progress | Mean wave | Reached wave 63 | Completions | Completion rate | Conditional completion |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `b5m07qqr` | 20,147 | **0.872229** | **55.583** | **1,230 / 6.105%** | 0 | 0.00000% | 0.000% |
+| `8q93t1vq` | 20,282 | 0.830458 | 52.981 | 717 / 3.535% | 1 | 0.00493% | 0.139% |
+| `hsfj3i5p` | 20,192 | 0.724286 | 46.238 | 27 / 0.134% | 0 | 0.00000% | 0.000% |
+
+`b5m07qqr` clearly generalized best on ordinary cave progress. Its two runs
+were close to one another and both exceeded every new-seed run from the other
+two candidates. `8q93t1vq` was weaker and seed 202 never reached Jad.
+`hsfj3i5p`, which Protein ranked first on seed 73, was highly seed-sensitive;
+seed 202 regressed to wave 40.3. This is direct evidence of winner's-curse
+selection in the original single-seed sweep.
+
+### Original seed-73 context
+
+| Candidate | Progress | Avg wave | Reach wave 63 | Completions | Completion rate | Conditional completion |
+|---|---:|---:|---:|---:|---:|---:|
+| `b5m07qqr` | 0.878084 | 55.939 | 17.973% | 56 / 10,104 | **0.5542%** | **3.08%** |
+| `8q93t1vq` | 0.898686 | 57.242 | 36.320% | 26 / 10,124 | 0.2568% | 0.71% |
+| `hsfj3i5p` | **0.918610** | **58.485** | **43.230%** | 9 / 10,044 | 0.0896% | 0.21% |
+
+Combining all three seeds is useful descriptively but should not be treated as
+a balanced three-seed experiment because the candidates were selected for
+being unusually good on seed 73:
+
+| Candidate | Three-seed progress | Three-seed wave | Three-seed reach 63 | Three-seed completion rate |
+|---|---:|---:|---:|---:|
+| `b5m07qqr` | **0.87418** | **55.70** | 10.069% | **56 / 30,251 = 0.1851%** |
+| `8q93t1vq` | 0.85320 | 54.40 | **14.451%** | 27 / 30,406 = 0.0888% |
+| `hsfj3i5p` | 0.78906 | 50.32 | 14.450% | 9 / 30,236 = 0.0298% |
+
+### Learning curves
+
+The values below use 25M-step rolling cave progress:
+
+| Candidate/seed | Peak progress @ step | Late mean | First 0.70 | First 0.80 | First 0.85 | First 0.90 |
+|---|---:|---:|---:|---:|---:|---:|
+| `b5` / 73 | 0.9055 @ 708M | 0.8996 | 388M | 496M | 640M | 704M |
+| `b5` / 101 | 0.8660 @ 750M | 0.8543 | 340M | 459M | 484M | never |
+| `b5` / 202 | 0.8808 @ 709M | 0.8721 | 309M | 514M | 619M | never |
+| `8q` / 73 | 0.9039 @ 709M | 0.8999 | 324M | 368M | 481M | 703M |
+| `8q` / 101 | 0.8789 @ 677M | 0.8572 | 362M | 453M | 576M | never |
+| `8q` / 202 | 0.7945 @ 750M | 0.7692 | 366M | never | never | never |
+| `hsf` / 73 | 0.9117 @ 750M | 0.8942 | 318M | 477M | 516M | 743M |
+| `hsf` / 101 | 0.7942 @ 750M | 0.7684 | 611M | never | never | never |
+| `hsf` / 202 | 0.6359 @ 730M | 0.6337 | never | never | never | never |
+
+The b5 curves were the tightest across new seeds and were still improving or
+stable at the end. The result supports a longer b5 confirmation, while showing
+that a single seed-73 rank is not enough to choose a policy.
+
+### Behavior and diagnostics
+
+- **Jad conversion did not generalize.** The original b5 policy averaged 15.64
+  Jad attack cycles per Jad reach and about 2,837 Jad damage per reach. Seeds
+  101 and 202 averaged only 3.41/2.52 cycles and 596/465 damage per reach.
+  They reached Jad but did not sustain the fight long enough to kill it.
+- **Healing remains policy-dependent.** b5 seed 202 spent an average 497 ticks
+  in its longest wave and allowed 3,994 NPC healing. The activity/no-attack
+  metrics show this was an active Yt-MejKot healing loop near wave 43, not a
+  motionless stall.
+- **The clearest idle failure was hsf seed 101.** Its longest wave averaged 494
+  ticks around wave 40.5, no-progress time reached 12.78%, and its no-attack
+  reward was `-4.4888` per episode. It was genuinely idle/praying during
+  no-progress periods.
+- **Prayer conservation is still weak.** Across new runs, policies issued a
+  prayer command on roughly 93% to 99.5% of ticks, maintained overhead prayer
+  roughly 46% to 54% of ticks, and lost about 87 to 94 prayer points per
+  episode. Correct-prayer accuracy ranged from about 68.5% to 78.7%.
+- **Targeting remained mechanically valid.** b5 had target range/LOS on about
+  94% to 95% of target ticks, no target on about 23% of ticks, and attack-ready
+  state on about 89% to 93% of ticks. Invalid movement and attack actions were
+  normally below one per episode; invalid prayer actions were zero.
+- **Target choice still favors Yt-MejKot.** b5 spent about 41% to 44% of target
+  time on MejKot, versus 34% to 37% for 8q and 32% to 36% for hsf. Healer and
+  Jad target shares were near zero because Jad encounters remained rare.
+- **Backend mechanics did not drift.** Damage per attack cycle and damaging-hit
+  probability were effectively identical by NPC type across all candidates
+  and seeds. The sweep changed learned behavior, not combat damage math.
+- **Reward accounting was healthy.** Progress reward dominated at roughly 51
+  to 94 reward per episode; correct-prayer reward was about 4 to 8; prayer
+  loss was about `-1.7` to `-1.88`. Reward clamping changed episode return by
+  only about 0.05 to 0.07. Every intentionally disabled reward stayed zero.
+- **Optimization was numerically stable.** Entropy ranged from about 1.46 to
+  2.13, KL from 0.016 to 0.021, and clip fraction from 0.179 to 0.233. No run
+  showed NaNs, OOM, loss failure, or backend contract mismatch.
+- **Compute matched replay ratio.** b5 ran at about 1.20M to 1.26M SPS, 8q at
+  1.30M to 1.39M, and hsf at up to 1.78M. VRAM was about 2.04 GB.
+
+### Decision
+
+Promote the `b5m07qqr` recipe under the official `v1.0` name as the single
+primary config. Do not carry all three candidate INIs forward. Next validate
+v1.0 at 1.5B across seeds 73, 101, and 202, then use the confirmed v1.0 recipe
+for the policy architecture sweep. The
+architecture sweep should be followed by a small learning-rate/entropy retune
+and, separately, a boundary-extension sweep for parameters that favored a
+search limit.
+
+---
+
+## v38 core hyperparameter Protein sweep (2026-07-14, completed - 48 runs)
+
+PufferLib 4.0 Protein varied seven trainer hyperparameters while holding the
+entire Fight Caves task fixed. The sweep used W&B group/tag
+`fc_hparam_sweep_core_750m`, optimized final `cave_progress`, ran every trial
+for 750M steps, and used source commit `856573792` with
+`FC_LOADOUT_SOTA_TBOW`. All 48 runs finished and synchronized successfully.
+
+### Search space
+
+| Hyperparameter | Distribution | Minimum | Maximum |
+|---|---|---:|---:|
+| `learning_rate` | log normal | 0.0002 | 0.003 |
+| `ent_coef` | log normal | 0.003 | 0.08 |
+| `gamma` | logit normal | 0.994 | 0.9995 |
+| `gae_lambda` | logit normal | 0.90 | 0.995 |
+| `horizon` | powers of two | 128 | 512 |
+| `minibatch_size` | powers of two | 4096 | 16384 |
+| `replay_ratio` | uniform | 0.5 | 2.5 |
+
+Protein controls were `max_runs=48`, one GPU, `max_suggestion_cost=1500`,
+`downsample=5`, GPU suggestions enabled, Pareto pruning enabled, and
+`early_stop_quantile=0.3`. No trial was early-stopped. The first two trials
+were identical baseline evaluations; Protein proposed the remaining 46.
+
+The fixed baseline trainer values were learning rate `0.0009`, entropy
+`0.0242337458`, gamma `0.9963272487`, GAE lambda `0.9640527403`, horizon 256,
+minibatch 4096, and replay ratio `1.5677333364`. All environment, reward,
+observation, action, model, vector, optimizer/loss values not listed in the
+search table were identical to the current canonical config.
+
+### Data validation and aggregate outcome
+
+- 48/48 runs finished; all had the same 145 metrics with no missing,
+  nonnumeric, NaN, or infinite values.
+- Final evaluations covered 481,825 episodes, 32,158 wave-63 reaches, and 121
+  cave completions.
+- 34 runs reached wave 63 at least once; 14 completed at least one cave.
+- 34 of 46 non-baseline trials beat baseline final cave progress; 11 beat the
+  1.5B historical run `v1fo07p3` using half its steps; seven beat its cave
+  completion rate.
+- The two baseline runs, `9txyihmv` and `8n659rab`, were identical on all 133
+  gameplay/training-result metrics. They were deterministic duplicates, not
+  independent seed replications.
+
+### Full final ranking
+
+| Rank | Run | Cave progress | Avg wave | Reach wave 63 | Completion rate |
+|---:|---|---:|---:|---:|---:|
+| 1 | `hsfj3i5p` | 0.91861 | 58.48 | 43.23% | 0.090% |
+| 2 | `8qy4q7xc` | 0.90459 | 57.64 | 23.65% | 0.030% |
+| 3 | `5wcflv85` | 0.90057 | 57.36 | 19.93% | 0.010% |
+| 4 | `8q93t1vq` | 0.89869 | 57.24 | 36.32% | 0.257% |
+| 5 | `goyl90gv` | 0.89827 | 57.24 | 28.97% | 0.080% |
+| 6 | `1to7kay8` | 0.89345 | 56.92 | 21.63% | 0.020% |
+| 7 | `2lu2lj5o` | 0.89188 | 56.81 | 18.71% | 0.040% |
+| 8 | `808doep9` | 0.88078 | 56.10 | 13.52% | 0.020% |
+| 9 | `b5m07qqr` | 0.87808 | 55.94 | 17.97% | 0.554% |
+| 10 | `5t5b3mhr` | 0.87797 | 55.90 | 10.90% | 0.000% |
+| 11 | `kckj5cvf` | 0.86374 | 55.05 | 6.03% | 0.000% |
+| 12 | `h05wfefp` | 0.85981 | 54.81 | 0.64% | 0.000% |
+| 13 | `hgtwczd5` | 0.85628 | 54.56 | 5.45% | 0.010% |
+| 14 | `zo8597g1` | 0.85046 | 54.21 | 3.72% | 0.059% |
+| 15 | `qa8p3k5p` | 0.85024 | 54.16 | 1.96% | 0.000% |
+| 16 | `j8838hfn` | 0.85020 | 54.21 | 12.17% | 0.000% |
+| 17 | `cn119id1` | 0.84480 | 53.83 | 19.90% | 0.010% |
+| 18 | `kizq4hq9` | 0.84197 | 53.67 | 2.23% | 0.000% |
+| 19 | `6eb1kr5h` | 0.83623 | 53.33 | 9.61% | 0.000% |
+| 20 | `0e61idka` | 0.82927 | 52.92 | 4.92% | 0.000% |
+| 21 | `zngapnrg` | 0.82239 | 52.44 | 0.82% | 0.000% |
+| 22 | `zruz1dlb` | 0.81957 | 52.26 | 10.76% | 0.000% |
+| 23 | `qk4bwpo5` | 0.81768 | 52.19 | 0.42% | 0.010% |
+| 24 | `fse6vteg` | 0.80454 | 51.34 | 2.07% | 0.000% |
+| 25 | `wlawm7n0` | 0.79850 | 50.96 | 0.00% | 0.000% |
+| 26 | `pab7415h` | 0.78662 | 50.20 | 0.21% | 0.000% |
+| 27 | `bhar5sxe` | 0.78481 | 50.05 | 0.00% | 0.000% |
+| 28 | `qjil1c0n` | 0.78135 | 49.83 | 0.13% | 0.000% |
+| 29 | `y75ca32j` | 0.76995 | 49.14 | 0.01% | 0.000% |
+| 30 | `i7dj6ju5` | 0.76016 | 48.52 | 0.09% | 0.000% |
+| 31 | `26qo2xkw` | 0.75928 | 48.51 | 0.50% | 0.010% |
+| 32 | `385svhmf` | 0.75443 | 48.15 | 1.16% | 0.000% |
+| 33 | `p37ygb4l` | 0.74186 | 47.38 | 0.19% | 0.000% |
+| 34 | `d8u86rzm` | 0.73079 | 46.64 | 0.00% | 0.000% |
+| 35 | `9txyihmv` | 0.72126 | 46.07 | 0.63% | 0.000% |
+| 36 | `8n659rab` | 0.72126 | 46.07 | 0.63% | 0.000% |
+| 37 | `k2flb76s` | 0.71110 | 45.57 | 0.00% | 0.000% |
+| 38 | `w08yd6bn` | 0.65647 | 42.00 | 0.10% | 0.000% |
+| 39 | `s02hm3mb` | 0.64485 | 41.39 | 0.00% | 0.000% |
+| 40 | `ct0g5ml0` | 0.63473 | 40.64 | 0.00% | 0.000% |
+| 41 | `w53rjt4y` | 0.61601 | 39.42 | 0.00% | 0.000% |
+| 42 | `gosbutpz` | 0.56430 | 36.15 | 0.00% | 0.000% |
+| 43 | `hf2nuch2` | 0.56266 | 36.26 | 0.00% | 0.000% |
+| 44 | `jj5bt5du` | 0.55402 | 35.72 | 0.00% | 0.000% |
+| 45 | `s0esw9xm` | 0.54460 | 34.96 | 0.00% | 0.000% |
+| 46 | `ny5drhm7` | 0.54449 | 35.13 | 0.00% | 0.000% |
+| 47 | `o8qt1zux` | 0.44884 | 28.90 | 0.00% | 0.000% |
+| 48 | `6tfuiyym` | 0.41209 | 26.58 | 0.00% | 0.000% |
+
+### Main findings
+
+- The useful learning-rate region was about `0.0009` to `0.0013`; very low
+  rates learned too slowly and rates above about `0.0015` were inconsistent.
+- Entropy around `0.010` to `0.016` was strongest. The three finalists were
+  43% to 48% below baseline entropy; values above about `0.026` were usually
+  poor.
+- Gamma around `0.9978` to `0.9988` and GAE lambda near `0.995` greatly
+  lengthened credit assignment. The rough advantage trace increased from
+  about 25 ticks at baseline to 128-162 ticks for the finalists.
+- Horizon 256/minibatch 4096 was the best-supported pair. Horizon 128 learned
+  poorly; 512 cost more and did not beat the best 256 results.
+- Replay ratio was almost perfectly inversely related to SPS in the common
+  256/4096 group (Spearman approximately `-0.98`). Ratios around 0.65-1.2
+  offered the best learning/throughput compromise.
+- The leading runs improved correct-prayer accuracy, target range/LOS time,
+  required work removed per tick, and learning speed without changing backend
+  damage distributions.
+- Cave progress alone was insufficient for selection. `goyl90gv` ranked fifth
+  but had a 2,073-tick longest wave, 13.25% healing/gross-damage ratio, and 55%
+  MejKot target share. `8qy4q7xc` ranked second but also showed elevated
+  longest-wave duration and healing.
+- b5 ranked only ninth on progress but had the best Jad conversion: 15.6 Jad
+  attack cycles per reach and 3.08% completion after reaching Jad. That is why
+  it entered confirmation as the primary candidate.
+- Better policies still issued prayer commands on about 97% to 98% of ticks
+  and did not solve healer management. Those are environment-policy issues for
+  later refinement, not evidence of trainer instability.
+
+### Statistical limitations
+
+Every Protein trial used native trainer seed 73, Protein sampled adaptively
+rather than as a balanced factorial design, 21 unique configurations hit the
+GAE upper bound, and cross-validated models explained only about 18% of held-
+out cave-progress variance. The exact independent effect of each parameter is
+therefore uncertain. Original sweep trials also did not save normal policy
+checkpoints; normal retrains are required for viewer replay.
+
+---
+
+## Retired Fight Caves INI registry (2026-07-17 cleanup)
+
+The repository now keeps one Fight Caves source config:
+`runescape-rl/config/fight_caves.ini`, plus its synchronized Puffer runtime
+copy. The 37 files below were removed after their purpose, values, and results
+were recorded. Tracked historical files are recoverable byte-for-byte from
+commit `856573792` or its ancestors with:
+
+```bash
+git show 856573792:<path-from-table>
+```
+
+The two July 2026 sweep INIs were not committed before cleanup, so their exact
+fixed contract, sweep ranges, and finalist values are preserved in the two
+sections immediately above. Their SHA-256 hashes remain recorded for audit.
+
+### Family index
+
+| Family | Retired files | Historical definition/results |
+|---|---|---|
+| v27 prayer/progress | `snapshots/v27*.ini` | `v27` through `v27.3` sections in this file; variants changed wave/Jad rewards and correct-prayer weights. |
+| v28.8 reward leave-one-out | `snapshots/fight_caves_s1_*.ini` | `v28.8 Sweep 1` in `docs/sweep_history.md`; each file zeroed exactly one listed reward. |
+| v29 optimizer probes | `snapshots/fight_caves_v29_*.ini` | v29 sweep analysis in `docs/sweep_history.md`; tested seed 7, no PER, lower entropy, LR annealing, and a 192-hidden policy. |
+| v30/observation ablations | `fight_caves_v30_0.ini`, `fight_caves_obs*.ini` | v30 and observation-sweep sections in `docs/sweep_history.md`; removed dead waste keys and separately ablated NPC distance, incoming aggregates, or NPC-valid flags. |
+| v35 retrain finalists | `v35_retrains/v35.1.ini` through `v35.7.ini` | `v35.1-v35.7` section in this file contains every source run and the complete varying-hparam table. |
+| v36 no supplies | `archive/fight_caves_v36_no_consumables.ini` | `v36` section in this file, run `jta3lkgx`; v35.1 recipe with zero food/potions. |
+| v38 Phase 7/no-supplies | `experiments/fight_caves_compare_*`, `phase7_*` | `fight_caves_improvement_plan.md` and `fc_revamp.md`; includes benchmark `2386cesn`, simplified run `rw70szhc`, and the later raw-progress reward path. |
+| July core hparam sweep | `fight_caves_hparam_sweep_core_750m.ini` | Full 48-run search space, ranking, and analysis above. |
+| July finalist confirmation | `fight_caves_hparam_finalists_seed_confirmation_750m.ini` | Exact candidates and all six new runs above. |
+
+### Exact retired-file hashes
+
+| Retired path | SHA-256 |
+|---|---|
+| `runescape-rl/config/archive/fight_caves_v36_no_consumables.ini` | `f03909e5d1fb811bd0a05844764ab19d6ccf14e77895c5016e419531b0d61c06` |
+| `runescape-rl/config/experiments/fight_caves_compare_current_no_supplies_1b.ini` | `88a07e36cfd63236130c3719139a69cbede4dfd3451d135e65fd2b0513c6f724` |
+| `runescape-rl/config/experiments/fight_caves_hparam_finalists_seed_confirmation_750m.ini` | `25e24735a429e3e27edf987bc71ebf713c69e7c0fb8e1c6ddabfd51cff3d5227` |
+| `runescape-rl/config/experiments/fight_caves_hparam_sweep_core_750m.ini` | `8c5f225f6927c891c42303319fa2f4f5d4d44f8dafdae4db1206c1cd9dcb7ab6` |
+| `runescape-rl/config/experiments/fight_caves_phase7_dev_1b.ini` | `788c014ec3aaca3421b11adeed1f2c37fd32d7e5eb21fca476537ce79008ff9a` |
+| `runescape-rl/config/experiments/fight_caves_phase7_no_kiting_1b.ini` | `f066373906305cc97ab558d32e7c07aa5046f4e6579335d081ea653fbc4e4b63` |
+| `runescape-rl/config/experiments/fight_caves_phase7_simplified_no_supplies_1b.ini` | `c243d6ab2d382fed9c0d18adc26ac9f6d138a336b77111fe6dd7a6dfc1c8b658` |
+| `runescape-rl/config/snapshots/fight_caves_obs0.ini` | `3f3c89e10cf3ed9023549377bbf3414f8efc5e477de80af9266c369d86e27afd` |
+| `runescape-rl/config/snapshots/fight_caves_obs1.ini` | `060dd9c5c8d1ca218cbe9c4c5ad9c4001eb3456a4dee1f8b24b2d9f8ada0564b` |
+| `runescape-rl/config/snapshots/fight_caves_obs2.ini` | `b9eeb51b4c2a2a65c5d5e1a2d1627def70ade4696c38415148cd92e2293b566f` |
+| `runescape-rl/config/snapshots/fight_caves_s1_01.ini` | `7396b763842cf4a8604654d202f9b739a51d98cd5676c654589661ab78f47222` |
+| `runescape-rl/config/snapshots/fight_caves_s1_02.ini` | `2bf0e32e08a3e64960ea516bb4c3ff87f898b980ace31708eeebfa4fba038158` |
+| `runescape-rl/config/snapshots/fight_caves_s1_03.ini` | `465fa9b0e513f005517c0ff96e5086e70917e6bca3dc356843f8f74902c5c5a2` |
+| `runescape-rl/config/snapshots/fight_caves_s1_04.ini` | `e52d75d066008c883ac931cf7494ccd2ca5f38b03ccad34c4e482fd07e3f86ef` |
+| `runescape-rl/config/snapshots/fight_caves_s1_05.ini` | `76f83b5e84f8473e9826420efc4743e7933fed4c5b7607839476509cb6ca7d89` |
+| `runescape-rl/config/snapshots/fight_caves_s1_06.ini` | `41546b71f1bd28cfedeb3c249175f1691e7fbf18dc2348e4d23a685983ee73da` |
+| `runescape-rl/config/snapshots/fight_caves_s1_07.ini` | `a47a487940390c1f7a162dd45aeef4fc247fe7523514a814f1625641fb66e4f0` |
+| `runescape-rl/config/snapshots/fight_caves_s1_08.ini` | `ffc4a61b8199ec4bf0a55ee0a9c4fee49d887afc69ed23338a324304c3d059cb` |
+| `runescape-rl/config/snapshots/fight_caves_s1_09.ini` | `260b56e233b41d194c63272b1a553ad82c137e42b7616b241a78a6e92c0c1eab` |
+| `runescape-rl/config/snapshots/fight_caves_s1_10.ini` | `515d9dfd45655aff2060a73e872d09801defafd3e96a09fc4f1e33c5268ba474` |
+| `runescape-rl/config/snapshots/fight_caves_v29_0.ini` | `57eea278e804ff977da7eb0a5f76747332f6b4cb1b00ff254e26027e7acf7268` |
+| `runescape-rl/config/snapshots/fight_caves_v29_1.ini` | `e97ead056f5f1b55a71c18df5671201472d70ad5b83b84e59e87d3e53b8fa9c5` |
+| `runescape-rl/config/snapshots/fight_caves_v29_2.ini` | `19c1aae7f34620da9e4231aa7c7996b3dc7985a2c8966a1e929dbed2a3f71875` |
+| `runescape-rl/config/snapshots/fight_caves_v29_3.ini` | `c99bb4fdad9aac77997d4858766e8da06a6cb96a079447179c6ee87a299c1155` |
+| `runescape-rl/config/snapshots/fight_caves_v29_4.ini` | `68a2933e60469408a8908851ceefbdfff3c08dc767b5206d3ce80a502adaf03a` |
+| `runescape-rl/config/snapshots/fight_caves_v30_0.ini` | `01eb0336da3f0aada1f2abc1154be860911d99c2db8971c80a7b202a2aca1787` |
+| `runescape-rl/config/snapshots/v27.1.ini` | `b0dc338b18e3f02e5ec9349be49baba2e874f3c5d8b12baafb3aed11c66053e7` |
+| `runescape-rl/config/snapshots/v27.2.ini` | `95fdae97d6a8ccffa7df65c7bf3591e98dbc8d52483c1edb3ae7825574e05578` |
+| `runescape-rl/config/snapshots/v27.3.ini` | `5da5bd89a81352fd985becbb976b21cd23e0c745309bbc5ecf50aa6275ed1a37` |
+| `runescape-rl/config/snapshots/v27.ini` | `91ab08666ed9499bf8e20553554b152450451224643b652ec48ae2dba36a4608` |
+| `runescape-rl/config/v35_retrains/v35.1.ini` | `12a9f6d1149ff06827db40672a758a68c08e9cc7d3ef508c6a30926e5352d19c` |
+| `runescape-rl/config/v35_retrains/v35.2.ini` | `1d4825e003fe65070b194778f70d75949fc2765f5dd0c16a624629d9248410d5` |
+| `runescape-rl/config/v35_retrains/v35.3.ini` | `674886c556e92e88c6e2d88e58c0830f776e7cd06210628480d38fd1f469eb16` |
+| `runescape-rl/config/v35_retrains/v35.4.ini` | `639a266db4cd8ca007db88a83ab95a66f6da22fbb042783e348273e1212e3c87` |
+| `runescape-rl/config/v35_retrains/v35.5.ini` | `ba6bec8568d85a6c278da70e4d182db96e0a8fe795d819b0fa6a26fb5f62cb3f` |
+| `runescape-rl/config/v35_retrains/v35.6.ini` | `bb1fb09cc5c54b8f01478e23adf3450576cc16e1e309bfd327344becc320d2c8` |
+| `runescape-rl/config/v35_retrains/v35.7.ini` | `780a36d37fc7b920a9e8c6c51bd9a854f259d1a7c80af34f3a3deb59079ce591` |
+
+---
+
 ## v38 loadout sweep (2026-06-22, completed - 9 current-backend loadout runs - W&B group `loadout-sweep-1.5b-current-backend`)
 
 Sequential cold-start training sweep across every loadout compiled into the

@@ -206,8 +206,10 @@ int fc_npc_hit_delay(int npc_type, int attack_style, int distance) {
 
         case NPC_TZTOK_JAD:
             if (attack_style == ATTACK_MAGIC) {
-                /* tztok_jad_travel: mult=8, no offset */
-                return (8 * distance) / 30 + 1;
+                /* Keep at least one full policy decision tick between Jad's
+                 * tell and impact, including when Magic is selected in melee. */
+                int delay = (8 * distance) / 30 + 1;
+                return delay < 2 ? 2 : delay;
             } else {
                 /* Jad ranged: no projectile, fixed client delay=120 */
                 return 120 / 30 + 1;  /* = 5 game ticks */
@@ -296,14 +298,25 @@ void fc_resolve_player_pending_hits(FcState* state) {
                 }
             }
 
-            /* Tz-Kih prayer drain — RSPS impact_drain fires unconditionally on attack
-             * impact, separate from damage. Drains even when prayer blocks the damage.
-             * (combat.toml: impact_drain = { skill = "prayer", amount = 1 }) */
+            /* Tz-Kih drains damage dealt + 1 Prayer point, with the base point
+             * still applying to misses and prayer-blocked attacks. HP and Prayer
+             * both use tenths internally, so final_damage can be added directly. */
             if (h->prayer_drain > 0) {
+                int drain = h->prayer_drain;
+                if (h->source_npc_idx >= 0 && h->source_npc_idx < FC_MAX_NPCS &&
+                    state->npcs[h->source_npc_idx].npc_type == NPC_TZ_KIH) {
+                    drain += final_damage;
+                }
                 int prayer_before = p->current_prayer;
-                p->current_prayer -= h->prayer_drain;
+                p->current_prayer -= drain;
                 if (p->current_prayer < 0) p->current_prayer = 0;
-                state->prayer_lost_this_tick += prayer_before - p->current_prayer;
+                int actual_drain = prayer_before - p->current_prayer;
+                state->prayer_lost_this_tick += actual_drain;
+                state->tz_kih_prayer_drain_this_tick += actual_drain;
+                if (h->source_npc_idx >= 0 && h->source_npc_idx < FC_MAX_NPCS) {
+                    state->npcs[h->source_npc_idx].prayer_drain_dealt_this_tick +=
+                        actual_drain;
+                }
             }
 
             /* Track prayer correctness. Jad hits and non-Jad styled hits are
@@ -378,6 +391,7 @@ void fc_resolve_npc_pending_hits(FcState* state, int npc_idx) {
             /* Yt-HurKot: any landed player attack distracts healer, including 0s. */
             if (npc->npc_type == NPC_YT_HURKOT) {
                 npc->healer_distracted = 1;
+                npc->heal_target_idx = -1;
             }
 
             /* NPC death — keep active for a few ticks so viewer can

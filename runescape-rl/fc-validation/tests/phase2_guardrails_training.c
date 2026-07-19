@@ -24,6 +24,11 @@ static void init_env(FightCaves* env,
 static int test_no_supplies_policy_contract(void) {
     int expected_obs = FC_POLICY_OBS_SIZE + FC_PUFFER_MASK_SIZE;
 
+    if (FC_POLICY_OBS_SIZE != 276 || FC_PUFFER_OBS_SIZE != 307) {
+        printf("FAIL: expected expanded policy/Puffer obs sizes 276/307, got %d/%d\n",
+               FC_POLICY_OBS_SIZE, FC_PUFFER_OBS_SIZE);
+        return 1;
+    }
     if (FC_PUFFER_NUM_ATNS != 3) {
         printf("FAIL: expected 3 Puffer action heads, got %d\n", FC_PUFFER_NUM_ATNS);
         return 1;

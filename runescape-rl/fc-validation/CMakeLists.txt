@@ -240,6 +240,31 @@ add_test(NAME phase3_healer_spawn_validity
 set_tests_properties(phase3_healer_spawn_validity PROPERTIES
     LABELS "phase3;guardrail")
 
+add_test(NAME special_tz_kih_prayer_drain
+    COMMAND phase2_guardrails_core special_tz_kih_prayer_drain)
+set_tests_properties(special_tz_kih_prayer_drain PROPERTIES
+    LABELS "fight_caves;guardrail;combat;special")
+
+add_test(NAME special_mejkot_heal_replaces_attack
+    COMMAND phase2_guardrails_core special_mejkot_heal_replaces_attack)
+set_tests_properties(special_mejkot_heal_replaces_attack PROPERTIES
+    LABELS "fight_caves;guardrail;combat;special")
+
+add_test(NAME special_adjacent_style_selection
+    COMMAND phase2_guardrails_core special_adjacent_style_selection)
+set_tests_properties(special_adjacent_style_selection PROPERTIES
+    LABELS "fight_caves;guardrail;combat;special")
+
+add_test(NAME special_hurkot_behavior
+    COMMAND phase2_guardrails_core special_hurkot_behavior)
+set_tests_properties(special_hurkot_behavior PROPERTIES
+    LABELS "fight_caves;guardrail;combat;special")
+
+add_test(NAME mechanics_observation_events
+    COMMAND phase2_guardrails_core mechanics_observation_events)
+set_tests_properties(mechanics_observation_events PROPERTIES
+    LABELS "fight_caves;guardrail;observation;special")
+
 add_executable(phase2_guardrails_training
     tests/phase2_guardrails_training.c
 )
