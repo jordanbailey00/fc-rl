@@ -11,14 +11,16 @@ for project follow-ups that should not become public repo documentation yet.
 - Selected baseline: `v1.0`, derived from W&B run `b5m07qqr`. The canonical
   live INI contains its exact trainer values with the validated no-supplies
   v38 backend/task contract.
-- Immediate next experiment: run v1.0 for 1.5B steps with native trainer seeds
-  73, 101, and 202 before treating its Jad conversion as robust.
+- Immediate next experiment: run the 96-trial, 750M-step Protein sweep in
+  `runescape-rl/config/experiments/fight_caves_v1_mechanics_hparam_sweep_750m.ini`.
+  It holds the new backend, v6 observations, rewards, 256x3 policy, horizon,
+  and minibatch fixed while retuning six PPO/optimizer parameters. W&B group:
+  `fc_v1_mechanics_hparam_sweep_750m`.
+- After the sweep, compare all runs against new-mechanics reference `ocunodgx`,
+  then confirm the best few recipes with independent trainer seeds 101 and 202.
 - Then sweep policy size: hidden sizes `128, 256, 384, 512` crossed with layer
   counts `2, 3, 4`, ideally two seeds each. Compare progress, Jad reach and
   completion, stability, SPS, runtime, and parameter count.
-- After architecture selection, retune learning rate and entropy for the new
-  network. Separately extend ranges for core hparams that favored a prior sweep
-  boundary, especially GAE lambda.
 - Behavior still needing refinement: prayer conservation, Yt-MejKot healing
   loops, and Jad/healer conversion. Hard action masks and target persistence /
   auto-path control remain backlog because invalid actions and target handling
