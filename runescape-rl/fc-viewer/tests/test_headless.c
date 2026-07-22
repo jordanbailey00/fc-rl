@@ -780,7 +780,6 @@ static void test_jad_prayer_reward_timing(void) {
     init_manual_test_state(&state);
     fc_npc_spawn(&state.npcs[0], NPC_TZTOK_JAD, 12, 10, 0);
     state.player.prayer = PRAYER_PROTECT_MAGIC;
-    params.w_correct_jad_prayer = 2.0f;
     fc_reward_runtime_reset(&runtime);
 
     fc_queue_pending_hit(state.player.pending_hits,
@@ -820,9 +819,11 @@ static void test_jad_prayer_reward_timing(void) {
     state.tick = 2;
     fc_resolve_player_pending_hits(&state);
     b = fc_reward_compute_breakdown(&state, &params, &runtime);
-    TEST("Jad prayer reward lands on resolve tick (Jad-only, no danger overlap)");
-    if (fabsf(b.correct_jad_prayer - 2.0f) < 0.0001f &&
-        fabsf(b.correct_danger_prayer) < 0.0001f &&
+    TEST("Jad block receives shared correct-prayer reward on resolve tick");
+    if (fabsf(b.raw[FC_RWD_CORRECT_JAD_PRAY] - 1.0f) < 0.0001f &&
+        fabsf(b.raw[FC_RWD_CORRECT_DANGER_PRAY] - 1.0f) < 0.0001f &&
+        fabsf(b.correct_jad_prayer) < 0.0001f &&
+        fabsf(b.correct_danger_prayer - params.w_correct_danger_prayer) < 0.0001f &&
         state.player.hit_landed_this_tick == 1 &&
         state.player.hit_locked_prayer_this_tick == PRAYER_PROTECT_MAGIC) PASS();
     else {
@@ -843,7 +844,7 @@ static void test_jad_prayer_reward_timing(void) {
     state.player.hit_source_npc_type = NPC_TZTOK_JAD;
     runtime.ticks_since_attack = 1;
     b = fc_reward_compute_breakdown(&state, &params, &runtime);
-    TEST("Ready-idle gate suppresses Jad prayer reward just like other prayer rewards");
+    TEST("Ready-idle gate suppresses Jad shared prayer reward");
     if (fabsf(b.correct_jad_prayer) < 0.0001f &&
         fabsf(b.correct_danger_prayer) < 0.0001f) PASS();
     else {

@@ -19,6 +19,8 @@ pufferlib/box2d-web/
 # Documentation — keep only root README out of live repo
 *.md
 !/README.md
+!/sweep_history/
+!/sweep_history/*.md
 /AGENT_README
 
 # Stray wandb run files written to repo root, and locally-built ELF

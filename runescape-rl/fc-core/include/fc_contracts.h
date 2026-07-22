@@ -161,14 +161,14 @@
 #define FC_RWD_CAVE_COMPLETE    7   /* all 63 waves cleared */
 #define FC_RWD_FOOD_USED        8   /* shark consumed this tick */
 #define FC_RWD_PRAYER_POT_USED  9   /* potion consumed this tick */
-#define FC_RWD_CORRECT_JAD_PRAY 10  /* prayer matched Jad attack */
-#define FC_RWD_WRONG_JAD_PRAY   11  /* prayer did not match Jad attack */
+#define FC_RWD_CORRECT_JAD_PRAY 10  /* Jad-specific correct-block diagnostic */
+#define FC_RWD_WRONG_JAD_PRAY   11  /* Jad-specific wrong-block diagnostic */
 #define FC_RWD_INVALID_ACTION   12  /* rejected/masked action attempted */
 #define FC_RWD_MOVEMENT         13  /* walk/run action executed */
 #define FC_RWD_IDLE             14  /* wait/idle action */
 #define FC_RWD_TICK_PENALTY     15  /* fires every tick (time discount) */
-#define FC_RWD_CORRECT_DANGER_PRAY 16  /* prayer matched resolved ranged/magic attack */
-#define FC_RWD_WRONG_DANGER_PRAY   17  /* prayer did not match resolved ranged/magic attack */
+#define FC_RWD_CORRECT_DANGER_PRAY 16  /* prayer matched any resolved NPC style, including Jad */
+#define FC_RWD_WRONG_DANGER_PRAY   17  /* prayer missed resolved non-Jad NPC style */
 #define FC_RWD_ATTACK_ATTEMPT   18  /* valid attack cycle launched this tick */
 #define FC_RWD_PRAYER_LOST      19  /* prayer points lost this tick */
 #define FC_REWARD_FEATURES      20

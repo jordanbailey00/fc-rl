@@ -134,8 +134,8 @@ def live_no_supplies_simplified_config() -> int:
             failures.append(f"{label}: action_version is not the 3-head no-supplies contract")
         if parser.get("run", "observation_version", fallback="").strip("'\"") != "fight_caves_puffer_policy_obs_v6_npc_prayer_drain_healing_aggro_mask_heads_0_2_no_supplies":
             failures.append(f"{label}: observation_version is not the v6 NPC prayer-drain/healing/aggro no-supplies contract")
-        if parser.get("run", "reward_version", fallback="").strip("'\"") != "fight_caves_v38_fc_revamp_step2_raw_work_progress_prayer_conserve_no_attack":
-            failures.append(f"{label}: reward_version is not the fc_revamp step-2 raw-work-progress prayer-conserve/no-attack contract")
+        if parser.get("run", "reward_version", fallback="").strip("'\"") != "fight_caves_v38_fc_revamp_step2_all_npc_correct_prayer":
+            failures.append(f"{label}: reward_version is not the fc_revamp all-NPC correct-prayer contract")
 
     if failures:
         print("FAIL: live configs are not on the simplified no-supplies contract:")
@@ -143,7 +143,7 @@ def live_no_supplies_simplified_config() -> int:
             print(f"  {failure}")
         return 1
 
-    print("PASS: live configs use the raw-work-progress no-supplies reward/action contract")
+    print("PASS: live configs use the all-NPC correct-prayer no-supplies reward/action contract")
     return 0
 
 

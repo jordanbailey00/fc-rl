@@ -195,6 +195,11 @@ add_test(NAME revamp_prayer_loss_penalty
 set_tests_properties(revamp_prayer_loss_penalty PROPERTIES
     LABELS "revamp;guardrail")
 
+add_test(NAME revamp_correct_prayer_reward_all_npcs
+    COMMAND phase2_guardrails_core correct_prayer_reward_all_npcs)
+set_tests_properties(revamp_correct_prayer_reward_all_npcs PROPERTIES
+    LABELS "revamp;guardrail;combat;reward")
+
 add_test(NAME revamp_no_attack_penalty_wave_scaled
     COMMAND phase2_guardrails_core no_attack_penalty_wave_scaled)
 set_tests_properties(revamp_no_attack_penalty_wave_scaled PROPERTIES

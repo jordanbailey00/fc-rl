@@ -484,6 +484,80 @@ static int test_prayer_loss_penalty(void) {
     return fail(msg);
 }
 
+static int test_correct_prayer_reward_all_npcs(void) {
+    FcState state;
+    FcRewardParams params;
+    FcRewardRuntime runtime;
+    FcRewardBreakdown breakdown;
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_TZTOK_JAD, 12, 10, 0);
+    state.npcs_remaining = 1;
+    state.player.prayer = PRAYER_PROTECT_MAGIC;
+
+    if (!fc_queue_pending_hit(state.player.pending_hits,
+                              &state.player.num_pending_hits,
+                              FC_MAX_PENDING_HITS,
+                              500, 1, ATTACK_MAGIC, 0, 0)) {
+        fc_destroy(&state);
+        return fail("could not queue Jad hit for shared prayer reward test");
+    }
+    state.player.pending_hits[0].prayer_snapshot = PRAYER_PROTECT_MAGIC;
+    fc_resolve_player_pending_hits(&state);
+
+    if (!state.correct_jad_prayer || !state.correct_danger_prayer ||
+        state.wrong_jad_prayer || state.wrong_danger_prayer ||
+        state.damage_taken_this_tick != 0) {
+        char msg[224];
+        snprintf(msg, sizeof(msg),
+                 "Jad block flags wrong: jad=%d danger=%d wrong_jad=%d wrong_danger=%d damage=%d",
+                 state.correct_jad_prayer, state.correct_danger_prayer,
+                 state.wrong_jad_prayer, state.wrong_danger_prayer,
+                 state.damage_taken_this_tick);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    memset(&params, 0, sizeof(params));
+    params.w_correct_danger_prayer = 0.005f;
+    params.w_correct_jad_prayer = 0.0f;
+    fc_reward_runtime_reset(&runtime);
+    breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
+
+    if (fabsf(breakdown.raw[FC_RWD_CORRECT_JAD_PRAY] - 1.0f) > 0.0001f ||
+        fabsf(breakdown.raw[FC_RWD_CORRECT_DANGER_PRAY] - 1.0f) > 0.0001f ||
+        fabsf(breakdown.correct_jad_prayer) > 0.0001f ||
+        fabsf(breakdown.correct_danger_prayer - 0.005f) > 0.0001f ||
+        fabsf(breakdown.total - 0.005f) > 0.0001f) {
+        char msg[256];
+        snprintf(msg, sizeof(msg),
+                 "Jad shared reward wrong: raw_jad=%.3f raw_all=%.3f jad=%.4f all=%.4f total=%.4f",
+                 breakdown.raw[FC_RWD_CORRECT_JAD_PRAY],
+                 breakdown.raw[FC_RWD_CORRECT_DANGER_PRAY],
+                 breakdown.correct_jad_prayer,
+                 breakdown.correct_danger_prayer,
+                 breakdown.total);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    runtime.ticks_since_attack = 100;
+    breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
+    if (fabsf(breakdown.correct_jad_prayer) > 0.0001f ||
+        fabsf(breakdown.correct_danger_prayer) > 0.0001f) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "attack-idle gate changed: jad=%.4f all=%.4f",
+                 breakdown.correct_jad_prayer,
+                 breakdown.correct_danger_prayer);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("Jad uses shared correct-prayer reward with existing idle gate preserved");
+}
+
 static int test_no_attack_penalty_wave_scaled(void) {
     FcState state;
     FcRewardParams params;
@@ -2487,7 +2561,7 @@ static int test_mechanics_observation_events(void) {
 
 int main(int argc, char** argv) {
     if (argc != 2) {
-        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|safespot_reward_disabled|npc_heal_penalty_actual_heal|prayer_loss_penalty|no_attack_penalty_wave_scaled|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|special_tz_kih_prayer_drain|special_mejkot_heal_replaces_attack|special_adjacent_style_selection|special_hurkot_behavior|mechanics_observation_events|safespot_los|diagonal_corner_clipping|npc_moves_when_attack_blocked|option_b_no_move_into_range_fire_same_tick|option_b_no_move_into_los_fire_same_tick|option_b_attack_then_move_when_already_valid|option_b_queued_projectile_survives_later_movement|step1_movement_only_clears_stale_target|step1_projectile_survives_movement_cancel|step1_attack_move_clears_continued_target|step1_attack_move_out_of_range_clears_target|step1_directional_cancels_old_approach_route|step1_directional_beats_old_tile_route|step1_attack_approach_without_explicit_movement|step2_occupancy_marks_and_ignores_entities|step2_dynamic_footprint_static_and_occupied|step2_entity_wrapper_ignores_self_blocks_others|step2_dynamic_diagonal_blocks_occupied_corner|step2_dynamic_bfs_avoids_occupied_steps|step2_dynamic_sized_bfs_checks_full_footprint|step2_start_reservation_blocks_swap_tile|step3_player_directional_blocked_by_npc|step3_player_tile_route_rejects_occupied_target|step3_npc_blocked_by_other_npc|step3_large_npc_blocked_by_healer_footprint|step3_tz_kek_split_avoids_occupied_tiles|step4_ranged_npc_chases_player_bounds_not_los_tile|step4_large_npc_chase_checks_full_footprint|step4_npc_stays_when_current_position_can_attack|invalid_action_classes>\n",
+        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|safespot_reward_disabled|npc_heal_penalty_actual_heal|prayer_loss_penalty|correct_prayer_reward_all_npcs|no_attack_penalty_wave_scaled|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|special_tz_kih_prayer_drain|special_mejkot_heal_replaces_attack|special_adjacent_style_selection|special_hurkot_behavior|mechanics_observation_events|safespot_los|diagonal_corner_clipping|npc_moves_when_attack_blocked|option_b_no_move_into_range_fire_same_tick|option_b_no_move_into_los_fire_same_tick|option_b_attack_then_move_when_already_valid|option_b_queued_projectile_survives_later_movement|step1_movement_only_clears_stale_target|step1_projectile_survives_movement_cancel|step1_attack_move_clears_continued_target|step1_attack_move_out_of_range_clears_target|step1_directional_cancels_old_approach_route|step1_directional_beats_old_tile_route|step1_attack_approach_without_explicit_movement|step2_occupancy_marks_and_ignores_entities|step2_dynamic_footprint_static_and_occupied|step2_entity_wrapper_ignores_self_blocks_others|step2_dynamic_diagonal_blocks_occupied_corner|step2_dynamic_bfs_avoids_occupied_steps|step2_dynamic_sized_bfs_checks_full_footprint|step2_start_reservation_blocks_swap_tile|step3_player_directional_blocked_by_npc|step3_player_tile_route_rejects_occupied_target|step3_npc_blocked_by_other_npc|step3_large_npc_blocked_by_healer_footprint|step3_tz_kek_split_avoids_occupied_tiles|step4_ranged_npc_chases_player_bounds_not_los_tile|step4_large_npc_chase_checks_full_footprint|step4_npc_stays_when_current_position_can_attack|invalid_action_classes>\n",
                 argv[0]);
         return 2;
     }
@@ -2499,6 +2573,7 @@ int main(int argc, char** argv) {
     if (strcmp(argv[1], "safespot_reward_disabled") == 0) return test_safespot_reward_disabled();
     if (strcmp(argv[1], "npc_heal_penalty_actual_heal") == 0) return test_npc_heal_penalty_actual_heal();
     if (strcmp(argv[1], "prayer_loss_penalty") == 0) return test_prayer_loss_penalty();
+    if (strcmp(argv[1], "correct_prayer_reward_all_npcs") == 0) return test_correct_prayer_reward_all_npcs();
     if (strcmp(argv[1], "no_attack_penalty_wave_scaled") == 0) return test_no_attack_penalty_wave_scaled();
     if (strcmp(argv[1], "net_progress_required_work") == 0) return test_net_progress_required_work();
     if (strcmp(argv[1], "net_progress_wave_clear") == 0) return test_net_progress_wave_clear_transition();

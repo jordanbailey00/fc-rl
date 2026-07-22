@@ -149,8 +149,8 @@ typedef struct FightCaves {
     float w_jad_kill;
     float w_cave_complete;
     float w_player_death;
-    float w_correct_jad_prayer;      /* fires only on Jad hits */
-    float w_correct_danger_prayer;   /* fires on non-Jad styled hits (melee/ranged/magic) */
+    float w_correct_jad_prayer;      /* optional additional Jad-only bonus */
+    float w_correct_danger_prayer;   /* shared correct-block reward, including Jad */
     float w_prayer_lost;             /* per prayer point lost from overhead drain or Tz-Kih */
     float w_invalid_action;
     float w_tick_penalty;

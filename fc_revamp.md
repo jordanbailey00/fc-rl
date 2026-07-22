@@ -712,7 +712,15 @@ Training result:
 Current follow-up implementation:
 
 - Reward version:
-  `fight_caves_v38_fc_revamp_step2_raw_work_progress_prayer_conserve_no_attack`.
+  `fight_caves_v38_fc_revamp_step2_all_npc_correct_prayer`.
+- Correct-prayer contract correction:
+  - `w_correct_danger_prayer=0.005` is the shared correct-block reward for every
+    NPC attack style, including Jad.
+  - The existing attack-idle suppression remains unchanged. The only behavioral
+    change is that a correctly blocked Jad hit now uses the shared reward too.
+  - Jad-specific correct/wrong flags remain available for diagnostics.
+  - `w_correct_jad_prayer=0.0` prevents an additional Jad-only bonus; it does not
+    prevent Jad from receiving the shared `+0.005` reward.
 - Prayer conservation:
   - `w_prayer_lost=-0.02`, charged per prayer point lost.
   - Full 99-prayer depletion is now about `-1.98` instead of `-0.495`.

@@ -195,9 +195,9 @@ run IDs, results, and recovery hashes were recorded in
 | **Loadout** | SOTA Twisted Bow / fortified Masori profile (`FC_LOADOUT_SOTA_TBOW`) |
 | **Supplies/actions** | zero sharks, zero prayer-potion doses, three heads: movement, attack, prayer |
 | **Progress/outcomes** | `w_progress=0.001`, `w_cave_complete=1.0`, `w_player_death=-1.0` |
-| **Damage/prayer** | `w_damage_taken=-0.25`, `w_correct_danger_prayer=0.005`, `w_prayer_lost=-0.02` |
+| **Damage/prayer** | `w_damage_taken=-0.25`; shared all-NPC correct-block reward `w_correct_danger_prayer=0.005` includes Jad; `w_prayer_lost=-0.02` |
 | **Pressure** | `w_tick_penalty=-0.0001`; staged no-progress penalties after 800/1600/2400 ticks; wave-scaled no-attack penalty after 50 ticks |
-| **Disabled channels** | damage-dealt, NPC/wave/Jad kill, Jad prayer, healer, unnecessary-prayer, and old wave-stall shaping are zero |
+| **Disabled channels** | damage-dealt, NPC/wave/Jad kill, additional Jad-only prayer bonus, healer, unnecessary-prayer, and old wave-stall shaping are zero |
 | **Reward contract** | scalar reward clamped to `[-1, 1]` per environment step |
 | **v1.0 trainer** | `lr=0.0012501122`, `entropy=0.0126193685`, `gamma=0.9977806603`, `gae_lambda=0.9944084419`, `replay_ratio=1.1570637170` |
 | **Fixed optimizer** | `clip=0.178306`, `vf_coef=1`, `vf_clip=0.151240`, `max_grad_norm=0.25`, `prio_alpha=0.968236` |

@@ -18,8 +18,8 @@ typedef struct {
     float w_jad_kill;          /* combined Jad kill + cave complete reward */
     float w_cave_complete;
     float w_player_death;
-    float w_correct_jad_prayer;     /* fires only on Jad hits */
-    float w_correct_danger_prayer;  /* fires on non-Jad styled hits (melee/ranged/magic) */
+    float w_correct_jad_prayer;     /* optional additional Jad-only bonus; active config keeps 0 */
+    float w_correct_danger_prayer;  /* shared correct-block reward for every NPC, including Jad */
     float w_prayer_lost;            /* per prayer point lost from overhead drain or Tz-Kih */
     float w_invalid_action;
     float w_tick_penalty;
@@ -404,10 +404,9 @@ static inline FcRewardBreakdown fc_reward_compute_breakdown(
     out.cave_complete = out.raw[FC_RWD_CAVE_COMPLETE] * params->w_cave_complete;
     out.player_death = out.raw[FC_RWD_PLAYER_DEATH] * params->w_player_death;
 
-    /* Prayer correctness: Jad and non-Jad are mutually exclusive — the
-     * upstream tracking in fc_combat.c guarantees at most one of
-     * CORRECT_JAD_PRAY / CORRECT_DANGER_PRAY is set per incoming hit.
-     * Non-Jad path covers any styled block (melee/ranged/magic). */
+    /* Jad now participates in the same correct-block reward as every other
+     * NPC. Preserve the existing attack-idle suppression unchanged. Jad's
+     * separate channel remains an optional additional bonus. */
     if (!prayer_reward_idle) {
         out.correct_jad_prayer =
             out.raw[FC_RWD_CORRECT_JAD_PRAY] * params->w_correct_jad_prayer;
