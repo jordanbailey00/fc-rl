@@ -611,11 +611,456 @@ static int test_no_attack_penalty_wave_scaled(void) {
     return fail(msg);
 }
 
+static int test_player_death_progress_scaled(void) {
+    FcState state;
+    FcRewardParams params;
+    FcRewardRuntime runtime;
+    FcRewardBreakdown breakdown;
+    const float progress = (53.0f + 0.5f) / (float)FC_NUM_WAVES;
+    const float expected_scaled = -(0.1f + 0.9f * progress);
+
+    memset(&params, 0, sizeof(params));
+    params.w_player_death = -1.0f;
+    params.scale_player_death_with_progress = 1;
+    params.player_death_min_scale = 0.1f;
+
+    if (fabsf(fc_reward_player_death_scale(&params, 0.0f) - 0.1f) > 0.0001f ||
+        fabsf(fc_reward_player_death_scale(&params, 0.5f) - 0.55f) > 0.0001f ||
+        fabsf(fc_reward_player_death_scale(&params, 1.0f) - 1.0f) > 0.0001f) {
+        return fail("player-death scale does not follow the configured linear schedule");
+    }
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_YT_MEJKOT, 12, 10, 0);
+    state.npcs[0].current_hp = 400;
+    state.npcs_remaining = 1;
+    state.current_wave = 54;
+    state.terminal = TERMINAL_PLAYER_DEATH;
+
+    memset(&runtime, 0, sizeof(runtime));
+    runtime.required_work_at_wave_start = 800.0f;
+    runtime.cave_progress_prev = 53.0f / (float)FC_NUM_WAVES;
+    breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
+    if (fabsf(runtime.last_cave_progress - progress) > 0.0001f ||
+        fabsf(breakdown.player_death - expected_scaled) > 0.0001f ||
+        fabsf(breakdown.total - expected_scaled) > 0.0001f) {
+        char msg[224];
+        snprintf(msg, sizeof(msg),
+                 "scaled death wrong: progress=%.6f death=%.6f total=%.6f expected=%.6f",
+                 runtime.last_cave_progress, breakdown.player_death,
+                 breakdown.total, expected_scaled);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    params.scale_player_death_with_progress = 0;
+    memset(&runtime, 0, sizeof(runtime));
+    runtime.required_work_at_wave_start = 800.0f;
+    runtime.cave_progress_prev = 53.0f / (float)FC_NUM_WAVES;
+    breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
+    if (fabsf(breakdown.player_death + 1.0f) > 0.0001f ||
+        fabsf(breakdown.total + 1.0f) > 0.0001f) {
+        fc_destroy(&state);
+        return fail("disabled progress scaling no longer preserves fixed death reward");
+    }
+
+    fc_destroy(&state);
+    return pass("player death scales linearly with cave progress and remains opt-in");
+}
+
+static int test_simple_reward_zeroed_channels(void) {
+    FcState state;
+    FcRewardParams params;
+    FcRewardRuntime runtime;
+    FcRewardBreakdown breakdown;
+    float channels[FC_CH_COUNT];
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 30, 30, 0);
+    state.npcs_remaining = 1;
+    state.player.prayer = FC_PRAYER_MELEE;
+
+    /* Populate the raw events behind every zero-weight scalar channel. */
+    state.damage_dealt_this_tick = 100;
+    state.hits_landed_this_tick = 1;
+    state.damage_taken_this_tick = 100;
+    state.npcs_killed_this_tick = 1;
+    state.wave_just_cleared = 1;
+    state.jad_killed = 1;
+    state.correct_jad_prayer = 1;
+    state.correct_danger_prayer = 1;
+    state.prayer_lost_this_tick = 10;
+    state.invalid_action_this_tick = 1;
+    state.jad_heal_procs_this_tick = 1;
+    state.npc_heal_procs_this_tick = 1;
+
+    memset(&params, 0, sizeof(params));
+    params.w_progress = 0.0001f;
+    params.negative_progress_multiplier = 1.1f;
+    params.w_cave_complete = 1.0f;
+    params.w_player_death = -1.0f;
+    params.scale_player_death_with_progress = 1;
+    params.player_death_min_scale = 0.1f;
+    params.shape_no_progress_start_1 = 800;
+    params.shape_no_progress_start_2 = 1600;
+    params.shape_no_progress_start_3 = 2400;
+    params.shape_no_attack_start = 50;
+    params.shape_no_attack_wave_scale = 0.05f;
+
+    for (int scenario = 0; scenario < 2; scenario++) {
+        fc_reward_runtime_begin_episode(&runtime, &state);
+        runtime.ticks_since_positive_progress = 3000;
+        runtime.ticks_since_attack = scenario == 0 ? 0 : 100;
+        runtime.ticks_in_wave = 3000;
+        state.attack_attempt_this_tick = scenario == 0 ? 1 : 0;
+        breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
+        fc_reward_breakdown_channels(&breakdown, channels);
+
+        for (int i = 0; i < FC_CH_COUNT; i++) {
+            if (fabsf(channels[i]) > 0.000001f) {
+                char msg[224];
+                snprintf(msg, sizeof(msg),
+                         "zeroed simple-reward channel %s fired in scenario %d with value %.6f",
+                         FC_CH_NAMES[i], scenario, channels[i]);
+                fc_destroy(&state);
+                return fail(msg);
+            }
+        }
+        if (fabsf(breakdown.total) > 0.000001f) {
+            char msg[160];
+            snprintf(msg, sizeof(msg),
+                     "zeroed simple-reward channels changed scenario %d total by %.6f",
+                     scenario, breakdown.total);
+            fc_destroy(&state);
+            return fail(msg);
+        }
+    }
+
+    fc_destroy(&state);
+    return pass("zeroed simple-reward channels cannot affect scalar reward");
+}
+
+static int test_npc_kill_reward_eligibility(void) {
+    FcState state;
+    FcRewardParams params;
+    FcRewardRuntime runtime;
+    FcRewardBreakdown breakdown;
+    float reward_features[FC_REWARD_FEATURES];
+    float obs[FC_TOTAL_OBS];
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    memset(&params, 0, sizeof(params));
+    params.w_npc_kill = 0.25f;
+
+    /* An ordinary death remains one factual kill and one rewarded kill. */
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 12, 10, 0);
+    state.npcs_remaining = 1;
+    fc_reward_runtime_begin_episode(&runtime, &state);
+    fc_write_obs(&state, obs);
+    if (obs[FC_OBS_NPC_START + FC_NPC_VALID] != 1.0f ||
+        obs[FC_OBS_NPC_START + FC_NPC_HP] <= 0.0f ||
+        obs[FC_OBS_NPC_START + FC_NPC_KILL_REWARD_ELIGIBLE] != 1.0f) {
+        fc_destroy(&state);
+        return fail("living ordinary NPC is not visibly kill-reward eligible");
+    }
+
+    fc_queue_pending_hit(state.npcs[0].pending_hits,
+                         &state.npcs[0].num_pending_hits,
+                         FC_MAX_PENDING_HITS,
+                         state.npcs[0].current_hp, 1,
+                         ATTACK_RANGED, -1, 0);
+    fc_resolve_npc_pending_hits(&state, 0);
+    fc_write_reward_features(&state, reward_features);
+    breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
+    fc_write_obs(&state, obs);
+    if (state.npcs_killed_this_tick != 1 ||
+        state.respawned_jad_healers_killed_this_tick != 0 ||
+        state.total_npcs_killed != 1 ||
+        reward_features[FC_RWD_NPC_KILL] != 1.0f ||
+        fabsf(breakdown.npc_kill - 0.25f) > 0.0001f ||
+        obs[FC_OBS_NPC_START + FC_NPC_VALID] != 0.0f ||
+        obs[FC_OBS_META_START + FC_OBS_META_REMAINING] != 0.0f ||
+        obs[FC_OBS_META_START + FC_OBS_META_REWARDABLE_NPC_KILL] != 1.0f) {
+        fc_destroy(&state);
+        return fail("ordinary NPC death is not counted, rewarded, or observable correctly");
+    }
+    fc_step(&state, actions);
+    fc_write_obs(&state, obs);
+    if (obs[FC_OBS_META_START + FC_OBS_META_REWARDABLE_NPC_KILL] != 0.0f) {
+        fc_destroy(&state);
+        return fail("rewardable NPC-kill observation persisted beyond one tick");
+    }
+    fc_destroy(&state);
+
+    /* First-generation Jad healers pay normally; later generations do not. */
+    make_open_manual_state(&state, 20, 20);
+    state.current_wave = FC_NUM_WAVES;
+    fc_npc_spawn(&state.npcs[0], NPC_TZTOK_JAD, 10, 10, 0);
+    state.npcs[0].current_hp = FC_JAD_HEALER_THRESHOLD_HP_TENTHS - 10;
+    state.npcs[0].attack_timer = 999;
+    state.npcs[0].movement_speed = 0;
+    state.npcs_remaining = 1;
+    state.next_spawn_index = 1;
+    fc_step(&state, actions);
+
+    int first_healer_idx = -1;
+    int first_generation_count = 0;
+    for (int i = 0; i < FC_MAX_NPCS; i++) {
+        FcNpc* npc = &state.npcs[i];
+        if (!npc->active || npc->is_dead || npc->npc_type != NPC_YT_HURKOT) continue;
+        first_generation_count++;
+        if (npc->is_respawned_jad_healer) {
+            fc_destroy(&state);
+            return fail("first Jad-healer generation was marked as respawned");
+        }
+        if (first_healer_idx < 0) first_healer_idx = i;
+    }
+    if (first_generation_count != FC_JAD_NUM_HEALERS ||
+        state.jad_healer_spawn_generations != 1 || first_healer_idx < 0) {
+        fc_destroy(&state);
+        return fail("initial Jad-healer generation did not spawn completely");
+    }
+
+    fc_reward_runtime_begin_episode(&runtime, &state);
+    FcNpc* first_healer = &state.npcs[first_healer_idx];
+    fc_write_obs(&state, obs);
+    int first_healer_slot = observation_slot_for_npc(&state, first_healer_idx);
+    if (first_healer_slot < 0 ||
+        obs[FC_OBS_NPC_START + first_healer_slot * FC_OBS_NPC_STRIDE +
+            FC_NPC_KILL_REWARD_ELIGIBLE] != 1.0f) {
+        fc_destroy(&state);
+        return fail("first-generation Jad healer is not visibly kill-reward eligible");
+    }
+    fc_queue_pending_hit(first_healer->pending_hits,
+                         &first_healer->num_pending_hits,
+                         FC_MAX_PENDING_HITS,
+                         first_healer->current_hp, 1,
+                         ATTACK_RANGED, -1, 0);
+    fc_resolve_npc_pending_hits(&state, first_healer_idx);
+    fc_write_reward_features(&state, reward_features);
+    breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
+    fc_write_obs(&state, obs);
+    if (reward_features[FC_RWD_NPC_KILL] != 1.0f ||
+        fabsf(breakdown.npc_kill - 0.25f) > 0.0001f ||
+        obs[FC_OBS_META_START + FC_OBS_META_REWARDABLE_NPC_KILL] != 1.0f) {
+        fc_destroy(&state);
+        return fail("first-generation Jad healer did not grant the normal kill reward");
+    }
+
+    /* Free the dead slot, re-arm at full HP, then cross the threshold again. */
+    first_healer->active = 0;
+    for (int i = 0; i < FC_MAX_NPCS; i++) {
+        if (state.npcs[i].active && state.npcs[i].npc_type == NPC_YT_HURKOT) {
+            state.npcs[i].movement_speed = 0;
+            state.npcs[i].heal_timer = 999;
+        }
+    }
+    state.npcs[0].current_hp = state.npcs[0].max_hp;
+    state.npcs[0].attack_timer = 999;
+    fc_step(&state, actions);
+    if (state.jad_healers_spawned != 0) {
+        fc_destroy(&state);
+        return fail("Jad reaching full HP did not re-arm healer spawning");
+    }
+
+    state.npcs[0].current_hp = FC_JAD_HEALER_THRESHOLD_HP_TENTHS - 10;
+    state.npcs[0].attack_timer = 999;
+    fc_step(&state, actions);
+
+    int respawned_healer_idx = -1;
+    for (int i = 0; i < FC_MAX_NPCS; i++) {
+        FcNpc* npc = &state.npcs[i];
+        if (npc->active && !npc->is_dead &&
+            npc->npc_type == NPC_YT_HURKOT && npc->is_respawned_jad_healer) {
+            respawned_healer_idx = i;
+            break;
+        }
+    }
+    if (state.jad_healer_spawn_generations != 2 || respawned_healer_idx < 0) {
+        fc_destroy(&state);
+        return fail("later Jad-healer generation was not tagged as respawned");
+    }
+
+    FcNpc* respawned_healer = &state.npcs[respawned_healer_idx];
+    fc_write_obs(&state, obs);
+    int respawned_healer_slot = observation_slot_for_npc(&state, respawned_healer_idx);
+    if (respawned_healer_slot < 0 ||
+        obs[FC_OBS_NPC_START + respawned_healer_slot * FC_OBS_NPC_STRIDE +
+            FC_NPC_KILL_REWARD_ELIGIBLE] != 0.0f) {
+        fc_destroy(&state);
+        return fail("respawned Jad healer is not visibly excluded from kill reward");
+    }
+    fc_queue_pending_hit(respawned_healer->pending_hits,
+                         &respawned_healer->num_pending_hits,
+                         FC_MAX_PENDING_HITS,
+                         respawned_healer->current_hp, 1,
+                         ATTACK_RANGED, -1, 0);
+    fc_resolve_npc_pending_hits(&state, respawned_healer_idx);
+    fc_write_reward_features(&state, reward_features);
+    breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
+    fc_write_obs(&state, obs);
+    if (state.npcs_killed_this_tick != 1 ||
+        state.respawned_jad_healers_killed_this_tick != 1 ||
+        state.total_npcs_killed != 2 ||
+        reward_features[FC_RWD_NPC_KILL] != 0.0f ||
+        fabsf(breakdown.npc_kill) > 0.0001f ||
+        obs[FC_OBS_META_START + FC_OBS_META_REWARDABLE_NPC_KILL] != 0.0f) {
+        fc_destroy(&state);
+        return fail("respawned Jad healer affected reward or disappeared from kill analytics");
+    }
+
+    fc_destroy(&state);
+    return pass("NPC kills pay once, while respawned Jad healers remain analytics-only");
+}
+
+static int test_tz_kek_split_kill_rewards(void) {
+    FcState state;
+    FcRewardParams params;
+    FcRewardRuntime runtime;
+    FcRewardBreakdown breakdown;
+    float reward_features[FC_REWARD_FEATURES];
+    float obs[FC_TOTAL_OBS];
+    int child_indices[2] = {-1, -1};
+    int child_count = 0;
+
+    make_open_manual_state(&state, 8, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_TZ_KEK, 12, 10, 0);
+    state.npcs_remaining = 2;
+    state.next_spawn_index = 1;
+
+    memset(&params, 0, sizeof(params));
+    params.w_npc_kill = 0.25f;
+    fc_reward_runtime_begin_episode(&runtime, &state);
+
+    fc_write_obs(&state, obs);
+    if (obs[FC_OBS_NPC_START + FC_NPC_TYPE_TZ_KEK] != 1.0f ||
+        obs[FC_OBS_NPC_START + FC_NPC_KILL_REWARD_ELIGIBLE] != 1.0f) {
+        fc_destroy(&state);
+        return fail("parent Tz-Kek is not visibly kill-reward eligible");
+    }
+
+    fc_queue_pending_hit(state.npcs[0].pending_hits,
+                         &state.npcs[0].num_pending_hits,
+                         FC_MAX_PENDING_HITS,
+                         state.npcs[0].current_hp, 1,
+                         ATTACK_RANGED, -1, 0);
+    fc_resolve_npc_pending_hits(&state, 0);
+    fc_write_reward_features(&state, reward_features);
+    breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
+    fc_write_obs(&state, obs);
+
+    for (int i = 0; i < FC_MAX_NPCS; i++) {
+        if (state.npcs[i].active && !state.npcs[i].is_dead &&
+            state.npcs[i].npc_type == NPC_TZ_KEK_SM) {
+            if (child_count < 2) child_indices[child_count] = i;
+            child_count++;
+        }
+    }
+    if (state.npcs_killed_this_tick != 1 ||
+        state.total_npcs_killed != 1 ||
+        state.npcs_remaining != 2 ||
+        reward_features[FC_RWD_NPC_KILL] != 1.0f ||
+        fabsf(breakdown.npc_kill - 0.25f) > 0.0001f ||
+        obs[FC_OBS_META_START + FC_OBS_META_REWARDABLE_NPC_KILL] != 1.0f ||
+        child_count != 2) {
+        fc_destroy(&state);
+        return fail("parent Tz-Kek death did not pay once and split into two children");
+    }
+
+    for (int child = 0; child < 2; child++) {
+        int slot = observation_slot_for_npc(&state, child_indices[child]);
+        if (slot < 0) {
+            fc_destroy(&state);
+            return fail("split Tz-Kek child is missing from visible NPC observations");
+        }
+        int base = FC_OBS_NPC_START + slot * FC_OBS_NPC_STRIDE;
+        if (obs[base + FC_NPC_TYPE_TZ_KEK_SM] != 1.0f ||
+            obs[base + FC_NPC_KILL_REWARD_ELIGIBLE] != 1.0f) {
+            fc_destroy(&state);
+            return fail("split Tz-Kek child is not visibly kill-reward eligible");
+        }
+    }
+
+    for (int child = 0; child < 2; child++) {
+        state.npcs_killed_this_tick = 0;
+        state.respawned_jad_healers_killed_this_tick = 0;
+        FcNpc* npc = &state.npcs[child_indices[child]];
+        fc_queue_pending_hit(npc->pending_hits,
+                             &npc->num_pending_hits,
+                             FC_MAX_PENDING_HITS,
+                             npc->current_hp, 1,
+                             ATTACK_RANGED, -1, 0);
+        fc_resolve_npc_pending_hits(&state, child_indices[child]);
+        fc_write_reward_features(&state, reward_features);
+        breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
+        fc_write_obs(&state, obs);
+
+        if (state.npcs_killed_this_tick != 1 ||
+            state.respawned_jad_healers_killed_this_tick != 0 ||
+            state.total_npcs_killed != child + 2 ||
+            state.npcs_remaining != 1 - child ||
+            reward_features[FC_RWD_NPC_KILL] != 1.0f ||
+            fabsf(breakdown.npc_kill - 0.25f) > 0.0001f ||
+            obs[FC_OBS_META_START + FC_OBS_META_REWARDABLE_NPC_KILL] != 1.0f) {
+            fc_destroy(&state);
+            return fail("a split Tz-Kek child did not pay the same single kill reward");
+        }
+    }
+
+    fc_destroy(&state);
+    return pass("parent Tz-Kek and both split children each pay one equal kill reward");
+}
+
+static int test_wave_clear_reward_scaling(void) {
+    FcState state;
+    FcRewardParams params;
+    FcRewardRuntime runtime;
+    FcRewardBreakdown breakdown;
+    float obs[FC_TOTAL_OBS];
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    state.current_wave = 15;
+    state.npcs_remaining = 0;
+    fc_reward_runtime_begin_episode(&runtime, &state);
+
+    if (!fc_wave_check_advance(&state) || state.current_wave != 16 ||
+        !state.wave_just_cleared) {
+        fc_destroy(&state);
+        return fail("wave 15 did not emit one wave-clear transition");
+    }
+
+    memset(&params, 0, sizeof(params));
+    params.w_wave_clear = 0.002f;
+    breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
+    fc_write_obs(&state, obs);
+    if (fabsf(breakdown.wave_clear - 0.030f) > 0.0001f ||
+        fabsf(breakdown.total - 0.030f) > 0.0001f ||
+        obs[FC_OBS_META_START + FC_OBS_META_WAVE_CLR] != 1.0f ||
+        fabsf(obs[FC_OBS_META_START + FC_OBS_META_WAVE] -
+              (16.0f / (float)FC_NUM_WAVES)) > 0.0001f) {
+        fc_destroy(&state);
+        return fail("wave-clear reward or its policy observations are incorrect");
+    }
+
+    fc_step(&state, actions);
+    breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
+    if (state.wave_just_cleared || fabsf(breakdown.wave_clear) > 0.0001f) {
+        fc_destroy(&state);
+        return fail("wave-clear reward persisted beyond its transition tick");
+    }
+
+    fc_destroy(&state);
+    return pass("wave-clear reward scales by cleared wave and fires for one transition");
+}
+
 static int test_net_progress_required_work(void) {
     FcState state;
     FcRewardParams params;
     FcRewardRuntime runtime;
     FcRewardBreakdown breakdown;
+    float positive_progress;
 
     make_open_manual_state(&state, 10, 10);
     fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 12, 10, 0);
@@ -623,6 +1068,7 @@ static int test_net_progress_required_work(void) {
 
     memset(&params, 0, sizeof(params));
     params.w_progress = 0.001f;
+    params.negative_progress_multiplier = 1.1f;
     fc_reward_runtime_begin_episode(&runtime, &state);
 
     if (fabsf(runtime.required_work_at_wave_start - 100.0f) > 0.0001f) {
@@ -635,6 +1081,7 @@ static int test_net_progress_required_work(void) {
 
     state.npcs[0].current_hp = 90;
     breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
+    positive_progress = breakdown.progress;
     if (fabsf(runtime.last_required_work_remaining - 90.0f) > 0.0001f ||
         fabsf(runtime.last_net_required_work_removed - 10.0f) > 0.0001f ||
         fabsf(breakdown.progress - 0.01f) > 0.0001f) {
@@ -652,7 +1099,8 @@ static int test_net_progress_required_work(void) {
     breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
     if (fabsf(runtime.last_required_work_remaining - 100.0f) > 0.0001f ||
         fabsf(runtime.last_net_required_work_removed + 10.0f) > 0.0001f ||
-        fabsf(breakdown.progress + 0.01f) > 0.0001f ||
+        fabsf(breakdown.progress + 0.011f) > 0.0001f ||
+        positive_progress + breakdown.progress >= -0.0001f ||
         runtime.ticks_since_positive_progress <= 0) {
         char msg[192];
         snprintf(msg, sizeof(msg),
@@ -666,7 +1114,7 @@ static int test_net_progress_required_work(void) {
     }
 
     fc_destroy(&state);
-    return pass("net required-work progress rewards damage and penalizes healing");
+    return pass("negative progress is 10% stronger while positive progress is unchanged");
 }
 
 static int test_net_progress_wave_clear_transition(void) {
@@ -681,6 +1129,7 @@ static int test_net_progress_wave_clear_transition(void) {
 
     memset(&params, 0, sizeof(params));
     params.w_progress = 0.001f;
+    params.negative_progress_multiplier = 1.0f;
     fc_reward_runtime_begin_episode(&runtime, &state);
 
     state.npcs[0].is_dead = 1;
@@ -756,6 +1205,7 @@ static int test_net_progress_jad_accounting(void) {
 
     memset(&params, 0, sizeof(params));
     params.w_progress = 0.001f;
+    params.negative_progress_multiplier = 1.0f;
     fc_reward_runtime_begin_episode(&runtime, &state);
 
     if (fabsf(runtime.required_work_at_wave_start - 2500.0f) > 0.0001f) {
@@ -2561,7 +3011,7 @@ static int test_mechanics_observation_events(void) {
 
 int main(int argc, char** argv) {
     if (argc != 2) {
-        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|safespot_reward_disabled|npc_heal_penalty_actual_heal|prayer_loss_penalty|correct_prayer_reward_all_npcs|no_attack_penalty_wave_scaled|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|special_tz_kih_prayer_drain|special_mejkot_heal_replaces_attack|special_adjacent_style_selection|special_hurkot_behavior|mechanics_observation_events|safespot_los|diagonal_corner_clipping|npc_moves_when_attack_blocked|option_b_no_move_into_range_fire_same_tick|option_b_no_move_into_los_fire_same_tick|option_b_attack_then_move_when_already_valid|option_b_queued_projectile_survives_later_movement|step1_movement_only_clears_stale_target|step1_projectile_survives_movement_cancel|step1_attack_move_clears_continued_target|step1_attack_move_out_of_range_clears_target|step1_directional_cancels_old_approach_route|step1_directional_beats_old_tile_route|step1_attack_approach_without_explicit_movement|step2_occupancy_marks_and_ignores_entities|step2_dynamic_footprint_static_and_occupied|step2_entity_wrapper_ignores_self_blocks_others|step2_dynamic_diagonal_blocks_occupied_corner|step2_dynamic_bfs_avoids_occupied_steps|step2_dynamic_sized_bfs_checks_full_footprint|step2_start_reservation_blocks_swap_tile|step3_player_directional_blocked_by_npc|step3_player_tile_route_rejects_occupied_target|step3_npc_blocked_by_other_npc|step3_large_npc_blocked_by_healer_footprint|step3_tz_kek_split_avoids_occupied_tiles|step4_ranged_npc_chases_player_bounds_not_los_tile|step4_large_npc_chase_checks_full_footprint|step4_npc_stays_when_current_position_can_attack|invalid_action_classes>\n",
+        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|safespot_reward_disabled|npc_heal_penalty_actual_heal|prayer_loss_penalty|correct_prayer_reward_all_npcs|no_attack_penalty_wave_scaled|player_death_progress_scaled|simple_reward_zeroed_channels|npc_kill_reward_eligibility|tz_kek_split_kill_rewards|wave_clear_reward_scaling|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|special_tz_kih_prayer_drain|special_mejkot_heal_replaces_attack|special_adjacent_style_selection|special_hurkot_behavior|mechanics_observation_events|safespot_los|diagonal_corner_clipping|npc_moves_when_attack_blocked|option_b_no_move_into_range_fire_same_tick|option_b_no_move_into_los_fire_same_tick|option_b_attack_then_move_when_already_valid|option_b_queued_projectile_survives_later_movement|step1_movement_only_clears_stale_target|step1_projectile_survives_movement_cancel|step1_attack_move_clears_continued_target|step1_attack_move_out_of_range_clears_target|step1_directional_cancels_old_approach_route|step1_directional_beats_old_tile_route|step1_attack_approach_without_explicit_movement|step2_occupancy_marks_and_ignores_entities|step2_dynamic_footprint_static_and_occupied|step2_entity_wrapper_ignores_self_blocks_others|step2_dynamic_diagonal_blocks_occupied_corner|step2_dynamic_bfs_avoids_occupied_steps|step2_dynamic_sized_bfs_checks_full_footprint|step2_start_reservation_blocks_swap_tile|step3_player_directional_blocked_by_npc|step3_player_tile_route_rejects_occupied_target|step3_npc_blocked_by_other_npc|step3_large_npc_blocked_by_healer_footprint|step3_tz_kek_split_avoids_occupied_tiles|step4_ranged_npc_chases_player_bounds_not_los_tile|step4_large_npc_chase_checks_full_footprint|step4_npc_stays_when_current_position_can_attack|invalid_action_classes>\n",
                 argv[0]);
         return 2;
     }
@@ -2575,6 +3025,11 @@ int main(int argc, char** argv) {
     if (strcmp(argv[1], "prayer_loss_penalty") == 0) return test_prayer_loss_penalty();
     if (strcmp(argv[1], "correct_prayer_reward_all_npcs") == 0) return test_correct_prayer_reward_all_npcs();
     if (strcmp(argv[1], "no_attack_penalty_wave_scaled") == 0) return test_no_attack_penalty_wave_scaled();
+    if (strcmp(argv[1], "player_death_progress_scaled") == 0) return test_player_death_progress_scaled();
+    if (strcmp(argv[1], "simple_reward_zeroed_channels") == 0) return test_simple_reward_zeroed_channels();
+    if (strcmp(argv[1], "npc_kill_reward_eligibility") == 0) return test_npc_kill_reward_eligibility();
+    if (strcmp(argv[1], "tz_kek_split_kill_rewards") == 0) return test_tz_kek_split_kill_rewards();
+    if (strcmp(argv[1], "wave_clear_reward_scaling") == 0) return test_wave_clear_reward_scaling();
     if (strcmp(argv[1], "net_progress_required_work") == 0) return test_net_progress_required_work();
     if (strcmp(argv[1], "net_progress_wave_clear") == 0) return test_net_progress_wave_clear_transition();
     if (strcmp(argv[1], "net_progress_tz_kek") == 0) return test_net_progress_tz_kek_accounting();

@@ -38,6 +38,7 @@ static void clear_per_tick_flags(FcState* state) {
     state->overhead_prayer_lost_this_tick = 0;
     state->tz_kih_prayer_drain_this_tick = 0;
     state->npcs_killed_this_tick = 0;
+    state->respawned_jad_healers_killed_this_tick = 0;
     state->wave_just_cleared = 0;
     state->jad_damage_this_tick = 0;
     state->jad_killed = 0;
@@ -638,6 +639,7 @@ static void check_jad_healers(FcState* state) {
             spawn_dirs[j] = tmp;
         }
         const FcNpcStats* healer_stats = fc_npc_get_stats(NPC_YT_HURKOT);
+        int is_respawn_generation = state->jad_healer_spawn_generations > 0;
         int spawned = 0;
         for (int h = 0; h < to_spawn; h++) {
             int hx, hy;
@@ -651,6 +653,8 @@ static void check_jad_healers(FcState* state) {
                 if (!state->npcs[slot].active) {
                     fc_npc_spawn(&state->npcs[slot], NPC_YT_HURKOT, hx, hy,
                                  state->next_spawn_index++);
+                    state->npcs[slot].is_respawned_jad_healer =
+                        is_respawn_generation;
                     state->npcs_remaining++;
                     spawned++;
                     break;
@@ -659,6 +663,7 @@ static void check_jad_healers(FcState* state) {
         }
         if (spawned > 0) {
             state->jad_healers_spawned = 1;
+            state->jad_healer_spawn_generations++;
         }
         return;
     }

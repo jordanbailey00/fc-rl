@@ -37,6 +37,8 @@ gets its own run id so comparisons stay one-change-at-a-time.
 | Step 2 pivot | Raw net required-work progress, `w_progress=0.001` | `n6nozx3q` | 1.5B | Tested. Final behavior was cleaner than `0gw22z0k`, but peak-depth behavior still showed no-target/no-progress stalling and final wave depth remained below benchmark. |
 | Step 2 follow-up | Stronger prayer conservation plus wave-scaled no-attack penalty | `mzqf7iml` | 1.5B | Tested. Large improvement over `n6nozx3q`: final wave reached `40.82`, no-progress/no-target rates stayed low, and the wave 20-30 wall was broken. Prayer is still heavily used and not truly conserved. |
 | Backend movement/positioning fix | OSRS-style diagonal movement, stricter clipping/masks, and NPCs continue moving when LOS or diagonal contact blocks attacks | `7mxnrzua` | 1.5B | Tested. Strong improvement over `mzqf7iml`: final wave reached `49.17`, cave progress reached `0.770`, and roughly 9 of 10,021 final-summary episodes reached wave 63. Jad kill rate remained `0`. |
+| Step 4 | Native hard action masks in rollout sampling and PPO | `l2l7lf6b` | 2.5B | Enforcement succeeded with zero invalid actions, but the unchanged `v2_simple_reward` policy entered a large Yt-MejKot healing loop and then collapsed into explicit legal no-ops. Pre-mask control: `ur7t6c4n`. |
+| Step 4 follow-up | Negative progress weighted `1.10x` | `ruuq4231` | 2.5B | Controlled seed-73 A/B completed. It prevented the catastrophic healing-loop collapse seen in `l2l7lf6b`, but legal no-op/stall behavior and a smaller late Yt-MejKot focus remain. |
 
 ## Current Step Order
 
@@ -69,15 +71,12 @@ gets its own run id so comparisons stay one-change-at-a-time.
      points per episode.
 3. Step 3: expose prayer decision deadline observations. Tested with run
    `lws7w8yb`; current observation contract includes these fields.
+4. Step 4: hard-apply action masks in native PufferLib. Implemented on
+   2026-07-22 and tested with run `l2l7lf6b`. Native enforcement is valid, but
+   the temporary simple-reward policy regressed late in training.
 
 ## Backlog / Not Prioritized Now
 
-- Hard-apply action masks safely.
-  - Reason for backlog: invalid actions are now rare in `mzqf7iml`.
-  - Final `rwd_invalid_action_total=-0.077`, roughly `0.77` invalid actions per
-    `4451` tick episode, or about `0.017%` of ticks.
-  - This is still useful cleanup later because it can remove invalid-action
-    reward noise, but it is not expected to drive the next major training gain.
 - Improve target persistence / auto-pathing control.
   - Reason for backlog: `mzqf7iml` largely fixed the old no-target/no-attack wall.
   - Final `target_held_ticks=93.5%`, `target_in_range_los_ticks=91.4%`,
@@ -1057,7 +1056,7 @@ Risk:
 
 ## Step 4: Hard-Apply Action Masks
 
-Status: Not started
+Status: Implemented and tested with W&B runs `l2l7lf6b` and `ruuq4231`
 
 Current issue:
 
@@ -1065,10 +1064,21 @@ Current issue:
 - The agent spends capacity learning which actions are impossible.
 - Invalid-action penalties add reward clutter.
 
-Proposed change:
+Implementation:
 
-- Apply action masks so impossible actions cannot be selected by the policy.
-- Remove invalid-action reward penalties once masking is trusted.
+- The existing 31 legality flags are published through a dedicated native
+  byte-mask channel while remaining in the 307-float policy observation for
+  checkpoint and experiment compatibility.
+- PufferLib applies that mask when sampling all three discrete heads: 17 move,
+  9 attack, and 5 prayer actions.
+- The exact mask used to sample each action is stored with its rollout and
+  reused for PPO log-probability, entropy, KL/ratio, and gradient calculation.
+- Invalid logits receive no PPO gradient. Each head must have at least one
+  legal action, and mask width must equal the 31 summed action logits.
+- Prayer semantics are unchanged: all five prayer choices remain legal. The
+  mask only excludes actions the environment already marks impossible.
+- No reward, observation, action-head, policy, hyperparameter, loadout, or
+  gameplay logic was changed. Invalid-action diagnostics remain enabled.
 
 Expected benefit:
 
@@ -1080,6 +1090,74 @@ Risk:
 
 - Masking bugs can silently break learning.
 - Needs direct validation that every legal action remains selectable and every illegal action is actually masked.
+
+Validation completed:
+
+- Native CUDA backend builds successfully with the SOTA Tbow loadout.
+- Adapter and static integration guardrails pass.
+- A 20M-step no-W&B smoke run completed without crashes or non-finite losses.
+- `invalid_move`, `invalid_attack`, and `invalid_prayer` remained exactly `0`
+  throughout the smoke run, exceeding the one-million-action acceptance gate.
+- The full regression suite passes except the known live-config guard, which
+  intentionally rejects the synchronized temporary `v2_simple_reward` config
+  as a canonical v1.0 reward config.
+- The exact 2.5B seed-73 A/B run `l2l7lf6b` used the same config hash, loadout,
+  observation/action/reward versions, policy, and trainer hyperparameters as
+  pre-mask run `ur7t6c4n`.
+- All 2,382 logged history rows reported zero invalid move, attack, and prayer
+  actions. This confirms the native mask path worked for the full run.
+
+Training outcome:
+
+- Peak cave progress improved to `0.5074` and peak average wave improved to
+  `32.5`, but neither run reached wave 63 or killed Jad.
+- From 1.75B-2.0B steps, NPC healing averaged about `156,930` against `178,834`
+  gross damage per episode (`87.75%`), primarily from repeatedly engaging
+  Yt-MejKot.
+- After about 2.05B steps, progress collapsed. Over the last 100M steps before
+  the terminal flush, episode-weighted cave progress was `0.0410`, average wave
+  was `3.32`, attack-none occupied `98.81%` of ticks, no-target occupied
+  `98.59%`, and entropy fell to `0.675`.
+- The policy did not replace invalid actions with useful legal actions. It
+  eventually selected explicit attack-none and move-idle while timing out.
+- This is not evidence that mask transport failed. It shows that the temporary
+  reward and previously tuned entropy/PPO settings are not robust after the
+  legal action distribution changes.
+
+Negative-progress follow-up outcome (`ruuq4231`):
+
+- This was a controlled 2.5B seed-73 comparison against `l2l7lf6b`. The only
+  intended effective reward change was
+  `negative_progress_multiplier: 1.0 -> 1.1`; positive progress remained
+  `0.001` per required-work unit.
+- Final-evaluation cave progress improved from `0.0503` to `0.3952`, average
+  wave from `3.75` to `25.27`, and NPC kills from `8.04` to `95.28`. The old
+  late collapse to wave 3 did not recur.
+- During the last 100M training steps, healing was `11.14%` of gross damage,
+  compared with the `50-90%` range during the original exploit. The final
+  evaluation rose to `23.96%`, so a smaller late Yt-MejKot/healing regression
+  remains, but it is not the former near-canceling damage/heal loop.
+- The final policy still selected attack-none on `90.65%` of ticks, held no
+  target on `90.38%`, and made no progress on `72.88%`. It timed out on
+  `34.26%` of evaluation episodes. This is a separate legal-stalling failure:
+  the simple reward does not penalize idle ticks or timeout after progress has
+  already been banked.
+- Invalid move, attack, and prayer metrics remained exactly zero in all 2,382
+  history rows. The native action-mask implementation remains validated.
+- No run reached wave 63, Jad, or cave completion. Peak logged average wave was
+  `31.42` near 2.20B steps; the final evaluation was weaker at `25.27`.
+
+Next decision:
+
+- Keep native action masks.
+- Keep `negative_progress_multiplier=1.1`; it accomplished its narrow purpose
+  without changing positive-progress value.
+- Treat legal stalling/timeouts as the next distinct objective problem. Choose
+  and test one minimal correction before retuning hparams for the masked action
+  space.
+- Do not increase healing punishment solely from this result. First separate
+  ordinary late Yt-MejKot difficulty from a profitable loop using the existing
+  healing, target-share, signed-progress, and idle metrics.
 
 ## Step 5: Give Policy Real Control Over Target Persistence And Auto-Pathing
 

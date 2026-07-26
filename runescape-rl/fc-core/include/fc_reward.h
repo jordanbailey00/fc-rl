@@ -12,12 +12,15 @@
 typedef struct {
     float w_damage_dealt;      /* legacy per-hit damage shaping; active fc_revamp config sets 0 */
     float w_progress;          /* reward per required-work unit removed */
+    float negative_progress_multiplier; /* extra weight when required work increases */
     float w_damage_taken;
-    float w_npc_kill;
-    float w_wave_clear;
+    float w_npc_kill;          /* per eligible entity death; Tz-Kek parent/children each pay */
+    float w_wave_clear;        /* cleared wave number multiplied by this value */
     float w_jad_kill;          /* combined Jad kill + cave complete reward */
     float w_cave_complete;
     float w_player_death;
+    int scale_player_death_with_progress;
+    float player_death_min_scale;
     float w_correct_jad_prayer;     /* optional additional Jad-only bonus; active config keeps 0 */
     float w_correct_danger_prayer;  /* shared correct-block reward for every NPC, including Jad */
     float w_prayer_lost;            /* per prayer point lost from overhead drain or Tz-Kih */
@@ -160,12 +163,15 @@ static inline FcRewardParams fc_reward_default_params(void) {
 
     params.w_damage_dealt = 0.0f;
     params.w_progress = 0.001f;
+    params.negative_progress_multiplier = 1.0f;
     params.w_damage_taken = -0.25f;
     params.w_npc_kill = 0.0f;
     params.w_wave_clear = 0.0f;
     params.w_jad_kill = 0.0f;
     params.w_cave_complete = 1.0f;
     params.w_player_death = -1.0f;
+    params.scale_player_death_with_progress = 0;
+    params.player_death_min_scale = 0.1f;
     params.w_correct_jad_prayer = 0.0f;
     params.w_correct_danger_prayer = 0.005f;
     params.w_prayer_lost = -0.02f;
@@ -201,6 +207,15 @@ static inline float fc_reward_clamp01(float value) {
     if (value < 0.0f) return 0.0f;
     if (value > 1.0f) return 1.0f;
     return value;
+}
+
+static inline float fc_reward_player_death_scale(
+        const FcRewardParams* params, float cave_progress) {
+    if (!params->scale_player_death_with_progress) return 1.0f;
+
+    float floor = fc_reward_clamp01(params->player_death_min_scale);
+    float progress = fc_reward_clamp01(cave_progress);
+    return floor + (1.0f - floor) * progress;
 }
 
 static inline float fc_reward_required_work_remaining(const FcState* state) {
@@ -343,10 +358,15 @@ static inline FcRewardBreakdown fc_reward_compute_breakdown(
         /* Scalar reward uses raw net required-work removed. The cave-progress
          * delta stays normalized for observations/logs, while this channel pays
          * for actual HP/work removed and goes negative when healing restores
-         * work. Multiplying by the wave's start work preserves the existing
-         * wave-clear handling and avoids treating the next wave spawn as
-         * negative progress. */
-        out.progress = net_work_removed * params->w_progress;
+         * work. The optional negative multiplier makes restored work more costly
+         * without changing positive progress. Multiplying by the wave's start
+         * work preserves wave-clear handling and avoids treating the next wave
+         * spawn as negative progress. */
+        float progress_weight = params->w_progress;
+        if (net_work_removed < 0.0f) {
+            progress_weight *= params->negative_progress_multiplier;
+        }
+        out.progress = net_work_removed * progress_weight;
 
         runtime->last_required_work_remaining = work_remaining;
         runtime->last_current_wave_progress = wave_progress;
@@ -402,7 +422,8 @@ static inline FcRewardBreakdown fc_reward_compute_breakdown(
 
     out.jad_kill = out.raw[FC_RWD_JAD_KILL] * params->w_jad_kill;
     out.cave_complete = out.raw[FC_RWD_CAVE_COMPLETE] * params->w_cave_complete;
-    out.player_death = out.raw[FC_RWD_PLAYER_DEATH] * params->w_player_death;
+    out.player_death = out.raw[FC_RWD_PLAYER_DEATH] * params->w_player_death *
+        fc_reward_player_death_scale(params, runtime->last_cave_progress);
 
     /* Jad now participates in the same correct-block reward as every other
      * NPC. Preserve the existing attack-idle suppression unchanged. Jad's

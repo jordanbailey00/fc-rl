@@ -401,7 +401,14 @@ void fc_resolve_npc_pending_hits(FcState* state, int npc_idx) {
                 npc->is_dead = 1;
                 npc->died_this_tick = 1;
                 npc->death_timer = 3;  /* remain visible for 3 ticks */
+                /* Each NPC entity is one kill. The Tz-Kek parent is counted
+                 * here before splitting, and each child is counted when it
+                 * later reaches this same death path. */
                 state->npcs_killed_this_tick++;
+                if (npc->npc_type == NPC_YT_HURKOT &&
+                    npc->is_respawned_jad_healer) {
+                    state->respawned_jad_healers_killed_this_tick++;
+                }
                 state->total_npcs_killed++;
 
                 if (npc->npc_type == NPC_TZTOK_JAD) {

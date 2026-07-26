@@ -100,15 +100,21 @@ For the corrected legacy control, preserve clipping initially so the comparison 
 
 ---
 
-## 2. Action masks are observations, not enforced constraints
+## 2. Action masks are now enforced constraints
 
-`runescape-rl/fc-training/fight_caves.h` appends 36 mask values to the policy input. However, the CUDA sampler and PPO loss in `pufferlib_4/src/pufferlib.cu` compute softmax, entropy, and log-probabilities over all actions in every head.
+Completed 2026-07-22. `runescape-rl/fc-training/fight_caves.h` publishes the
+31 move/attack/prayer legality flags through PufferLib's dedicated native mask
+channel. The same flags remain appended to the policy input to preserve the
+existing 307-float observation contract and checkpoint compatibility.
 
-The policy must learn to obey the masks. The entropy bonus simultaneously rewards probability mass on invalid actions. The invalid-action penalty then tries to counteract that pressure through reward shaping.
+The CUDA rollout sampler excludes invalid logits. The exact mask used for each
+sample is stored in the rollout and reused for PPO new-policy log-probability,
+entropy, KL/ratio, and gradient calculations. Invalid logits receive zero PPO
+gradient.
 
-### Required change
+### Implemented contract
 
-Apply masks consistently in:
+Masks are applied consistently in:
 
 - rollout action sampling;
 - rollout log-probability calculation;
@@ -116,16 +122,21 @@ Apply masks consistently in:
 - entropy calculation;
 - KL and diagnostic calculations.
 
-Invalid logits should be excluded, not merely discouraged. Assert that every action head has at least one legal action.
+The trainer checks that mask width equals the sum of discrete head sizes. The
+environment adapter tests that every head has at least one legal action and that
+the native byte mask exactly matches the retained observation mask.
 
-After hard masking is implemented:
+Follow-up rules:
 
-- set `w_invalid_action = 0`;
+- use `w_invalid_action = 0` in new experiments after the mask is trusted;
 - retain an invalid-action counter as an assertion/diagnostic;
 - retune entropy because the valid action-set size and entropy scale will change;
 - preferably report per-head entropy normalized by the maximum entropy of the valid action set.
 
-Acceptance criterion: at least one million sampled vectorized actions with zero invalid selections.
+Acceptance result: a 20M-step native smoke run completed with
+`invalid_move=0`, `invalid_attack=0`, and `invalid_prayer=0` throughout. The
+next gate is an unchanged 2.5B `v2_simple_reward` comparison against W&B run
+`ur7t6c4n`.
 
 ---
 
@@ -666,7 +677,7 @@ Do not start expensive sweeps until these pass.
 
 ## Trainer
 
-- [ ] Hard masks produce zero invalid sampled actions.
+- [x] Hard masks produce zero invalid sampled actions.
 - [ ] Rollout and PPO masked log-probabilities match a reference implementation.
 - [ ] Masked entropy matches a reference implementation.
 - [ ] Every environment reward is consumed exactly once by GAE.
@@ -706,7 +717,7 @@ Do not start expensive sweeps until these pass.
 1. Archive the current config and add run-manifest logging.
 2. Add reward-transport and GAE boundary tests.
 3. Fix rollout alignment and scalar/vector advantage parity.
-4. Implement hard masks in rollout and PPO.
+4. Implement hard masks in rollout and PPO. Completed 2026-07-22; full-run A/B pending.
 5. Fix stable NPC target identity.
 6. Fix per-environment seeding.
 7. Replace global analytics with race-free reductions.

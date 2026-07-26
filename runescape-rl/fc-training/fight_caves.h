@@ -72,6 +72,7 @@ typedef struct {
     float max_wave_ticks_wave;
     float reached_wave_63;
     float jad_kill_rate;
+    float player_death_rate;
     float dmg_to_npc_type[NPC_TYPE_COUNT];
     float resolved_hits_to_npc_type[NPC_TYPE_COUNT];
     float damaging_hits_to_npc_type[NPC_TYPE_COUNT];
@@ -134,6 +135,7 @@ typedef struct FightCaves {
     float* actions;             /* required: NUM_ATNS per agent (vecenv uses float*) */
     float* rewards;             /* required: 1 per agent */
     float* terminals;           /* required: 1 per agent (vecenv uses float*) */
+    unsigned char* action_mask; /* required when MY_ACTION_MASK is enabled */
     int num_agents;             /* always 1 for Fight Caves */
     int rng;                    /* per-env RNG seed (set by vecenv.h) */
 
@@ -143,12 +145,15 @@ typedef struct FightCaves {
     /* Reward shaping weights (from config) */
     float w_damage_dealt;       /* legacy per-hit damage shaping; active fc_revamp config sets 0 */
     float w_progress;
+    float negative_progress_multiplier;
     float w_damage_taken;
     float w_npc_kill;
     float w_wave_clear;
     float w_jad_kill;
     float w_cave_complete;
     float w_player_death;
+    int scale_player_death_with_progress;
+    float player_death_min_scale;
     float w_correct_jad_prayer;      /* optional additional Jad-only bonus */
     float w_correct_danger_prayer;   /* shared correct-block reward, including Jad */
     float w_prayer_lost;             /* per prayer point lost from overhead drain or Tz-Kih */
@@ -236,10 +241,16 @@ static void fc_puffer_write_obs(FightCaves* env) {
                           env->obs_ablate_incoming_aggregates,
                           env->obs_ablate_npc_valid);
 
-    /* Action mask: Puffer policy heads only. */
+    /* Keep the float mask in observations for checkpoint compatibility, and
+     * publish the same legality flags through PufferLib's native mask channel. */
     float full_mask[FC_ACTION_MASK_SIZE];
     fc_write_mask(&env->state, full_mask);
     memcpy(obs + FC_POLICY_OBS_SIZE, full_mask, sizeof(float) * FC_PUFFER_MASK_SIZE);
+    if (env->action_mask != NULL) {
+        for (int i = 0; i < FC_PUFFER_MASK_SIZE; i++) {
+            env->action_mask[i] = (unsigned char)(full_mask[i] != 0.0f);
+        }
+    }
 }
 
 static FcRewardParams fc_reward_params_from_env(const FightCaves* env) {
@@ -248,12 +259,15 @@ static FcRewardParams fc_reward_params_from_env(const FightCaves* env) {
 
     params.w_damage_dealt = env->w_damage_dealt;
     params.w_progress = env->w_progress;
+    params.negative_progress_multiplier = env->negative_progress_multiplier;
     params.w_damage_taken = env->w_damage_taken;
     params.w_npc_kill = env->w_npc_kill;
     params.w_wave_clear = env->w_wave_clear;
     params.w_jad_kill = env->w_jad_kill;
     params.w_cave_complete = env->w_cave_complete;
     params.w_player_death = env->w_player_death;
+    params.scale_player_death_with_progress = env->scale_player_death_with_progress;
+    params.player_death_min_scale = env->player_death_min_scale;
     params.w_correct_jad_prayer = env->w_correct_jad_prayer;
     params.w_correct_danger_prayer = env->w_correct_danger_prayer;
     params.w_prayer_lost = env->w_prayer_lost;
@@ -496,6 +510,8 @@ void c_step(FightCaves* env) {
         env->log.max_wave_ticks_wave += (float)env->state.ep_max_wave_ticks_wave;
         env->log.reached_wave_63 += (float)env->state.ep_reached_wave_63;
         env->log.jad_kill_rate += (float)env->state.ep_jad_killed;
+        env->log.player_death_rate +=
+            (env->state.terminal == TERMINAL_PLAYER_DEATH) ? 1.0f : 0.0f;
         for (int i = 0; i < NPC_TYPE_COUNT; i++) {
             env->log.dmg_to_npc_type[i] +=
                 (float)env->state.ep_damage_to_npc_type[i];

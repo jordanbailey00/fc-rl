@@ -44,10 +44,9 @@ def analytics_no_global_metrics() -> int:
 
 
 def live_no_supplies_simplified_config() -> int:
-    """Live configs should stay on the raw-work-progress no-supplies reward/action contract."""
+    """The authoritative live config should stay on the no-supplies contract."""
     paths = [
         RUNESCAPE_DIR / "config" / "fight_caves.ini",
-        RUNESCAPE_DIR.parent / "pufferlib_4" / "config" / "fight_caves.ini",
     ]
     removed_reward_keys = [
         "shape_food_waste_scale",
@@ -73,7 +72,6 @@ def live_no_supplies_simplified_config() -> int:
         "shape_wave_stall_base_penalty",
         "shape_wave_stall_cap",
         "shape_jad_heal_penalty",
-        "shape_npc_heal_penalty",
     ]
 
     failures: list[str] = []
@@ -111,6 +109,7 @@ def live_no_supplies_simplified_config() -> int:
             "shape_no_progress_penalty_3": -0.02,
             "shape_no_attack_base_penalty": -0.005,
             "shape_no_attack_wave_scale": 0.05,
+            "shape_npc_heal_penalty": -0.005,
         }
         for key, expected in expected_floats.items():
             if not parser.has_option("env", key):
@@ -132,10 +131,34 @@ def live_no_supplies_simplified_config() -> int:
 
         if parser.get("run", "action_version", fallback="").strip("'\"") != "fight_caves_multidiscrete_3_head_no_supplies_v1":
             failures.append(f"{label}: action_version is not the 3-head no-supplies contract")
-        if parser.get("run", "observation_version", fallback="").strip("'\"") != "fight_caves_puffer_policy_obs_v6_npc_prayer_drain_healing_aggro_mask_heads_0_2_no_supplies":
-            failures.append(f"{label}: observation_version is not the v6 NPC prayer-drain/healing/aggro no-supplies contract")
-        if parser.get("run", "reward_version", fallback="").strip("'\"") != "fight_caves_v38_fc_revamp_step2_all_npc_correct_prayer":
-            failures.append(f"{label}: reward_version is not the fc_revamp all-NPC correct-prayer contract")
+        if parser.get("run", "observation_version", fallback="").strip("'\"") != "fight_caves_puffer_policy_obs_v7_npc_prayer_drain_healing_aggro_kill_events_mask_heads_0_2_no_supplies":
+            failures.append(f"{label}: observation_version is not the v7 NPC mechanics/kill-events no-supplies contract")
+        if parser.get("run", "reward_version", fallback="").strip("'\"") != "fight_caves_v3_progress_npc_heal_penalty_m0005":
+            failures.append(f"{label}: reward_version is not the v3 simple-reward contract")
+
+        expected_train = {
+            "total_timesteps": 750_000_000,
+            "anneal_lr": 0,
+            "learning_rate": 0.0009393225766890022,
+            "ent_coef": 0.00644463919247784,
+            "gamma": 0.9995188470393721,
+            "gae_lambda": 0.9995,
+            "horizon": 256,
+            "minibatch_size": 4096,
+            "replay_ratio": 1.333589848960783,
+            "clip_coef": 0.13236033890397741,
+        }
+        for key, expected in expected_train.items():
+            value = parser.getfloat("train", key, fallback=float("nan"))
+            if abs(value - expected) > 0.000001:
+                failures.append(f"{label}: train.{key}={value}, expected {expected}")
+
+        if parser.getint("base", "seed", fallback=-1) != 73:
+            failures.append(f"{label}: base.seed must be 73")
+        if parser.getint("policy", "hidden_size", fallback=-1) != 256:
+            failures.append(f"{label}: policy.hidden_size must be 256")
+        if parser.getint("policy", "num_layers", fallback=-1) != 3:
+            failures.append(f"{label}: policy.num_layers must be 3")
 
     if failures:
         print("FAIL: live configs are not on the simplified no-supplies contract:")
@@ -143,7 +166,7 @@ def live_no_supplies_simplified_config() -> int:
             print(f"  {failure}")
         return 1
 
-    print("PASS: live configs use the all-NPC correct-prayer no-supplies reward/action contract")
+    print("PASS: live config matches the 8rg9wurg v3 no-supplies baseline")
     return 0
 
 
@@ -171,6 +194,58 @@ def env_log_key_budget() -> int:
         return 1
 
     print(f"PASS: Fight Caves env log key budget is {total}/128")
+    return 0
+
+
+def native_action_mask_contract() -> int:
+    """Native rollout sampling and PPO must consume the dedicated mask."""
+    puffer_dir = RUNESCAPE_DIR.parent / "pufferlib_4"
+    paths = {
+        "binding": RUNESCAPE_DIR / "fc-training" / "binding.c",
+        "adapter": RUNESCAPE_DIR / "fc-training" / "fight_caves.h",
+        "vecenv": puffer_dir / "src" / "vecenv.h",
+        "trainer": puffer_dir / "src" / "pufferlib.cu",
+        "manifest": RUNESCAPE_DIR / "tools" / "validation" / "run_manifest.py",
+    }
+    texts = {name: path.read_text(encoding="utf-8") for name, path in paths.items()}
+    required = {
+        "binding": ["#define MY_ACTION_MASK FC_PUFFER_MASK_SIZE"],
+        "adapter": [
+            "unsigned char* action_mask",
+            "env->action_mask[i] =",
+        ],
+        "vecenv": [
+            "unsigned char* action_mask",
+            "unsigned char* gpu_action_mask",
+            "env->action_mask = vec->action_mask",
+            "vec->gpu_action_mask + agent_start * MY_ACTION_MASK",
+        ],
+        "trainer": [
+            "PrecisionTensor action_mask",
+            "PrecisionTensor mb_action_mask",
+            "env.action_mask.data",
+            "mask_slice.data, mask_stride",
+            ".action_mask = has_action_mask ? graph.mb_action_mask.data : nullptr",
+            "rollouts.action_mask.data, src.action_mask.data",
+        ],
+        "manifest": [
+            '"action_masks_enforced_by_trainer": True',
+        ],
+    }
+
+    failures: list[str] = []
+    for name, snippets in required.items():
+        for snippet in snippets:
+            if snippet not in texts[name]:
+                failures.append(f"{paths[name].name}: missing {snippet!r}")
+
+    if failures:
+        print("FAIL: native action-mask integration is incomplete:")
+        for failure in failures:
+            print(f"  {failure}")
+        return 1
+
+    print("PASS: native masks are wired through rollout sampling and PPO")
     return 0
 
 
@@ -300,7 +375,7 @@ def viewer_training_parity_contract() -> int:
 
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
-        print("usage: phase2_static_guardrails.py <analytics_no_global_metrics|live_no_supplies_simplified_config|env_log_key_budget|viewer_policy_pipe_matches_puffer_contract|viewer_training_parity_contract>", file=sys.stderr)
+        print("usage: phase2_static_guardrails.py <analytics_no_global_metrics|live_no_supplies_simplified_config|env_log_key_budget|native_action_mask_contract|viewer_policy_pipe_matches_puffer_contract|viewer_training_parity_contract>", file=sys.stderr)
         return 2
     if argv[1] == "analytics_no_global_metrics":
         return analytics_no_global_metrics()
@@ -308,6 +383,8 @@ def main(argv: list[str]) -> int:
         return live_no_supplies_simplified_config()
     if argv[1] == "env_log_key_budget":
         return env_log_key_budget()
+    if argv[1] == "native_action_mask_contract":
+        return native_action_mask_contract()
     if argv[1] == "viewer_policy_pipe_matches_puffer_contract":
         return viewer_policy_pipe_matches_puffer_contract()
     if argv[1] == "viewer_training_parity_contract":

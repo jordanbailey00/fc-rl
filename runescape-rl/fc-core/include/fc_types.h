@@ -280,6 +280,7 @@ typedef struct {
     /* Yt-HurKot (Jad healer) */
     int healer_distracted;  /* permanent player aggro after the healer is tagged */
     int heal_target_idx;    /* NPC index of the entity being healed (Jad) */
+    int is_respawned_jad_healer; /* 1 for generations spawned after the first */
 
     /* Per-tick event flags */
     int damage_taken_this_tick;
@@ -378,6 +379,7 @@ typedef struct {
 
     /* Jad healer state */
     int jad_healers_spawned;  /* 1 until Jad has been healed back to full HP */
+    int jad_healer_spawn_generations; /* successful healer generations spawned this wave */
 
     /* Per-tick aggregated event flags (for reward features) */
     int damage_dealt_this_tick;
@@ -387,6 +389,7 @@ typedef struct {
     int overhead_prayer_lost_this_tick; /* passive overhead drain, in tenths */
     int tz_kih_prayer_drain_this_tick; /* Tz-Kih share of prayer loss, in tenths */
     int npcs_killed_this_tick;
+    int respawned_jad_healers_killed_this_tick;
     int wave_just_cleared;
     int jad_damage_this_tick;
     int jad_killed;

@@ -1289,6 +1289,7 @@ int fc_wave_check_advance(FcState* state) {
     /* Advance to next wave */
     state->current_wave++;
     state->jad_healers_spawned = 0;
+    state->jad_healer_spawn_generations = 0;
     state->wave_start_tick = state->tick;
     fc_wave_spawn(state, state->current_wave);
 

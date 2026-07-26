@@ -16,9 +16,17 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
+CUDA_ARCH_SH="$SCRIPT_DIR/cuda_arch.sh"
 DEFAULT_PUFFERLIB_DIR="$(cd "$REPO_DIR/.." && pwd)/pufferlib_4"
 PUFFERLIB_DIR="${PUFFERLIB_DIR:-$DEFAULT_PUFFERLIB_DIR}"
 VENV_DIR="$REPO_DIR/.venv"
+
+if [ ! -f "$CUDA_ARCH_SH" ]; then
+    echo "Error: CUDA architecture helper not found at $CUDA_ARCH_SH" >&2
+    exit 1
+fi
+source "$CUDA_ARCH_SH"
+
 python_has_training_deps() {
     "$1" -c "import numpy, pybind11, torch" >/dev/null 2>&1
 }
@@ -231,18 +239,7 @@ else
         CUDNN_LFLAG=$("$PYTHON_BIN" -c "import nvidia.cudnn, os; print('-L' + os.path.join(nvidia.cudnn.__path__[0], 'lib'))" 2>/dev/null || echo "")
     fi
 
-    if [ -n "$NVCC_ARCH" ]; then
-        ARCH=$NVCC_ARCH
-    elif command -v nvidia-smi &>/dev/null; then
-        GPU_CC=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d '.')
-        if printf '%s' "$GPU_CC" | grep -Eq '^[0-9]+$'; then
-            ARCH="sm_$GPU_CC"
-        else
-            ARCH="native"
-        fi
-    else
-        ARCH=native
-    fi
+    ARCH="$(fc_resolve_cuda_arch "${NVCC_ARCH:-}")" || exit 1
 
     NVCC="$NVCC_BIN"
 
@@ -307,6 +304,9 @@ else
         -lgomp -O2 $RENDER_LIBS \
         -Bsymbolic-functions \
         -o "$OUTPUT"
+    CUOBJDUMP_BIN="$(fc_find_cuobjdump "$NVCC_BIN")" || exit 1
+    fc_verify_cuda_binary_arch "$OUTPUT" "$ARCH" "$CUOBJDUMP_BIN" || exit 1
+    echo "Verified CUDA backend device code: $ARCH"
     echo "Built: $OUTPUT"
 fi
 

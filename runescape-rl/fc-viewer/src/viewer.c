@@ -1006,12 +1006,15 @@ static void reward_params_apply_key(FcRewardParams* params,
                                     const char* value) {
     if (strcmp(key, "w_damage_dealt") == 0) params->w_damage_dealt = strtof(value, NULL);
     else if (strcmp(key, "w_progress") == 0) params->w_progress = strtof(value, NULL);
+    else if (strcmp(key, "negative_progress_multiplier") == 0) params->negative_progress_multiplier = strtof(value, NULL);
     else if (strcmp(key, "w_damage_taken") == 0) params->w_damage_taken = strtof(value, NULL);
     else if (strcmp(key, "w_npc_kill") == 0) params->w_npc_kill = strtof(value, NULL);
     else if (strcmp(key, "w_wave_clear") == 0) params->w_wave_clear = strtof(value, NULL);
     else if (strcmp(key, "w_jad_kill") == 0) params->w_jad_kill = strtof(value, NULL);
     else if (strcmp(key, "w_cave_complete") == 0) params->w_cave_complete = strtof(value, NULL);
     else if (strcmp(key, "w_player_death") == 0) params->w_player_death = strtof(value, NULL);
+    else if (strcmp(key, "scale_player_death_with_progress") == 0) params->scale_player_death_with_progress = (int)strtol(value, NULL, 10);
+    else if (strcmp(key, "player_death_min_scale") == 0) params->player_death_min_scale = strtof(value, NULL);
     else if (strcmp(key, "w_correct_jad_prayer") == 0) params->w_correct_jad_prayer = strtof(value, NULL);
     else if (strcmp(key, "w_correct_danger_prayer") == 0) params->w_correct_danger_prayer = strtof(value, NULL);
     else if (strcmp(key, "w_prayer_lost") == 0) params->w_prayer_lost = strtof(value, NULL);

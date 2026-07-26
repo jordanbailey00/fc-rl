@@ -10,6 +10,7 @@ ROOT_DIR="$(cd "$SRC_DIR/.." && pwd)"
 PUFFER_DIR="${PUFFER_DIR:-$ROOT_DIR/pufferlib_4}"
 CONFIG_PATH="${CONFIG_PATH:-$SRC_DIR/config/fight_caves.ini}"
 TRAINING_BUILD_SH="$SRC_DIR/fc-training/build.sh"
+CUDA_ARCH_SH="$SRC_DIR/fc-training/cuda_arch.sh"
 
 if [ ! -d "$PUFFER_DIR" ]; then
     echo "Error: PufferLib not found at $PUFFER_DIR"
@@ -25,6 +26,11 @@ if [ ! -f "$TRAINING_BUILD_SH" ]; then
     echo "Error: local training backend build script not found at $TRAINING_BUILD_SH"
     exit 1
 fi
+if [ ! -f "$CUDA_ARCH_SH" ]; then
+    echo "Error: CUDA architecture helper not found at $CUDA_ARCH_SH"
+    exit 1
+fi
+source "$CUDA_ARCH_SH"
 
 # Sync config to where PufferLib reads it
 cp "$CONFIG_PATH" "$PUFFER_DIR/config/fight_caves.ini"
@@ -83,35 +89,6 @@ fi
 export CC="${CC:-gcc}"
 export CXX="${CXX:-g++}"
 
-EXT_SUFFIX="$("$PYTHON_BIN" -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX') or '')")"
-BACKEND_SO="$PUFFER_DIR/pufferlib/_C${EXT_SUFFIX}"
-BACKEND_STAMP="$PUFFER_DIR/build/fight_caves_build.env"
-ACTIVE_LOADOUT_KEY="${FC_ACTIVE_LOADOUT:-FC_LOADOUT_SOTA_TBOW}"
-BACKEND_REBUILD_REASON=""
-if [ ! -f "$BACKEND_SO" ]; then
-    BACKEND_REBUILD_REASON="missing backend"
-elif ! "$PYTHON_BIN" -c "import importlib.util, sys; spec=importlib.util.spec_from_file_location('pufferlib._C', sys.argv[1]); mod=importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); ok=(getattr(mod, 'env_name', None) == 'fight_caves' and hasattr(mod, 'create_pufferl')); raise SystemExit(0 if ok else 1)" "$BACKEND_SO"; then
-    BACKEND_REBUILD_REASON="backend missing compiled trainer API"
-elif find "$SRC_DIR/fc-core" "$SRC_DIR/fc-training" "$PUFFER_DIR/src/vecenv.h" -type f -newer "$BACKEND_SO" -print -quit | grep -q .; then
-    BACKEND_REBUILD_REASON="backend sources newer than compiled extension"
-elif [ "${FORCE_BACKEND_REBUILD:-0}" = "1" ]; then
-    BACKEND_REBUILD_REASON="FORCE_BACKEND_REBUILD=1"
-elif [ ! -f "$BACKEND_STAMP" ]; then
-    BACKEND_REBUILD_REASON="missing backend build stamp"
-elif ! grep -Fxq "FC_ACTIVE_LOADOUT=$ACTIVE_LOADOUT_KEY" "$BACKEND_STAMP"; then
-    BACKEND_REBUILD_REASON="FC_ACTIVE_LOADOUT changed to $ACTIVE_LOADOUT_KEY"
-fi
-
-if [ -n "$BACKEND_REBUILD_REASON" ]; then
-    echo "[train.sh] Rebuilding fight_caves backend: $BACKEND_REBUILD_REASON"
-    bash "$TRAINING_BUILD_SH"
-    mkdir -p "$(dirname "$BACKEND_STAMP")"
-    {
-        echo "FC_ACTIVE_LOADOUT=$ACTIVE_LOADOUT_KEY"
-        echo "PYTHON_BIN=$PYTHON_BIN"
-    } > "$BACKEND_STAMP"
-fi
-
 MODE="train"
 if [ "$#" -gt 0 ]; then
     case "$1" in
@@ -124,13 +101,75 @@ fi
 
 WANDB_FLAG="--wandb"
 EXTRA_ARGS=()
+HELP_REQUESTED=0
 for arg in "$@"; do
     if [ "$arg" = "--no-wandb" ]; then
         WANDB_FLAG=""
     else
         EXTRA_ARGS+=("$arg")
     fi
+    if [ "$arg" = "--help" ] || [ "$arg" = "-h" ]; then
+        HELP_REQUESTED=1
+    fi
 done
+
+# Help only needs the Python command surface. Never replace a working backend
+# as a side effect of inspecting CLI options.
+if [ "$HELP_REQUESTED" = "1" ]; then
+    exec "$PYTHON_BIN" -m pufferlib.pufferl "$MODE" fight_caves "${EXTRA_ARGS[@]}"
+fi
+
+NVCC_BIN="$(command -v nvcc 2>/dev/null || true)"
+if [ -z "$NVCC_BIN" ]; then
+    echo "Error: nvcc not found. Add CUDA to PATH or set CUDA_HOME." >&2
+    exit 1
+fi
+EXPECTED_CUDA_ARCH="$(fc_resolve_cuda_arch "${NVCC_ARCH:-}")" || exit 1
+export NVCC_ARCH="$EXPECTED_CUDA_ARCH"
+CUOBJDUMP_BIN="$(fc_find_cuobjdump "$NVCC_BIN")" || exit 1
+
+EXT_SUFFIX="$("$PYTHON_BIN" -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX') or '')")"
+BACKEND_SO="$PUFFER_DIR/pufferlib/_C${EXT_SUFFIX}"
+BACKEND_STAMP="$PUFFER_DIR/build/fight_caves_build.env"
+ACTIVE_LOADOUT_KEY="${FC_ACTIVE_LOADOUT:-FC_LOADOUT_SOTA_TBOW}"
+BACKEND_REBUILD_REASON=""
+if [ ! -f "$BACKEND_SO" ]; then
+    BACKEND_REBUILD_REASON="missing backend"
+elif ! "$PYTHON_BIN" -c "import importlib.util, sys; spec=importlib.util.spec_from_file_location('pufferlib._C', sys.argv[1]); mod=importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); ok=(getattr(mod, 'env_name', None) == 'fight_caves' and hasattr(mod, 'create_pufferl')); raise SystemExit(0 if ok else 1)" "$BACKEND_SO"; then
+    BACKEND_REBUILD_REASON="backend missing compiled trainer API"
+elif ! fc_verify_cuda_binary_arch \
+        "$BACKEND_SO" "$EXPECTED_CUDA_ARCH" "$CUOBJDUMP_BIN" \
+        >/dev/null 2>&1; then
+    BACKEND_REBUILD_REASON="backend does not contain $EXPECTED_CUDA_ARCH device code"
+elif find "$SRC_DIR/fc-core" "$SRC_DIR/fc-training" \
+        "$PUFFER_DIR/src/vecenv.h" "$PUFFER_DIR/src/pufferlib.cu" \
+        "$PUFFER_DIR/src/bindings.cu" \
+        -type f -newer "$BACKEND_SO" -print -quit | grep -q .; then
+    BACKEND_REBUILD_REASON="backend sources newer than compiled extension"
+elif [ "${FORCE_BACKEND_REBUILD:-0}" = "1" ]; then
+    BACKEND_REBUILD_REASON="FORCE_BACKEND_REBUILD=1"
+elif [ ! -f "$BACKEND_STAMP" ]; then
+    BACKEND_REBUILD_REASON="missing backend build stamp"
+elif ! grep -Fxq "FC_ACTIVE_LOADOUT=$ACTIVE_LOADOUT_KEY" "$BACKEND_STAMP"; then
+    BACKEND_REBUILD_REASON="FC_ACTIVE_LOADOUT changed to $ACTIVE_LOADOUT_KEY"
+elif ! grep -Fxq "NVCC_ARCH=$EXPECTED_CUDA_ARCH" "$BACKEND_STAMP"; then
+    BACKEND_REBUILD_REASON="missing or stale CUDA architecture build stamp"
+fi
+
+if [ -n "$BACKEND_REBUILD_REASON" ]; then
+    echo "[train.sh] Rebuilding fight_caves backend: $BACKEND_REBUILD_REASON"
+    bash "$TRAINING_BUILD_SH"
+    fc_verify_cuda_binary_arch \
+        "$BACKEND_SO" "$EXPECTED_CUDA_ARCH" "$CUOBJDUMP_BIN" || exit 1
+    mkdir -p "$(dirname "$BACKEND_STAMP")"
+    {
+        echo "FC_ACTIVE_LOADOUT=$ACTIVE_LOADOUT_KEY"
+        echo "PYTHON_BIN=$PYTHON_BIN"
+        echo "NVCC_ARCH=$EXPECTED_CUDA_ARCH"
+        echo "NVCC_VERSION=$($NVCC_BIN --version | tail -n 1)"
+        echo "BACKEND_SHA256=$(sha256sum "$BACKEND_SO" | awk '{print $1}')"
+    } > "$BACKEND_STAMP"
+fi
 CMD=("$PYTHON_BIN" -m pufferlib.pufferl "$MODE" fight_caves)
 if [ -n "$WANDB_FLAG" ]; then
     CMD+=("$WANDB_FLAG")

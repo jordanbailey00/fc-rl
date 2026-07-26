@@ -56,11 +56,13 @@ struct RolloutBuf {
     PrecisionTensor terminals;
     PrecisionTensor ratio;
     PrecisionTensor importance;
+    PrecisionTensor action_mask;   // (horizon, agents, mask_size), optional
 };
 
 // Buffers are initialized as raw structs with only shape information. alloc_register
 // stores the shape and data pointer. Memory is only allocated after all buffers are registered.
-void register_rollout_buffers(RolloutBuf& bufs, Allocator* alloc, int T, int B, int input_size, int num_atns) {
+void register_rollout_buffers(RolloutBuf& bufs, Allocator* alloc, int T, int B,
+        int input_size, int num_atns, int mask_size) {
     bufs = (RolloutBuf){
         .observations = {.shape = {T, B, input_size}},
         .actions      = {.shape = {T, B, num_atns}},
@@ -70,6 +72,7 @@ void register_rollout_buffers(RolloutBuf& bufs, Allocator* alloc, int T, int B, 
         .terminals    = {.shape = {T, B}},
         .ratio        = {.shape = {T, B}},
         .importance   = {.shape = {T, B}},
+        .action_mask  = {},
     };
     alloc_register(alloc, &bufs.observations);
     alloc_register(alloc, &bufs.actions);
@@ -79,6 +82,10 @@ void register_rollout_buffers(RolloutBuf& bufs, Allocator* alloc, int T, int B, 
     alloc_register(alloc, &bufs.terminals);
     alloc_register(alloc, &bufs.ratio);
     alloc_register(alloc, &bufs.importance);
+    if (mask_size > 0) {
+        bufs.action_mask = {.shape = {T, B, mask_size}};
+        alloc_register(alloc, &bufs.action_mask);
+    }
 }
 
 // Train data layout is transposed to (B, T) from rollouts layout (T, B)
@@ -95,10 +102,11 @@ struct TrainGraph {
     PrecisionTensor mb_ratio;
     PrecisionTensor mb_newvalue;
     PrecisionTensor mb_prio;        // (B,)
+    PrecisionTensor mb_action_mask; // (B, T, mask_size), optional
 };
 
 void register_train_buffers(TrainGraph& bufs, Allocator* alloc, int B, int T, int input_size,
-        int hidden_size, int num_atns, int num_layers) {
+        int hidden_size, int num_atns, int num_layers, int mask_size) {
     bufs = (TrainGraph){
         .mb_state =         {.shape = {num_layers, B, hidden_size}},
         .mb_obs =           {.shape = {B, T, input_size}},
@@ -110,6 +118,7 @@ void register_train_buffers(TrainGraph& bufs, Allocator* alloc, int B, int T, in
         .mb_ratio =         {.shape = {B, T}},
         .mb_newvalue =      {.shape = {B, T}},
         .mb_prio =          {.shape = {B}},
+        .mb_action_mask =   {},
     };
     alloc_register(alloc, &bufs.mb_obs);
     alloc_register(alloc, &bufs.mb_state);
@@ -121,6 +130,10 @@ void register_train_buffers(TrainGraph& bufs, Allocator* alloc, int B, int T, in
     alloc_register(alloc, &bufs.mb_returns);
     alloc_register(alloc, &bufs.mb_ratio);
     alloc_register(alloc, &bufs.mb_newvalue);
+    if (mask_size > 0) {
+        bufs.mb_action_mask = {.shape = {B, T, mask_size}};
+        alloc_register(alloc, &bufs.mb_action_mask);
+    }
 }
 
 // PPO buffers + args are quite complex. We do the entire
@@ -146,6 +159,8 @@ struct PPOKernelArgs {
     const float* adv_mean;
     const float* adv_var;
     const int* act_sizes;
+    const precision_t* action_mask; // (N, T, A_total), optional
+    int mask_stride_n, mask_stride_t;
     int num_atns;
     float clip_coef, vf_clip_coef, vf_coef, ent_coef;
     int T_seq, A_total, N;
@@ -219,6 +234,7 @@ struct EnvBuf {
     FloatTensor actions;   // (total_agents, num_atns)
     FloatTensor rewards;   // (total_agents,)
     FloatTensor terminals; // (total_agents,)
+    ByteTensor action_mask; // (total_agents, mask_size), optional
 };
 
 StaticVec* create_environments(int num_buffers, int total_agents,
@@ -231,6 +247,14 @@ StaticVec* create_environments(int num_buffers, int total_agents,
     env.actions = { .data = (float*)vec->gpu_actions, .shape = {total_agents, get_num_atns()} };
     env.rewards = { .data = (float*)vec->gpu_rewards, .shape = {total_agents} };
     env.terminals = { .data = (float*)vec->gpu_terminals, .shape = {total_agents} };
+    if (vec->action_mask_size > 0) {
+        env.action_mask = {
+            .data = vec->gpu_action_mask,
+            .shape = {total_agents, vec->action_mask_size},
+        };
+    } else {
+        env.action_mask = {.data = nullptr, .shape = {0}};
+    }
     return vec;
 }
 
@@ -371,6 +395,17 @@ __device__ __forceinline__ float safe_logit(const precision_t* logits,
     return l;
 }
 
+__device__ __forceinline__ float masked_logit(const precision_t* logits,
+        int logits_base, int logits_offset, int offset,
+        const precision_t* action_mask, int mask_base) {
+    float l = safe_logit(logits, logits_base, logits_offset, offset);
+    if (action_mask != nullptr &&
+            to_float(action_mask[mask_base + logits_offset + offset]) == 0.0f) {
+        l = -1e4f;
+    }
+    return l;
+}
+
 // Expects action logits and values to be in the same contiguous buffer. See default decoder
 __global__ void sample_logits(
         PrecisionTensor dec_out,              // (B, logits_dim + 1 for values)
@@ -379,7 +414,9 @@ __global__ void sample_logits(
         precision_t* __restrict__ actions,    // (B, num_atns)
         precision_t* __restrict__ logprobs,   // (B,)
         precision_t* __restrict__ value_out,  // (B,)
-        curandStatePhilox4_32_10_t* __restrict__ rng_states) {
+        curandStatePhilox4_32_10_t* __restrict__ rng_states,
+        const precision_t* __restrict__ action_mask, // (B, A_total), optional
+        int mask_stride) {
     int B = dec_out.shape[0];
     int fused_cols = dec_out.shape[1];
     int num_atns = numel(act_sizes_puf.shape);
@@ -427,6 +464,7 @@ __global__ void sample_logits(
     } else {
         // Discrete action sampling (original multinomial logic)
         int logits_offset = 0;  // offset within row for current action head
+        int mask_base = (action_mask != nullptr) ? idx * mask_stride : 0;
 
         for (int h = 0; h < num_atns; ++h) {
             int A = act_sizes[h];  // size of this action head
@@ -435,7 +473,8 @@ __global__ void sample_logits(
             float max_val = -INFINITY;
             float sum_exp = 0.0f;
             for (int a = 0; a < A; ++a) {
-                float l = safe_logit(logits, logits_base, logits_offset, a);
+                float l = masked_logit(
+                    logits, logits_base, logits_offset, a, action_mask, mask_base);
                 if (l > max_val) {
                     sum_exp *= expf(max_val - l);
                     max_val = l;
@@ -449,10 +488,11 @@ __global__ void sample_logits(
 
             // Step 4: Multinomial sampling using inverse CDF
             float cumsum = 0.0f;
-            int sampled_action = A - 1;  // default to last action
+            int sampled_action = -1;
 
             for (int a = 0; a < A; ++a) {
-                float l = safe_logit(logits, logits_base, logits_offset, a);
+                float l = masked_logit(
+                    logits, logits_base, logits_offset, a, action_mask, mask_base);
                 float prob = expf(l - logsumexp);
                 cumsum += prob;
                 if (rand_val < cumsum) {
@@ -461,8 +501,25 @@ __global__ void sample_logits(
                 }
             }
 
+            // Floating-point rounding can leave the CDF below 1. Fall back to
+            // the last legal action, never merely the last action in the head.
+            if (sampled_action < 0) {
+                sampled_action = A - 1;
+                if (action_mask != nullptr) {
+                    for (int a = A - 1; a >= 0; --a) {
+                        if (to_float(action_mask[
+                                mask_base + logits_offset + a]) != 0.0f) {
+                            sampled_action = a;
+                            break;
+                        }
+                    }
+                }
+            }
+
             // Step 5: Gather log probability of sampled action
-            float sampled_logit = safe_logit(logits, logits_base, logits_offset, sampled_action);
+            float sampled_logit = masked_logit(
+                logits, logits_base, logits_offset, sampled_action,
+                action_mask, mask_base);
             float log_prob = sampled_logit - logsumexp;
 
             // Write action for this head
@@ -526,6 +583,21 @@ extern "C" void net_callback_wrapper(void* ctx, int buf, int t) {
     cast<<<grid_size(n), BLOCK_SIZE, 0, stream>>>(
         term_dst.data, env.terminals.data + start, n);
 
+    // Snapshot the exact legality mask used for this action. The same stored
+    // mask is reused when PPO recomputes log-probabilities and entropy.
+    PrecisionTensor mask_slice = {};
+    int mask_stride = 0;
+    if (rollouts.action_mask.data != nullptr) {
+        int mask_size = rollouts.action_mask.shape[2];
+        mask_stride = mask_size;
+        mask_slice = puf_slice(rollouts.action_mask, t, start, block_size);
+        int mask_n = block_size * mask_size;
+        cast<<<grid_size(mask_n), BLOCK_SIZE, 0, stream>>>(
+            mask_slice.data,
+            env.action_mask.data + (long)start * mask_size,
+            mask_n);
+    }
+
     // Policy forward pass for rollouts
     PrecisionTensor state_puf = pufferl->buffer_states[buf];
     PrecisionTensor dec_puf = policy_forward(&pufferl->policy, pufferl->weights, pufferl->buffer_activations[buf], obs_dst, state_puf, stream);
@@ -543,7 +615,7 @@ extern "C" void net_callback_wrapper(void* ctx, int buf, int t) {
     sample_logits<<<grid_size(block_size), BLOCK_SIZE, 0, stream>>>(
         dec_puf, p_logstd, pufferl->act_sizes_puf,
         act_slice.data, lp_slice.data, val_slice.data,
-        pufferl->rng_states[buf]);
+        pufferl->rng_states[buf], mask_slice.data, mask_stride);
 
     // Copy actions to env
     long act_cols = env.actions.shape[1];
@@ -560,17 +632,32 @@ extern "C" void net_callback_wrapper(void* ctx, int buf, int t) {
     profile_end(hypers.profile);
 }
 
+__device__ __forceinline__ float load_logit_masked(
+        const precision_t* __restrict__ logits, int logits_base,
+        int logits_stride_a, int logits_offset, int action,
+        const precision_t* __restrict__ action_mask, int mask_base) {
+    float l = to_float(
+        logits[logits_base + (logits_offset + action) * logits_stride_a]);
+    if (action_mask != nullptr &&
+            to_float(action_mask[mask_base + logits_offset + action]) == 0.0f) {
+        return -1e4f;
+    }
+    return l;
+}
 
 __device__ __forceinline__ void ppo_discrete_head(
         const precision_t* __restrict__ logits, int logits_base,
         int logits_stride_a, int logits_offset, int A, int act,
+        const precision_t* __restrict__ action_mask, int mask_base,
         float* out_logsumexp, float* out_entropy, float* out_logp) {
     float max_logit = -INFINITY;
     float sum = 0.0f;
     float act_logit = 0.0f;
 
     for (int a = 0; a < A; ++a) {
-        float l = to_float(logits[logits_base + (logits_offset + a) * logits_stride_a]);
+        float l = load_logit_masked(
+            logits, logits_base, logits_stride_a, logits_offset, a,
+            action_mask, mask_base);
         if (a == act) {
             act_logit = l;
         }
@@ -584,7 +671,9 @@ __device__ __forceinline__ void ppo_discrete_head(
 
     float ent = 0.0f;
     for (int a = 0; a < A; ++a) {
-        float l = to_float(logits[logits_base + (logits_offset + a) * logits_stride_a]);
+        float l = load_logit_masked(
+            logits, logits_base, logits_stride_a, logits_offset, a,
+            action_mask, mask_base);
         float logp = l - logsumexp;
         float p = __expf(logp);
         ent -= p * logp;
@@ -681,6 +770,9 @@ __global__ void ppo_loss_compute(
     float head_entropy[MAX_ATN_HEADS];
     int head_act[MAX_ATN_HEADS];
 
+    int mask_base = (a.action_mask != nullptr)
+        ? n * a.mask_stride_n + t * a.mask_stride_t : 0;
+
     if (!a.is_continuous) {
         int logits_offset = 0;
         for (int h = 0; h < a.num_atns; ++h) {
@@ -688,7 +780,9 @@ __global__ void ppo_loss_compute(
             int act = static_cast<int>(g.actions[nt * a.num_atns + h]);
             head_act[h] = act;
             float lse, ent, lp;
-            ppo_discrete_head(a.logits, logits_base, a.logits_stride_a, logits_offset, A, act, &lse, &ent, &lp);
+            ppo_discrete_head(
+                a.logits, logits_base, a.logits_stride_a, logits_offset, A, act,
+                a.action_mask, mask_base, &lse, &ent, &lp);
             head_logsumexp[h] = lse;
             head_entropy[h] = ent;
             total_log_prob += lp;
@@ -734,7 +828,15 @@ __global__ void ppo_loss_compute(
             float ent = head_entropy[h];
 
             for (int j = 0; j < A; ++j) {
-                float l = to_float(a.logits[logits_base + (logits_offset + j) * a.logits_stride_a]);
+                if (a.action_mask != nullptr &&
+                        to_float(a.action_mask[
+                            mask_base + logits_offset + j]) == 0.0f) {
+                    a.grad_logits[grad_logits_base + logits_offset + j] = 0.0f;
+                    continue;
+                }
+                float l = load_logit_masked(
+                    a.logits, logits_base, a.logits_stride_a,
+                    logits_offset, j, a.action_mask, mask_base);
                 float logp = l - logsumexp;
                 float p = __expf(logp);
                 float d_logit = (j == act) ? d_new_logp : 0.0f;
@@ -905,6 +1007,7 @@ void ppo_loss_fwd_bwd(
         .returns = graph.mb_returns.data,
     };
 
+    bool has_action_mask = (graph.mb_action_mask.data != nullptr);
     PPOKernelArgs args = {
         .grad_logits = bufs.grad_logits.data,
         .grad_logstd = is_continuous ? bufs.grad_logstd.data : nullptr,
@@ -915,6 +1018,9 @@ void ppo_loss_fwd_bwd(
         .adv_mean = adv_mean_ptr,
         .adv_var = adv_var_ptr,
         .act_sizes = act_sizes.data,
+        .action_mask = has_action_mask ? graph.mb_action_mask.data : nullptr,
+        .mask_stride_n = has_action_mask ? T * A_total : 0,
+        .mask_stride_t = has_action_mask ? A_total : 0,
         .num_atns = (int)numel(act_sizes.shape),
         .clip_coef = clip_coef, .vf_clip_coef = vf_clip_coef,
         .vf_coef = vf_coef, .ent_coef = ent_coef,
@@ -1257,8 +1363,17 @@ __global__ void select_copy(RolloutBuf rollouts, TrainGraph graph,
     case 4:
         if (threadIdx.x == 0) {
             graph.mb_prio.data[mb] = from_float(mb_prio[mb]);
-            break;
         }
+        break;
+    case 5:
+        if (graph.mb_action_mask.data != nullptr) {
+            int mask_row_bytes = (numel(rollouts.action_mask.shape)
+                / rollouts.action_mask.shape[0]) * sizeof(precision_t);
+            copy_bytes((const char*)rollouts.action_mask.data,
+                (char*)graph.mb_action_mask.data,
+                src_row, mb, mask_row_bytes);
+        }
+        break;
     }
 }
 
@@ -1299,6 +1414,11 @@ void train_impl(PuffeRL& pufferl) {
         rollouts.ratio.data, src.ratio.data, T, B, 1);
     transpose_102<<<grid_size(T*B), BLOCK_SIZE, 0, train_stream>>>(
         rollouts.values.data, src.values.data, T, B, 1);
+    if (src.action_mask.data != nullptr) {
+        int mask_size = src.action_mask.shape[2];
+        transpose_102<<<grid_size(T*B*mask_size), BLOCK_SIZE, 0, train_stream>>>(
+            rollouts.action_mask.data, src.action_mask.data, T, B, mask_size);
+    }
 
     // We hard-clamp rewards to -1, 1. Our envs are mostly designed to respect this range
     clamp_precision_kernel<<<grid_size(numel(rollouts.rewards.shape)), BLOCK_SIZE, 0, train_stream>>>(
@@ -1355,7 +1475,8 @@ void train_impl(PuffeRL& pufferl) {
             RolloutBuf sel_src = rollouts;
             sel_src.values = rollouts.values;
             int mb_segs = pufferl.prio_bufs.idx.shape[0];
-            select_copy<<<dim3(mb_segs, 5), SELECT_COPY_THREADS, 0, train_stream>>>(
+            int channels = (graph.mb_action_mask.data != nullptr) ? 6 : 5;
+            select_copy<<<dim3(mb_segs, channels), SELECT_COPY_THREADS, 0, train_stream>>>(
                 sel_src, graph, pufferl.prio_bufs.idx.data,
                 advantages_puf.data, pufferl.prio_bufs.mb_prio.data);
         }
@@ -1498,6 +1619,18 @@ std::unique_ptr<PuffeRL> create_pufferl_impl(HypersT& hypers,
     } else {
         printf("Detected discrete action space with %d heads\n", num_action_heads);
     }
+    if (vec->action_mask_size > 0) {
+        if (pufferl->is_continuous) {
+            throw std::runtime_error(
+                "Native action masks require a discrete action space");
+        }
+        if (vec->action_mask_size != act_n) {
+            throw std::runtime_error(
+                "Action mask size must equal the sum of discrete head sizes");
+        }
+        printf("Native action masks enabled for %d logits\n",
+            vec->action_mask_size);
+    }
 
     // Create profiling events
     for (int i = 0; i < NUM_TRAIN_EVENTS; i++) {
@@ -1520,6 +1653,7 @@ std::unique_ptr<PuffeRL> create_pufferl_impl(HypersT& hypers,
     int total_agents = vec->total_agents;
     int batch = total_agents / hypers.num_buffers;
     int num_buffers = hypers.num_buffers;
+    int action_mask_size = vec->action_mask_size;
 
     Encoder encoder = {
         .forward = encoder_forward,
@@ -1585,12 +1719,14 @@ std::unique_ptr<PuffeRL> create_pufferl_impl(HypersT& hypers,
         alloc_register(acts, &pufferl->buffer_states[i]);
     }
     register_rollout_buffers(pufferl->rollouts,
-        acts, horizon, total_agents, input_size, num_action_heads);
+        acts, horizon, total_agents, input_size,
+        num_action_heads, action_mask_size);
     register_train_buffers(pufferl->train_buf,
         acts, minibatch_segments, horizon, input_size,
-        hidden_size, num_action_heads, num_layers);
+        hidden_size, num_action_heads, num_layers, action_mask_size);
     register_rollout_buffers(pufferl->train_rollouts,
-        acts, total_agents, horizon, input_size, num_action_heads);
+        acts, total_agents, horizon, input_size,
+        num_action_heads, action_mask_size);
     register_ppo_buffers(pufferl->ppo_bufs_puf,
         acts, minibatch_segments, hypers.horizon, decoder_output_size, is_continuous);
     register_prio_buffers(pufferl->prio_bufs,

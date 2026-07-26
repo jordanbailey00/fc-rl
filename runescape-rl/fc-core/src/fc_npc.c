@@ -126,6 +126,7 @@ void fc_npc_spawn(FcNpc* npc, int npc_type, int x, int y, int spawn_index) {
     npc->heal_amount = stats->heal_amount;
     npc->healer_distracted = 0;
     npc->heal_target_idx = -1;
+    npc->is_respawned_jad_healer = 0;
     npc->damage_taken_this_tick = 0;
     npc->prayer_drain_dealt_this_tick = 0;
     npc->healing_received_this_tick = 0;

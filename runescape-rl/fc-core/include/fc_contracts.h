@@ -56,7 +56,7 @@
 #define FC_OBS_PLAYER_OVERHEAD_PRAYER_LOST 21 /* 1 if passive overhead drain removed prayer this tick */
 #define FC_OBS_PLAYER_SIZE      22
 
-/* --- Per-NPC features (30 floats x 8 visible NPCs = 240 floats) --- */
+/* --- Per-NPC features (31 floats x 8 visible NPCs = 248 floats) --- */
 /*
  * NPC slot ordering — deterministic rules for the 8 visible NPC slots:
  *
@@ -77,7 +77,7 @@
  * equal, which is critical for replay consistency and debug reproducibility.
  */
 #define FC_OBS_NPC_START        FC_OBS_PLAYER_SIZE  /* 22 */
-#define FC_OBS_NPC_STRIDE       30
+#define FC_OBS_NPC_STRIDE       31
 #define FC_OBS_NPC_SLOTS        8   /* FC_VISIBLE_NPCS */
 
 /* Per-NPC feature offsets within stride.
@@ -119,11 +119,12 @@
 #define FC_NPC_HEALED_SELF             27  /* 1 if this NPC restored its own HP this tick */
 #define FC_NPC_TARGETS_PLAYER          28  /* 1 if the NPC's current movement/combat target is the player */
 #define FC_NPC_HEAL_COOLDOWN           29  /* normalized time until the next possible healing cycle */
+#define FC_NPC_KILL_REWARD_ELIGIBLE    30  /* 1 if this NPC's death would pay FC_RWD_NPC_KILL */
 
-#define FC_OBS_NPC_TOTAL        (FC_OBS_NPC_STRIDE * FC_OBS_NPC_SLOTS)  /* 240 */
+#define FC_OBS_NPC_TOTAL        (FC_OBS_NPC_STRIDE * FC_OBS_NPC_SLOTS)  /* 248 */
 
-/* --- Wave/meta features (14 floats) --- */
-#define FC_OBS_META_START       (FC_OBS_NPC_START + FC_OBS_NPC_TOTAL)  /* 262 */
+/* --- Wave/meta features (15 floats) --- */
+#define FC_OBS_META_START       (FC_OBS_NPC_START + FC_OBS_NPC_TOTAL)  /* 270 */
 #define FC_OBS_META_WAVE        0   /* current_wave / NUM_WAVES */
 #define FC_OBS_META_ROTATION    1   /* rotation_id / NUM_ROTATIONS */
 #define FC_OBS_META_REMAINING   2   /* npcs_remaining / MAX_NPCS */
@@ -138,10 +139,11 @@
 #define FC_OBS_META_WORK_REM    11  /* required_work_remaining / required_work_start */
 #define FC_OBS_META_NO_PROG     12  /* ticks_since_positive_progress / 2400 */
 #define FC_OBS_META_NPC_HEALING 13  /* HP restored this tick / required work at wave start */
-#define FC_OBS_META_SIZE        14
+#define FC_OBS_META_REWARDABLE_NPC_KILL 14  /* 1 if at least one eligible NPC died this tick */
+#define FC_OBS_META_SIZE        15
 
 /* --- Policy observation total --- */
-#define FC_POLICY_OBS_SIZE      (FC_OBS_PLAYER_SIZE + FC_OBS_NPC_TOTAL + FC_OBS_META_SIZE)  /* 276 */
+#define FC_POLICY_OBS_SIZE      (FC_OBS_PLAYER_SIZE + FC_OBS_NPC_TOTAL + FC_OBS_META_SIZE)  /* 285 */
 
 /* --- Reward features (20 floats) --- */
 /*
@@ -150,10 +152,10 @@
  * The policy DOES NOT consume these by default.
  * Python applies configurable shaping weights to produce the scalar reward.
  */
-#define FC_REWARD_START         FC_POLICY_OBS_SIZE  /* 276 */
+#define FC_REWARD_START         FC_POLICY_OBS_SIZE  /* 285 */
 #define FC_RWD_DAMAGE_DEALT     0   /* NPC HP reduced this tick (normalized) */
 #define FC_RWD_DAMAGE_TAKEN     1   /* player HP reduced this tick */
-#define FC_RWD_NPC_KILL         2   /* NPC death count this tick */
+#define FC_RWD_NPC_KILL         2   /* rewardable deaths; excludes respawned Jad healers */
 #define FC_RWD_WAVE_CLEAR       3   /* all wave NPCs dead */
 #define FC_RWD_JAD_DAMAGE       4   /* Jad HP reduced this tick */
 #define FC_RWD_JAD_KILL         5   /* Jad defeated */
@@ -174,7 +176,7 @@
 #define FC_REWARD_FEATURES      20
 
 /* --- Total observation (policy obs + reward features) --- */
-#define FC_TOTAL_OBS            (FC_POLICY_OBS_SIZE + FC_REWARD_FEATURES)  /* 296 */
+#define FC_TOTAL_OBS            (FC_POLICY_OBS_SIZE + FC_REWARD_FEATURES)  /* 305 */
 
 /* ======================================================================== */
 /* Action space — 7 canonical core heads                                     */
@@ -336,7 +338,7 @@ static const int FC_PUFFER_ACTION_DIMS[FC_PUFFER_NUM_ATNS] = FC_PUFFER_ACT_SIZES
 
 /*
  * Total floats in the full FC backend buffer:
- *   FC_POLICY_OBS_SIZE (276) + FC_REWARD_FEATURES (20) + FC_ACTION_MASK_SIZE (166) = 462
+ *   FC_POLICY_OBS_SIZE (285) + FC_REWARD_FEATURES (20) + FC_ACTION_MASK_SIZE (166) = 471
  *
  * The PufferLib adapter does NOT expose this full buffer directly. It exposes
  * FC_PUFFER_OBS_SIZE, defined above from the Puffer policy-head contract.
@@ -346,7 +348,7 @@ static const int FC_PUFFER_ACTION_DIMS[FC_PUFFER_NUM_ATNS] = FC_PUFFER_ACT_SIZES
  *   reward_feat  = full_obs[FC_REWARD_START:FC_REWARD_START + FC_REWARD_FEATURES]
  *   action_mask  = full_obs[FC_TOTAL_OBS:FC_TOTAL_OBS + FC_ACTION_MASK_SIZE]
  */
-#define FC_OBS_SIZE             (FC_TOTAL_OBS + FC_ACTION_MASK_SIZE)  /* 462 */
+#define FC_OBS_SIZE             (FC_TOTAL_OBS + FC_ACTION_MASK_SIZE)  /* 471 */
 
 /* ======================================================================== */
 /* Normalization divisors                                                     */

@@ -120,6 +120,7 @@ def selected_env() -> dict[str, str]:
         "FC_RUN_MANIFEST_PATH",
         "FORCE_BACKEND_REBUILD",
         "LOAD_MODEL_PATH",
+        "NVCC_ARCH",
         "PUFFER_DIR",
         "PYTHON_BIN",
         "WANDB_PROJECT",
@@ -202,8 +203,11 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
             "reward_clip_min": run_cfg.get("reward_clip_min", -1.0),
             "reward_clip_max": run_cfg.get("reward_clip_max", 1.0),
             "reward_clip_source": "pufferlib_4/src/pufferlib.cu rollout reward clamp",
-            "action_masks_enforced_by_trainer": False,
-            "action_masks_note": "Fight Caves masks are observation features; PufferLib sampling does not enforce them.",
+            "action_masks_enforced_by_trainer": True,
+            "action_masks_note": (
+                "PufferLib natively applies the environment mask during rollout "
+                "sampling and PPO log-probability/entropy recomputation."
+            ),
         },
         "backend": {
             "active_loadout": args.active_loadout,

@@ -205,6 +205,31 @@ add_test(NAME revamp_no_attack_penalty_wave_scaled
 set_tests_properties(revamp_no_attack_penalty_wave_scaled PROPERTIES
     LABELS "revamp;guardrail")
 
+add_test(NAME simple_reward_player_death_progress_scaled
+    COMMAND phase2_guardrails_core player_death_progress_scaled)
+set_tests_properties(simple_reward_player_death_progress_scaled PROPERTIES
+    LABELS "simple_reward;guardrail;reward")
+
+add_test(NAME simple_reward_zeroed_channels
+    COMMAND phase2_guardrails_core simple_reward_zeroed_channels)
+set_tests_properties(simple_reward_zeroed_channels PROPERTIES
+    LABELS "simple_reward;guardrail;reward")
+
+add_test(NAME npc_kill_reward_eligibility
+    COMMAND phase2_guardrails_core npc_kill_reward_eligibility)
+set_tests_properties(npc_kill_reward_eligibility PROPERTIES
+    LABELS "fight_caves;guardrail;reward;observation")
+
+add_test(NAME tz_kek_split_kill_rewards
+    COMMAND phase2_guardrails_core tz_kek_split_kill_rewards)
+set_tests_properties(tz_kek_split_kill_rewards PROPERTIES
+    LABELS "fight_caves;guardrail;reward;observation")
+
+add_test(NAME wave_clear_reward_scaling
+    COMMAND phase2_guardrails_core wave_clear_reward_scaling)
+set_tests_properties(wave_clear_reward_scaling PROPERTIES
+    LABELS "fight_caves;guardrail;reward;observation")
+
 add_test(NAME revamp_net_progress_required_work
     COMMAND phase2_guardrails_core net_progress_required_work)
 set_tests_properties(revamp_net_progress_required_work PROPERTIES
@@ -290,6 +315,17 @@ add_test(NAME phase7_no_supplies_policy_contract
 set_tests_properties(phase7_no_supplies_policy_contract PROPERTIES
     LABELS "phase7;guardrail")
 
+add_test(NAME revamp_native_action_mask_adapter
+    COMMAND phase2_guardrails_training native_action_mask_adapter)
+set_tests_properties(revamp_native_action_mask_adapter PROPERTIES
+    LABELS "revamp;guardrail;action_mask")
+
+add_test(NAME cuda_backend_architecture_guardrails
+    COMMAND bash
+            ${CMAKE_CURRENT_SOURCE_DIR}/../tools/validation/tests/cuda_arch_guardrails.sh)
+set_tests_properties(cuda_backend_architecture_guardrails PROPERTIES
+    LABELS "training;guardrail;cuda")
+
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
     add_test(NAME phase3_analytics_no_globals
@@ -312,6 +348,13 @@ if(Python3_Interpreter_FOUND)
                 env_log_key_budget)
     set_tests_properties(revamp_env_log_key_budget PROPERTIES
         LABELS "revamp;guardrail")
+
+    add_test(NAME revamp_native_action_mask_contract
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/../tools/validation/tests/phase2_static_guardrails.py
+                native_action_mask_contract)
+    set_tests_properties(revamp_native_action_mask_contract PROPERTIES
+        LABELS "revamp;guardrail;action_mask")
 
     add_test(NAME revamp_viewer_policy_pipe_contract
         COMMAND ${Python3_EXECUTABLE}

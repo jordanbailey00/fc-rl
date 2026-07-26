@@ -14,6 +14,7 @@
 #define ACT_SIZES FC_PUFFER_ACT_SIZES
 #define OBS_TYPE FLOAT
 #define ACT_TYPE DOUBLE
+#define MY_ACTION_MASK FC_PUFFER_MASK_SIZE
 
 #define Env FightCaves
 #include "vecenv.h"
@@ -28,6 +29,8 @@ void my_init(Env* env, Dict* kwargs) {
     env->w_damage_dealt = item ? (float)item->value : defaults.w_damage_dealt;
     item = dict_get_unsafe(kwargs, "w_progress");
     env->w_progress = item ? (float)item->value : defaults.w_progress;
+    item = dict_get_unsafe(kwargs, "negative_progress_multiplier");
+    env->negative_progress_multiplier = item ? (float)item->value : defaults.negative_progress_multiplier;
     item = dict_get_unsafe(kwargs, "w_damage_taken");
     env->w_damage_taken = item ? (float)item->value : defaults.w_damage_taken;
     item = dict_get_unsafe(kwargs, "w_npc_kill");
@@ -40,6 +43,10 @@ void my_init(Env* env, Dict* kwargs) {
     env->w_cave_complete = item ? (float)item->value : defaults.w_cave_complete;
     item = dict_get_unsafe(kwargs, "w_player_death");
     env->w_player_death = item ? (float)item->value : defaults.w_player_death;
+    item = dict_get_unsafe(kwargs, "scale_player_death_with_progress");
+    env->scale_player_death_with_progress = item ? (int)item->value : defaults.scale_player_death_with_progress;
+    item = dict_get_unsafe(kwargs, "player_death_min_scale");
+    env->player_death_min_scale = item ? (float)item->value : defaults.player_death_min_scale;
     item = dict_get_unsafe(kwargs, "w_correct_jad_prayer");
     env->w_correct_jad_prayer = item ? (float)item->value : defaults.w_correct_jad_prayer;
     item = dict_get_unsafe(kwargs, "w_correct_danger_prayer");
@@ -126,6 +133,7 @@ void my_log(Log* log, Dict* out) {
     dict_set(out, "max_wave_ticks_wave", log->max_wave_ticks_wave);
     dict_set(out, "reached_wave_63", log->reached_wave_63);
     dict_set(out, "jad_kill_rate", log->jad_kill_rate);
+    dict_set(out, "player_death_rate", log->player_death_rate);
     dict_set(out, "target_held_ticks", log->target_held_ticks);
     dict_set(out, "no_target_ticks", log->no_target_ticks);
     dict_set(out, "target_in_range_los_ticks", log->target_in_range_los_ticks);

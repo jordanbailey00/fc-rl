@@ -434,6 +434,17 @@ static int npc_type_obs_offset(int npc_type) {
     }
 }
 
+static int npc_kill_reward_eligible(const FcNpc* npc) {
+    return npc->npc_type != NPC_YT_HURKOT ||
+           !npc->is_respawned_jad_healer;
+}
+
+static int rewardable_npc_kills_this_tick(const FcState* state) {
+    int count = state->npcs_killed_this_tick -
+                state->respawned_jad_healers_killed_this_tick;
+    return count > 0 ? count : 0;
+}
+
 void fc_write_obs(const FcState* state, float* out) {
     memset(out, 0, sizeof(float) * FC_TOTAL_OBS);
 
@@ -529,6 +540,8 @@ void fc_write_obs(const FcState* state, float* out) {
         npc_out[FC_NPC_TARGETS_PLAYER] =
             (n->npc_type != NPC_YT_HURKOT || n->healer_distracted) ? 1.0f : 0.0f;
         npc_out[FC_NPC_HEAL_COOLDOWN] = normalize_npc_heal_cooldown(n);
+        npc_out[FC_NPC_KILL_REWARD_ELIGIBLE] =
+            npc_kill_reward_eligible(n) ? 1.0f : 0.0f;
         int type_offset = npc_type_obs_offset(n->npc_type);
         if (type_offset >= 0) {
             npc_out[type_offset] = 1.0f;
@@ -587,6 +600,8 @@ void fc_write_obs(const FcState* state, float* out) {
         ? clamp01((float)state->npc_heal_amount_this_tick /
                   state->progress_required_work_start)
         : 0.0f;
+    meta[FC_OBS_META_REWARDABLE_NPC_KILL] =
+        rewardable_npc_kills_this_tick(state) > 0 ? 1.0f : 0.0f;
 
     /* Reward features (at offset FC_REWARD_START) — written by fc_write_reward_features */
     fc_write_reward_features(state, out + FC_REWARD_START);
@@ -625,7 +640,7 @@ void fc_write_reward_features(const FcState* state, float* out) {
     out[FC_RWD_DAMAGE_DEALT]     = (float)state->damage_dealt_this_tick / 1000.0f;
     out[FC_RWD_DAMAGE_TAKEN]     = (state->player.max_hp > 0) ?
                                    (float)state->damage_taken_this_tick / (float)state->player.max_hp : 0.0f;
-    out[FC_RWD_NPC_KILL]         = (float)state->npcs_killed_this_tick;
+    out[FC_RWD_NPC_KILL]         = (float)rewardable_npc_kills_this_tick(state);
     out[FC_RWD_WAVE_CLEAR]       = (float)state->wave_just_cleared;
     out[FC_RWD_JAD_DAMAGE]       = (float)state->jad_damage_this_tick / 1000.0f;
     out[FC_RWD_JAD_KILL]         = (float)state->jad_killed;

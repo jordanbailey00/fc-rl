@@ -21,12 +21,15 @@ int main(void) {
         FcRewardParams defaults = fc_reward_default_params();
         env.w_damage_dealt = defaults.w_damage_dealt;
         env.w_progress = defaults.w_progress;
+        env.negative_progress_multiplier = defaults.negative_progress_multiplier;
         env.w_damage_taken = defaults.w_damage_taken;
         env.w_npc_kill = defaults.w_npc_kill;
         env.w_wave_clear = defaults.w_wave_clear;
         env.w_jad_kill = defaults.w_jad_kill;
         env.w_cave_complete = defaults.w_cave_complete;
         env.w_player_death = defaults.w_player_death;
+        env.scale_player_death_with_progress = defaults.scale_player_death_with_progress;
+        env.player_death_min_scale = defaults.player_death_min_scale;
         env.w_correct_jad_prayer = defaults.w_correct_jad_prayer;
         env.w_correct_danger_prayer = defaults.w_correct_danger_prayer;
         env.w_prayer_lost = defaults.w_prayer_lost;

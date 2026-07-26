@@ -3,6 +3,48 @@
 This file is intentionally local-only and ignored by git. Use it as a working list
 for project follow-ups that should not become public repo documentation yet.
 
+## Current Baseline: v3 Simple Reward
+
+- The authoritative live config is `runescape-rl/config/fight_caves.ini`.
+- It is byte-for-byte identical to the config used by W&B run `8rg9wurg`
+  (`62edaa59d0f3cfbcacc9bcaa2aa5b0da8d68fa81d21f283afc7676017fce7057`).
+- Use `8rg9wurg` as the current 750M-step, seed-73 comparison baseline before
+  changing rewards or sweeping trainer hyperparameters.
+
+## Immediate Priority: Validate Native Action Masks
+
+- [x] Hard-enforce the existing 31-value Fight Caves action mask in native
+  PufferLib rollout sampling and PPO recomputation.
+- [x] Preserve the existing 307-float policy input and three action heads so
+  checkpoints and the `v2_simple_reward` experiment remain comparable.
+- [x] Pass the 20M-step no-W&B smoke test with exactly zero invalid move,
+  attack, and prayer actions.
+- [x] Run the exact `v2_simple_reward` 2.5B-step experiment again with seed 73.
+  Hard-mask run: `l2l7lf6b`; pre-mask benchmark: `ur7t6c4n`.
+- [x] Confirm invalid actions remain exactly zero in all 2,382 history rows and
+  compare cave progress, stability, legal no-op/stalling behavior, entropy,
+  SPS, and all reward and behavior metrics against `ur7t6c4n`.
+- [x] Choose a minimal first correction for the measured Yt-MejKot healing
+  loop: retain `w_progress=0.001` for positive progress and apply
+  `negative_progress_multiplier=1.1` when required work increases.
+- [x] Implement and guardrail the asymmetric progress scale without changing
+  combat, movement, observations, action heads, masks, or trainer hparams.
+- [x] Run the exact 2.5B-step seed-73 `v2_simple_reward` trial with hard masks
+  and the new `1.1` negative-progress multiplier. Follow-up run: `ruuq4231`;
+  direct hard-mask benchmark: `l2l7lf6b`.
+- [x] Determine whether the multiplier removes the Yt-MejKot loop and whether
+  the separate explicit legal no-op collapse remains. `ruuq4231` prevented the
+  catastrophic healing-loop collapse and finished at average wave `25.27`
+  versus `3.75`, but the final policy still spent `90.65%` of ticks selecting
+  attack-none and showed a smaller late return toward Yt-MejKot/healing.
+- [ ] Keep the `1.1` multiplier and choose a separate, minimal correction for
+  legal stalling/timeouts before spending compute on masked-space hparam
+  retuning. Do not conflate that objective fix with further heal-loop tuning.
+- [ ] Decide whether the entropy coefficient needs retuning only after the
+  controlled A/B result. Do not mix that change into the mask validation run.
+
+Implementation and validation details are tracked in `fc_revamp.md`, Step 4.
+
 ## Immediate Priority: Clean Baselines vs NPC-Heal Penalty
 
 This section is the next work to execute. It supersedes older "immediate next"
@@ -171,9 +213,9 @@ cave progress while recording at least 10% healing.
   counts `2, 3, 4`, ideally two seeds each. Compare progress, Jad reach and
   completion, stability, SPS, runtime, and parameter count.
 - Behavior still needing refinement: prayer conservation, Yt-MejKot healing
-  loops, and Jad/healer conversion. Hard action masks and target persistence /
-  auto-path control remain backlog because invalid actions and target handling
-  are not current bottlenecks.
+  loops, and Jad/healer conversion. Hard action masks are implemented and await
+  the controlled `ur7t6c4n` comparison; target persistence / auto-path control
+  remains backlog.
 - Historical implementation plans remain in `fc_revamp.md` and
   `runescape-rl/docs/fight_caves_improvement_plan.md`.
 
@@ -215,8 +257,9 @@ cave progress while recording at least 10% healing.
     no-attack pressure. Latest run: `mzqf7iml`.
   - Next decision: inspect/replay `mzqf7iml` prayer behavior and add
     prayer-action diagnostics if needed.
-  - Backlog, not current priority: hard-apply action masks, then review target
-    persistence and auto-pathing control.
+  - Hard action masks are implemented; run the controlled `ur7t6c4n` A/B before
+    changing entropy or rewards. Target persistence and auto-pathing control
+    remain backlog.
 
 - Longer-running cleanup: reduce and prune the reward config, then run another
   sweep.
