@@ -30,6 +30,11 @@ add_test(NAME phase5_invalid_action_classes
 set_tests_properties(phase5_invalid_action_classes PROPERTIES
     LABELS "phase5;guardrail")
 
+add_test(NAME osrs_hp_regeneration_interval
+    COMMAND phase2_guardrails_core hp_regeneration_interval)
+set_tests_properties(osrs_hp_regeneration_interval PROPERTIES
+    LABELS "guardrail;mechanics;health")
+
 add_test(NAME phase3_target_identity_stable
     COMMAND phase2_guardrails_core target_identity)
 set_tests_properties(phase3_target_identity_stable PROPERTIES

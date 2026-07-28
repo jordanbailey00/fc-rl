@@ -3,13 +3,16 @@
 This file is intentionally local-only and ignored by git. Use it as a working list
 for project follow-ups that should not become public repo documentation yet.
 
-## Current Baseline: v3 Simple Reward
+## Current Baseline: v4_simple_reward
 
 - The authoritative live config is `runescape-rl/config/fight_caves.ini`.
-- It is byte-for-byte identical to the config used by W&B run `8rg9wurg`
-  (`62edaa59d0f3cfbcacc9bcaa2aa5b0da8d68fa81d21f283afc7676017fce7057`).
-- Use `8rg9wurg` as the current 750M-step, seed-73 comparison baseline before
-  changing rewards or sweeping trainer hyperparameters.
+- It promotes the exact `mmyxbyn4` trainer recipe to a 1.5B-step budget with
+  current 60-second HP regeneration mechanics.
+- Use W&B run `l9o32hhz` as the seed-73 empirical comparison baseline.
+- The source and synchronized Puffer INIs are byte-identical with SHA-256
+  `509af1168dca12f1c9f72ffc51d31bc2e7c7476536785915f20b034418127514`.
+- Full derivation, exact config, trajectory, and final metrics are recorded at
+  the top of `runescape-rl/docs/run_history.md`.
 
 ## Immediate Priority: Validate Native Action Masks
 

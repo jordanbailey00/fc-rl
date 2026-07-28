@@ -108,7 +108,7 @@ typedef enum {
 #define FC_POTION_COOLDOWN_TICKS  2  /* drink_delay: 2 ticks (NOT 3 — separate clock from food) */
 #define FC_COMBO_EAT_TICKS        1  /* karambwan combo delay after food */
 #define FC_MAX_EPISODE_TICKS   200000 /* ~33 hours at 0.6s/tick — force prayer drain */
-#define FC_HP_REGEN_INTERVAL     10  /* HP regen: 1 HP every 10 ticks (6 seconds) */
+#define FC_HP_REGEN_INTERVAL     100 /* HP regen: 1 HP every 100 ticks (60 seconds) */
 
 /* Player base stats — defined in fc_player_init.h */
 #include "fc_player_init.h"

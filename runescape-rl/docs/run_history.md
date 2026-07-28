@@ -45,7 +45,234 @@ attribution-matrix style used from v28.5 onward.
 
 ---
 
-## v1.0 current baseline - source run `b5m07qqr` (2026-07-17, selected after multi-seed confirmation)
+## v4_simple_reward current baseline - source recipe `mmyxbyn4`, confirmation `l9o32hhz` (2026-07-27)
+
+`v4_simple_reward` is the canonical Fight Caves baseline from this point
+forward. It promotes the trainer recipe from W&B run `mmyxbyn4`, the
+highest-peak run in the 140-trial v3 Stage 1 Protein sweep, and uses a fixed
+1.5B-step training budget with the current 60-second natural HP regeneration
+mechanic.
+
+The completed promotion run is W&B `l9o32hhz`. It used native trainer seed
+`73`, the SOTA Twisted Bow loadout, no food or prayer potions, the v7
+observation contract, native hard action masks, the three-head action contract,
+and the unchanged v3 simple-reward matrix. The `v4_simple_reward` name denotes
+the complete promoted baseline; it does not imply a fourth reward rewrite.
+
+### Derivation
+
+1. `8rg9wurg` established the v3 simple-reward environment and trainer center.
+2. `v3_simple_reward_sweep1` ran 140 PufferLib Protein trials for 750M steps,
+   optimizing `jad_kill_rate` while holding the environment, rewards, backend,
+   policy architecture, loadout, observations, actions, and seed fixed.
+3. `mmyxbyn4` ranked first by peak Jad kill rate at `98.0952%` and finished its
+   750M sweep run at `95.5813%`.
+4. Natural HP regeneration was corrected from 1 HP every 10 ticks (6 seconds)
+   to 1 HP every 100 ticks (60 seconds).
+5. The exact `mmyxbyn4` trainer recipe was rerun for 1.5B steps as `l9o32hhz`.
+   That completed run is the empirical reference for this baseline.
+
+Relative to the original `mmyxbyn4` sweep trial, `l9o32hhz` intentionally
+changes two experimental conditions: the configured budget is 1.5B rather than
+750M, and the backend uses 60-second rather than 6-second natural HP
+regeneration. Puffer's priority correction schedule depends on the configured
+total budget, so the two runs are historical relatives rather than a
+single-variable A/B test.
+
+### Exact canonical configuration
+
+This snapshot is the source for both `runescape-rl/config/fight_caves.ini` and
+the synchronized `pufferlib_4/config/fight_caves.ini`:
+
+```ini
+[base]
+env_name = fight_caves
+checkpoint_interval = 50
+eval_episodes = 10000
+cudagraphs = 10
+reset_state = True
+seed = 73
+
+[env]
+initial_sharks = 0
+initial_prayer_doses = 0
+w_damage_dealt = 0.0
+w_progress = 0.001
+w_damage_taken = -0.25
+w_npc_kill = 0.0
+w_wave_clear = 0.0
+w_jad_kill = 0.0
+w_cave_complete = 1.0
+w_player_death = -1.0
+w_correct_jad_prayer = 0.0
+w_correct_danger_prayer = 0.005
+w_prayer_lost = -0.02
+w_invalid_action = -0.1
+w_tick_penalty = -0.0001
+shape_unnecessary_prayer_penalty = 0.0
+shape_wave_stall_start = 0
+shape_wave_stall_ramp_interval = 0
+shape_wave_stall_base_penalty = 0.0
+shape_wave_stall_cap = 0.0
+shape_jad_heal_penalty = 0.0
+shape_npc_heal_penalty = -0.005
+shape_no_progress_start_1 = 800
+shape_no_progress_start_2 = 1600
+shape_no_progress_start_3 = 2400
+shape_no_progress_penalty_1 = -0.001
+shape_no_progress_penalty_2 = -0.005
+shape_no_progress_penalty_3 = -0.02
+shape_no_attack_start = 50
+shape_no_attack_base_penalty = -0.005
+shape_no_attack_wave_scale = 0.05
+obs_ablate_npc_distance = 0
+obs_ablate_incoming_aggregates = 1
+obs_ablate_npc_valid = 0
+
+[vec]
+total_agents = 4096
+num_buffers = 2
+num_threads = 16
+
+[train]
+gpus = 1
+total_timesteps = 1_500_000_000
+anneal_lr = 0
+learning_rate = 0.00207567504650331
+ent_coef = 0.000625460620549345
+gamma = 0.9991261141073255
+gae_lambda = 0.9
+horizon = 256
+minibatch_size = 32768
+replay_ratio = 2.055184291514704
+clip_coef = 0.05
+vf_coef = 1
+vf_clip_coef = 0.15124043205980495
+max_grad_norm = 0.25
+vtrace_rho_clip = 2.0
+vtrace_c_clip = 0.9746667741536915
+prio_alpha = 0.9110743956381228
+prio_beta0 = 0.2258134371255269
+beta1 = 0.95
+beta2 = 0.9995810484472892
+eps = 1e-10
+
+[policy]
+hidden_size = 256
+num_layers = 3
+expansion_factor = 1
+
+[run]
+manifest_path = ''
+manifest_schema_version = 1
+observation_version = 'fight_caves_puffer_policy_obs_v7_npc_prayer_drain_healing_aggro_kill_events_mask_heads_0_2_no_supplies'
+action_version = 'fight_caves_multidiscrete_3_head_no_supplies_v1'
+reward_version = 'fight_caves_v3_progress_npc_heal_penalty_m0005'
+reward_clip_enabled = 1
+reward_clip_min = -1.0
+reward_clip_max = 1.0
+
+[sweep]
+metric = jad_kill_rate
+```
+
+### Backend and policy contract
+
+- Natural HP regeneration: 1 HP every 100 ticks, or 60 seconds.
+- Loadout: `FC_LOADOUT_SOTA_TBOW`.
+- Supplies: no sharks and no prayer-potion doses.
+- Policy: 256 hidden units, 3 MinGRU layers, expansion factor 1.
+- Vectorization: 4,096 agents, two buffers, 16 environment threads, one GPU.
+- Observation: v7 NPC identity, prayer-drain, healing, aggro, kill-event, and
+  native action-mask contract.
+- Actions: movement, target selection, and prayer; native masks are hard
+  enforced.
+- Reward clipping: per-tick scalar reward clamped to `[-1, 1]`.
+
+### `l9o32hhz` final evaluation
+
+The final evaluation contains `10,082` episodes at approximately 1.499B agent
+steps:
+
+| Metric | Result |
+|---|---:|
+| Jad kill / cave completion rate | 82.5134% |
+| Reached wave 63 | 87.2942% |
+| Jad kill conditional on reaching wave 63 | 94.5228% |
+| Player death rate | 17.4866% |
+| Mean cave progress | 0.980091 |
+| Mean wave reached | 61.8601 |
+| Mean NPCs slain | 266.433 |
+| Mean episode length | 8,478.32 ticks |
+| Attack-when-ready rate | 92.2003% |
+| Correct-prayer share of danger hits | 86.3500% |
+| Mean damage taken | 1,389.48 |
+| Mean damage blocked | 138,986.59 |
+| Mean no-progress ticks | 259.73 |
+| Mean longest wave | 345.17 ticks, around wave 55.24 |
+| Mean NPC healing | 6,861.30 |
+| Mean Yt-MejKot healing | 2,574.26 |
+| Mean Jad healing | 4,287.05 |
+| Gross damage / permanent progress | 1.29087 |
+| Final entropy | 1.66349 |
+| Final KL | 0.006245 |
+| Final clip fraction | 0.35972 |
+| Mean SPS | approximately 1.69M |
+| Runtime | approximately 14 minutes 49 seconds |
+
+### Training trajectory
+
+| Agent steps | Jad kill | Reached wave 63 | Death rate | Mean wave | NPC healing |
+|---:|---:|---:|---:|---:|---:|
+| 209M | 0.000% | 0.172% | 100.000% | 35.79 | 571.0 |
+| 563M | 8.844% | 77.021% | 91.156% | 61.11 | 1,718.9 |
+| 938M | 48.120% | 87.728% | 51.880% | 61.88 | 5,055.5 |
+| 1.313B | 78.853% | 85.117% | 21.142% | 61.70 | 6,405.2 |
+| 1.499B | 82.513% | 87.294% | 17.487% | 61.86 | 6,861.3 |
+
+The sampled training history peaked at an 88.596% Jad kill rate near 1.254B
+steps, then finished lower. This baseline is highly capable but not fully
+stable: future comparisons should report peak, final evaluation, and
+multi-seed behavior rather than only one of those values.
+
+### Final reward accounting
+
+| Reward channel | Mean episode contribution |
+|---|---:|
+| Progress | +114.0393 |
+| Correct danger prayer | +8.1951 |
+| Cave completion | +0.8251 |
+| Damage taken | -0.3509 |
+| Player death | -0.1749 |
+| Prayer lost | -1.2594 |
+| NPC healing | -0.5622 |
+| Tick penalty | -0.8479 |
+| No-progress penalty | -0.0164 |
+| No-attack penalty | -0.0532 |
+| Pre-clip total | +119.7977 |
+| Post-clip total | +119.5761 |
+
+Every intentionally disabled reward channel remained zero, and native action
+masks kept invalid movement, attack, and prayer actions at zero. The main
+remaining behavioral inefficiency is healing churn: the policy deals about
+29.1% more gross damage than the permanent work it removes.
+
+### Artifacts
+
+- W&B source sweep run: `mmyxbyn4`.
+- W&B promoted baseline run: `l9o32hhz`.
+- Local run metadata: `pufferlib_4/logs/fight_caves/l9o32hhz.json`.
+- Canonical source config: `runescape-rl/config/fight_caves.ini`.
+- Synced Puffer config: `pufferlib_4/config/fight_caves.ini`.
+- Dedicated mmy 1.5B reproduction config:
+  `runescape-rl/config/experiments/fight_caves_mmyxbyn4_hp_regen_60s_1p5b.ini`.
+- Dedicated il0 1.5B comparison config:
+  `runescape-rl/config/experiments/fight_caves_il0xq0uf_hp_regen_60s_1p5b.ini`.
+- Canonical INI SHA-256: `509af1168dca12f1c9f72ffc51d31bc2e7c7476536785915f20b034418127514`.
+
+---
+
+## v1.0 former baseline - source run `b5m07qqr` (2026-07-17, selected after multi-seed confirmation)
 
 `v1.0` is the official name of the primary Fight Caves training configuration
 from this point forward. Its source recipe is W&B run `b5m07qqr`, selected

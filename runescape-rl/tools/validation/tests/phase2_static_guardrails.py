@@ -137,16 +137,26 @@ def live_no_supplies_simplified_config() -> int:
             failures.append(f"{label}: reward_version is not the v3 simple-reward contract")
 
         expected_train = {
-            "total_timesteps": 750_000_000,
+            "total_timesteps": 1_500_000_000,
             "anneal_lr": 0,
-            "learning_rate": 0.0009393225766890022,
-            "ent_coef": 0.00644463919247784,
-            "gamma": 0.9995188470393721,
-            "gae_lambda": 0.9995,
+            "learning_rate": 0.00207567504650331,
+            "ent_coef": 0.000625460620549345,
+            "gamma": 0.9991261141073255,
+            "gae_lambda": 0.9,
             "horizon": 256,
-            "minibatch_size": 4096,
-            "replay_ratio": 1.333589848960783,
-            "clip_coef": 0.13236033890397741,
+            "minibatch_size": 32768,
+            "replay_ratio": 2.055184291514704,
+            "clip_coef": 0.05,
+            "vf_coef": 1,
+            "vf_clip_coef": 0.15124043205980495,
+            "max_grad_norm": 0.25,
+            "vtrace_rho_clip": 2.0,
+            "vtrace_c_clip": 0.9746667741536915,
+            "prio_alpha": 0.9110743956381228,
+            "prio_beta0": 0.2258134371255269,
+            "beta1": 0.95,
+            "beta2": 0.9995810484472892,
+            "eps": 1e-10,
         }
         for key, expected in expected_train.items():
             value = parser.getfloat("train", key, fallback=float("nan"))
