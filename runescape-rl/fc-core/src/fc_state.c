@@ -97,6 +97,7 @@ static void init_player(FcPlayer* p) {
     p->current_prayer = FC_PLAYER_MAX_PRAYER;
     p->max_prayer = FC_PLAYER_MAX_PRAYER;
     p->prayer = PRAYER_NONE;
+    p->prayer_at_tick_start = PRAYER_NONE;
     p->sharks_remaining = FC_MAX_SHARKS;
     p->prayer_doses_remaining = FC_MAX_PRAYER_DOSES;
     p->attack_timer = 0;
@@ -113,6 +114,7 @@ static void init_player(FcPlayer* p) {
     p->magic_level = FC_PLAYER_MAGIC_LVL;
     p->weapon_kind = FC_PLAYER_WEAPON_KIND;
     p->weapon_uses_ammo = FC_PLAYER_WEAPON_USES_AMMO;
+    p->crystal_piece_mask = FC_PLAYER_CRYSTAL_PIECE_MASK;
     p->weapon_speed = FC_PLAYER_WEAPON_SPEED;
     p->weapon_range = FC_PLAYER_WEAPON_RANGE;
     p->ranged_attack_bonus = FC_EQUIP_RANGED_ATK;
@@ -137,6 +139,7 @@ static void init_player(FcPlayer* p) {
 
 void fc_init(FcState* state) {
     memset(state, 0, sizeof(FcState));
+    state->active_loadout = FC_ACTIVE_LOADOUT;
 }
 
 void fc_reset(FcState* state, uint32_t seed) {
@@ -154,6 +157,7 @@ void fc_reset(FcState* state, uint32_t seed) {
 
     /* Initialize player */
     init_player(&state->player);
+    state->active_loadout = FC_ACTIVE_LOADOUT;
 
     /* Spawn wave 1 NPCs */
     state->current_wave = 1;
@@ -337,7 +341,9 @@ static float normalize_prayer_drain_counter(const FcPlayer* p) {
 static float normalize_npc_prayer_drain(const FcNpc* npc) {
     const FcNpcStats* stats = fc_npc_get_stats(npc->npc_type);
     int maximum = stats->prayer_drain;
-    if (npc->npc_type == NPC_TZ_KIH) maximum += stats->max_hit;
+    if (npc->npc_type == NPC_TZ_KIH) {
+        maximum += fc_npc_max_hit_tenths_for_style(stats, ATTACK_MELEE);
+    }
     if (maximum <= 0) return 0.0f;
     return clamp01((float)npc->prayer_drain_dealt_this_tick / (float)maximum);
 }
@@ -414,7 +420,8 @@ static int npc_telegraph_style(const FcState* state, const FcNpc* npc) {
      * both adjacent styles remain possible. Pure melee NPCs (Yt-MejKot,
      * Tz-Kih, Tz-Kek) telegraph MELEE even when far
      * — they'll close the gap and that's what they'll hit with. */
-    if (can_melee && (stats->melee_max_hit > 0 || npc->attack_style == ATTACK_MELEE)) {
+    if (can_melee && (stats->melee_max_hit_tenths > 0 ||
+                      npc->attack_style == ATTACK_MELEE)) {
         return ATTACK_MELEE;
     }
     return npc->attack_style;

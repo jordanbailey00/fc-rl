@@ -49,6 +49,18 @@ typedef enum {
     ATTACK_MAGIC  = 3
 } FcAttackStyle;
 
+/* Exact incoming attack type used for equipment-defence selection. This is
+ * intentionally separate from FcAttackStyle, which remains the broad style
+ * used for prayer matching, observations, and animations. */
+typedef enum {
+    FC_ATTACK_TYPE_NONE   = 0,
+    FC_ATTACK_TYPE_STAB   = 1,
+    FC_ATTACK_TYPE_SLASH  = 2,
+    FC_ATTACK_TYPE_CRUSH  = 3,
+    FC_ATTACK_TYPE_RANGED = 4,
+    FC_ATTACK_TYPE_MAGIC  = 5
+} FcAttackType;
+
 /* Protection prayers */
 typedef enum {
     PRAYER_NONE          = 0,
@@ -158,7 +170,8 @@ typedef struct {
     int current_prayer, max_prayer;
 
     /* Active prayer */
-    int prayer;  /* FcPrayer enum */
+    int prayer;                /* FcPrayer enum: final/live overhead */
+    int prayer_at_tick_start;  /* immutable broad-style protection snapshot */
 
     /* Prayer drain counter (OSRS counter-based system from PrayerDrain.kt):
      * Each tick: counter += active prayer drain rate (12 for protect prayers).
@@ -189,6 +202,7 @@ typedef struct {
     int magic_level;
     int weapon_kind;
     int weapon_uses_ammo;
+    int crystal_piece_mask;
     int weapon_speed;
     int weapon_range;
 
@@ -268,7 +282,7 @@ typedef struct {
     int attack_timer;       /* tick countdown to next attack */
     int attack_speed;       /* ticks between attacks */
     int attack_range;       /* tile distance for ranged/magic, 1 for melee */
-    int max_hit;            /* max damage this NPC can roll */
+    int max_hit_tenths;     /* primary-style compatibility maximum */
 
     /* AI */
     int movement_speed;     /* 1 = walk, 2 = run */
@@ -345,6 +359,9 @@ typedef struct {
 typedef struct {
     FcPlayer player;
     FcNpc npcs[FC_MAX_NPCS];
+
+    /* Compile-selected loadout copied into state for diagnostics/contracts. */
+    int active_loadout;
 
     /* Wave progression */
     int current_wave;       /* 1-indexed: 1..63. 0 = not started */

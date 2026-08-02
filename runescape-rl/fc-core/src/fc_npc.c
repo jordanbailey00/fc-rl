@@ -32,68 +32,149 @@
 /* ======================================================================== */
 
 /*
- * Stats sourced from OSRS wiki + Kotlin archive.
- * HP in tenths (100 = 10.0 HP). Max hit in tenths.
- * Defence stats used by fc_npc_def_roll for player attack accuracy.
- *
- * Fields: max_hp, attack_style, attack_speed, attack_range, max_hit,
- *         att_level, att_bonus, def_level, def_bonus, magic_level, size,
- *         movement_speed, prayer_drain, heal_amount, heal_interval, jad_ranged_max_hit
- */
-/*
  * Stats from Void 634 cache + tzhaar_fight_cave.npcs.toml + tzhaar_fight_cave.combat.toml.
  * Sizes verified via NPCDecoder opcode 12 from Void 634 cache (2026-04-02 audit).
  *
- * Fields: max_hp, attack_style, attack_speed, attack_range, max_hit, melee_max_hit,
- *         att_level, att_bonus, def_level, def_bonus, magic_level, size, movement_speed,
- *         prayer_drain, heal_amount, heal_interval, jad_ranged_max_hit
- *
- * Dual-mode NPCs (Tok-Xil, Ket-Zek, Jad):
- *   attack_style = primary ranged/magic style, max_hit = primary style max
- *   melee_max_hit > 0 = can also melee at range 1
+ * A1 names style and unit fields explicitly but retains the pre-parity values
+ * so this schema migration does not change combat outcomes. The NPC workstream
+ * replaces these compatibility values with the reviewed parity table.
  */
 static const FcNpcStats NPC_STATS[NPC_TYPE_COUNT] = {
-    /* NPC_NONE */
-    { 0, ATTACK_NONE, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+    [NPC_NONE] = {0},
 
     /* NPC_TZ_KIH: Lv 22 melee bat. Drains damage + 1 Prayer point.
      * Void 634: HP 100, Att 20, Str 30, Def 15, size 1, stab max 40 */
-    { 100, ATTACK_MELEE, 4, 1, 40, 0, 20, 0, 15, 0, 0, 1, 1, 10, 0, 0, 0 },
+    [NPC_TZ_KIH] = {
+        .max_hp = 100, .attack_style = ATTACK_MELEE,
+        .attack_speed = 4, .attack_range = 1,
+        .melee_max_hit_tenths = 40,
+        .att_level = 20, .ranged_level = 20, .att_bonus = 0,
+        .def_level = 15, .ranged_def_bonus = 0,
+        .melee_attack_type = FC_ATTACK_TYPE_CRUSH,
+        .size = 1, .movement_speed = 1, .prayer_drain = 10,
+    },
 
     /* NPC_TZ_KEK: Lv 45 melee blob. Splits into 2 small on death.
      * Void 634: HP 200, Att 40, Str 60, Def 30, size 2, crush max 70 */
-    { 200, ATTACK_MELEE, 4, 1, 70, 0, 40, 0, 30, 0, 0, 2, 1, 0, 0, 0, 0 },
+    [NPC_TZ_KEK] = {
+        .max_hp = 200, .attack_style = ATTACK_MELEE,
+        .attack_speed = 4, .attack_range = 1,
+        .melee_max_hit_tenths = 70,
+        .att_level = 40, .ranged_level = 40, .att_bonus = 0,
+        .def_level = 30, .ranged_def_bonus = 0,
+        .melee_attack_type = FC_ATTACK_TYPE_CRUSH,
+        .size = 2, .movement_speed = 1,
+    },
 
     /* NPC_TZ_KEK_SM: Lv 22 small blob (from split).
      * Void 634: HP 100, Att 20, Str 30, Def 15, size 1, crush max 40 */
-    { 100, ATTACK_MELEE, 4, 1, 40, 0, 20, 0, 15, 0, 0, 1, 1, 0, 0, 0, 0 },
+    [NPC_TZ_KEK_SM] = {
+        .max_hp = 100, .attack_style = ATTACK_MELEE,
+        .attack_speed = 4, .attack_range = 1,
+        .melee_max_hit_tenths = 40,
+        .att_level = 20, .ranged_level = 20, .att_bonus = 0,
+        .def_level = 15, .ranged_def_bonus = 0,
+        .melee_attack_type = FC_ATTACK_TYPE_CRUSH,
+        .size = 1, .movement_speed = 1,
+    },
 
     /* NPC_TOK_XIL: Lv 90 ranged + melee (DUAL MODE).
      * Void 634: HP 400, Att 80, Str 120, Def 60, Rng 120, size 3
      * combat.toml: melee crush max 130 (range 1), ranged max 140 (range 14) */
-    { 400, ATTACK_RANGED, 4, 14, 140, 130, 120, 0, 60, 0, 0, 3, 1, 0, 0, 0, 0 },
+    [NPC_TOK_XIL] = {
+        .max_hp = 400, .attack_style = ATTACK_RANGED,
+        .attack_speed = 4, .attack_range = 14,
+        .melee_max_hit_tenths = 130, .ranged_max_hit_tenths = 140,
+        .att_level = 120, .ranged_level = 120, .att_bonus = 0,
+        .def_level = 60, .ranged_def_bonus = 0,
+        .melee_attack_type = FC_ATTACK_TYPE_CRUSH,
+        .size = 3, .movement_speed = 1,
+    },
 
     /* NPC_YT_MEJKOT: Lv 180 melee + heals self/nearby NPCs with HP < 50% max.
      * Void 634: HP 800, Att 160, Str 240, Def 120, size 4
      * combat.toml: crush max 250. Heals 100 tenths (10 HP) as its attack. */
-    { 800, ATTACK_MELEE, 4, 1, 250, 0, 160, 0, 120, 0, 0, 4, 1, 0, 100, 0, 0 },
+    [NPC_YT_MEJKOT] = {
+        .max_hp = 800, .attack_style = ATTACK_MELEE,
+        .attack_speed = 4, .attack_range = 1,
+        .melee_max_hit_tenths = 250,
+        .att_level = 160, .ranged_level = 160, .att_bonus = 0,
+        .def_level = 120, .ranged_def_bonus = 0,
+        .melee_attack_type = FC_ATTACK_TYPE_CRUSH,
+        .size = 4, .movement_speed = 1, .heal_amount = 100,
+    },
 
     /* NPC_KET_ZEK: Lv 360 magic + melee (DUAL MODE).
      * Void 634: HP 1600, Att 320, Str 480, Def 240, Mag 240, size 5
      * combat.toml: melee stab max 540 (range 1), magic max 490 (range 14) */
-    { 1600, ATTACK_MAGIC, 4, 14, 490, 540, 240, 0, 240, 0, 240, 5, 1, 0, 0, 0, 0 },
+    [NPC_KET_ZEK] = {
+        .max_hp = 1600, .attack_style = ATTACK_MAGIC,
+        .attack_speed = 4, .attack_range = 14,
+        .melee_max_hit_tenths = 540, .magic_max_hit_tenths = 490,
+        .att_level = 240, .ranged_level = 240, .magic_level = 240,
+        .att_bonus = 0, .def_level = 240, .ranged_def_bonus = 0,
+        .melee_attack_type = FC_ATTACK_TYPE_CRUSH,
+        .size = 5, .movement_speed = 1,
+    },
 
     /* NPC_TZTOK_JAD: Lv 702 magic + ranged + melee.
      * Void 634: HP 2500, Att 640, Str 960, Def 480, Mag 480, Rng 960, size 5
      * combat.toml: melee stab max 970 (range 1), magic max 950 (range 14), ranged max 970
      * attack speed 8 (double normal), range 14 */
-    { 2500, ATTACK_MAGIC, 8, 14, 970, 970, 480, 0, 480, 0, 480, 5, 1, 0, 0, 0, 950 },
+    [NPC_TZTOK_JAD] = {
+        .max_hp = 2500, .attack_style = ATTACK_MAGIC,
+        .attack_speed = 8, .attack_range = 14,
+        .melee_max_hit_tenths = 970, .ranged_max_hit_tenths = 950,
+        .magic_max_hit_tenths = 970,
+        .att_level = 480, .ranged_level = 480, .magic_level = 480,
+        .att_bonus = 0, .def_level = 480, .ranged_def_bonus = 0,
+        .melee_attack_type = FC_ATTACK_TYPE_CRUSH,
+        .size = 5, .movement_speed = 1,
+    },
 
     /* NPC_YT_HURKOT: Lv 108 Jad healer. Heals Jad 50 tenths (5 HP) every 4 ticks within 5 tiles.
      * Void 634: HP 600, Att 140, Str 100, Def 60, size 1
      * combat.toml: crush max 140 */
-    { 600, ATTACK_MELEE, 4, 1, 140, 0, 140, 0, 60, 0, 0, 1, 1, 0, 50, 4, 0 },
+    [NPC_YT_HURKOT] = {
+        .max_hp = 600, .attack_style = ATTACK_MELEE,
+        .attack_speed = 4, .attack_range = 1,
+        .melee_max_hit_tenths = 140,
+        .att_level = 140, .ranged_level = 140, .att_bonus = 0,
+        .def_level = 60, .ranged_def_bonus = 0,
+        .melee_attack_type = FC_ATTACK_TYPE_CRUSH,
+        .size = 1, .movement_speed = 1,
+        .heal_amount = 50, .heal_interval = 4,
+    },
 };
+
+int fc_npc_max_hit_tenths_for_style(const FcNpcStats* stats, int attack_style) {
+    if (stats == NULL) return 0;
+    switch (attack_style) {
+        case ATTACK_MELEE: return stats->melee_max_hit_tenths;
+        case ATTACK_RANGED: return stats->ranged_max_hit_tenths;
+        case ATTACK_MAGIC: return stats->magic_max_hit_tenths;
+        default: return 0;
+    }
+}
+
+int fc_npc_max_hit_hp_for_style(const FcNpcStats* stats, int attack_style) {
+    int max_hit_tenths = fc_npc_max_hit_tenths_for_style(stats, attack_style);
+    if (max_hit_tenths < 0 || max_hit_tenths % 10 != 0) return 0;
+    return max_hit_tenths / 10;
+}
+
+int fc_npc_stats_valid(const FcNpcStats* stats) {
+    if (stats == NULL) return 0;
+    const int maxima[] = {
+        stats->melee_max_hit_tenths,
+        stats->ranged_max_hit_tenths,
+        stats->magic_max_hit_tenths,
+    };
+    for (int i = 0; i < 3; i++) {
+        if (maxima[i] < 0 || maxima[i] % 10 != 0) return 0;
+    }
+    return 1;
+}
 
 const FcNpcStats* fc_npc_get_stats(int npc_type) {
     if (npc_type < 0 || npc_type >= NPC_TYPE_COUNT) return &NPC_STATS[0];
@@ -120,7 +201,8 @@ void fc_npc_spawn(FcNpc* npc, int npc_type, int x, int y, int spawn_index) {
     npc->attack_timer = stats->attack_speed;  /* first attack after full cooldown */
     npc->attack_speed = stats->attack_speed;
     npc->attack_range = stats->attack_range;
-    npc->max_hit = stats->max_hit;
+    npc->max_hit_tenths =
+        fc_npc_max_hit_tenths_for_style(stats, stats->attack_style);
     npc->movement_speed = stats->movement_speed;
     npc->heal_timer = stats->heal_interval;  /* start at full cooldown */
     npc->heal_amount = stats->heal_amount;
@@ -254,7 +336,8 @@ int fc_npc_position_can_attack_player(const FcState* state, const FcNpc* npc,
                                             candidate.x, candidate.y,
                                             candidate.size, state->walkable);
     if (can_melee &&
-        (stats->melee_max_hit > 0 || candidate.attack_style == ATTACK_MELEE)) {
+        (stats->melee_max_hit_tenths > 0 ||
+         candidate.attack_style == ATTACK_MELEE)) {
         return 1;
     }
 
@@ -364,31 +447,35 @@ static void jad_attack(FcState* state, FcNpc* npc, int npc_idx) {
         fc_has_los_to_npc(p->x, p->y, npc->x, npc->y, npc->size,
                           state->walkable);
 
-    if (can_melee && stats->melee_max_hit > 0) {
+    if (can_melee && stats->melee_max_hit_tenths > 0) {
         /* In melee range Jad can still choose Magic or Ranged. All three
          * configured attacks have equal selection weight. */
         int choice = can_use_distance_styles ? fc_rng_int(state, 3) : 0;
         if (choice == 0) {
             use_style = ATTACK_MELEE;
-            use_max_hit = stats->melee_max_hit;
+            use_max_hit = stats->melee_max_hit_tenths;
         } else if (choice == 1) {
             use_style = ATTACK_MAGIC;
-            use_max_hit = stats->max_hit;
+            use_max_hit = stats->magic_max_hit_tenths;
         } else {
             use_style = ATTACK_RANGED;
-            use_max_hit = stats->jad_ranged_max_hit;
+            use_max_hit = stats->ranged_max_hit_tenths;
         }
         in_range = 1;
     } else if (can_use_distance_styles) {
         use_style = (fc_rng_int(state, 2) == 0) ? ATTACK_MAGIC : ATTACK_RANGED;
-        use_max_hit = (use_style == ATTACK_MAGIC) ? stats->max_hit : stats->jad_ranged_max_hit;
+        use_max_hit = fc_npc_max_hit_tenths_for_style(stats, use_style);
         in_range = 1;
     }
 
     if (!in_range) return;
 
     int att_roll = fc_npc_attack_roll(stats->att_level, stats->att_bonus);
-    int def_roll = fc_player_def_roll(p, use_style);
+    FcAttackType attack_type = (use_style == ATTACK_MELEE)
+        ? (FcAttackType)stats->melee_attack_type
+        : (use_style == ATTACK_RANGED ? FC_ATTACK_TYPE_RANGED
+                                      : FC_ATTACK_TYPE_MAGIC);
+    int def_roll = fc_player_def_roll(p, attack_type);
     float chance = fc_hit_chance(att_roll, def_roll);
 
     int hit = (fc_rng_float(state) < chance) ? 1 : 0;
@@ -563,7 +650,7 @@ static void npc_generic_attack(FcState* state, FcNpc* npc, int npc_idx) {
 
     /* Determine attack style and max hit based on distance */
     int use_style = npc->attack_style;  /* primary style */
-    int use_max_hit = npc->max_hit;
+    int use_max_hit = npc->max_hit_tenths;
     int in_range = 0;
     int primary_in_range =
         npc->attack_style != ATTACK_MELEE &&
@@ -571,14 +658,14 @@ static void npc_generic_attack(FcState* state, FcNpc* npc, int npc_idx) {
         fc_has_los_to_npc(p->x, p->y, npc->x, npc->y, npc->size,
                           state->walkable);
 
-    if (can_melee && stats->melee_max_hit > 0) {
+    if (can_melee && stats->melee_max_hit_tenths > 0) {
         if (npc->npc_type == NPC_KET_ZEK && primary_in_range &&
             fc_rng_int(state, 2) == 0) {
             use_style = npc->attack_style;
-            use_max_hit = npc->max_hit;
+            use_max_hit = npc->max_hit_tenths;
         } else {
             use_style = ATTACK_MELEE;
-            use_max_hit = stats->melee_max_hit;
+            use_max_hit = stats->melee_max_hit_tenths;
         }
         in_range = 1;
     } else if (can_melee && npc->attack_style == ATTACK_MELEE) {
@@ -591,7 +678,11 @@ static void npc_generic_attack(FcState* state, FcNpc* npc, int npc_idx) {
     if (!in_range) return;
 
     int att_roll = fc_npc_attack_roll(stats->att_level, stats->att_bonus);
-    int def_roll = fc_player_def_roll(p, use_style);
+    FcAttackType attack_type = (use_style == ATTACK_MELEE)
+        ? (FcAttackType)stats->melee_attack_type
+        : (use_style == ATTACK_RANGED ? FC_ATTACK_TYPE_RANGED
+                                      : FC_ATTACK_TYPE_MAGIC);
+    int def_roll = fc_player_def_roll(p, attack_type);
     float chance = fc_hit_chance(att_roll, def_roll);
 
     int hit = (fc_rng_float(state) < chance) ? 1 : 0;

@@ -152,7 +152,9 @@ static int npc_slot_to_index(const FcState* state, int slot) {
 /* Process player actions                                                    */
 /* ======================================================================== */
 
-static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTION_HEADS]) {
+static void process_player_actions(FcState* state,
+                                   const int actions[FC_NUM_ACTION_HEADS],
+                                   FcPrayerTransition* prayer_transition) {
     FcPlayer* p = &state->player;
     int was_attack_ready = (p->attack_timer <= 0 && state->npcs_remaining > 0);
 
@@ -212,9 +214,9 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
     }
 
     /* ---- Prayer (instant, processed first) ---- */
-    if (act_prayer > 0) {
+    {
         int old_prayer = p->prayer;
-        fc_prayer_apply_action(p, act_prayer);
+        *prayer_transition = fc_prayer_apply_action(p, act_prayer);
         if (p->prayer != old_prayer) {
             p->prayer_changed_this_tick = 1;
         }
@@ -381,7 +383,8 @@ static void process_player_actions(FcState* state, const int actions[FC_NUM_ACTI
                 /* In range — fire attack */
                 int att_roll = fc_player_ranged_attack_roll(p, target);
                 const FcNpcStats* tstats = fc_npc_get_stats(target->npc_type);
-                int def_roll = fc_npc_def_roll(tstats->def_level, tstats->def_bonus);
+                int def_roll = fc_npc_def_roll(tstats->def_level,
+                                               tstats->ranged_def_bonus);
                 float chance = fc_hit_chance(att_roll, def_roll);
 
                 int hit = (fc_rng_float(state) < chance) ? 1 : 0;
@@ -699,21 +702,24 @@ static void check_terminal(FcState* state) {
 /* ======================================================================== */
 
 void fc_tick(FcState* state, const int actions[FC_NUM_ACTION_HEADS]) {
-    int prayer_active_at_tick_start = (state->player.prayer != PRAYER_NONE);
+    state->player.prayer_at_tick_start = state->player.prayer;
+    FcPrayerTransition prayer_transition = {0};
 
     /* 1. Clear per-tick flags */
     clear_per_tick_flags(state);
     build_movement_start_reservations(state);
 
     /* 2. Process player actions */
-    process_player_actions(state, actions);
+    process_player_actions(state, actions, &prayer_transition);
 
     /* 3. Decrement player timers */
     decrement_player_timers(&state->player);
 
     /* 4. Prayer drain */
     state->overhead_prayer_lost_this_tick =
-        fc_prayer_drain_tick(&state->player, prayer_active_at_tick_start);
+        fc_prayer_drain_tick(&state->player,
+                             state->player.prayer_at_tick_start,
+                             &prayer_transition);
     state->prayer_lost_this_tick += state->overhead_prayer_lost_this_tick;
 
     /* 4b. HP regen (1 HP = 10 tenths every FC_HP_REGEN_INTERVAL ticks) */

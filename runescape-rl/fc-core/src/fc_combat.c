@@ -1,6 +1,8 @@
 #include "fc_api.h"
 #include "fc_npc.h"
+#include <limits.h>
 #include <math.h>
+#include <stddef.h>
 
 /*
  * fc_combat.c — OSRS combat math and pending hit resolution.
@@ -41,17 +43,19 @@ int fc_npc_melee_max_hit(int str_level, int str_bonus) {
 /* Player defence roll                                                       */
 /* ======================================================================== */
 
-int fc_player_def_roll(const FcPlayer* p, int attack_style) {
+int fc_player_def_roll(const FcPlayer* p, FcAttackType attack_type) {
     int def_bonus;
-    switch (attack_style) {
-        case ATTACK_MELEE:  def_bonus = p->defence_crush; break;  /* FC melee NPCs use crush/stab */
-        case ATTACK_RANGED: def_bonus = p->defence_ranged; break;
-        case ATTACK_MAGIC:  def_bonus = p->defence_magic; break;
-        default:            def_bonus = 0; break;
+    switch (attack_type) {
+        case FC_ATTACK_TYPE_STAB:   def_bonus = p->defence_stab; break;
+        case FC_ATTACK_TYPE_SLASH:  def_bonus = p->defence_slash; break;
+        case FC_ATTACK_TYPE_CRUSH:  def_bonus = p->defence_crush; break;
+        case FC_ATTACK_TYPE_RANGED: def_bonus = p->defence_ranged; break;
+        case FC_ATTACK_TYPE_MAGIC:  def_bonus = p->defence_magic; break;
+        default:                    def_bonus = 0; break;
     }
 
     int eff_def;
-    if (attack_style == ATTACK_MAGIC) {
+    if (attack_type == FC_ATTACK_TYPE_MAGIC) {
         /* Magic defence: 30% from Defence, 70% from Magic (OSRS formula from Hit.kt) */
         eff_def = (int)(p->defence_level * 0.3 + p->magic_level * 0.7) + 9;
     } else {
@@ -69,6 +73,11 @@ static int fc_player_effective_ranged_level(const FcPlayer* p) {
     return p->ranged_level + 8;
 }
 
+int fc_player_ranged_base_attack_roll(const FcPlayer* p) {
+    int eff_ranged = fc_player_effective_ranged_level(p);
+    return eff_ranged * (p->ranged_attack_bonus + 64);
+}
+
 static int fc_tbow_target_magic_level(const FcNpc* target) {
     const FcNpcStats* stats = fc_npc_get_stats(target->npc_type);
     int magic_level = stats->magic_level;
@@ -78,8 +87,11 @@ static int fc_tbow_target_magic_level(const FcNpc* target) {
     return magic_level;
 }
 
-static int fc_tbow_accuracy_multiplier_pct(const FcNpc* target) {
-    float magic = (float)fc_tbow_target_magic_level(target);
+int fc_tbow_accuracy_multiplier_pct(int target_magic_level) {
+    int clamped_magic = target_magic_level;
+    if (clamped_magic < 0) clamped_magic = 0;
+    if (clamped_magic > 250) clamped_magic = 250;
+    float magic = (float)clamped_magic;
     float x = 0.3f * magic;
     float pct = 140.0f + ((3.0f * magic) - 10.0f) / 100.0f -
         ((x - 100.0f) * (x - 100.0f)) / 100.0f;
@@ -89,8 +101,11 @@ static int fc_tbow_accuracy_multiplier_pct(const FcNpc* target) {
     return (int)floorf(pct);
 }
 
-static int fc_tbow_damage_multiplier_pct(const FcNpc* target) {
-    float magic = (float)fc_tbow_target_magic_level(target);
+int fc_tbow_damage_multiplier_pct(int target_magic_level) {
+    int clamped_magic = target_magic_level;
+    if (clamped_magic < 0) clamped_magic = 0;
+    if (clamped_magic > 250) clamped_magic = 250;
+    float magic = (float)clamped_magic;
     float x = 0.3f * magic;
     float pct = 250.0f + ((3.0f * magic) - 14.0f) / 100.0f -
         ((x - 140.0f) * (x - 140.0f)) / 100.0f;
@@ -101,26 +116,51 @@ static int fc_tbow_damage_multiplier_pct(const FcNpc* target) {
 }
 
 int fc_player_ranged_attack_roll(const FcPlayer* p, const FcNpc* target) {
-    int eff_ranged = fc_player_effective_ranged_level(p);
-    int attack_roll = eff_ranged * (p->ranged_attack_bonus + 64);
+    int attack_roll = fc_player_ranged_base_attack_roll(p);
 
     if (p->weapon_kind == FC_WEAPON_TWISTED_BOW && target) {
-        attack_roll = (attack_roll * fc_tbow_accuracy_multiplier_pct(target)) / 100;
+        attack_roll = (attack_roll *
+            fc_tbow_accuracy_multiplier_pct(fc_tbow_target_magic_level(target))) / 100;
     }
 
     return attack_roll;
 }
 
-int fc_player_ranged_max_hit(const FcPlayer* p, const FcNpc* target) {
+int fc_player_ranged_base_max_hit_hp(const FcPlayer* p) {
     int eff_str = fc_player_effective_ranged_level(p);
-    int base_hp = (int)floorf(
+    return (int)floorf(
         0.5f + ((float)eff_str * (float)(p->ranged_strength_bonus + 64)) / 640.0f);
+}
+
+int fc_player_ranged_final_max_hit_hp(const FcPlayer* p, const FcNpc* target) {
+    int base_hp = fc_player_ranged_base_max_hit_hp(p);
 
     if (p->weapon_kind == FC_WEAPON_TWISTED_BOW && target) {
-        base_hp = (base_hp * fc_tbow_damage_multiplier_pct(target)) / 100;
+        base_hp = (base_hp *
+            fc_tbow_damage_multiplier_pct(fc_tbow_target_magic_level(target))) / 100;
     }
 
-    return base_hp * 10;
+    return base_hp;
+}
+
+int fc_player_ranged_max_hit(const FcPlayer* p, const FcNpc* target) {
+    return fc_player_ranged_final_max_hit_hp(p, target) * 10;
+}
+
+static int fc_roll_legacy_tenths_damage(FcState* state, int final_max_hit_hp) {
+    if (state == NULL || final_max_hit_hp < 0 ||
+        final_max_hit_hp > (INT_MAX - 1) / 10) {
+        return 0;
+    }
+    return fc_rng_int(state, final_max_hit_hp * 10 + 1);
+}
+
+int fc_roll_player_damage_tenths(FcState* state, int final_max_hit_hp) {
+    return fc_roll_legacy_tenths_damage(state, final_max_hit_hp);
+}
+
+int fc_roll_npc_damage_tenths(FcState* state, int final_max_hit_hp) {
+    return fc_roll_legacy_tenths_damage(state, final_max_hit_hp);
 }
 
 /* ======================================================================== */

@@ -260,6 +260,12 @@ static const int FC_MOVE_DY[17] = {
 #define FC_PRAYER_MAGIC          2
 #define FC_PRAYER_RANGE          3
 #define FC_PRAYER_MELEE          4
+/* Reserved compound commands. A1 exposes their stable IDs while retaining
+ * the five-action runtime contract; the prayer workstream raises
+ * FC_PRAYER_DIM and activates these commands atomically with consumers. */
+#define FC_PRAYER_FLICK_MAGIC    5
+#define FC_PRAYER_FLICK_RANGE    6
+#define FC_PRAYER_FLICK_MELEE    7
 
 /* Head 3: EAT */
 #define FC_EAT_DIM               3

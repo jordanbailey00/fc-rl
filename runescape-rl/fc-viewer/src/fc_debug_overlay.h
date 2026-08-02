@@ -438,7 +438,7 @@ static void dbg_draw_entity_info(const FcState* state, Camera3D camera) {
 
         snprintf(buf, sizeof(buf), "AtkTmr:%d/%d  Range:%d  MaxHit:%d",
                  n->attack_timer, n->attack_speed, n->attack_range,
-                 n->max_hit/10);
+                 n->max_hit_tenths/10);
         DrawText(buf, panel_x + 4, ny, 10, DBG_COL_LABEL); ny += lh;
 
         if (n->npc_type == NPC_YT_HURKOT) {

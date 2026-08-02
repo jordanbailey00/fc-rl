@@ -3,13 +3,30 @@
 
 #include "fc_types.h"
 
+typedef struct {
+    int prior_prayer;
+    int requested_final_prayer;
+    int actual_final_prayer;
+    int off_requested;
+    int off_performed;
+    int on_requested;
+    int on_succeeded;
+    int explicit_off_then_on;
+    int final_state_changed;
+} FcPrayerTransition;
+
 /* Drain prayer points based on active prayer and bonus.
  * prayer_active_at_tick_start should reflect the prayer state before the
  * current tick's input actions were applied, so 1-tick flicks do not drain. */
-int fc_prayer_drain_tick(FcPlayer* p, int prayer_active_at_tick_start);
+int fc_prayer_drain_tick(FcPlayer* p, int prayer_at_tick_start,
+                         const FcPrayerTransition* transition);
 
 /* Apply a prayer action (from FC_PRAYER_* constants in fc_contracts.h) */
-void fc_prayer_apply_action(FcPlayer* p, int prayer_action);
+FcPrayerTransition fc_prayer_apply_action(FcPlayer* p, int prayer_action);
+
+/* Apply capped Prayer loss in tenths. The centralized depletion invariant is
+ * activated by the prayer workstream; this scaffold provides the typed API. */
+int fc_prayer_apply_loss_tenths(FcPlayer* p, int requested_loss_tenths);
 
 /* Prayer potion restore amount in tenths (level-dependent) */
 int fc_prayer_potion_restore(int prayer_level);

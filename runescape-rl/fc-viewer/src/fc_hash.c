@@ -98,7 +98,7 @@ static uint32_t hash_npc(uint32_t h, const FcNpc* n) {
     h = fnv_feed_int(h, n->attack_timer);
     h = fnv_feed_int(h, n->attack_speed);
     h = fnv_feed_int(h, n->attack_range);
-    h = fnv_feed_int(h, n->max_hit);
+    h = fnv_feed_int(h, n->max_hit_tenths);
     h = fnv_feed_int(h, n->movement_speed);
     h = fnv_feed_int(h, n->heal_timer);
     h = fnv_feed_int(h, n->healer_distracted);

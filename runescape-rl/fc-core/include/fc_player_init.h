@@ -68,6 +68,24 @@ typedef struct {
     const char* label;
 } FcLoadoutEquipmentItem;
 
+typedef enum {
+    FC_CRYSTAL_PIECE_NONE = 0,
+    FC_CRYSTAL_PIECE_HELM = 1 << 0,
+    FC_CRYSTAL_PIECE_BODY = 1 << 1,
+    FC_CRYSTAL_PIECE_LEGS = 1 << 2,
+    FC_CRYSTAL_PIECE_ALL = FC_CRYSTAL_PIECE_HELM |
+                           FC_CRYSTAL_PIECE_BODY |
+                           FC_CRYSTAL_PIECE_LEGS
+} FcCrystalPieceMask;
+
+/* Exact per-piece modifiers. One percentage point is 100 basis points. */
+#define FC_CRYSTAL_HELM_ACCURACY_BP  500
+#define FC_CRYSTAL_HELM_DAMAGE_BP    250
+#define FC_CRYSTAL_BODY_ACCURACY_BP 1500
+#define FC_CRYSTAL_BODY_DAMAGE_BP    750
+#define FC_CRYSTAL_LEGS_ACCURACY_BP 1000
+#define FC_CRYSTAL_LEGS_DAMAGE_BP    500
+
 typedef struct {
     const char* name;
     const char* weapon_name;
@@ -78,6 +96,7 @@ typedef struct {
     int ranged_lvl, prayer_lvl, magic_lvl;
     int weapon_kind;
     int weapon_uses_ammo;
+    int crystal_piece_mask;
     int weapon_speed;
     int weapon_range;
     int ranged_atk, ranged_str;
@@ -447,6 +466,7 @@ static const FcLoadout FC_LOADOUTS[FC_NUM_LOADOUTS] = {
         .magic_lvl    = 0,
         .weapon_kind  = FC_WEAPON_BOW_OF_FAERDHINEN,
         .weapon_uses_ammo = 0,
+        .crystal_piece_mask = FC_CRYSTAL_PIECE_ALL,
         .weapon_speed = 4,
         .weapon_range = 10,
         .ranged_atk   = 233,
@@ -531,6 +551,7 @@ static const FcLoadout FC_LOADOUTS[FC_NUM_LOADOUTS] = {
 #define FC_PLAYER_MAGIC_LVL     (FC_LOADOUTS[FC_ACTIVE_LOADOUT].magic_lvl)
 #define FC_PLAYER_WEAPON_KIND   (FC_LOADOUTS[FC_ACTIVE_LOADOUT].weapon_kind)
 #define FC_PLAYER_WEAPON_USES_AMMO (FC_LOADOUTS[FC_ACTIVE_LOADOUT].weapon_uses_ammo)
+#define FC_PLAYER_CRYSTAL_PIECE_MASK (FC_LOADOUTS[FC_ACTIVE_LOADOUT].crystal_piece_mask)
 #define FC_PLAYER_WEAPON_SPEED  (FC_LOADOUTS[FC_ACTIVE_LOADOUT].weapon_speed)
 #define FC_PLAYER_WEAPON_RANGE  (FC_LOADOUTS[FC_ACTIVE_LOADOUT].weapon_range)
 #define FC_EQUIP_RANGED_ATK     (FC_LOADOUTS[FC_ACTIVE_LOADOUT].ranged_atk)

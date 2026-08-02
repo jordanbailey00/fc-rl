@@ -11,9 +11,24 @@ int fc_npc_attack_roll(int att_level, int att_bonus);
 int fc_npc_melee_max_hit(int str_level, int str_bonus);
 
 /* Player combat */
-int fc_player_def_roll(const FcPlayer* p, int attack_style);
+int fc_player_def_roll(const FcPlayer* p, FcAttackType attack_type);
+int fc_player_ranged_base_attack_roll(const FcPlayer* p);
 int fc_player_ranged_attack_roll(const FcPlayer* p, const FcNpc* target);
+int fc_player_ranged_base_max_hit_hp(const FcPlayer* p);
+int fc_player_ranged_final_max_hit_hp(const FcPlayer* p, const FcNpc* target);
+
+/* Transitional compatibility API used by the untouched attack path in A1.
+ * It retains the current tenths return until the damage workstream migrates
+ * every caller to the unit-explicit helpers above. */
 int fc_player_ranged_max_hit(const FcPlayer* p, const FcNpc* target);
+
+/* Damage helpers accept a whole-HP maximum and return tenths storage units. */
+int fc_roll_player_damage_tenths(FcState* state, int final_max_hit_hp);
+int fc_roll_npc_damage_tenths(FcState* state, int final_max_hit_hp);
+
+/* Twisted-bow staged multiplier boundaries. */
+int fc_tbow_accuracy_multiplier_pct(int target_magic_level);
+int fc_tbow_damage_multiplier_pct(int target_magic_level);
 
 /* PvM prayer: returns 1 if prayer blocks the attack style (100% block) */
 int fc_prayer_blocks_style(int prayer, int attack_style);

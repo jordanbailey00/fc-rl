@@ -9,23 +9,33 @@ typedef struct {
     int attack_style;       /* FcAttackStyle: primary style (ranged/magic for dual-mode) */
     int attack_speed;       /* ticks between attacks */
     int attack_range;       /* primary attack range (1 for melee-only, 14 for ranged/magic) */
-    int max_hit;            /* primary style max damage (tenths) */
-    int melee_max_hit;      /* melee max damage for dual-mode NPCs (0 if melee-only or no melee) */
-    int att_level;
+    int melee_max_hit_tenths;
+    int ranged_max_hit_tenths;
+    int magic_max_hit_tenths;
+    int att_level;          /* melee Attack */
+    int ranged_level;
+    int magic_level;        /* also the Twisted-bow target input */
     int att_bonus;
     int def_level;          /* NPC defence level (for player attack accuracy) */
-    int def_bonus;          /* NPC defence bonus vs ranged (simplified) */
-    int magic_level;        /* used by Twisted bow scaling */
+    int ranged_def_bonus;   /* NPC equipment defence vs Ranged */
+    int melee_attack_type;  /* FcAttackType */
     int size;               /* tile footprint */
     int movement_speed;     /* 1=walk, 2=run */
     int prayer_drain;       /* base prayer drain in tenths (Tz-Kih specific) */
     int heal_amount;        /* HP healed per proc */
     int heal_interval;      /* ticks between independent Yt-HurKot heals */
-    int jad_ranged_max_hit; /* Jad ranged max hit (0 for non-Jad) */
 } FcNpcStats;
 
 /* Get stats for a given NPC type */
 const FcNpcStats* fc_npc_get_stats(int npc_type);
+
+/* Unit-explicit style maximum boundaries. Unsupported/invalid styles return
+ * zero. The HP accessor rejects non-integral tenths values by returning zero. */
+int fc_npc_max_hit_tenths_for_style(const FcNpcStats* stats, int attack_style);
+int fc_npc_max_hit_hp_for_style(const FcNpcStats* stats, int attack_style);
+
+/* Returns nonzero when every populated style maximum is valid tenths data. */
+int fc_npc_stats_valid(const FcNpcStats* stats);
 
 /* Initialize an NPC slot from type and spawn position */
 void fc_npc_spawn(FcNpc* npc, int npc_type, int x, int y, int spawn_index);

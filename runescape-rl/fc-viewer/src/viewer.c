@@ -3790,6 +3790,8 @@ static void draw_panel(ViewerState* v) {
                     p->prayer_level = lo->prayer_lvl; p->magic_level = lo->magic_lvl;
                     p->weapon_kind = lo->weapon_kind;
                     p->weapon_uses_ammo = lo->weapon_uses_ammo;
+                    p->crystal_piece_mask = lo->crystal_piece_mask;
+                    v->state.active_loadout = li;
                     p->weapon_speed = lo->weapon_speed;
                     p->weapon_range = lo->weapon_range;
                     p->ranged_attack_bonus = lo->ranged_atk; p->ranged_strength_bonus = lo->ranged_str;
