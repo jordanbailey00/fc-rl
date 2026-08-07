@@ -78,7 +78,8 @@ static inline void fc_debug_init(FcDebugLog* log) { (void)log; }
 
 /*
  * Records per-tick action buffers for replay compatibility.
- * Replay format: { seed: uint32, actions: int32[num_ticks][FC_NUM_ACTION_HEADS] }
+ * Replay metadata records the seed and state-hash version. The payload stores
+ * actions as int32[num_ticks][FC_NUM_ACTION_HEADS] plus per-tick hashes.
  *
  * The trace is a simple growable buffer. Call fc_trace_record after each step.
  * To replay: fc_reset(state, trace.seed), then for each tick:
@@ -90,6 +91,7 @@ static inline void fc_debug_init(FcDebugLog* log) { (void)log; }
 
 typedef struct {
     uint32_t seed;
+    uint32_t state_hash_version;
     int* actions;       /* flat: actions[tick * FC_NUM_ACTION_HEADS + head] */
     uint32_t* hashes;   /* per-tick state hash (optional, for verification) */
     int num_ticks;

@@ -1,0 +1,1946 @@
+{
+  "commands": [
+    {
+      "command": [
+        "git",
+        "-C",
+        "/tmp/fc-parity-mutations-m1eyfbl0",
+        "init",
+        "--quiet"
+      ],
+      "elapsed_seconds": 0.013297884026542306,
+      "exit_code": 0,
+      "label": "baseline-git-init",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/001-baseline-git-init.log"
+    },
+    {
+      "command": [
+        "git",
+        "-C",
+        "/tmp/fc-parity-mutations-m1eyfbl0",
+        "add",
+        "--",
+        "runescape-rl",
+        "pufferlib_4"
+      ],
+      "elapsed_seconds": 0.19954182603396475,
+      "exit_code": 0,
+      "label": "baseline-git-add",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/002-baseline-git-add.log"
+    },
+    {
+      "command": [
+        "git",
+        "-C",
+        "/tmp/fc-parity-mutations-m1eyfbl0",
+        "-c",
+        "user.name=Fight Caves Validation",
+        "-c",
+        "user.email=fight-caves-validation.invalid",
+        "commit",
+        "--quiet",
+        "-m",
+        "mutation audit snapshot"
+      ],
+      "elapsed_seconds": 0.004228321020491421,
+      "exit_code": 0,
+      "label": "baseline-git-commit",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/003-baseline-git-commit.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "-S",
+        "/tmp/fc-parity-mutations-m1eyfbl0/runescape-rl",
+        "-B",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DFC_ACTIVE_LOADOUT=FC_LOADOUT_SOTA_TBOW"
+      ],
+      "elapsed_seconds": 0.210099839954637,
+      "exit_code": 0,
+      "label": "baseline-configure",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/004-baseline-configure.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 3.1005683769471943,
+      "exit_code": 0,
+      "label": "baseline-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/005-baseline-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--show-only=json-v1"
+      ],
+      "elapsed_seconds": 0.010274640982970595,
+      "exit_code": 0,
+      "label": "baseline-test-inventory",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/006-baseline-test-inventory.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_npc_001_exact_stat_table|parity_npc_002_style_maximum_selection|parity_npc_003_exact_offensive_rolls|parity_npc_004_real_dual_style_routing|parity_def_001_sota_exact_rolls|parity_def_002_equipment_field_isolation|parity_def_003_skill_isolation_truncation|parity_tbow_003_effect_gating|parity_cry_002_weapon_cross_product|parity_tbow_002_exhaustive_integer_oracle|parity_cry_001_all_piece_masks|parity_dmg_001_exact_raw_roll_mapping|parity_dmg_006_storage_consumers|parity_dmg_002_independent_rng_oracle|parity_dmg_007_minimum_hit_functional|parity_pray_006_tick_start_snapshot|parity_pray_003_drain_decision_table|parity_pray_004_resistance_persistence|parity_pray_007_repeated_flick_trace|parity_pray_005_centralized_depletion|parity_dmg_008_tz_kih_coupling|parity_pray_008_jad_delayed_lock|parity_contract_001_exact_dimensions|parity_contract_002_puffer_mask_values|parity_contract_003_single_env_canaries|parity_det_001_field_coverage|parity_det_002_same_version_replay|parity_det_003_core_puffer_replay|parity_contract_004_evaluator_hard_failures|parity_contract_004_latest_checkpoint_filter|parity_contract_004_preflight_rejections|parity_contract_004_manifest_schema2)$"
+      ],
+      "elapsed_seconds": 2.239966426976025,
+      "exit_code": 0,
+      "label": "baseline-focused-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/007-baseline-focused-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4977230939548463,
+      "exit_code": 0,
+      "label": "npc_jad_max_swap-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/008-npc_jad_max_swap-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_npc_001_exact_stat_table|parity_npc_002_style_maximum_selection)$"
+      ],
+      "elapsed_seconds": 0.00965731602627784,
+      "exit_code": 8,
+      "label": "npc_jad_max_swap-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/009-npc_jad_max_swap-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4730444740271196,
+      "exit_code": 0,
+      "label": "npc_jad_max_swap-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/010-npc_jad_max_swap-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4949854119913653,
+      "exit_code": 0,
+      "label": "npc_all_styles_attack_level-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/011-npc_all_styles_attack_level-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_npc_003_exact_offensive_rolls|parity_npc_004_real_dual_style_routing)$"
+      ],
+      "elapsed_seconds": 0.011585837928578258,
+      "exit_code": 8,
+      "label": "npc_all_styles_attack_level-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/012-npc_all_styles_attack_level-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4795411649392918,
+      "exit_code": 0,
+      "label": "npc_all_styles_attack_level-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/013-npc_all_styles_attack_level-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.479619233054109,
+      "exit_code": 0,
+      "label": "def_melee_all_crush-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/014-def_melee_all_crush-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_def_001_sota_exact_rolls|parity_def_002_equipment_field_isolation)$"
+      ],
+      "elapsed_seconds": 0.0077076059533283114,
+      "exit_code": 8,
+      "label": "def_melee_all_crush-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/015-def_melee_all_crush-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4635913840029389,
+      "exit_code": 0,
+      "label": "def_melee_all_crush-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/016-def_melee_all_crush-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4641622269991785,
+      "exit_code": 0,
+      "label": "def_plus_nine-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/017-def_plus_nine-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_def_001_sota_exact_rolls|parity_def_003_skill_isolation_truncation)$"
+      ],
+      "elapsed_seconds": 0.010215041926130652,
+      "exit_code": 8,
+      "label": "def_plus_nine-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/018-def_plus_nine-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4761402030708268,
+      "exit_code": 0,
+      "label": "def_plus_nine-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/019-def_plus_nine-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.450005408958532,
+      "exit_code": 0,
+      "label": "def_magic_combined_floor-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/020-def_magic_combined_floor-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_def_003_skill_isolation_truncation)$"
+      ],
+      "elapsed_seconds": 0.00836595194414258,
+      "exit_code": 8,
+      "label": "def_magic_combined_floor-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/021-def_magic_combined_floor-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4574113260023296,
+      "exit_code": 0,
+      "label": "def_magic_combined_floor-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/022-def_magic_combined_floor-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4706736309453845,
+      "exit_code": 0,
+      "label": "bowfa_consumes_target_magic-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/023-bowfa_consumes_target_magic-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_tbow_003_effect_gating|parity_cry_002_weapon_cross_product)$"
+      ],
+      "elapsed_seconds": 0.007417365908622742,
+      "exit_code": 8,
+      "label": "bowfa_consumes_target_magic-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/024-bowfa_consumes_target_magic-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4722331420052797,
+      "exit_code": 0,
+      "label": "bowfa_consumes_target_magic-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/025-bowfa_consumes_target_magic-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4624945729738101,
+      "exit_code": 0,
+      "label": "generic_enters_tbow-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/026-generic_enters_tbow-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_tbow_003_effect_gating)$"
+      ],
+      "elapsed_seconds": 0.00940699502825737,
+      "exit_code": 8,
+      "label": "generic_enters_tbow-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/027-generic_enters_tbow-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.473235509940423,
+      "exit_code": 0,
+      "label": "generic_enters_tbow-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/028-generic_enters_tbow-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4861082440475002,
+      "exit_code": 0,
+      "label": "tbow_collapse_staged_integer-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/029-tbow_collapse_staged_integer-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_tbow_002_exhaustive_integer_oracle)$"
+      ],
+      "elapsed_seconds": 0.008320191060192883,
+      "exit_code": 8,
+      "label": "tbow_collapse_staged_integer-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/030-tbow_collapse_staged_integer-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4715195359895006,
+      "exit_code": 0,
+      "label": "tbow_collapse_staged_integer-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/031-tbow_collapse_staged_integer-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.470260167028755,
+      "exit_code": 0,
+      "label": "crystal_partial_gets_full_bonus-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/032-crystal_partial_gets_full_bonus-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_cry_001_all_piece_masks)$"
+      ],
+      "elapsed_seconds": 0.00759458402171731,
+      "exit_code": 8,
+      "label": "crystal_partial_gets_full_bonus-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/033-crystal_partial_gets_full_bonus-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4683414810569957,
+      "exit_code": 0,
+      "label": "crystal_partial_gets_full_bonus-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/034-crystal_partial_gets_full_bonus-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4796615270897746,
+      "exit_code": 0,
+      "label": "crystal_applies_to_all_ranged-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/035-crystal_applies_to_all_ranged-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_cry_002_weapon_cross_product)$"
+      ],
+      "elapsed_seconds": 0.009016639087349176,
+      "exit_code": 8,
+      "label": "crystal_applies_to_all_ranged-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/036-crystal_applies_to_all_ranged-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4705743090016767,
+      "exit_code": 0,
+      "label": "crystal_applies_to_all_ranged-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/037-crystal_applies_to_all_ranged-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4689597940305248,
+      "exit_code": 0,
+      "label": "npc_damage_tenths_range-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/038-npc_damage_tenths_range-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_dmg_001_exact_raw_roll_mapping|parity_dmg_006_storage_consumers)$"
+      ],
+      "elapsed_seconds": 0.009072178974747658,
+      "exit_code": 8,
+      "label": "npc_damage_tenths_range-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/039-npc_damage_tenths_range-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4453210639767349,
+      "exit_code": 0,
+      "label": "npc_damage_tenths_range-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/040-npc_damage_tenths_range-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4622266869992018,
+      "exit_code": 0,
+      "label": "player_damage_uniform_one_to_max-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/041-player_damage_uniform_one_to_max-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_dmg_001_exact_raw_roll_mapping|parity_dmg_002_independent_rng_oracle)$"
+      ],
+      "elapsed_seconds": 0.008376803947612643,
+      "exit_code": 8,
+      "label": "player_damage_uniform_one_to_max-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/042-player_damage_uniform_one_to_max-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4634911000030115,
+      "exit_code": 0,
+      "label": "player_damage_uniform_one_to_max-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/043-player_damage_uniform_one_to_max-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.463983524008654,
+      "exit_code": 0,
+      "label": "npc_zero_clamped_to_one-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/044-npc_zero_clamped_to_one-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_dmg_007_minimum_hit_functional)$"
+      ],
+      "elapsed_seconds": 0.006925684050656855,
+      "exit_code": 8,
+      "label": "npc_zero_clamped_to_one-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/045-npc_zero_clamped_to_one-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4572399120079353,
+      "exit_code": 0,
+      "label": "npc_zero_clamped_to_one-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/046-npc_zero_clamped_to_one-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4618302799062803,
+      "exit_code": 0,
+      "label": "player_zero_reroll-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/047-player_zero_reroll-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_dmg_002_independent_rng_oracle)$"
+      ],
+      "elapsed_seconds": 0.007262741099111736,
+      "exit_code": 8,
+      "label": "player_zero_reroll-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/048-player_zero_reroll-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4508969660382718,
+      "exit_code": 0,
+      "label": "player_zero_reroll-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/049-player_zero_reroll-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4747498309006914,
+      "exit_code": 0,
+      "label": "ordinary_attack_uses_live_prayer-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/050-ordinary_attack_uses_live_prayer-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_pray_006_tick_start_snapshot)$"
+      ],
+      "elapsed_seconds": 0.006951965042389929,
+      "exit_code": 8,
+      "label": "ordinary_attack_uses_live_prayer-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/051-ordinary_attack_uses_live_prayer-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4826517710462213,
+      "exit_code": 0,
+      "label": "ordinary_attack_uses_live_prayer-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/052-ordinary_attack_uses_live_prayer-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4511192520149052,
+      "exit_code": 0,
+      "label": "direct_switch_is_free_flick-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/053-direct_switch_is_free_flick-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_pray_003_drain_decision_table)$"
+      ],
+      "elapsed_seconds": 0.007103938027285039,
+      "exit_code": 8,
+      "label": "direct_switch_is_free_flick-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/054-direct_switch_is_free_flick-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4558454839279875,
+      "exit_code": 0,
+      "label": "direct_switch_is_free_flick-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/055-direct_switch_is_free_flick-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4482798300450668,
+      "exit_code": 0,
+      "label": "prayer_drain_greater_equal-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/056-prayer_drain_greater_equal-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_pray_004_resistance_persistence)$"
+      ],
+      "elapsed_seconds": 0.007376946974545717,
+      "exit_code": 8,
+      "label": "prayer_drain_greater_equal-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/057-prayer_drain_greater_equal-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4357906089862809,
+      "exit_code": 0,
+      "label": "prayer_drain_greater_equal-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/058-prayer_drain_greater_equal-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4646701840683818,
+      "exit_code": 0,
+      "label": "manual_off_resets_fraction-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/059-manual_off_resets_fraction-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_pray_004_resistance_persistence)$"
+      ],
+      "elapsed_seconds": 0.00916774698998779,
+      "exit_code": 8,
+      "label": "manual_off_resets_fraction-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/060-manual_off_resets_fraction-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4712087550433353,
+      "exit_code": 0,
+      "label": "manual_off_resets_fraction-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/061-manual_off_resets_fraction-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4702267479151487,
+      "exit_code": 0,
+      "label": "flick_resets_fraction-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/062-flick_resets_fraction-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_pray_004_resistance_persistence|parity_pray_007_repeated_flick_trace)$"
+      ],
+      "elapsed_seconds": 0.009519611019641161,
+      "exit_code": 8,
+      "label": "flick_resets_fraction-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/063-flick_resets_fraction-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4675661450019106,
+      "exit_code": 0,
+      "label": "flick_resets_fraction-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/064-flick_resets_fraction-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.5643188519170508,
+      "exit_code": 0,
+      "label": "potion_resets_fraction-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/065-potion_resets_fraction-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_pray_005_centralized_depletion)$"
+      ],
+      "elapsed_seconds": 0.006764348014257848,
+      "exit_code": 8,
+      "label": "potion_resets_fraction-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/066-potion_resets_fraction-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.5311156979296356,
+      "exit_code": 0,
+      "label": "potion_resets_fraction-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/067-potion_resets_fraction-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.469315979979001,
+      "exit_code": 0,
+      "label": "depletion_preserves_fraction-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/068-depletion_preserves_fraction-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_pray_005_centralized_depletion)$"
+      ],
+      "elapsed_seconds": 0.009379765018820763,
+      "exit_code": 8,
+      "label": "depletion_preserves_fraction-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/069-depletion_preserves_fraction-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4736624730285257,
+      "exit_code": 0,
+      "label": "depletion_preserves_fraction-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/070-depletion_preserves_fraction-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4958196270745248,
+      "exit_code": 0,
+      "label": "tz_kih_bypasses_cleanup-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/071-tz_kih_bypasses_cleanup-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_pray_005_centralized_depletion|parity_dmg_008_tz_kih_coupling)$"
+      ],
+      "elapsed_seconds": 0.008906648959964514,
+      "exit_code": 8,
+      "label": "tz_kih_bypasses_cleanup-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/072-tz_kih_bypasses_cleanup-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4882552140625194,
+      "exit_code": 0,
+      "label": "tz_kih_bypasses_cleanup-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/073-tz_kih_bypasses_cleanup-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.554769725073129,
+      "exit_code": 0,
+      "label": "jad_post_lock_rewrites_snapshot-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/074-jad_post_lock_rewrites_snapshot-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_pray_008_jad_delayed_lock)$"
+      ],
+      "elapsed_seconds": 0.008092549978755414,
+      "exit_code": 8,
+      "label": "jad_post_lock_rewrites_snapshot-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/075-jad_post_lock_rewrites_snapshot-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.5366916920756921,
+      "exit_code": 0,
+      "label": "jad_post_lock_rewrites_snapshot-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/076-jad_post_lock_rewrites_snapshot-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.5060757040046155,
+      "exit_code": 0,
+      "label": "jad_minimum_delay_two-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/077-jad_minimum_delay_two-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_pray_008_jad_delayed_lock)$"
+      ],
+      "elapsed_seconds": 0.009352780994959176,
+      "exit_code": 8,
+      "label": "jad_minimum_delay_two-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/078-jad_minimum_delay_two-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4963066769996658,
+      "exit_code": 0,
+      "label": "jad_minimum_delay_two-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/079-jad_minimum_delay_two-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.6456781460437924,
+      "exit_code": 2,
+      "label": "puffer_mask_old_size-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/080-puffer_mask_old_size-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 3.0077079000184312,
+      "exit_code": 0,
+      "label": "puffer_mask_old_size-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/081-puffer_mask_old_size-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.4646315400023013,
+      "exit_code": 2,
+      "label": "full_mask_old_size-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/082-full_mask_old_size-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 2.993638669955544,
+      "exit_code": 0,
+      "label": "full_mask_old_size-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/083-full_mask_old_size-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.599016180029139,
+      "exit_code": 0,
+      "label": "hash_omits_prayer_counter-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/084-hash_omits_prayer_counter-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_det_001_field_coverage)$"
+      ],
+      "elapsed_seconds": 0.01061902695801109,
+      "exit_code": 8,
+      "label": "hash_omits_prayer_counter-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/085-hash_omits_prayer_counter-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.608803428011015,
+      "exit_code": 0,
+      "label": "hash_omits_prayer_counter-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/086-hash_omits_prayer_counter-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.600358169991523,
+      "exit_code": 0,
+      "label": "hash_omits_pending_lock-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/087-hash_omits_pending_lock-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_det_001_field_coverage)$"
+      ],
+      "elapsed_seconds": 0.008557141991332173,
+      "exit_code": 8,
+      "label": "hash_omits_pending_lock-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/088-hash_omits_pending_lock-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.6412848900072277,
+      "exit_code": 0,
+      "label": "hash_omits_pending_lock-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/089-hash_omits_pending_lock-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.6033607289427891,
+      "exit_code": 0,
+      "label": "hash_omits_route-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/090-hash_omits_route-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_det_001_field_coverage)$"
+      ],
+      "elapsed_seconds": 0.008830490987747908,
+      "exit_code": 8,
+      "label": "hash_omits_route-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/091-hash_omits_route-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.6030311801005155,
+      "exit_code": 0,
+      "label": "hash_omits_route-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/092-hash_omits_route-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.5875662800390273,
+      "exit_code": 0,
+      "label": "hash_omits_weapon_kind-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/093-hash_omits_weapon_kind-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_det_001_field_coverage)$"
+      ],
+      "elapsed_seconds": 0.010849831975065172,
+      "exit_code": 8,
+      "label": "hash_omits_weapon_kind-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/094-hash_omits_weapon_kind-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 1.612657432910055,
+      "exit_code": 0,
+      "label": "hash_omits_weapon_kind-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/095-hash_omits_weapon_kind-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 0.35855490795802325,
+      "exit_code": 0,
+      "label": "replay_omits_reward_runtime-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/096-replay_omits_reward_runtime-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_det_002_same_version_replay|parity_det_003_core_puffer_replay)$"
+      ],
+      "elapsed_seconds": 0.13157251104712486,
+      "exit_code": 8,
+      "label": "replay_omits_reward_runtime-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/097-replay_omits_reward_runtime-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 0.3652622050140053,
+      "exit_code": 0,
+      "label": "replay_omits_reward_runtime-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/098-replay_omits_reward_runtime-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 0.1269888459937647,
+      "exit_code": 0,
+      "label": "evaluator_falls_back_random-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/099-evaluator_falls_back_random-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_contract_004_evaluator_hard_failures)$"
+      ],
+      "elapsed_seconds": 0.748519969987683,
+      "exit_code": 8,
+      "label": "evaluator_falls_back_random-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/100-evaluator_falls_back_random-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 0.14034774794708937,
+      "exit_code": 0,
+      "label": "evaluator_falls_back_random-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/101-evaluator_falls_back_random-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 0.13053888909053057,
+      "exit_code": 0,
+      "label": "latest_considers_incompatible-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/102-latest_considers_incompatible-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_contract_004_latest_checkpoint_filter)$"
+      ],
+      "elapsed_seconds": 0.22493209701497108,
+      "exit_code": 8,
+      "label": "latest_considers_incompatible-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/103-latest_considers_incompatible-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 0.1308596070157364,
+      "exit_code": 0,
+      "label": "latest_considers_incompatible-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/104-latest_considers_incompatible-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 0.1277413230855018,
+      "exit_code": 0,
+      "label": "config_accepts_schema_one-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/105-config_accepts_schema_one-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_contract_004_preflight_rejections|parity_contract_004_manifest_schema2)$"
+      ],
+      "elapsed_seconds": 1.2488624469842762,
+      "exit_code": 8,
+      "label": "config_accepts_schema_one-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/106-config_accepts_schema_one-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 0.13180051394738257,
+      "exit_code": 0,
+      "label": "config_accepts_schema_one-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/107-config_accepts_schema_one-restore-build.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 0.1284663809929043,
+      "exit_code": 0,
+      "label": "checkpoint_accepts_schema_one-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/108-checkpoint_accepts_schema_one-build.log"
+    },
+    {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "--output-on-failure",
+        "-R",
+        "^(parity_contract_004_latest_checkpoint_filter)$"
+      ],
+      "elapsed_seconds": 0.20295710396021605,
+      "exit_code": 8,
+      "label": "checkpoint_accepts_schema_one-tests",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/109-checkpoint_accepts_schema_one-tests.log"
+    },
+    {
+      "command": [
+        "cmake",
+        "--build",
+        "/tmp/fc-parity-mutations-m1eyfbl0/build",
+        "-j2"
+      ],
+      "elapsed_seconds": 0.13117461395449936,
+      "exit_code": 0,
+      "label": "checkpoint_accepts_schema_one-restore-build",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/mutation_audit/110-checkpoint_accepts_schema_one-restore-build.log"
+    }
+  ],
+  "elapsed_seconds": 103.24062833201606,
+  "gate": "targeted-mutation-audit",
+  "metadata": {
+    "hostname": "zeus",
+    "logical_cpus": 28,
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]"
+  },
+  "mutation_count": 35,
+  "mutations": [
+    {
+      "after": ".melee_max_hit_tenths = 970, .ranged_max_hit_tenths = 950,\n        .magic_max_hit_tenths = 970,",
+      "allow_compile_kill": false,
+      "before": ".melee_max_hit_tenths = 970, .ranged_max_hit_tenths = 970,\n        .magic_max_hit_tenths = 950,",
+      "description": "swap Jad ranged and magic maximum hits",
+      "index": 1,
+      "mutation_id": "npc_jad_max_swap",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_npc.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_npc_001_exact_stat_table",
+        "parity_npc_002_style_maximum_selection"
+      ]
+    },
+    {
+      "after": "case ATTACK_MELEE: return stats->att_level;\n        case ATTACK_RANGED: return stats->att_level;\n        case ATTACK_MAGIC: return stats->att_level;",
+      "allow_compile_kill": false,
+      "before": "case ATTACK_MELEE: return stats->att_level;\n        case ATTACK_RANGED: return stats->ranged_level;\n        case ATTACK_MAGIC: return stats->magic_level;",
+      "description": "use melee Attack for every NPC style",
+      "index": 2,
+      "mutation_id": "npc_all_styles_attack_level",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_npc.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_npc_003_exact_offensive_rolls",
+        "parity_npc_004_real_dual_style_routing"
+      ]
+    },
+    {
+      "after": "case FC_ATTACK_TYPE_STAB:   def_bonus = p->defence_crush; break;\n        case FC_ATTACK_TYPE_SLASH:  def_bonus = p->defence_crush; break;",
+      "allow_compile_kill": false,
+      "before": "case FC_ATTACK_TYPE_STAB:   def_bonus = p->defence_stab; break;\n        case FC_ATTACK_TYPE_SLASH:  def_bonus = p->defence_slash; break;",
+      "description": "map stab and slash defence to crush",
+      "index": 3,
+      "mutation_id": "def_melee_all_crush",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_combat.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_def_001_sota_exact_rolls",
+        "parity_def_002_equipment_field_isolation"
+      ]
+    },
+    {
+      "after": "eff_def = p->defence_level + 9;",
+      "allow_compile_kill": false,
+      "before": "eff_def = p->defence_level + 8;",
+      "description": "change the Defence invisible boost from +8 to +9",
+      "index": 4,
+      "mutation_id": "def_plus_nine",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_combat.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_def_001_sota_exact_rolls",
+        "parity_def_003_skill_isolation_truncation"
+      ]
+    },
+    {
+      "after": "eff_def = (3 * p->defence_level + 7 * p->magic_level) / 10 + 8;",
+      "allow_compile_kill": false,
+      "before": "eff_def = 3 * p->defence_level / 10 +\n                  7 * p->magic_level / 10 + 8;",
+      "description": "combine the two Magic-defence truncations",
+      "index": 5,
+      "mutation_id": "def_magic_combined_floor",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_combat.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_def_003_skill_isolation_truncation"
+      ]
+    },
+    {
+      "after": "fc_crystal_modifiers_bp(p->crystal_piece_mask,\n                                &accuracy_bp, &damage_bp);\n        if (target) accuracy_bp += fc_tbow_target_magic_level(target);\n        (void)damage_bp;",
+      "allow_compile_kill": false,
+      "before": "fc_crystal_modifiers_bp(p->crystal_piece_mask,\n                                &accuracy_bp, &damage_bp);\n        (void)damage_bp;",
+      "description": "let Bowfa accuracy and damage consume target Magic",
+      "index": 6,
+      "mutation_id": "bowfa_consumes_target_magic",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_combat.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_tbow_003_effect_gating",
+        "parity_cry_002_weapon_cross_product"
+      ]
+    },
+    {
+      "after": "p->weapon_kind != FC_WEAPON_BOW_OF_FAERDHINEN && target",
+      "allow_compile_kill": false,
+      "before": "p->weapon_kind == FC_WEAPON_TWISTED_BOW && target",
+      "description": "let generic Ranged weapons enter the TBow branch",
+      "index": 7,
+      "mutation_id": "generic_enters_tbow",
+      "occurrences": 2,
+      "relative_path": "fc-core/src/fc_combat.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_tbow_003_effect_gating"
+      ]
+    },
+    {
+      "after": "int64_t inner = 3 * magic / 10;\n    int64_t delta = (3 * magic - 1000) / 10;",
+      "allow_compile_kill": false,
+      "before": "int64_t inner = 3 * magic / 10;\n    int64_t delta = inner - 100;",
+      "description": "collapse TBow's staged integer division",
+      "index": 8,
+      "mutation_id": "tbow_collapse_staged_integer",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_combat.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_tbow_002_exhaustive_integer_oracle"
+      ]
+    },
+    {
+      "after": "int mask = (crystal_piece_mask & FC_CRYSTAL_PIECE_ALL)\n        ? FC_CRYSTAL_PIECE_ALL : 0;",
+      "allow_compile_kill": false,
+      "before": "int mask = crystal_piece_mask & FC_CRYSTAL_PIECE_ALL;",
+      "description": "apply the full crystal bonus for any partial set",
+      "index": 9,
+      "mutation_id": "crystal_partial_gets_full_bonus",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_combat.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_cry_001_all_piece_masks"
+      ]
+    },
+    {
+      "after": "}\n\n    if (p->crystal_piece_mask != 0) {",
+      "allow_compile_kill": false,
+      "before": "} else if (p->weapon_kind == FC_WEAPON_BOW_OF_FAERDHINEN) {",
+      "description": "apply crystal modifiers to TBow and generic Ranged",
+      "index": 10,
+      "mutation_id": "crystal_applies_to_all_ranged",
+      "occurrences": 2,
+      "relative_path": "fc-core/src/fc_combat.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_cry_002_weapon_cross_product"
+      ]
+    },
+    {
+      "after": "return fc_rng_int(state, final_max_hit_hp * 10 + 1);",
+      "allow_compile_kill": false,
+      "before": "return fc_rng_int(state, final_max_hit_hp + 1) * 10;",
+      "description": "sample NPC damage from max_hit_tenths + 1",
+      "index": 11,
+      "mutation_id": "npc_damage_tenths_range",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_combat.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_dmg_001_exact_raw_roll_mapping",
+        "parity_dmg_006_storage_consumers"
+      ]
+    },
+    {
+      "after": "int rolled_hp = fc_rng_int(state, final_max_hit_hp) + 1;",
+      "allow_compile_kill": false,
+      "before": "int rolled_hp = fc_rng_int(state, final_max_hit_hp + 1);\n    if (rolled_hp == 0) rolled_hp = 1;",
+      "description": "make player damage uniform over 1 through max",
+      "index": 12,
+      "mutation_id": "player_damage_uniform_one_to_max",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_combat.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_dmg_001_exact_raw_roll_mapping",
+        "parity_dmg_002_independent_rng_oracle"
+      ]
+    },
+    {
+      "after": "int rolled_hp = fc_rng_int(state, final_max_hit_hp + 1);\n    if (rolled_hp == 0) rolled_hp = 1;\n    return rolled_hp * 10;",
+      "allow_compile_kill": false,
+      "before": "return fc_rng_int(state, final_max_hit_hp + 1) * 10;",
+      "description": "clamp an accurate NPC zero to one HP",
+      "index": 13,
+      "mutation_id": "npc_zero_clamped_to_one",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_combat.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_dmg_007_minimum_hit_functional"
+      ]
+    },
+    {
+      "after": "while (rolled_hp == 0) {\n        rolled_hp = fc_rng_int(state, final_max_hit_hp + 1);\n    }",
+      "allow_compile_kill": false,
+      "before": "if (rolled_hp == 0) rolled_hp = 1;",
+      "description": "reroll a player zero and consume another RNG draw",
+      "index": 14,
+      "mutation_id": "player_zero_reroll",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_combat.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_dmg_002_independent_rng_oracle"
+      ]
+    },
+    {
+      "after": "queued->prayer_snapshot = p->prayer;",
+      "allow_compile_kill": false,
+      "before": "queued->prayer_snapshot = p->prayer_at_tick_start;",
+      "description": "use live Prayer instead of the tick-start snapshot",
+      "index": 15,
+      "mutation_id": "ordinary_attack_uses_live_prayer",
+      "occurrences": 2,
+      "relative_path": "fc-core/src/fc_npc.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_pray_006_tick_start_snapshot"
+      ]
+    },
+    {
+      "after": "int performed_flick = transition != NULL &&\n        transition->prior_prayer != PRAYER_NONE &&\n        transition->actual_final_prayer != PRAYER_NONE &&\n        transition->final_state_changed;",
+      "allow_compile_kill": false,
+      "before": "int performed_flick = transition != NULL &&\n        transition->explicit_off_then_on &&\n        transition->off_performed &&\n        transition->on_succeeded;",
+      "description": "treat a direct protection-Prayer switch as a free flick",
+      "index": 16,
+      "mutation_id": "direct_switch_is_free_flick",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_prayer.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_pray_003_drain_decision_table"
+      ]
+    },
+    {
+      "after": "while (p->prayer_drain_counter >= resistance) {",
+      "allow_compile_kill": false,
+      "before": "while (p->prayer_drain_counter > resistance) {",
+      "description": "change the Prayer drain threshold from greater-than to greater-or-equal",
+      "index": 17,
+      "mutation_id": "prayer_drain_greater_equal",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_prayer.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_pray_004_resistance_persistence"
+      ]
+    },
+    {
+      "after": "result.off_requested = (p->prayer != PRAYER_NONE);\n            p->prayer = PRAYER_NONE;\n            p->prayer_drain_counter = 0;",
+      "allow_compile_kill": false,
+      "before": "result.off_requested = (p->prayer != PRAYER_NONE);\n            p->prayer = PRAYER_NONE;",
+      "description": "reset the fractional Prayer counter on manual OFF",
+      "index": 18,
+      "mutation_id": "manual_off_resets_fraction",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_prayer.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_pray_004_resistance_persistence"
+      ]
+    },
+    {
+      "after": "result.explicit_off_then_on = 1;\n            p->prayer = PRAYER_NONE;\n            p->prayer_drain_counter = 0;",
+      "allow_compile_kill": false,
+      "before": "result.explicit_off_then_on = 1;\n            p->prayer = PRAYER_NONE;",
+      "description": "reset the fractional Prayer counter on an explicit flick",
+      "index": 19,
+      "mutation_id": "flick_resets_fraction",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_prayer.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_pray_004_resistance_persistence",
+        "parity_pray_007_repeated_flick_trace"
+      ]
+    },
+    {
+      "after": "p->current_prayer += restore;\n        if (p->current_prayer > p->max_prayer) p->current_prayer = p->max_prayer;\n        p->prayer_drain_counter = 0;\n        p->prayer_doses_remaining--;",
+      "allow_compile_kill": false,
+      "before": "p->current_prayer += restore;\n        if (p->current_prayer > p->max_prayer) p->current_prayer = p->max_prayer;\n        p->prayer_doses_remaining--;",
+      "description": "reset the fractional Prayer counter on a non-depleting potion",
+      "index": 20,
+      "mutation_id": "potion_resets_fraction",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_tick.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_pray_005_centralized_depletion"
+      ]
+    },
+    {
+      "after": "}",
+      "allow_compile_kill": false,
+      "before": "    p->prayer_drain_counter = 0;\n}",
+      "description": "preserve the fractional Prayer counter after depletion",
+      "index": 21,
+      "mutation_id": "depletion_preserves_fraction",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_prayer.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_pray_005_centralized_depletion"
+      ]
+    },
+    {
+      "after": "int prayer_before = p->current_prayer;\n                p->current_prayer -= drain;\n                if (p->current_prayer < 0) p->current_prayer = 0;\n                int actual_drain = prayer_before - p->current_prayer;",
+      "allow_compile_kill": false,
+      "before": "int actual_drain = fc_prayer_apply_loss_tenths(p, drain);",
+      "description": "deplete Prayer through Tz-Kih without centralized cleanup",
+      "index": 22,
+      "mutation_id": "tz_kih_bypasses_cleanup",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_combat.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_pray_005_centralized_depletion",
+        "parity_dmg_008_tz_kih_coupling"
+      ]
+    },
+    {
+      "after": "if (!hit->active || hit->prayer_lock_tick < 0 ||",
+      "allow_compile_kill": false,
+      "before": "if (!hit->active || hit->prayer_snapshot >= 0 ||\n            hit->prayer_lock_tick < 0 ||",
+      "description": "let a post-lock Jad action rewrite the locked snapshot",
+      "index": 23,
+      "mutation_id": "jad_post_lock_rewrites_snapshot",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_tick.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_pray_008_jad_delayed_lock"
+      ]
+    },
+    {
+      "after": "if (use_style != ATTACK_MELEE && delay < 2) delay = 2;",
+      "allow_compile_kill": false,
+      "before": "if (use_style != ATTACK_MELEE && delay < 3) delay = 3;",
+      "description": "queue a minimum-delay Jad hit at two under same-tick aging",
+      "index": 24,
+      "mutation_id": "jad_minimum_delay_two",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_npc.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_pray_008_jad_delayed_lock"
+      ]
+    },
+    {
+      "after": "#define FC_PUFFER_MASK_SIZE     (FC_MOVE_DIM + FC_ATTACK_DIM + 5)",
+      "allow_compile_kill": true,
+      "before": "#define FC_PUFFER_MASK_SIZE     (FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM)",
+      "description": "leave the Puffer mask at its old 31-value expression",
+      "index": 25,
+      "mutation_id": "puffer_mask_old_size",
+      "occurrences": 1,
+      "relative_path": "fc-core/include/fc_contracts.h",
+      "status": "killed_by_compile_guard",
+      "tests": [
+        "parity_contract_001_exact_dimensions",
+        "parity_contract_002_puffer_mask_values"
+      ]
+    },
+    {
+      "after": "#define FC_ACTION_MASK_SIZE     (FC_MOVE_DIM + FC_ATTACK_DIM + 5 + FC_EAT_DIM + FC_DRINK_DIM + FC_MOVE_TARGET_X_DIM + FC_MOVE_TARGET_Y_DIM)  /* stale 166 */",
+      "allow_compile_kill": true,
+      "before": "#define FC_ACTION_MASK_SIZE     (FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM + FC_EAT_DIM + FC_DRINK_DIM + FC_MOVE_TARGET_X_DIM + FC_MOVE_TARGET_Y_DIM)  /* 169 */",
+      "description": "leave the full mask at its old 166-value expression",
+      "index": 26,
+      "mutation_id": "full_mask_old_size",
+      "occurrences": 1,
+      "relative_path": "fc-core/include/fc_contracts.h",
+      "status": "killed_by_compile_guard",
+      "tests": [
+        "parity_contract_001_exact_dimensions",
+        "parity_contract_003_single_env_canaries"
+      ]
+    },
+    {
+      "after": "",
+      "allow_compile_kill": false,
+      "before": "    FC_HASH_I32(player->prayer_drain_counter);\n",
+      "description": "omit prayer_drain_counter from the canonical hash",
+      "index": 27,
+      "mutation_id": "hash_omits_prayer_counter",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_hash.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_det_001_field_coverage"
+      ]
+    },
+    {
+      "after": "",
+      "allow_compile_kill": false,
+      "before": "    FC_HASH_I32(hit->prayer_lock_tick);\n",
+      "description": "omit pending prayer_lock_tick from the canonical hash",
+      "index": 28,
+      "mutation_id": "hash_omits_pending_lock",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_hash.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_det_001_field_coverage"
+      ]
+    },
+    {
+      "after": "",
+      "allow_compile_kill": false,
+      "before": "        FC_HASH_I32(player->route_x[i]);\n",
+      "description": "omit a route coordinate from the canonical hash",
+      "index": 29,
+      "mutation_id": "hash_omits_route",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_hash.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_det_001_field_coverage"
+      ]
+    },
+    {
+      "after": "",
+      "allow_compile_kill": false,
+      "before": "    FC_HASH_I32(player->weapon_kind);\n",
+      "description": "omit weapon_kind from the canonical hash",
+      "index": 30,
+      "mutation_id": "hash_omits_weapon_kind",
+      "occurrences": 1,
+      "relative_path": "fc-core/src/fc_hash.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_det_001_field_coverage"
+      ]
+    },
+    {
+      "after": "    (void)runtime;\n",
+      "allow_compile_kill": false,
+      "before": "    print_runtime(output, runtime);\n",
+      "description": "omit reward runtime from the wrapper replay record",
+      "index": 31,
+      "mutation_id": "replay_omits_reward_runtime",
+      "occurrences": 1,
+      "relative_path": "fc-validation/tests/parity_fix_replay.c",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_det_002_same_version_replay",
+        "parity_det_003_core_puffer_replay"
+      ]
+    },
+    {
+      "after": "        except Exception as exc:\n            print(\n                checkpoint_diagnostic(\n                    exc, checkpoint_path, parameter_bytes, contract\n                ),\n                file=sys.stderr,\n            )\n            policy = None",
+      "allow_compile_kill": false,
+      "before": "        except Exception as exc:\n            print(\n                checkpoint_diagnostic(\n                    exc, checkpoint_path, parameter_bytes, contract\n                ),\n                file=sys.stderr,\n            )\n            return 1",
+      "description": "let evaluator checkpoint/model errors fall back to random behavior",
+      "index": 32,
+      "mutation_id": "evaluator_falls_back_random",
+      "occurrences": 1,
+      "relative_path": "fc-viewer/eval_viewer.py",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_contract_004_evaluator_hard_failures"
+      ]
+    },
+    {
+      "after": "        except ContractError:\n            pass\n        for candidate in marker.parent.rglob(\"*.bin\"):",
+      "allow_compile_kill": false,
+      "before": "        except ContractError:\n            continue\n        for candidate in marker.parent.rglob(\"*.bin\"):",
+      "description": "let latest consider an incompatible pre-parity checkpoint",
+      "index": 33,
+      "mutation_id": "latest_considers_incompatible",
+      "occurrences": 1,
+      "relative_path": "tools/validation/contract_preflight.py",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_contract_004_latest_checkpoint_filter"
+      ]
+    },
+    {
+      "after": "if values[\"manifest_schema_version\"] not in (1, 2):",
+      "allow_compile_kill": false,
+      "before": "if values[\"manifest_schema_version\"] != 2:",
+      "description": "accept a schema-1 parity configuration/manifest request",
+      "index": 34,
+      "mutation_id": "config_accepts_schema_one",
+      "occurrences": 1,
+      "relative_path": "tools/validation/contract_preflight.py",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_contract_004_preflight_rejections",
+        "parity_contract_004_manifest_schema2"
+      ]
+    },
+    {
+      "after": "if marker.get(\"checkpoint_contract_schema_version\") not in (1, 2):",
+      "allow_compile_kill": false,
+      "before": "if marker.get(\"checkpoint_contract_schema_version\") != 2:",
+      "description": "accept a schema-1 checkpoint sidecar",
+      "index": 35,
+      "mutation_id": "checkpoint_accepts_schema_one",
+      "occurrences": 1,
+      "relative_path": "tools/validation/contract_preflight.py",
+      "status": "killed_by_test",
+      "tests": [
+        "parity_contract_004_latest_checkpoint_filter"
+      ]
+    }
+  ],
+  "schema": 1,
+  "source": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl",
+  "source_hashes_after": {
+    "fc-core/include/fc_contracts.h": "87a1a88c38e29ba3eb568e5a9d38b1dfb7b9985c399fcf41e557d9f0e8214fc1",
+    "fc-core/src/fc_combat.c": "298efbd744adc2924eaa555235ed7d31c464e01b2052479085db205a254027d6",
+    "fc-core/src/fc_hash.c": "f09bd0365cacba300d2f043d163d6156ac571563678c7ca99a9c8043ab5fb80d",
+    "fc-core/src/fc_npc.c": "de8591a0d4014c941027724dd86b1e697e7d8b90bd46b317619c900f0d4c09cf",
+    "fc-core/src/fc_prayer.c": "8faaa14b868630b03483cc62eef2530d0cc6a3668db80c6d620a1a91c9c14426",
+    "fc-core/src/fc_tick.c": "eec617a511ac99518ac3f1318ce590b7215d9ff463b2b5c9d945254065bd6bda",
+    "fc-validation/tests/parity_fix_replay.c": "ea41fa328ce8c7413dd601b42364dc10b2582725f739bee819b4dfcb55cd7cd0",
+    "fc-viewer/eval_viewer.py": "55f27fb6153ea44efc40db9e24547a3ac05a1832b3992c5d224dcfa91a11b6a4",
+    "tools/validation/contract_preflight.py": "3c4bc086a5aa85c1705d59a12f024e7780578ade09a0727b7d48c04fc4004ef0"
+  },
+  "source_hashes_before": {
+    "fc-core/include/fc_contracts.h": "87a1a88c38e29ba3eb568e5a9d38b1dfb7b9985c399fcf41e557d9f0e8214fc1",
+    "fc-core/src/fc_combat.c": "298efbd744adc2924eaa555235ed7d31c464e01b2052479085db205a254027d6",
+    "fc-core/src/fc_hash.c": "f09bd0365cacba300d2f043d163d6156ac571563678c7ca99a9c8043ab5fb80d",
+    "fc-core/src/fc_npc.c": "de8591a0d4014c941027724dd86b1e697e7d8b90bd46b317619c900f0d4c09cf",
+    "fc-core/src/fc_prayer.c": "8faaa14b868630b03483cc62eef2530d0cc6a3668db80c6d620a1a91c9c14426",
+    "fc-core/src/fc_tick.c": "eec617a511ac99518ac3f1318ce590b7215d9ff463b2b5c9d945254065bd6bda",
+    "fc-validation/tests/parity_fix_replay.c": "ea41fa328ce8c7413dd601b42364dc10b2582725f739bee819b4dfcb55cd7cd0",
+    "fc-viewer/eval_viewer.py": "55f27fb6153ea44efc40db9e24547a3ac05a1832b3992c5d224dcfa91a11b6a4",
+    "tools/validation/contract_preflight.py": "3c4bc086a5aa85c1705d59a12f024e7780578ade09a0727b7d48c04fc4004ef0"
+  },
+  "source_unchanged": true,
+  "status": "passed"
+}

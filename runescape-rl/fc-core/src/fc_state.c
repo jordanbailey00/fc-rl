@@ -87,15 +87,41 @@ static void setup_arena(FcState* state) {
     memcpy(state->walkable, g_collision_cache, sizeof(state->walkable));
 }
 
-/* Player initialization — constants defined in fc_player_init.h */
+/* Player initialization — the loadout table is the combat-state authority. */
+
+static void apply_loadout_combat_fields(FcPlayer* p,
+                                        const FcLoadout* loadout) {
+    p->max_hp = loadout->max_hp;
+    p->max_prayer = loadout->max_prayer;
+    p->attack_level = loadout->attack_lvl;
+    p->strength_level = loadout->strength_lvl;
+    p->defence_level = loadout->defence_lvl;
+    p->ranged_level = loadout->ranged_lvl;
+    p->prayer_level = loadout->prayer_lvl;
+    p->magic_level = loadout->magic_lvl;
+    p->weapon_kind = loadout->weapon_kind;
+    p->weapon_uses_ammo = loadout->weapon_uses_ammo;
+    p->crystal_piece_mask = loadout->crystal_piece_mask;
+    p->weapon_speed = loadout->weapon_speed;
+    p->weapon_range = loadout->weapon_range;
+    p->ranged_attack_bonus = loadout->ranged_atk;
+    p->ranged_strength_bonus = loadout->ranged_str;
+    p->defence_stab = loadout->def_stab;
+    p->defence_slash = loadout->def_slash;
+    p->defence_crush = loadout->def_crush;
+    p->defence_magic = loadout->def_magic;
+    p->defence_ranged = loadout->def_ranged;
+    p->prayer_bonus = loadout->prayer_bonus;
+    p->ammo_count = loadout->ammo;
+}
 
 static void init_player(FcPlayer* p) {
+    const FcLoadout* loadout = &FC_LOADOUTS[FC_ACTIVE_LOADOUT];
+    apply_loadout_combat_fields(p, loadout);
     p->x = FC_ARENA_WIDTH / 2;
     p->y = FC_ARENA_HEIGHT / 2;
-    p->current_hp = FC_PLAYER_MAX_HP;
-    p->max_hp = FC_PLAYER_MAX_HP;
-    p->current_prayer = FC_PLAYER_MAX_PRAYER;
-    p->max_prayer = FC_PLAYER_MAX_PRAYER;
+    p->current_hp = p->max_hp;
+    p->current_prayer = p->max_prayer;
     p->prayer = PRAYER_NONE;
     p->prayer_at_tick_start = PRAYER_NONE;
     p->sharks_remaining = FC_MAX_SHARKS;
@@ -106,26 +132,6 @@ static void init_player(FcPlayer* p) {
     p->combo_timer = 0;
     p->run_energy = 10000;
     p->is_running = 1;
-    p->attack_level = FC_PLAYER_ATTACK_LVL;
-    p->strength_level = FC_PLAYER_STRENGTH_LVL;
-    p->defence_level = FC_PLAYER_DEFENCE_LVL;
-    p->ranged_level = FC_PLAYER_RANGED_LVL;
-    p->prayer_level = FC_PLAYER_PRAYER_LVL;
-    p->magic_level = FC_PLAYER_MAGIC_LVL;
-    p->weapon_kind = FC_PLAYER_WEAPON_KIND;
-    p->weapon_uses_ammo = FC_PLAYER_WEAPON_USES_AMMO;
-    p->crystal_piece_mask = FC_PLAYER_CRYSTAL_PIECE_MASK;
-    p->weapon_speed = FC_PLAYER_WEAPON_SPEED;
-    p->weapon_range = FC_PLAYER_WEAPON_RANGE;
-    p->ranged_attack_bonus = FC_EQUIP_RANGED_ATK;
-    p->ranged_strength_bonus = FC_EQUIP_RANGED_STR;
-    p->defence_stab = FC_EQUIP_DEF_STAB;
-    p->defence_slash = FC_EQUIP_DEF_SLASH;
-    p->defence_crush = FC_EQUIP_DEF_CRUSH;
-    p->defence_magic = FC_EQUIP_DEF_MAGIC;
-    p->defence_ranged = FC_EQUIP_DEF_RANGED;
-    p->prayer_bonus = FC_EQUIP_PRAYER_BONUS;
-    p->ammo_count = FC_PLAYER_AMMO;
     p->hp_regen_counter = 0;
     p->route_len = 0;
     p->route_idx = 0;
@@ -137,7 +143,70 @@ static void init_player(FcPlayer* p) {
 /* Lifecycle                                                                 */
 /* ======================================================================== */
 
+static void validate_npc_table_or_abort(void) {
+    for (int npc_type = NPC_TZ_KIH; npc_type < NPC_TYPE_COUNT; npc_type++) {
+        const FcNpcStats* stats = fc_npc_get_stats(npc_type);
+        if (fc_npc_stats_valid(stats)) continue;
+
+        fprintf(stderr,
+                "fc_init: invalid NPC maxima for type %d: melee=%d ranged=%d magic=%d tenths\n",
+                npc_type, stats->melee_max_hit_tenths,
+                stats->ranged_max_hit_tenths,
+                stats->magic_max_hit_tenths);
+        abort();
+    }
+}
+
+static void validate_loadout_table_or_abort(void) {
+    if (FC_ACTIVE_LOADOUT < 0 || FC_ACTIVE_LOADOUT >= FC_NUM_LOADOUTS) {
+        fprintf(stderr, "fc_init: active loadout %d is outside [0,%d)\n",
+                FC_ACTIVE_LOADOUT, FC_NUM_LOADOUTS);
+        abort();
+    }
+
+    for (int loadout_id = 0; loadout_id < FC_NUM_LOADOUTS; loadout_id++) {
+        const FcLoadout* loadout = &FC_LOADOUTS[loadout_id];
+        int valid = loadout->max_hp > 0 && loadout->max_prayer > 0 &&
+            loadout->attack_lvl >= 1 && loadout->strength_lvl >= 1 &&
+            loadout->defence_lvl >= 1 && loadout->ranged_lvl >= 1 &&
+            loadout->prayer_lvl >= 1 && loadout->magic_lvl >= 1 &&
+            loadout->weapon_kind >= FC_WEAPON_GENERIC_RANGED &&
+            loadout->weapon_kind <= FC_WEAPON_BOW_OF_FAERDHINEN &&
+            (loadout->weapon_uses_ammo == 0 ||
+             loadout->weapon_uses_ammo == 1) &&
+            loadout->ammo >= 0 &&
+            (loadout->crystal_piece_mask & ~FC_CRYSTAL_PIECE_ALL) == 0 &&
+            loadout->equipment_count >= 0 &&
+            loadout->equipment_count <= FC_LOADOUT_EQUIP_MAX &&
+            loadout->model_item_count >= 0 &&
+            loadout->model_item_count <= FC_LOADOUT_MODEL_ITEM_MAX;
+
+        FcPlayer player = {0};
+        apply_loadout_combat_fields(&player, loadout);
+        if (fc_player_ranged_base_max_hit_hp(&player) <= 0) valid = 0;
+        for (int npc_type = NPC_TZ_KIH;
+             valid && npc_type < NPC_TYPE_COUNT; npc_type++) {
+            FcNpc target = {0};
+            target.npc_type = npc_type;
+            if (fc_player_ranged_final_max_hit_hp(&player, &target) <= 0)
+                valid = 0;
+        }
+
+        if (valid) continue;
+        fprintf(stderr,
+                "fc_init: invalid loadout %d (skills=%d/%d/%d/%d/%d/%d weapon=%d ammo=%d/%d crystal=%d)\n",
+                loadout_id, loadout->attack_lvl, loadout->strength_lvl,
+                loadout->defence_lvl, loadout->ranged_lvl,
+                loadout->prayer_lvl, loadout->magic_lvl,
+                loadout->weapon_kind, loadout->weapon_uses_ammo,
+                loadout->ammo, loadout->crystal_piece_mask);
+        abort();
+    }
+}
+
 void fc_init(FcState* state) {
+    validate_npc_table_or_abort();
+    validate_loadout_table_or_abort();
     memset(state, 0, sizeof(FcState));
     state->active_loadout = FC_ACTIVE_LOADOUT;
 }
@@ -363,22 +432,23 @@ static float normalize_npc_heal_cooldown(const FcNpc* npc) {
     return 0.0f;
 }
 
-static int pending_hit_prayer_actionable(const FcPendingHit* ph) {
+static int pending_hit_prayer_actionable(const FcState* state,
+                                         const FcPendingHit* ph) {
     if (!ph->active) return 0;
     if (ph->prayer_snapshot >= 0) return 0;
     if (ph->prayer_lock_tick < 0) return 0;
+    if (state->tick >= ph->prayer_lock_tick) return 0;
     return attack_style_summary_idx(ph->attack_style) >= 0;
 }
 
 static float pending_hit_prayer_deadline_urgency(const FcState* state,
                                                  const FcPendingHit* ph) {
-    if (!pending_hit_prayer_actionable(ph)) return 0.0f;
+    if (!pending_hit_prayer_actionable(state, ph)) return 0.0f;
 
     int ticks_until_lock = ph->prayer_lock_tick - state->tick;
-    if (ticks_until_lock < 0) ticks_until_lock = 0;
-    if (ticks_until_lock > 3) ticks_until_lock = 3;
+    if (ticks_until_lock > 4) ticks_until_lock = 4;
 
-    return (float)(4 - ticks_until_lock) / 4.0f;
+    return (float)(5 - ticks_until_lock) / 4.0f;
 }
 
 /* Distance-only attack-style telegraph: what style would this NPC throw if it
@@ -468,7 +538,7 @@ void fc_write_obs(const FcState* state, float* out) {
         const FcPendingHit* ph = &p->pending_hits[hi];
         if (!ph->active) continue;
         int style_idx = attack_style_summary_idx(ph->attack_style);
-        if (style_idx >= 0 && pending_hit_prayer_actionable(ph)) {
+        if (style_idx >= 0 && pending_hit_prayer_actionable(state, ph)) {
             float urgency = pending_hit_prayer_deadline_urgency(state, ph);
             if (urgency > prayer_deadline_urgency[style_idx]) {
                 prayer_deadline_urgency[style_idx] = urgency;
@@ -564,7 +634,7 @@ void fc_write_obs(const FcState* state, float* out) {
             if (ph->active && ph->source_npc_idx == active_indices[slot]) {
                 npc_out[FC_NPC_PENDING_STYLE] = (float)ph->attack_style / 3.0f;
                 npc_out[FC_NPC_PENDING_TICKS] = (float)ph->ticks_remaining / 10.0f;
-                if (pending_hit_prayer_actionable(ph)) {
+                if (pending_hit_prayer_actionable(state, ph)) {
                     npc_out[FC_NPC_PENDING_PRAYER_WINDOW] = 1.0f;
                     npc_out[FC_NPC_PENDING_PRAYER_DEADLINE] =
                         pending_hit_prayer_deadline_urgency(state, ph);

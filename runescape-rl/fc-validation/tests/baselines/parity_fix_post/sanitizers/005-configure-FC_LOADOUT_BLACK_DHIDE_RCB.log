@@ -1,0 +1,12 @@
+-- The C compiler identification is GNU 13.3.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Fight Caves sanitizers enabled: ASan=ON, UBSan=ON, compiler=GNU 13.3.0
+-- Fight Caves active loadout override: FC_LOADOUT_BLACK_DHIDE_RCB
+-- Raylib found at /home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-viewer/raylib — fc_viewer will be built
+-- Configuring done (0.5s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-sanitizers-final/fc_loadout_black_dhide_rcb

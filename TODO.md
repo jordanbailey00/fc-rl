@@ -14,264 +14,72 @@ for project follow-ups that should not become public repo documentation yet.
 - Full derivation, exact config, trajectory, and final metrics are recorded at
   the top of `runescape-rl/docs/run_history.md`.
 
-## Immediate Priority: Validate Native Action Masks
+## Immediate Next Steps: Validate v4 Before Stage 2
 
-- [x] Hard-enforce the existing 31-value Fight Caves action mask in native
-  PufferLib rollout sampling and PPO recomputation.
-- [x] Preserve the existing 307-float policy input and three action heads so
-  checkpoints and the `v2_simple_reward` experiment remain comparable.
-- [x] Pass the 20M-step no-W&B smoke test with exactly zero invalid move,
-  attack, and prayer actions.
-- [x] Run the exact `v2_simple_reward` 2.5B-step experiment again with seed 73.
-  Hard-mask run: `l2l7lf6b`; pre-mask benchmark: `ur7t6c4n`.
-- [x] Confirm invalid actions remain exactly zero in all 2,382 history rows and
-  compare cave progress, stability, legal no-op/stalling behavior, entropy,
-  SPS, and all reward and behavior metrics against `ur7t6c4n`.
-- [x] Choose a minimal first correction for the measured Yt-MejKot healing
-  loop: retain `w_progress=0.001` for positive progress and apply
-  `negative_progress_multiplier=1.1` when required work increases.
-- [x] Implement and guardrail the asymmetric progress scale without changing
-  combat, movement, observations, action heads, masks, or trainer hparams.
-- [x] Run the exact 2.5B-step seed-73 `v2_simple_reward` trial with hard masks
-  and the new `1.1` negative-progress multiplier. Follow-up run: `ruuq4231`;
-  direct hard-mask benchmark: `l2l7lf6b`.
-- [x] Determine whether the multiplier removes the Yt-MejKot loop and whether
-  the separate explicit legal no-op collapse remains. `ruuq4231` prevented the
-  catastrophic healing-loop collapse and finished at average wave `25.27`
-  versus `3.75`, but the final policy still spent `90.65%` of ticks selecting
-  attack-none and showed a smaller late return toward Yt-MejKot/healing.
-- [ ] Keep the `1.1` multiplier and choose a separate, minimal correction for
-  legal stalling/timeouts before spending compute on masked-space hparam
-  retuning. Do not conflate that objective fix with further heal-loop tuning.
-- [ ] Decide whether the entropy coefficient needs retuning only after the
-  controlled A/B result. Do not mix that change into the mask validation run.
+This section is the authoritative next work.
 
-Implementation and validation details are tracked in `fc_revamp.md`, Step 4.
+Planning document for all proposed sweep stages:
+`v3_simple_reward_sweep.md`. Stage 1 is complete. Stage 2 is the planned value
+and optimizer sweep, but it must use `v4_simple_reward` as its fixed baseline
+and must not start until the validation gate below passes.
 
-## Immediate Priority: Clean Baselines vs NPC-Heal Penalty
+### 1. Visually Evaluate the New Baseline
 
-This section is the next work to execute. It supersedes older "immediate next"
-wording farther down this file without deleting that historical context.
+- [ ] Select useful checkpoints from W&B baseline run `l9o32hhz`, including an
+  early/transition policy, a strong late policy near the sampled 1.254B Jad
+  peak, and the final 1.499B policy.
+- [ ] Replay each selected checkpoint in the eval viewer, preferably across
+  multiple episodes rather than drawing conclusions from one cave.
+- [ ] Validate learned behavior: movement and combat timing, targeting and
+  target priority, prayer switching and conservation, attack activity,
+  safespot/LOS use, wave progression, Yt-MejKot handling, Jad prayer, healer
+  aggro, healer targeting, and healer/Jad interactions.
+- [ ] Compare visible behavior against `l9o32hhz` metrics so apparent issues
+  are supported or contradicted quantitatively.
+- [ ] Record checkpoint paths, observed behavior, and any suspected mechanics
+  defects before changing code or configuration.
 
-Goal: establish short- and long-budget baselines for the three strongest clean
-hyperparameter recipes, then repeat the exact matrix with one reward change:
-`shape_npc_heal_penalty = -0.01`. This separates ordinary training variance,
-long-budget behavior, and the effect of the healing-loop correction.
+### 2. Test the Environment for Defects
 
-Authoritative sweep analysis, exact hyperparameters, baseline config, run IDs,
-and exploit classifications:
-`sweep_history/v1.0_hparam_sweep.md`.
+- [ ] Build a focused mechanics checklist covering natural HP regeneration,
+  prayer drain and protection, player/NPC attack timing, damage calculation,
+  movement speed, pathfinding, collision, LOS, safespots, NPC footprints,
+  target/aggro persistence, wave composition, split NPCs, Yt-MejKot healing,
+  Jad attacks, Yt-HurKot spawn/aggro/pathing/healing, deaths, resets, rewards,
+  observations, and hard action masks.
+- [ ] Exercise the checklist with targeted validation-module tests and focused
+  playable-viewer scenarios. Keep diagnostic tooling outside `fc-core`.
+- [ ] Compare uncertain mechanics against OSRS references and the local
+  RuneScape reference repositories before labeling behavior defective.
+- [ ] Verify the 100-tick natural HP regeneration correction remains active:
+  no HP before tick 100 and exactly 1 HP on tick 100.
+- [ ] Check for additional accidental simplifications or timing errors similar
+  to the old 10-tick HP regeneration defect.
+- [ ] Document each finding as confirmed correct, intentional simplification,
+  confirmed defect, or unresolved. Do not fix behavior based only on visual
+  suspicion.
+- [ ] For every confirmed defect, add a failing guardrail first, implement the
+  smallest correction, rerun the full validation suite, and assess whether the
+  change invalidates `l9o32hhz` as the empirical baseline.
 
-### Primary Recipes
+### 3. Stage 2 Go/No-Go Gate
 
-Use the top three clean recipes rather than the literal raw top three:
-
-1. `ge0h4chm` - raw rank 1, clean winner, cave progress `0.937295`.
-2. `luiq0j2s` - raw rank 3, clean runner-up, cave progress `0.915094`.
-3. `5mpum7x7` - raw rank 4, strongest clean alternate parameter region,
-   cave progress `0.892173`.
-
-Do not use raw rank-2 `fi6th21p` as a clean baseline. It had excellent cave
-progress (`0.920874`) but a serious Yt-MejKot healing loop. Preserve it for the
-later exploit-focused stress tests.
-
-### Controls for Every Primary Run
-
-- Use the exact six trainer hyperparameters recorded for that source W&B run.
-- Keep top-level trainer seed `73` for direct paired comparisons.
-- Keep backend/core commit, v6 observation contract, action contract, reward
-  settings, 256x3 MinGRU policy, vector settings, SOTA TBow loadout, no-food,
-  and no-prayer-potion setup fixed.
-- Before the heal-fix phase, keep `shape_npc_heal_penalty = 0.0`.
-- During the heal-fix phase, change only
-  `shape_npc_heal_penalty: 0.0 -> -0.01`.
-- Do not simultaneously change correct-prayer reward, progress timers, wave
-  stall penalties, action masks, or any other hyperparameter/reward.
-- Enable normal checkpoint saving for these direct runs so interesting policies
-  can be replayed. Sweep trials did not preserve normal checkpoint series.
-- Give every run a unique W&B group/tag identifying recipe, budget, and whether
-  the heal penalty is enabled. Record every resulting W&B ID in
-  `sweep_history/v1.0_hparam_sweep.md` before moving to the next phase.
-- Record the exact git commit, config hash, backend build stamp, seed, and
-  manifest for reproducibility.
-
-Using seed 73 makes this a controlled A/B comparison and should reproduce the
-750M sweep policies if the effective binary and config are unchanged. It does
-not provide independent-seed confidence. Seeds 101 and 202 can be added after
-the paired matrix identifies which recipe/reward combination is worth deeper
-validation.
-
-### Phase A: Pre-Fix Baselines (`shape_npc_heal_penalty = 0.0`)
-
-Run and analyze all six before changing the reward configuration.
-
-750M reproduction runs:
-
-- [ ] `ge0h4chm` recipe at 750M steps, seed 73.
-- [ ] `luiq0j2s` recipe at 750M steps, seed 73.
-- [ ] `5mpum7x7` recipe at 750M steps, seed 73.
-
-2.5B long-budget runs, changing only `total_timesteps`:
-
-- [ ] `ge0h4chm` recipe at 2.5B steps, seed 73.
-- [ ] `luiq0j2s` recipe at 2.5B steps, seed 73.
-- [ ] `5mpum7x7` recipe at 2.5B steps, seed 73.
-
-Phase A exit gate:
-
-- [ ] Verify each 750M reproduction against its source sweep run.
-- [ ] Analyze whether each recipe improves, plateaus, regresses, or develops a
-  healing/stall failure between 750M and 2.5B.
-- [ ] Record all six W&B IDs, configs, checkpoint locations, and full metric
-  comparisons in the sweep-history document.
-- [ ] Do not enable the heal penalty until all six baselines are complete and
-  documented.
-
-### Phase B: Paired Heal-Penalty Runs (`shape_npc_heal_penalty = -0.01`)
-
-After Phase A, enable only the existing per-successful-heal penalty and repeat
-the same six jobs.
-
-750M paired runs:
-
-- [ ] `ge0h4chm` recipe at 750M steps, seed 73, heal penalty `-0.01`.
-- [ ] `luiq0j2s` recipe at 750M steps, seed 73, heal penalty `-0.01`.
-- [ ] `5mpum7x7` recipe at 750M steps, seed 73, heal penalty `-0.01`.
-
-2.5B paired runs, changing only `total_timesteps`:
-
-- [ ] `ge0h4chm` recipe at 2.5B steps, seed 73, heal penalty `-0.01`.
-- [ ] `luiq0j2s` recipe at 2.5B steps, seed 73, heal penalty `-0.01`.
-- [ ] `5mpum7x7` recipe at 2.5B steps, seed 73, heal penalty `-0.01`.
-
-Compare each post-fix run only to its same-recipe, same-budget pre-fix pair
-first. Then compare winners across recipes. Required outcome metrics:
-
-- Cave progress and average wave.
-- Wave-63 reach count/rate and cave completion count/rate.
-- Learning curve, peak, final value, and late-training stability.
-- NPC healing total and healing/gross-damage ratio.
-- Yt-MejKot target share, episode duration, longest-wave duration, and the wave
-  containing the longest delay.
-- Progress, correct-prayer, heal, no-progress, no-attack, tick, prayer-loss,
-  damage-taken, death, and total reward channels.
-- Prayer accuracy/conservation, attack activity, invalid actions, Jad damage,
-  healer targeting, SPS, runtime, and optimization stability.
-
-Phase B success criteria:
-
-- [ ] Healing stays near normal clean-run levels, approximately below 5-10% of
-  gross damage.
-- [ ] Multi-thousand-tick Yt-MejKot loops do not appear.
-- [ ] Cave progress, wave-63 reach, and completion do not materially regress
-  versus the matching pre-fix run.
-- [ ] Correct-prayer behavior remains useful, and progress remains the dominant
-  positive reward channel.
-
-### Phase C: Exploit-Focused Stress Tests
-
-After the clean paired matrix is complete, rerun selected high-performing
-healing-loop recipes with `shape_npc_heal_penalty = -0.01`. These runs answer a
-different question: whether the fix removes an already demonstrated exploit,
-not merely whether clean policies tolerate the new reward.
-
-Initial priority candidates:
-
-1. `fi6th21p` - raw rank 2, progress `0.920874`, healing `47.85%`, longest
-   wave 12,532 ticks. This is the highest-performing compromised policy.
-2. `vxpabmtb` - raw rank 7, progress `0.867107`, healing `19.16%`, longest
-   wave 2,706 ticks. This is the other compromised top-10 policy.
-3. `c5ygx7jk` - progress `0.782454`, healing `60.99%`, 24.54% wave-63 reach,
-   and 0.3065% completion. This is the strongest clear severe-loop stress case
-   that still beat the original `gp2dfafs` baseline.
-
-Additional candidates if more coverage is useful:
-`j4rm3ojl`, `bth7nkal`, `1lpyx352`, and `nc149won`. Each exceeded baseline
-cave progress while recording at least 10% healing.
-
-- [ ] Start each selected exploit recipe at 750M with its original seed-73
-  hyperparameters and only the `-0.01` heal-penalty change.
-- [ ] Compare directly against its original sweep metrics.
-- [ ] Promote only informative, non-looping results to 2.5B confirmation.
-- [ ] If the loop survives, do not stack fixes immediately. First determine
-  whether the direct penalty fires at the expected count and magnitude; then
-  test the next isolated option documented in the sweep analysis.
-
-## Current Focus
-
-- Completed: 48-run core-hparam Protein sweep and six-run trainer-seed
-  confirmation. Full configs, run IDs, metrics, and analysis are in
-  `runescape-rl/docs/run_history.md`.
-- Selected baseline: `v1.0`, derived from W&B run `b5m07qqr`. The canonical
-  live INI contains its exact trainer values with the validated no-supplies
-  v38 backend/task contract.
-- Immediate next experiment: run the 96-trial, 750M-step Protein sweep in
-  `runescape-rl/config/experiments/fight_caves_v1_mechanics_hparam_sweep_750m.ini`.
-  It holds the new backend, v6 observations, rewards, 256x3 policy, horizon,
-  and minibatch fixed while retuning six PPO/optimizer parameters. W&B group:
-  `fc_v1_mechanics_hparam_sweep_750m`.
-- After the sweep, compare all runs against new-mechanics reference `ocunodgx`,
-  then confirm the best few recipes with independent trainer seeds 101 and 202.
-- Then sweep policy size: hidden sizes `128, 256, 384, 512` crossed with layer
-  counts `2, 3, 4`, ideally two seeds each. Compare progress, Jad reach and
-  completion, stability, SPS, runtime, and parameter count.
-- Behavior still needing refinement: prayer conservation, Yt-MejKot healing
-  loops, and Jad/healer conversion. Hard action masks are implemented and await
-  the controlled `ur7t6c4n` comparison; target persistence / auto-path control
-  remains backlog.
-- Historical implementation plans remain in `fc_revamp.md` and
-  `runescape-rl/docs/fight_caves_improvement_plan.md`.
-
-## Backend / Training Correctness
-
-- Compare the current backend core against the SOTA run baseline and identify every
-  training-impacting diff.
-  - Scope only `fc-core`, `fc-training`, config/loadout/stat initialization, action
-    masking, reward/obs generation, reset logic, wave/NPC/combat mechanics, and any
-    PufferLib integration that changes training behavior.
-  - Exclude viewer-only diffs, UI diffs, render assets, screenshots, and frontend-only
-    code.
-  - For each backend diff, decide whether it should be kept, validated against OSRS,
-    fixed, or rolled back.
-
-- Using the simplified no-supplies config, run controlled training for each
-  loadout/equipment/stat setup and analyze performance by setup.
-  - Next planned sweep: after the simplified Tbow no-supplies retrain, run each
-    current backend loadout with the same no-food/no-prayer-potion contract.
-  - Keep all other training settings fixed so differences are attributable to loadout,
-    stats, and resource availability.
-  - Compare Jad reach rate, Jad kill rate, final/peak stability, resource usage,
-    prayer accuracy, death causes, and checkpoint quality.
-
-- Clean up bugs, defects, or simplifications that do not map to OSRS functionality.
-  - Prioritize mechanics that affect training behavior: combat timing, pathing,
-    collision, line of sight, prayer resolution, healer behavior, NPC targeting,
-    inventory/resource handling, and action masks.
-  - If behavior is intentionally simplified, document the reason and make sure the
-    simplification is not accidental or misleading.
-
-## Reward / Observation Iteration
-
-- Follow `fc_revamp.md` as the immediate reward/observation implementation plan.
-  - NPC type observations and prayer-decision deadline observations are already
-    implemented.
-  - Current reward trial is raw net required-work progress with
-    `w_progress=0.001`, stronger prayer conservation, and wave-scaled
-    no-attack pressure. Latest run: `mzqf7iml`.
-  - Next decision: inspect/replay `mzqf7iml` prayer behavior and add
-    prayer-action diagnostics if needed.
-  - Hard action masks are implemented; run the controlled `ur7t6c4n` A/B before
-    changing entropy or rewards. Target persistence and auto-pathing control
-    remain backlog.
-
-- Longer-running cleanup: reduce and prune the reward config, then run another
-  sweep.
-  - Remove reward terms that are redundant, dead, unreachable, or mostly acting as
-    optimizer noise.
-  - Prefer simpler reward terms that line up with OSRS-relevant outcomes and avoid
-    over-shaping behavior that should emerge from environment dynamics.
-  - After pruning, run a fresh sweep using the simplified reward surface and compare
-    against the current SOTA config.
+- [ ] Confirm no known training-relevant mechanics defect remains unresolved.
+- [ ] Confirm the viewer accurately represents backend actions well enough for
+  behavioral evaluation.
+- [ ] Confirm rewards, observations, action masks, loadout, seed, policy,
+  backend build, live INI, and synchronized Puffer INI match the documented
+  `v4_simple_reward` contract.
+- [ ] If validation changes backend behavior, rerun `v4_simple_reward` before
+  sweeping so Stage 2 has a valid post-fix baseline.
+- [ ] If the gate passes without training-impacting changes, configure Stage 2
+  from `v3_simple_reward_sweep.md` around the v4 trainer recipe. Sweep only
+  `vf_coef`, `vf_clip_coef`, `max_grad_norm`, and `beta1`; keep the environment,
+  rewards, observations, actions, architecture, loadout, seed, and all selected
+  Stage 1 trainer values fixed.
+- [ ] Decide and document the Stage 2 trial count and per-trial timestep budget
+  before creating its INI. Do not mix environment fixes or reward changes into
+  that sweep.
 
 ## Repo / PufferLib PR Readiness
 

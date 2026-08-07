@@ -3,7 +3,6 @@
 
 set(FC_VIEWER_SOURCES
     src/viewer.c
-    src/fc_hash.c
     src/fc_debug.c
     src/ui.c
     src/ui_assets.c
@@ -43,7 +42,6 @@ endif()
 
 add_executable(test_headless
     tests/test_headless.c
-    src/fc_hash.c
 )
 target_include_directories(test_headless PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src

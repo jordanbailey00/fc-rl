@@ -1,0 +1,1 @@
+PASS SOAK: seeds=2 ticks=2854 budget=5000 loadout=7 available_attacks=0x3e selected_attacks=0x3e prayer_counts=357,357,357,357,357,357,356,356

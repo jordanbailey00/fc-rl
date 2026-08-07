@@ -16,9 +16,10 @@ runescape-rl/reference/legacy-rsps/**/build/
 *.zip
 pufferlib/box2d-web/
 
-# Documentation — keep only root README out of live repo
+# Documentation — keep the root README and scoped agent instructions
 *.md
 !/README.md
+!**/AGENTS.md
 !/sweep_history/
 !/sweep_history/*.md
 /AGENT_README

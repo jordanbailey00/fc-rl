@@ -20,6 +20,13 @@ import subprocess
 import sys
 from typing import Any
 
+from contract_preflight import (
+    ContractError,
+    contract_identity,
+    load_checkpoint_resolution,
+    load_verified_preflight,
+)
+
 
 def sha256_file(path: str) -> str | None:
     if not path or not os.path.isfile(path):
@@ -135,7 +142,61 @@ def command_from_remainder(remainder: list[str]) -> list[str]:
     return remainder
 
 
+def require_stamp(stamp: dict[str, str], key: str) -> str:
+    value = stamp.get(key, "").strip()
+    if not value:
+        raise ContractError(f"backend build stamp omits required field {key}")
+    return value
+
+
+def build_checkpoint_record(
+    args: argparse.Namespace,
+    verified_preflight: dict[str, Any],
+) -> dict[str, Any]:
+    if args.checkpoint_request_mode == "cold":
+        if args.checkpoint_resolution_path:
+            raise ContractError(
+                "cold-start manifest received unexpected checkpoint resolution: "
+                f"actual={args.checkpoint_resolution_path!r}"
+            )
+        return {
+            "request_mode": "cold",
+            "cold_start": True,
+            "resolved_path": None,
+            "file_size": None,
+            "checkpoint_sha256": None,
+            "sidecar_path": None,
+            "sidecar_contract_identity": None,
+        }
+    if not args.checkpoint_resolution_path:
+        raise ContractError(
+            "warm/latest manifest requires a validated checkpoint resolution artifact"
+        )
+    resolution = load_checkpoint_resolution(
+        args.checkpoint_resolution_path,
+        verified_preflight,
+        expected_request_mode=args.checkpoint_request_mode,
+    )
+    return {
+        "request_mode": resolution["request_mode"],
+        "cold_start": False,
+        "resolved_path": resolution["resolved_path"],
+        "file_size": resolution["file_size"],
+        "checkpoint_sha256": resolution["checkpoint_sha256"],
+        "sidecar_path": resolution["sidecar_path"],
+        "sidecar_contract_identity": resolution["sidecar_contract_identity"],
+    }
+
+
 def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
+    verified = load_verified_preflight(
+        args.contract_path,
+        backend_so=args.backend_path,
+        config_path=args.config_path,
+        synced_config_path=args.synced_config_path,
+        active_loadout=args.active_loadout,
+    )
+    contract = verified["contract"]
     default_config_path = os.path.join(args.puffer_dir, "config", "default.ini")
     default_config = read_config(default_config_path) if os.path.isfile(default_config_path) else {}
     config = read_config(args.config_path)
@@ -149,6 +210,69 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
     base_cfg = effective_config.get("base", {})
     backend_stamp = read_key_value_file(args.backend_stamp)
     git_status = git(args.repo_root, "status", "--short")
+
+    backend_binary_sha256 = sha256_file(args.backend_path)
+    if backend_binary_sha256 is None:
+        raise ContractError(f"compiled backend is unavailable: {args.backend_path}")
+    stamped_backend_sha256 = require_stamp(backend_stamp, "BACKEND_SHA256")
+    if stamped_backend_sha256 != backend_binary_sha256:
+        raise ContractError(
+            "backend binary hash mismatch: "
+            f"expected={stamped_backend_sha256!r}, actual={backend_binary_sha256!r}"
+        )
+
+    source_sha256 = require_stamp(backend_stamp, "SOURCE_SHA256")
+    stamped_loadout = require_stamp(backend_stamp, "FC_ACTIVE_LOADOUT")
+    if stamped_loadout != args.active_loadout:
+        raise ContractError(
+            "backend stamp loadout mismatch: "
+            f"expected={args.active_loadout!r}, actual={stamped_loadout!r}"
+        )
+    compiler = {
+        "cc": require_stamp(backend_stamp, "CC"),
+        "cc_version": require_stamp(backend_stamp, "CC_VERSION"),
+        "cxx": require_stamp(backend_stamp, "CXX"),
+        "cxx_version": require_stamp(backend_stamp, "CXX_VERSION"),
+        "nvcc_version": require_stamp(backend_stamp, "NVCC_VERSION"),
+    }
+    build = {
+        "mode": require_stamp(backend_stamp, "BUILD_MODE"),
+        "nvcc_arch": require_stamp(backend_stamp, "NVCC_ARCH"),
+        "observation_version": require_stamp(
+            backend_stamp, "FC_OBSERVATION_VERSION"
+        ),
+        "action_version": require_stamp(backend_stamp, "FC_ACTION_VERSION"),
+        "reward_version": require_stamp(backend_stamp, "FC_REWARD_VERSION"),
+        "prayer_timing_version": require_stamp(
+            backend_stamp, "FC_PRAYER_TIMING_VERSION"
+        ),
+    }
+    for field in (
+        "observation_version",
+        "action_version",
+        "reward_version",
+        "prayer_timing_version",
+    ):
+        if build[field] != contract[field]:
+            raise ContractError(
+                f"backend stamp contract mismatch for {field}: "
+                f"expected={contract[field]!r}, actual={build[field]!r}"
+            )
+
+    source_config_sha256 = sha256_file(args.config_path)
+    synced_config_sha256 = sha256_file(args.synced_config_path)
+    if source_config_sha256 is None or synced_config_sha256 is None:
+        raise ContractError("source or synced config hash is unavailable")
+    if source_config_sha256 != synced_config_sha256:
+        raise ContractError(
+            "source/copied config hash mismatch while writing manifest: "
+            f"source_sha256={source_config_sha256}, "
+            f"synced_sha256={synced_config_sha256}"
+        )
+
+    commit = git(args.repo_root, "rev-parse", "HEAD")
+    if not commit:
+        raise ContractError("backend/source git commit is unavailable")
 
     resolved = {
         "env_name": base_cfg.get("env_name", "fight_caves"),
@@ -166,7 +290,7 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
     }
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "mode": args.mode,
         "command": command_from_remainder(args.command),
@@ -178,23 +302,28 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
             "synced_config_path": os.path.abspath(args.synced_config_path),
             "default_config_path": os.path.abspath(default_config_path),
             "backend_stamp": os.path.abspath(args.backend_stamp),
+            "backend_path": os.path.abspath(args.backend_path),
+            "contract_path": os.path.abspath(args.contract_path),
         },
         "git": {
             "branch": git(args.repo_root, "branch", "--show-current"),
-            "commit": git(args.repo_root, "rev-parse", "HEAD"),
+            "commit": commit,
             "commit_short": git(args.repo_root, "rev-parse", "--short", "HEAD"),
             "dirty": bool(git_status),
             "status_short": git_status.splitlines() if git_status else [],
         },
         "config": {
             "default_sha256": sha256_file(default_config_path),
-            "source_sha256": sha256_file(args.config_path),
-            "synced_sha256": sha256_file(args.synced_config_path),
+            "source_sha256": source_config_sha256,
+            "synced_sha256": synced_config_sha256,
+            "byte_identical": True,
             "default_sections": default_config,
             "override_sections": override_config,
             "effective_sections": effective_config,
         },
         "resolved": resolved,
+        "contract": contract,
+        "contract_identity": contract_identity(contract),
         "trainer_contract": {
             "observation_version": run_cfg.get("observation_version"),
             "action_version": run_cfg.get("action_version"),
@@ -211,9 +340,15 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
         },
         "backend": {
             "active_loadout": args.active_loadout,
+            "binary_path": os.path.abspath(args.backend_path),
+            "binary_sha256": backend_binary_sha256,
+            "source_sha256": source_sha256,
+            "build_stamp_sha256": sha256_file(args.backend_stamp),
+            "build": build,
+            "compiler": compiler,
             "stamp": backend_stamp,
-            "stamp_sha256": sha256_file(args.backend_stamp),
         },
+        "checkpoint": build_checkpoint_record(args, verified),
         "runtime": {
             "python_bin": args.python_bin,
             "python_version": python_version(args.python_bin),
@@ -234,6 +369,14 @@ def main() -> int:
     parser.add_argument("--config-path", required=True)
     parser.add_argument("--synced-config-path", required=True)
     parser.add_argument("--backend-stamp", required=True)
+    parser.add_argument("--backend-path", required=True)
+    parser.add_argument("--contract-path", required=True)
+    parser.add_argument(
+        "--checkpoint-request-mode",
+        required=True,
+        choices=("cold", "explicit", "latest"),
+    )
+    parser.add_argument("--checkpoint-resolution-path")
     parser.add_argument("--active-loadout", required=True)
     parser.add_argument("--python-bin", required=True)
     parser.add_argument("--mode", required=True)
@@ -241,7 +384,11 @@ def main() -> int:
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
 
-    manifest = build_manifest(args)
+    try:
+        manifest = build_manifest(args)
+    except (ContractError, OSError, ValueError, configparser.Error) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
     output_path = os.path.abspath(args.output_path)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:

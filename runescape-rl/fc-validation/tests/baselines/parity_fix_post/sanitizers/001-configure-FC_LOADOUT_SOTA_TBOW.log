@@ -1,0 +1,6 @@
+-- Fight Caves sanitizers enabled: ASan=ON, UBSan=ON, compiler=GNU 13.3.0
+-- Fight Caves active loadout override: FC_LOADOUT_SOTA_TBOW
+-- Raylib found at /home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-viewer/raylib — fc_viewer will be built
+-- Configuring done (0.1s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-sanitizers-final/full

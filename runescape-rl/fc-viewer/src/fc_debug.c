@@ -1,4 +1,5 @@
 #include "fc_debug.h"
+#include "fc_api.h"
 #include "fc_contracts.h"
 #include <stdlib.h>
 #include <string.h>
@@ -40,6 +41,7 @@ void fc_trace_init(FcActionTrace* trace) {
     trace->hashes = (uint32_t*)malloc(sizeof(uint32_t) * trace->capacity);
     trace->num_ticks = 0;
     trace->seed = 0;
+    trace->state_hash_version = FC_STATE_HASH_VERSION;
 }
 
 void fc_trace_destroy(FcActionTrace* trace) {
@@ -50,6 +52,7 @@ void fc_trace_destroy(FcActionTrace* trace) {
 
 void fc_trace_reset(FcActionTrace* trace, uint32_t seed) {
     trace->seed = seed;
+    trace->state_hash_version = FC_STATE_HASH_VERSION;
     trace->num_ticks = 0;
 }
 

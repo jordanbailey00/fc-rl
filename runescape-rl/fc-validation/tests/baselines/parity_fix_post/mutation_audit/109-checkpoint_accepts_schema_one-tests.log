@@ -1,0 +1,25 @@
+Internal ctest changing into directory: /tmp/fc-parity-mutations-m1eyfbl0/build
+Test project /tmp/fc-parity-mutations-m1eyfbl0/build
+    Start 149: parity_contract_004_latest_checkpoint_filter
+1/1 Test #149: parity_contract_004_latest_checkpoint_filter ...***Failed    0.20 sec
+FAIL CONTRACT-004 contract-filtered latest:
+  latest resolution resolved_path='/tmp/fc-checkpoint-latest-ol6ofy7o/checkpoints/schema1-compatible/fight_caves/pre-parity-run/schema1-newest.bin', expected '/tmp/fc-checkpoint-latest-ol6ofy7o/checkpoints/contracts/29e4e754afdb7378a06ea38428c9cc50b258888b711835cd6fe6033ee813d71a/fight_caves/active-run/0001.bin'
+  latest resolution file_size=29, expected 17
+  latest resolution checkpoint_sha256='679e489c44f265dc098c1de3867aa3bc82849223c7f133712db236a1b11898d9', expected '2b1edb32ee0f149f032a1cb558ada0c94a8c14c18213f60759b355a7aa49a692'
+  latest resolution sidecar_path='/tmp/fc-checkpoint-latest-ol6ofy7o/checkpoints/schema1-compatible/contract.json', expected '/tmp/fc-checkpoint-latest-ol6ofy7o/checkpoints/contracts/29e4e754afdb7378a06ea38428c9cc50b258888b711835cd6fe6033ee813d71a/contract.json'
+  explicit schema-1 checkpoint sidecar was accepted
+  latest accepted checkpoints with no matching schema-2 sidecar
+
+
+0% tests passed, 1 tests failed out of 1
+
+Label Time Summary:
+checkpoint    =   0.20 sec*proc (1 test)
+contract      =   0.20 sec*proc (1 test)
+parity_fix    =   0.20 sec*proc (1 test)
+
+Total Test time (real) =   0.20 sec
+
+The following tests FAILED:
+	149 - parity_contract_004_latest_checkpoint_filter (Failed)
+Errors while running CTest

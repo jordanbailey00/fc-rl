@@ -1,0 +1,90 @@
+Internal ctest changing into directory: /tmp/fc-parity-mutations-_d8rqtq0/build
+Test project /tmp/fc-parity-mutations-_d8rqtq0/build
+      Start   3: parity_npc_001_exact_stat_table
+ 1/31 Test   #3: parity_npc_001_exact_stat_table ................   Passed    0.00 sec
+      Start   4: parity_npc_002_style_maximum_selection
+ 2/31 Test   #4: parity_npc_002_style_maximum_selection .........   Passed    0.00 sec
+      Start   5: parity_npc_003_exact_offensive_rolls
+ 3/31 Test   #5: parity_npc_003_exact_offensive_rolls ...........   Passed    0.00 sec
+      Start   6: parity_npc_004_real_dual_style_routing
+ 4/31 Test   #6: parity_npc_004_real_dual_style_routing .........   Passed    0.01 sec
+      Start   8: parity_def_001_sota_exact_rolls
+ 5/31 Test   #8: parity_def_001_sota_exact_rolls ................   Passed    0.00 sec
+      Start   9: parity_def_002_equipment_field_isolation
+ 6/31 Test   #9: parity_def_002_equipment_field_isolation .......   Passed    0.00 sec
+      Start  10: parity_def_003_skill_isolation_truncation
+ 7/31 Test  #10: parity_def_003_skill_isolation_truncation ......   Passed    0.00 sec
+      Start  15: parity_tbow_002_exhaustive_integer_oracle
+ 8/31 Test  #15: parity_tbow_002_exhaustive_integer_oracle ......   Passed    0.00 sec
+      Start  16: parity_tbow_003_effect_gating
+ 9/31 Test  #16: parity_tbow_003_effect_gating ..................   Passed    0.00 sec
+      Start  17: parity_cry_001_all_piece_masks
+10/31 Test  #17: parity_cry_001_all_piece_masks .................   Passed    0.00 sec
+      Start  18: parity_cry_002_weapon_cross_product
+11/31 Test  #18: parity_cry_002_weapon_cross_product ............   Passed    0.00 sec
+      Start  26: parity_dmg_001_exact_raw_roll_mapping
+12/31 Test  #26: parity_dmg_001_exact_raw_roll_mapping ..........   Passed    0.00 sec
+      Start  27: parity_dmg_002_independent_rng_oracle
+13/31 Test  #27: parity_dmg_002_independent_rng_oracle ..........   Passed    0.00 sec
+      Start  31: parity_dmg_006_storage_consumers
+14/31 Test  #31: parity_dmg_006_storage_consumers ...............   Passed    0.00 sec
+      Start  32: parity_dmg_007_minimum_hit_functional
+15/31 Test  #32: parity_dmg_007_minimum_hit_functional ..........   Passed    0.00 sec
+      Start  33: parity_dmg_008_tz_kih_coupling
+16/31 Test  #33: parity_dmg_008_tz_kih_coupling .................   Passed    0.00 sec
+      Start  36: parity_pray_003_drain_decision_table
+17/31 Test  #36: parity_pray_003_drain_decision_table ...........   Passed    0.00 sec
+      Start  37: parity_pray_004_resistance_persistence
+18/31 Test  #37: parity_pray_004_resistance_persistence .........   Passed    0.00 sec
+      Start  38: parity_pray_005_centralized_depletion
+19/31 Test  #38: parity_pray_005_centralized_depletion ..........   Passed    0.00 sec
+      Start  39: parity_pray_006_tick_start_snapshot
+20/31 Test  #39: parity_pray_006_tick_start_snapshot ............   Passed    0.00 sec
+      Start  40: parity_pray_007_repeated_flick_trace
+21/31 Test  #40: parity_pray_007_repeated_flick_trace ...........   Passed    0.00 sec
+      Start  41: parity_pray_008_jad_delayed_lock
+22/31 Test  #41: parity_pray_008_jad_delayed_lock ...............   Passed    0.00 sec
+      Start 119: parity_contract_001_exact_dimensions
+23/31 Test #119: parity_contract_001_exact_dimensions ...........   Passed    0.00 sec
+      Start 120: parity_contract_002_puffer_mask_values
+24/31 Test #120: parity_contract_002_puffer_mask_values .........   Passed    0.00 sec
+      Start 121: parity_contract_003_single_env_canaries
+25/31 Test #121: parity_contract_003_single_env_canaries ........   Passed    0.00 sec
+      Start 124: parity_det_002_same_version_replay
+26/31 Test #124: parity_det_002_same_version_replay .............   Passed    0.11 sec
+      Start 125: parity_det_003_core_puffer_replay
+27/31 Test #125: parity_det_003_core_puffer_replay ..............   Passed    0.11 sec
+      Start 141: parity_contract_004_preflight_rejections
+28/31 Test #141: parity_contract_004_preflight_rejections .......   Passed    0.58 sec
+      Start 142: parity_contract_004_manifest_schema2
+29/31 Test #142: parity_contract_004_manifest_schema2 ...........***Failed    0.06 sec
+FAIL CONTRACT-004 manifest schema 2:
+  schema-2 manifest writer exited 1: Error: backend/source git commit is unavailable
+
+      Start 148: parity_contract_004_evaluator_hard_failures
+30/31 Test #148: parity_contract_004_evaluator_hard_failures ....   Passed    0.54 sec
+      Start 149: parity_contract_004_latest_checkpoint_filter
+31/31 Test #149: parity_contract_004_latest_checkpoint_filter ...   Passed    0.18 sec
+
+97% tests passed, 1 tests failed out of 31
+
+Label Time Summary:
+action_mask     =   0.00 sec*proc (3 tests)
+checkpoint      =   0.18 sec*proc (1 test)
+contract        =   1.36 sec*proc (7 tests)
+determinism     =   0.22 sec*proc (3 tests)
+evaluator       =   0.54 sec*proc (1 test)
+integration     =   0.02 sec*proc (8 tests)
+manifest        =   0.06 sec*proc (1 test)
+parity_fix      =   1.61 sec*proc (31 tests)
+preflight       =   0.58 sec*proc (1 test)
+preservation    =   0.00 sec*proc (3 tests)
+replay          =   0.22 sec*proc (2 tests)
+training        =   0.11 sec*proc (1 test)
+unit            =   0.01 sec*proc (14 tests)
+
+Total Test time (real) =   1.62 sec
+
+The following tests FAILED:
+	142 - parity_contract_004_manifest_schema2 (Failed)
+Errors while running CTest

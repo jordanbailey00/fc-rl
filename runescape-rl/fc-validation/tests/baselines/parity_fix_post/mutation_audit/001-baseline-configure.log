@@ -1,0 +1,11 @@
+-- The C compiler identification is GNU 13.3.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Fight Caves active loadout override: FC_LOADOUT_SOTA_TBOW
+-- Raylib not found at /tmp/fc-parity-mutations-_d8rqtq0/runescape-rl/fc-viewer/raylib — fc_viewer skipped (set RAYLIB_ROOT)
+-- Configuring done (0.2s)
+-- Generating done (0.0s)
+-- Build files have been written to: /tmp/fc-parity-mutations-_d8rqtq0/build

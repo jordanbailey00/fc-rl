@@ -10,11 +10,12 @@
 #include "fc_types.h"
 #include "fc_contracts.h"
 #include "fc_api.h"
+#include "fc_capi.h"
 #include "fc_npc.h"
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct {
+struct FcEnvCtx {
     FcState state;
     float obs[FC_OBS_SIZE];
     int actions[FC_NUM_ACTION_HEADS];
@@ -23,7 +24,7 @@ typedef struct {
     /* Episode accumulators for logging */
     float episode_reward;
     int episode_ticks;
-} FcEnvCtx;
+};
 
 /* Exported constants for Python to read (avoids magic numbers) */
 int fc_capi_obs_size(void) { return FC_OBS_SIZE; }
@@ -115,10 +116,10 @@ int fc_capi_get_terminal(const FcEnvCtx* ctx) { return ctx->terminal; }
  * Python creates one batch, then passes the handle to batch_step/reset.
  * This avoids pointer-to-pointer indirection and per-env ctypes calls.
  */
-typedef struct {
+struct FcBatchCtx {
     int num_envs;
     FcEnvCtx* envs;  /* contiguous array of FcEnvCtx[num_envs] */
-} FcBatchCtx;
+};
 
 FcBatchCtx* fc_capi_batch_create(int num_envs) {
     FcBatchCtx* batch = (FcBatchCtx*)calloc(1, sizeof(FcBatchCtx));

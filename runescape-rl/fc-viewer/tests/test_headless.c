@@ -250,7 +250,6 @@ static void test_action_mask(void) {
 
     float mask[FC_ACTION_MASK_SIZE];
     fc_write_mask(&state, mask);
-    char err[128];
 
     /* Idle is always valid */
     TEST("Move idle (0) always valid");
@@ -327,11 +326,6 @@ static void test_action_mask(void) {
 static void test_determinism(void) {
     printf("\n=== Determinism ===\n");
 
-#ifdef FC_NO_HASH
-    TEST("Deterministic replay (skipped — FC_NO_HASH)");
-    printf("SKIP\n"); tests_passed++;
-    return;
-#else
     uint32_t seed = 777;
     int num_ticks = 500;
     char err[128];
@@ -400,7 +394,6 @@ static void test_determinism(void) {
 
     free(recorded_actions);
     free(hashes1);
-#endif /* FC_NO_HASH */
 }
 
 /* ====================================================================== */
@@ -776,19 +769,21 @@ static void test_jad_prayer_reward_timing(void) {
     FcRewardRuntime runtime;
     FcRewardBreakdown b;
     FcPendingHit* queued;
+    int reveal_tick;
 
     init_manual_test_state(&state);
     fc_npc_spawn(&state.npcs[0], NPC_TZTOK_JAD, 12, 10, 0);
     state.player.prayer = PRAYER_PROTECT_MAGIC;
     fc_reward_runtime_reset(&runtime);
+    reveal_tick = state.tick;
 
     fc_queue_pending_hit(state.player.pending_hits,
                          &state.player.num_pending_hits,
                          FC_MAX_PENDING_HITS,
-                         97, 2, ATTACK_MAGIC, 0, 0);
+                         97, 3, ATTACK_MAGIC, 0, 0);
     queued = &state.player.pending_hits[0];
     queued->prayer_snapshot = -1;
-    queued->prayer_lock_tick = state.tick + 1;
+    queued->prayer_lock_tick = reveal_tick + 2;
 
     b = fc_reward_compute_breakdown(&state, &params, &runtime);
     TEST("Queued Jad attack gives no prayer reward before lock/resolve");
@@ -801,8 +796,12 @@ static void test_jad_prayer_reward_timing(void) {
     }
 
     clear_manual_tick_signals(&state);
-    state.tick = 1;
-    fc_resolve_player_pending_hits(&state);
+    state.tick = reveal_tick;
+    fc_resolve_player_pending_hits(&state);  /* reveal tick: 3 -> 2 */
+    state.tick = reveal_tick + 1;
+    fc_resolve_player_pending_hits(&state);  /* T+1: 2 -> 1 */
+    state.tick = reveal_tick + 2;
+    queued->prayer_snapshot = state.player.prayer;
     b = fc_reward_compute_breakdown(&state, &params, &runtime);
     TEST("Jad prayer lock tick still gives no reward before impact");
     if (queued->prayer_snapshot == PRAYER_PROTECT_MAGIC &&
@@ -816,7 +815,7 @@ static void test_jad_prayer_reward_timing(void) {
     }
 
     clear_manual_tick_signals(&state);
-    state.tick = 2;
+    state.tick = reveal_tick + 2;
     fc_resolve_player_pending_hits(&state);
     b = fc_reward_compute_breakdown(&state, &params, &runtime);
     TEST("Jad block receives shared correct-prayer reward on resolve tick");

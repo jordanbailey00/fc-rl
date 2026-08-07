@@ -1,0 +1,186 @@
+{
+  "build_root": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix",
+  "commands": [
+    {
+      "command": [
+        "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix/fc_loadout_black_dhide_rcb/fc-validation/parity_fix_soak",
+        "--seeds",
+        "29",
+        "--ticks",
+        "200000",
+        "--seed-start",
+        "50001",
+        "--failure-trace",
+        "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix/fc_loadout_black_dhide_rcb/fc-validation/extended-soak-failure.json"
+      ],
+      "elapsed_seconds": 0.1401164149865508,
+      "exit_code": 0,
+      "label": "extended-soak-FC_LOADOUT_BLACK_DHIDE_RCB",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/extended_soak_after_range_correction/001-extended-soak-FC_LOADOUT_BLACK_DHIDE_RCB.log"
+    },
+    {
+      "command": [
+        "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix/fc_loadout_sota_tbow/fc-validation/parity_fix_soak",
+        "--seeds",
+        "29",
+        "--ticks",
+        "200000",
+        "--seed-start",
+        "150001",
+        "--failure-trace",
+        "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix/fc_loadout_sota_tbow/fc-validation/extended-soak-failure.json"
+      ],
+      "elapsed_seconds": 0.6758712229784578,
+      "exit_code": 0,
+      "label": "extended-soak-FC_LOADOUT_SOTA_TBOW",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/extended_soak_after_range_correction/002-extended-soak-FC_LOADOUT_SOTA_TBOW.log"
+    },
+    {
+      "command": [
+        "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix/fc_loadout_low_def_rcb/fc-validation/parity_fix_soak",
+        "--seeds",
+        "29",
+        "--ticks",
+        "200000",
+        "--seed-start",
+        "250001",
+        "--failure-trace",
+        "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix/fc_loadout_low_def_rcb/fc-validation/extended-soak-failure.json"
+      ],
+      "elapsed_seconds": 0.06822908692993224,
+      "exit_code": 0,
+      "label": "extended-soak-FC_LOADOUT_LOW_DEF_RCB",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/extended_soak_after_range_correction/003-extended-soak-FC_LOADOUT_LOW_DEF_RCB.log"
+    },
+    {
+      "command": [
+        "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix/fc_loadout_rcb_pure/fc-validation/parity_fix_soak",
+        "--seeds",
+        "29",
+        "--ticks",
+        "200000",
+        "--seed-start",
+        "350001",
+        "--failure-trace",
+        "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix/fc_loadout_rcb_pure/fc-validation/extended-soak-failure.json"
+      ],
+      "elapsed_seconds": 0.07477435504551977,
+      "exit_code": 0,
+      "label": "extended-soak-FC_LOADOUT_RCB_PURE",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/extended_soak_after_range_correction/004-extended-soak-FC_LOADOUT_RCB_PURE.log"
+    },
+    {
+      "command": [
+        "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix/fc_loadout_msbi_pure/fc-validation/parity_fix_soak",
+        "--seeds",
+        "28",
+        "--ticks",
+        "200000",
+        "--seed-start",
+        "450001",
+        "--failure-trace",
+        "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix/fc_loadout_msbi_pure/fc-validation/extended-soak-failure.json"
+      ],
+      "elapsed_seconds": 0.08901846501976252,
+      "exit_code": 0,
+      "label": "extended-soak-FC_LOADOUT_MSBI_PURE",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/extended_soak_after_range_correction/005-extended-soak-FC_LOADOUT_MSBI_PURE.log"
+    },
+    {
+      "command": [
+        "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix/fc_loadout_blowpipe_pure/fc-validation/parity_fix_soak",
+        "--seeds",
+        "28",
+        "--ticks",
+        "200000",
+        "--seed-start",
+        "550001",
+        "--failure-trace",
+        "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix/fc_loadout_blowpipe_pure/fc-validation/extended-soak-failure.json"
+      ],
+      "elapsed_seconds": 0.0965109330136329,
+      "exit_code": 0,
+      "label": "extended-soak-FC_LOADOUT_BLOWPIPE_PURE",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/extended_soak_after_range_correction/006-extended-soak-FC_LOADOUT_BLOWPIPE_PURE.log"
+    },
+    {
+      "command": [
+        "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix/fc_loadout_acb_armadyl/fc-validation/parity_fix_soak",
+        "--seeds",
+        "28",
+        "--ticks",
+        "200000",
+        "--seed-start",
+        "650001",
+        "--failure-trace",
+        "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix/fc_loadout_acb_armadyl/fc-validation/extended-soak-failure.json"
+      ],
+      "elapsed_seconds": 0.374517299933359,
+      "exit_code": 0,
+      "label": "extended-soak-FC_LOADOUT_ACB_ARMADYL",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/extended_soak_after_range_correction/007-extended-soak-FC_LOADOUT_ACB_ARMADYL.log"
+    },
+    {
+      "command": [
+        "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix/fc_loadout_bowfa_crystal/fc-validation/parity_fix_soak",
+        "--seeds",
+        "28",
+        "--ticks",
+        "200000",
+        "--seed-start",
+        "750001",
+        "--failure-trace",
+        "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix/fc_loadout_bowfa_crystal/fc-validation/extended-soak-failure.json"
+      ],
+      "elapsed_seconds": 0.4663829510100186,
+      "exit_code": 0,
+      "label": "extended-soak-FC_LOADOUT_BOWFA_CRYSTAL",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/extended_soak_after_range_correction/008-extended-soak-FC_LOADOUT_BOWFA_CRYSTAL.log"
+    },
+    {
+      "command": [
+        "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix/fc_loadout_tbow_masori/fc-validation/parity_fix_soak",
+        "--seeds",
+        "28",
+        "--ticks",
+        "200000",
+        "--seed-start",
+        "850001",
+        "--failure-trace",
+        "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix/fc_loadout_tbow_masori/fc-validation/extended-soak-failure.json"
+      ],
+      "elapsed_seconds": 0.6371601799037308,
+      "exit_code": 0,
+      "label": "extended-soak-FC_LOADOUT_TBOW_MASORI",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/extended_soak_after_range_correction/009-extended-soak-FC_LOADOUT_TBOW_MASORI.log"
+    }
+  ],
+  "elapsed_seconds": 2.6318891199771315,
+  "environment": {},
+  "gate": "extended-soak",
+  "loadouts": [
+    "FC_LOADOUT_BLACK_DHIDE_RCB",
+    "FC_LOADOUT_SOTA_TBOW",
+    "FC_LOADOUT_LOW_DEF_RCB",
+    "FC_LOADOUT_RCB_PURE",
+    "FC_LOADOUT_MSBI_PURE",
+    "FC_LOADOUT_BLOWPIPE_PURE",
+    "FC_LOADOUT_ACB_ARMADYL",
+    "FC_LOADOUT_BOWFA_CRYSTAL",
+    "FC_LOADOUT_TBOW_MASORI"
+  ],
+  "metadata": {
+    "cmake": "cmake version 3.28.3\n\nCMake suite maintained and supported by Kitware (kitware.com/cmake).",
+    "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+    "cpu_model": "Intel(R) Core(TM) i7-14700F",
+    "hostname": "zeus",
+    "logical_cpus": 28,
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]"
+  },
+  "schema": 1,
+  "source": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl",
+  "status": "passed",
+  "tick_budget": 200000,
+  "total_seeds": 256
+}

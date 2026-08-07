@@ -11,6 +11,7 @@ PUFFER_DIR="${PUFFER_DIR:-$ROOT_DIR/pufferlib_4}"
 CONFIG_PATH="${CONFIG_PATH:-$SRC_DIR/config/fight_caves.ini}"
 TRAINING_BUILD_SH="$SRC_DIR/fc-training/build.sh"
 CUDA_ARCH_SH="$SRC_DIR/fc-training/cuda_arch.sh"
+CONTRACT_PREFLIGHT="$SRC_DIR/tools/validation/contract_preflight.py"
 
 if [ ! -d "$PUFFER_DIR" ]; then
     echo "Error: PufferLib not found at $PUFFER_DIR"
@@ -30,6 +31,10 @@ if [ ! -f "$CUDA_ARCH_SH" ]; then
     echo "Error: CUDA architecture helper not found at $CUDA_ARCH_SH"
     exit 1
 fi
+if [ ! -f "$CONTRACT_PREFLIGHT" ]; then
+    echo "Error: compiled-contract preflight helper not found at $CONTRACT_PREFLIGHT" >&2
+    exit 1
+fi
 source "$CUDA_ARCH_SH"
 
 # Sync config to where PufferLib reads it
@@ -37,7 +42,7 @@ cp "$CONFIG_PATH" "$PUFFER_DIR/config/fight_caves.ini"
 echo "[train.sh] Synced config from $CONFIG_PATH to $PUFFER_DIR/config/fight_caves.ini"
 
 mkdir -p \
-    "$PUFFER_DIR/checkpoints/fight_caves" \
+    "$PUFFER_DIR/checkpoints" \
     "$PUFFER_DIR/logs/fight_caves" \
     "$PUFFER_DIR/wandb"
 
@@ -119,6 +124,26 @@ if [ "$HELP_REQUESTED" = "1" ]; then
     exec "$PYTHON_BIN" -m pufferlib.pufferl "$MODE" fight_caves "${EXTRA_ARGS[@]}"
 fi
 
+CONTRACT_VALUES_OUTPUT="$(
+    "$PYTHON_BIN" "$CONTRACT_PREFLIGHT" config-values \
+        --config-path "$CONFIG_PATH"
+)" || exit 1
+mapfile -t SELECTED_CONTRACT_VALUES <<< "$CONTRACT_VALUES_OUTPUT"
+if [ "${#SELECTED_CONTRACT_VALUES[@]}" -ne 4 ]; then
+    echo "Error: config contract helper returned ${#SELECTED_CONTRACT_VALUES[@]} values, expected 4" >&2
+    exit 1
+fi
+export FC_OBSERVATION_VERSION="${SELECTED_CONTRACT_VALUES[0]}"
+export FC_ACTION_VERSION="${SELECTED_CONTRACT_VALUES[1]}"
+export FC_REWARD_VERSION="${SELECTED_CONTRACT_VALUES[2]}"
+export FC_PRAYER_TIMING_VERSION="${SELECTED_CONTRACT_VALUES[3]}"
+
+BACKEND_SOURCE_SHA256="$(
+    "$PYTHON_BIN" "$CONTRACT_PREFLIGHT" source-hash \
+        --runescape-dir "$SRC_DIR" \
+        --puffer-dir "$PUFFER_DIR"
+)" || exit 1
+
 NVCC_BIN="$(command -v nvcc 2>/dev/null || true)"
 if [ -z "$NVCC_BIN" ]; then
     echo "Error: nvcc not found. Add CUDA to PATH or set CUDA_HOME." >&2
@@ -154,6 +179,19 @@ elif ! grep -Fxq "FC_ACTIVE_LOADOUT=$ACTIVE_LOADOUT_KEY" "$BACKEND_STAMP"; then
     BACKEND_REBUILD_REASON="FC_ACTIVE_LOADOUT changed to $ACTIVE_LOADOUT_KEY"
 elif ! grep -Fxq "NVCC_ARCH=$EXPECTED_CUDA_ARCH" "$BACKEND_STAMP"; then
     BACKEND_REBUILD_REASON="missing or stale CUDA architecture build stamp"
+elif ! grep -Fxq "SOURCE_SHA256=$BACKEND_SOURCE_SHA256" "$BACKEND_STAMP"; then
+    BACKEND_REBUILD_REASON="backend source identity changed"
+elif ! grep -Fxq "FC_OBSERVATION_VERSION=$FC_OBSERVATION_VERSION" "$BACKEND_STAMP"; then
+    BACKEND_REBUILD_REASON="observation contract changed"
+elif ! grep -Fxq "FC_ACTION_VERSION=$FC_ACTION_VERSION" "$BACKEND_STAMP"; then
+    BACKEND_REBUILD_REASON="action contract changed"
+elif ! grep -Fxq "FC_REWARD_VERSION=$FC_REWARD_VERSION" "$BACKEND_STAMP"; then
+    BACKEND_REBUILD_REASON="reward contract changed"
+elif ! grep -Fxq "FC_PRAYER_TIMING_VERSION=$FC_PRAYER_TIMING_VERSION" "$BACKEND_STAMP"; then
+    BACKEND_REBUILD_REASON="Prayer timing contract changed"
+elif ! grep -Eq '^CC_VERSION=.' "$BACKEND_STAMP" \
+        || ! grep -Eq '^CXX_VERSION=.' "$BACKEND_STAMP"; then
+    BACKEND_REBUILD_REASON="missing compiler build identity"
 fi
 
 if [ -n "$BACKEND_REBUILD_REASON" ]; then
@@ -164,12 +202,35 @@ if [ -n "$BACKEND_REBUILD_REASON" ]; then
     mkdir -p "$(dirname "$BACKEND_STAMP")"
     {
         echo "FC_ACTIVE_LOADOUT=$ACTIVE_LOADOUT_KEY"
+        echo "FC_OBSERVATION_VERSION=$FC_OBSERVATION_VERSION"
+        echo "FC_ACTION_VERSION=$FC_ACTION_VERSION"
+        echo "FC_REWARD_VERSION=$FC_REWARD_VERSION"
+        echo "FC_PRAYER_TIMING_VERSION=$FC_PRAYER_TIMING_VERSION"
+        echo "BUILD_MODE=cuda"
+        echo "SOURCE_SHA256=$BACKEND_SOURCE_SHA256"
         echo "PYTHON_BIN=$PYTHON_BIN"
+        echo "CC=$CC"
+        echo "CC_VERSION=$($CC --version | head -n 1)"
+        echo "CXX=$CXX"
+        echo "CXX_VERSION=$($CXX --version | head -n 1)"
         echo "NVCC_ARCH=$EXPECTED_CUDA_ARCH"
         echo "NVCC_VERSION=$($NVCC_BIN --version | tail -n 1)"
         echo "BACKEND_SHA256=$(sha256sum "$BACKEND_SO" | awk '{print $1}')"
     } > "$BACKEND_STAMP"
 fi
+
+CONTRACT_PREFLIGHT_PATH="${FC_CONTRACT_PREFLIGHT_PATH:-$PUFFER_DIR/build/fight_caves_contract_$$.json}"
+if ! "$PYTHON_BIN" "$CONTRACT_PREFLIGHT" check \
+    --backend-so "$BACKEND_SO" \
+    --config-path "$CONFIG_PATH" \
+    --synced-config-path "$PUFFER_DIR/config/fight_caves.ini" \
+    --active-loadout "$ACTIVE_LOADOUT_KEY" \
+    --output-path "$CONTRACT_PREFLIGHT_PATH"; then
+    echo "Error: Fight Caves compiled-contract preflight failed" >&2
+    exit 1
+fi
+echo "[train.sh] Compiled-contract preflight passed: $CONTRACT_PREFLIGHT_PATH"
+
 CMD=("$PYTHON_BIN" -m pufferlib.pufferl "$MODE" fight_caves)
 if [ -n "$WANDB_FLAG" ]; then
     CMD+=("$WANDB_FLAG")
@@ -178,9 +239,58 @@ CMD+=(--wandb-project "$WANDB_PROJECT")
 if [ -n "${WANDB_TAG:-}" ]; then
     CMD+=(--tag "$WANDB_TAG")
 fi
+
+CHECKPOINT_ROOT="${FC_CHECKPOINT_ROOT:-$PUFFER_DIR/checkpoints}"
+CHECKPOINT_PREP_OUTPUT="$(
+    "$PYTHON_BIN" "$CONTRACT_PREFLIGHT" prepare-checkpoint-dir \
+        --checkpoint-root "$CHECKPOINT_ROOT" \
+        --preflight-path "$CONTRACT_PREFLIGHT_PATH"
+)" || exit 1
+mapfile -t CHECKPOINT_PREP_VALUES <<< "$CHECKPOINT_PREP_OUTPUT"
+if [ "${#CHECKPOINT_PREP_VALUES[@]}" -ne 2 ]; then
+    echo "Error: checkpoint directory helper returned ${#CHECKPOINT_PREP_VALUES[@]} values, expected 2" >&2
+    exit 1
+fi
+CONTRACT_CHECKPOINT_DIR="${CHECKPOINT_PREP_VALUES[0]}"
+CHECKPOINT_CONTRACT_SIDECAR="${CHECKPOINT_PREP_VALUES[1]}"
+CMD+=(--checkpoint-dir "$CONTRACT_CHECKPOINT_DIR")
+echo "[train.sh] Contract checkpoint directory: $CONTRACT_CHECKPOINT_DIR"
+
+CHECKPOINT_REQUEST_MODE="cold"
+CHECKPOINT_RESOLUTION_PATH=""
 if [ -n "${LOAD_MODEL_PATH:-}" ]; then
-    echo "[train.sh] Using warm-start checkpoint: $LOAD_MODEL_PATH"
-    CMD+=(--load-model-path "$LOAD_MODEL_PATH")
+    if [ "$LOAD_MODEL_PATH" = "latest" ]; then
+        CHECKPOINT_REQUEST_MODE="latest"
+    else
+        CHECKPOINT_REQUEST_MODE="explicit"
+    fi
+    CHECKPOINT_RESOLUTION_PATH="${FC_CHECKPOINT_RESOLUTION_PATH:-$PUFFER_DIR/build/fight_caves_checkpoint_$$.json}"
+    RESOLVE_ARGS=(
+        resolve-checkpoint
+        --request "$CHECKPOINT_REQUEST_MODE"
+        --checkpoint-root "$CHECKPOINT_ROOT"
+        --preflight-path "$CONTRACT_PREFLIGHT_PATH"
+        --config-path "$CONFIG_PATH"
+        --default-config-path "$PUFFER_DIR/config/default.ini"
+        --output-path "$CHECKPOINT_RESOLUTION_PATH"
+    )
+    if [ "$CHECKPOINT_REQUEST_MODE" = "explicit" ]; then
+        RESOLVE_ARGS+=(--checkpoint-path "$LOAD_MODEL_PATH")
+    fi
+    CHECKPOINT_RESOLVE_OUTPUT="$(
+        "$PYTHON_BIN" "$CONTRACT_PREFLIGHT" "${RESOLVE_ARGS[@]}"
+    )" || {
+        echo "Error: Fight Caves checkpoint resolution failed" >&2
+        exit 1
+    }
+    mapfile -t CHECKPOINT_RESOLVE_VALUES <<< "$CHECKPOINT_RESOLVE_OUTPUT"
+    if [ "${#CHECKPOINT_RESOLVE_VALUES[@]}" -ne 2 ]; then
+        echo "Error: checkpoint resolver returned ${#CHECKPOINT_RESOLVE_VALUES[@]} values, expected 2" >&2
+        exit 1
+    fi
+    RESOLVED_CHECKPOINT="${CHECKPOINT_RESOLVE_VALUES[1]}"
+    echo "[train.sh] Using validated warm-start checkpoint: $RESOLVED_CHECKPOINT"
+    CMD+=(--load-model-path "$RESOLVED_CHECKPOINT")
 fi
 if [ "${#EXTRA_ARGS[@]}" -gt 0 ]; then
     CMD+=("${EXTRA_ARGS[@]}")
@@ -194,18 +304,26 @@ if grep -Eq '^\[run\]' "$PUFFER_DIR/config/fight_caves.ini" \
     && grep -Eq '^manifest_path[[:space:]]*=' "$PUFFER_DIR/config/fight_caves.ini"; then
     CMD+=(--run.manifest-path "$RUN_MANIFEST_PATH")
 fi
-if ! "$PYTHON_BIN" "$SRC_DIR/tools/validation/run_manifest.py" \
+MANIFEST_ARGS=(
     --repo-root "$ROOT_DIR" \
     --runescape-dir "$SRC_DIR" \
     --puffer-dir "$PUFFER_DIR" \
     --config-path "$CONFIG_PATH" \
     --synced-config-path "$PUFFER_DIR/config/fight_caves.ini" \
     --backend-stamp "$BACKEND_STAMP" \
+    --backend-path "$BACKEND_SO" \
+    --contract-path "$CONTRACT_PREFLIGHT_PATH" \
+    --checkpoint-request-mode "$CHECKPOINT_REQUEST_MODE" \
     --active-loadout "$ACTIVE_LOADOUT_KEY" \
     --python-bin "$PYTHON_BIN" \
     --mode "$MODE" \
-    --output-path "$RUN_MANIFEST_PATH" \
-    -- "${CMD[@]}"; then
+    --output-path "$RUN_MANIFEST_PATH"
+)
+if [ -n "$CHECKPOINT_RESOLUTION_PATH" ]; then
+    MANIFEST_ARGS+=(--checkpoint-resolution-path "$CHECKPOINT_RESOLUTION_PATH")
+fi
+if ! "$PYTHON_BIN" "$SRC_DIR/tools/validation/run_manifest.py" \
+    "${MANIFEST_ARGS[@]}" -- "${CMD[@]}"; then
     echo "Error: failed to write run manifest at $RUN_MANIFEST_PATH" >&2
     exit 1
 fi

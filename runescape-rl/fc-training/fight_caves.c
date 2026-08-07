@@ -80,7 +80,8 @@ int main(void) {
                 env.actions[h] = (float)(rand() % 17);
             env.actions[0] = (rand() % 3 == 0) ? (float)(rand() % 17) : 0.0f;
             env.actions[1] = (rand() % 5 == 0) ? (float)(rand() % 9) : 0.0f;
-            env.actions[2] = (rand() % 10 == 0) ? (float)(rand() % 5) : 0.0f;
+            env.actions[2] = (rand() % 10 == 0)
+                ? (float)(rand() % FC_PRAYER_DIM) : 0.0f;
             c_step(&env);
             total_reward += env.rewards[0];
             ep_ticks++;

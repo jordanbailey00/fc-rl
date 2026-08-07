@@ -1400,7 +1400,7 @@ static int test_prayer_deadline_observation_fields(void) {
                          0,
                          0);
     state.player.pending_hits[0].prayer_snapshot = -1;
-    state.player.pending_hits[0].prayer_lock_tick = state.tick;
+    state.player.pending_hits[0].prayer_lock_tick = state.tick + 1;
 
     fc_write_obs(&state, obs);
 

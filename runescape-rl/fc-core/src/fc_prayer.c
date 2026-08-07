@@ -21,20 +21,30 @@
 
 #define PRAYER_OVERHEAD_DRAIN_RATE 12
 
+static void enforce_post_loss_invariant(FcPlayer* p) {
+    if (p->current_prayer > 0) return;
+    p->current_prayer = 0;
+    p->prayer = PRAYER_NONE;
+    p->prayer_drain_counter = 0;
+}
+
 int fc_prayer_drain_tick(FcPlayer* p, int prayer_at_tick_start,
                          const FcPrayerTransition* transition) {
     int prayer_before = p->current_prayer;
-    (void)transition;
 
-    /* Perfect 1-tick flicks should be free: only accrue drain when some prayer
-     * was active both before and after this tick's action processing. */
-    if (prayer_at_tick_start == PRAYER_NONE || p->prayer == PRAYER_NONE) return 0;
     if (p->current_prayer <= 0) {
-        /* Auto-deactivate if prayer points depleted */
-        p->prayer = PRAYER_NONE;
-        p->prayer_drain_counter = 0;
+        enforce_post_loss_invariant(p);
         return 0;
     }
+
+    if (p->prayer == PRAYER_NONE) return 0;
+    if (prayer_at_tick_start == PRAYER_NONE) return 0;
+
+    int performed_flick = transition != NULL &&
+        transition->explicit_off_then_on &&
+        transition->off_performed &&
+        transition->on_succeeded;
+    if (performed_flick) return 0;
 
     /* Counter-based drain matching OSRS PrayerDrain.kt exactly:
      * Accumulate drain rate each tick, drain 1 point when counter exceeds resistance. */
@@ -43,18 +53,16 @@ int fc_prayer_drain_tick(FcPlayer* p, int prayer_at_tick_start,
 
     p->prayer_drain_counter += drain_rate;
 
+    int requested_loss = 0;
     while (p->prayer_drain_counter > resistance) {
-        p->current_prayer -= 10;  /* drain 1 prayer point (10 tenths) */
         p->prayer_drain_counter -= resistance;
-
-        if (p->current_prayer <= 0) {
-            p->current_prayer = 0;
-            p->prayer = PRAYER_NONE;
-            p->prayer_drain_counter = 0;
-            return prayer_before;
-        }
+        requested_loss += 10;
+        if (requested_loss >= p->current_prayer) break;
     }
 
+    if (requested_loss > 0) {
+        fc_prayer_apply_loss_tenths(p, requested_loss);
+    }
     return prayer_before - p->current_prayer;
 }
 
@@ -86,12 +94,30 @@ FcPrayerTransition fc_prayer_apply_action(FcPlayer* p, int prayer_action) {
             result.on_requested = (p->prayer != PRAYER_PROTECT_MELEE);
             p->prayer = (p->current_prayer > 0) ? PRAYER_PROTECT_MELEE : PRAYER_NONE;
             break;
+        case FC_PRAYER_FLICK_MAGIC:
+        case FC_PRAYER_FLICK_RANGE:
+        case FC_PRAYER_FLICK_MELEE: {
+            int requested_prayer = prayer_action == FC_PRAYER_FLICK_MAGIC
+                ? PRAYER_PROTECT_MAGIC
+                : (prayer_action == FC_PRAYER_FLICK_RANGE
+                    ? PRAYER_PROTECT_RANGE : PRAYER_PROTECT_MELEE);
+            result.requested_final_prayer = requested_prayer;
+            result.off_requested = 1;
+            result.off_performed = p->prayer != PRAYER_NONE;
+            result.on_requested = 1;
+            result.explicit_off_then_on = 1;
+            p->prayer = PRAYER_NONE;
+            if (p->current_prayer > 0) p->prayer = requested_prayer;
+            break;
+        }
         default:
             break;
     }
 
     result.actual_final_prayer = p->prayer;
-    result.off_performed = result.off_requested;
+    if (!result.explicit_off_then_on) {
+        result.off_performed = result.off_requested;
+    }
     result.on_succeeded = result.on_requested &&
         result.actual_final_prayer == result.requested_final_prayer;
     result.final_state_changed =
@@ -100,11 +126,14 @@ FcPrayerTransition fc_prayer_apply_action(FcPlayer* p, int prayer_action) {
 }
 
 int fc_prayer_apply_loss_tenths(FcPlayer* p, int requested_loss_tenths) {
-    if (p == NULL || requested_loss_tenths <= 0) return 0;
+    if (p == NULL) return 0;
     int prayer_before = p->current_prayer;
-    int loss = requested_loss_tenths;
-    if (loss > prayer_before) loss = prayer_before;
-    p->current_prayer -= loss;
+    if (requested_loss_tenths > 0 && p->current_prayer > 0) {
+        int loss = requested_loss_tenths;
+        if (loss > p->current_prayer) loss = p->current_prayer;
+        p->current_prayer -= loss;
+    }
+    enforce_post_loss_invariant(p);
     return prayer_before - p->current_prayer;
 }
 

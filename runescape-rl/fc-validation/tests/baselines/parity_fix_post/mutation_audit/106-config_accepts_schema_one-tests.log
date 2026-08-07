@@ -1,0 +1,23 @@
+Internal ctest changing into directory: /tmp/fc-parity-mutations-m1eyfbl0/build
+Test project /tmp/fc-parity-mutations-m1eyfbl0/build
+    Start 141: parity_contract_004_preflight_rejections
+1/2 Test #141: parity_contract_004_preflight_rejections ...   Passed    0.61 sec
+    Start 142: parity_contract_004_manifest_schema2
+2/2 Test #142: parity_contract_004_manifest_schema2 .......***Failed    0.64 sec
+FAIL CONTRACT-004 manifest schema 2:
+  manifest writer accepted manifest_schema_version = 1
+
+
+50% tests passed, 1 tests failed out of 2
+
+Label Time Summary:
+contract      =   1.24 sec*proc (2 tests)
+manifest      =   0.64 sec*proc (1 test)
+parity_fix    =   1.24 sec*proc (2 tests)
+preflight     =   0.61 sec*proc (1 test)
+
+Total Test time (real) =   1.24 sec
+
+The following tests FAILED:
+	142 - parity_contract_004_manifest_schema2 (Failed)
+Errors while running CTest

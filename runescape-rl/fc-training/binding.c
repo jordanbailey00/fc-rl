@@ -8,6 +8,10 @@
 #include "fight_caves.h"
 #include "fc_reward.h"
 
+/* Kept in this linked object so the selected Puffer extension exports the
+ * same implementation exercised by validation. It is never called per-step. */
+#include "contract_dump.c"
+
 #define OBS_SIZE FC_PUFFER_OBS_SIZE
 #define OBS_TENSOR_T FloatTensor
 #define NUM_ATNS FC_PUFFER_NUM_ATNS

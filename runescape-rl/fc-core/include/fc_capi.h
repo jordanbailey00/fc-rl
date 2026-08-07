@@ -7,6 +7,7 @@
  */
 
 typedef struct FcEnvCtx FcEnvCtx;
+typedef struct FcBatchCtx FcBatchCtx;
 
 /* Constants */
 int fc_capi_obs_size(void);
@@ -33,11 +34,15 @@ const float* fc_capi_get_obs(const FcEnvCtx* ctx);
 float fc_capi_get_reward(const FcEnvCtx* ctx);
 int fc_capi_get_terminal(const FcEnvCtx* ctx);
 
-/* Batch */
-void fc_capi_batch_step(FcEnvCtx** envs, int num_envs,
-                        const int* all_actions,
-                        float* all_obs,
-                        float* all_rewards,
-                        int* all_terminals);
+/* Contiguous batch lifecycle and I/O */
+FcBatchCtx* fc_capi_batch_create(int num_envs);
+void fc_capi_batch_destroy(FcBatchCtx* batch);
+void fc_capi_batch_reset(FcBatchCtx* batch, unsigned int base_seed);
+void fc_capi_batch_step_flat(FcBatchCtx* batch,
+                             const int* all_actions,
+                             float* all_obs,
+                             float* all_rewards,
+                             int* all_terminals);
+void fc_capi_batch_get_obs(const FcBatchCtx* batch, float* all_obs);
 
 #endif /* FC_CAPI_H */

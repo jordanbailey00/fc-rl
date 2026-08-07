@@ -1,0 +1,51 @@
+{
+  "build_root": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix",
+  "commands": [
+    {
+      "command": [
+        "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix/fc_loadout_black_dhide_rcb/fc-validation/parity_fix_soak",
+        "--seeds",
+        "29",
+        "--ticks",
+        "200000",
+        "--seed-start",
+        "50001",
+        "--failure-trace",
+        "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/build-parity-loadout-matrix/fc_loadout_black_dhide_rcb/fc-validation/extended-soak-failure.json"
+      ],
+      "elapsed_seconds": 0.08734724798705429,
+      "exit_code": 1,
+      "label": "extended-soak-FC_LOADOUT_BLACK_DHIDE_RCB",
+      "raw_log": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/extended_soak/001-extended-soak-FC_LOADOUT_BLACK_DHIDE_RCB.log"
+    }
+  ],
+  "elapsed_seconds": 0.09495575202163309,
+  "environment": {},
+  "error": "extended-soak-FC_LOADOUT_BLACK_DHIDE_RCB failed with exit 1; log=/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl/fc-validation/tests/baselines/parity_fix_post/extended_soak/001-extended-soak-FC_LOADOUT_BLACK_DHIDE_RCB.log\nFAIL SOAK: seed=66610 seed_index=17 tick=9: non-finite or out-of-range policy observation",
+  "gate": "extended-soak",
+  "loadouts": [
+    "FC_LOADOUT_BLACK_DHIDE_RCB",
+    "FC_LOADOUT_SOTA_TBOW",
+    "FC_LOADOUT_LOW_DEF_RCB",
+    "FC_LOADOUT_RCB_PURE",
+    "FC_LOADOUT_MSBI_PURE",
+    "FC_LOADOUT_BLOWPIPE_PURE",
+    "FC_LOADOUT_ACB_ARMADYL",
+    "FC_LOADOUT_BOWFA_CRYSTAL",
+    "FC_LOADOUT_TBOW_MASORI"
+  ],
+  "metadata": {
+    "cmake": "cmake version 3.28.3\n\nCMake suite maintained and supported by Kitware (kitware.com/cmake).",
+    "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+    "cpu_model": "Intel(R) Core(TM) i7-14700F",
+    "hostname": "zeus",
+    "logical_cpus": 28,
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]"
+  },
+  "schema": 1,
+  "source": "/home/joe/projects/runescape-rl/fight-cave-rl_clones/v38/runescape-rl",
+  "status": "failed",
+  "tick_budget": 200000,
+  "total_seeds": 256
+}

@@ -1,0 +1,18 @@
+Internal ctest changing into directory: /tmp/fc-parity-mutations-dy8zuspq/build
+Test project /tmp/fc-parity-mutations-dy8zuspq/build
+    Start 37: parity_pray_004_resistance_persistence
+1/1 Test #37: parity_pray_004_resistance_persistence ...***Failed    0.00 sec
+FAIL PRAY-004: OFF discarded fractional drain
+
+
+0% tests passed, 1 tests failed out of 1
+
+Label Time Summary:
+parity_fix    =   0.00 sec*proc (1 test)
+unit          =   0.00 sec*proc (1 test)
+
+Total Test time (real) =   0.00 sec
+
+The following tests FAILED:
+	 37 - parity_pray_004_resistance_persistence (Failed)
+Errors while running CTest

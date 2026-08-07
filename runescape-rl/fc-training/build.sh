@@ -134,6 +134,18 @@ if [ -n "${FC_ACTIVE_LOADOUT:-}" ]; then
     esac
 fi
 
+CONTRACT_VERSION_FLAGS=()
+for contract_name in \
+    FC_OBSERVATION_VERSION \
+    FC_ACTION_VERSION \
+    FC_REWARD_VERSION \
+    FC_PRAYER_TIMING_VERSION; do
+    contract_value="${!contract_name:-}"
+    if [ -n "$contract_value" ]; then
+        CONTRACT_VERSION_FLAGS+=("-D${contract_name}=\"${contract_value}\"")
+    fi
+done
+
 mkdir -p build
 
 # Standalone executable (for testing without Python)
@@ -142,7 +154,8 @@ if [ "$MODE" = "local" ] || [ "$MODE" = "fast" ]; then
     ${CC:-gcc} "${CLANG_OPT[@]}" \
         -I"$PUFFERLIB_DIR/src" -I"$SRC_DIR" -I"$FC_CORE_INCLUDE" -I"$FC_CORE_SRC" \
         -I"$RAYLIB_NAME/include" \
-        -DPLATFORM_DESKTOP -DFC_NO_HASH "${ACTIVE_LOADOUT_FLAGS[@]}" $RENDER_FLAGS \
+        -DPLATFORM_DESKTOP "${ACTIVE_LOADOUT_FLAGS[@]}" \
+        "${CONTRACT_VERSION_FLAGS[@]}" $RENDER_FLAGS \
         "$SRC_DIR/$ENV.c" -o "$ENV" \
         "$RAYLIB_A" \
         /usr/lib/x86_64-linux-gnu/libGL.so.1 -lm -lpthread -fopenmp $RENDER_LIBS
@@ -158,7 +171,8 @@ echo "Compiling static library for $ENV..."
 ${CC:-gcc} -c "${CLANG_OPT[@]}" \
     -I"$PUFFERLIB_DIR/src" -I"$SRC_DIR" -I"$FC_CORE_INCLUDE" -I"$FC_CORE_SRC" \
     -I"$RAYLIB_NAME/include" \
-    -DPLATFORM_DESKTOP -DFC_NO_HASH "${ACTIVE_LOADOUT_FLAGS[@]}" $RENDER_FLAGS \
+    -DPLATFORM_DESKTOP "${ACTIVE_LOADOUT_FLAGS[@]}" \
+    "${CONTRACT_VERSION_FLAGS[@]}" $RENDER_FLAGS \
     -fno-semantic-interposition -fvisibility=hidden \
     -fPIC -fopenmp \
     "$BINDING_SRC" -o "$STATIC_OBJ"

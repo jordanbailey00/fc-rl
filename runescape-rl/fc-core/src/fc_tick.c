@@ -23,7 +23,7 @@
  *   5. NPC AI tick (movement + attack) for all active NPCs
  *   6. Resolve pending hits (NPC → player, player → NPC)
  *   7. Check terminal conditions
- *   8. Increment tick
+ *   8. Increment tick and lock prayer snapshots due at the new boundary
  */
 
 /* ======================================================================== */
@@ -215,9 +215,11 @@ static void process_player_actions(FcState* state,
 
     /* ---- Prayer (instant, processed first) ---- */
     {
-        int old_prayer = p->prayer;
         *prayer_transition = fc_prayer_apply_action(p, act_prayer);
-        if (p->prayer != old_prayer) {
+        if (prayer_transition->final_state_changed ||
+            (prayer_transition->explicit_off_then_on &&
+             prayer_transition->off_performed &&
+             prayer_transition->on_succeeded)) {
             p->prayer_changed_this_tick = 1;
         }
     }
@@ -388,8 +390,10 @@ static void process_player_actions(FcState* state,
                 float chance = fc_hit_chance(att_roll, def_roll);
 
                 int hit = (fc_rng_float(state) < chance) ? 1 : 0;
-                int max_hit = fc_player_ranged_max_hit(p, target);
-                int damage = hit ? fc_rng_int(state, max_hit + 1) : 0;
+                int final_max_hit_hp =
+                    fc_player_ranged_final_max_hit_hp(p, target);
+                int damage = hit ?
+                    fc_roll_player_damage_tenths(state, final_max_hit_hp) : 0;
 
                 int delay = fc_ranged_hit_delay(dist);
                 fc_queue_pending_hit(target->pending_hits, &target->num_pending_hits,
@@ -697,6 +701,19 @@ static void check_terminal(FcState* state) {
     }
 }
 
+static void lock_pending_prayers_at_boundary(FcState* state) {
+    FcPlayer* p = &state->player;
+    for (int i = 0; i < p->num_pending_hits; i++) {
+        FcPendingHit* hit = &p->pending_hits[i];
+        if (!hit->active || hit->prayer_snapshot >= 0 ||
+            hit->prayer_lock_tick < 0 ||
+            state->tick < hit->prayer_lock_tick) {
+            continue;
+        }
+        hit->prayer_snapshot = p->prayer;
+    }
+}
+
 /* ======================================================================== */
 /* Main tick entry point                                                     */
 /* ======================================================================== */
@@ -763,11 +780,11 @@ void fc_tick(FcState* state, const int actions[FC_NUM_ACTION_HEADS]) {
     check_terminal(state);
 
     /* 8. Episode analytics */
-    if (state->player.prayer == PRAYER_PROTECT_MELEE)
+    if (state->player.prayer_at_tick_start == PRAYER_PROTECT_MELEE)
         state->ep_ticks_pray_melee++;
-    if (state->player.prayer == PRAYER_PROTECT_RANGE)
+    if (state->player.prayer_at_tick_start == PRAYER_PROTECT_RANGE)
         state->ep_ticks_pray_range++;
-    if (state->player.prayer == PRAYER_PROTECT_MAGIC)
+    if (state->player.prayer_at_tick_start == PRAYER_PROTECT_MAGIC)
         state->ep_ticks_pray_magic++;
     if (state->player.prayer_changed_this_tick)
         state->ep_prayer_switches++;
@@ -776,4 +793,9 @@ void fc_tick(FcState* state, const int actions[FC_NUM_ACTION_HEADS]) {
 
     /* 9. Increment tick */
     state->tick++;
+
+    /* This is the pre-action boundary for the next policy decision. Jad's
+     * T+2 lock must be visible before that observation and cannot be changed
+     * by the action selected from it. */
+    lock_pending_prayers_at_boundary(state);
 }

@@ -1,8 +1,9 @@
 #include "fc_api.h"
 #include "fc_npc.h"
+#include "fc_prayer.h"
 #include <limits.h>
-#include <math.h>
 #include <stddef.h>
+#include <stdint.h>
 
 /*
  * fc_combat.c — OSRS combat math and pending hit resolution.
@@ -56,10 +57,11 @@ int fc_player_def_roll(const FcPlayer* p, FcAttackType attack_type) {
 
     int eff_def;
     if (attack_type == FC_ATTACK_TYPE_MAGIC) {
-        /* Magic defence: 30% from Defence, 70% from Magic (OSRS formula from Hit.kt) */
-        eff_def = (int)(p->defence_level * 0.3 + p->magic_level * 0.7) + 9;
+        /* OSRS truncates the Defence and Magic contributions separately. */
+        eff_def = 3 * p->defence_level / 10 +
+                  7 * p->magic_level / 10 + 8;
     } else {
-        eff_def = p->defence_level + 9;
+        eff_def = p->defence_level + 8;
     }
     return eff_def * (def_bonus + 64);
 }
@@ -88,39 +90,71 @@ static int fc_tbow_target_magic_level(const FcNpc* target) {
 }
 
 int fc_tbow_accuracy_multiplier_pct(int target_magic_level) {
-    int clamped_magic = target_magic_level;
-    if (clamped_magic < 0) clamped_magic = 0;
-    if (clamped_magic > 250) clamped_magic = 250;
-    float magic = (float)clamped_magic;
-    float x = 0.3f * magic;
-    float pct = 140.0f + ((3.0f * magic) - 10.0f) / 100.0f -
-        ((x - 100.0f) * (x - 100.0f)) / 100.0f;
+    int64_t magic = target_magic_level;
+    if (magic < 0) magic = 0;
+    if (magic > 250) magic = 250;
 
-    if (pct < 0.0f) pct = 0.0f;
-    if (pct > 140.0f) pct = 140.0f;
-    return (int)floorf(pct);
+    int64_t inner = 3 * magic / 10;
+    int64_t delta = inner - 100;
+    int64_t pct = 140 + (3 * magic - 10) / 100 -
+                  delta * delta / 100;
+    if (pct < 0) pct = 0;
+    if (pct > 140) pct = 140;
+    return (int)pct;
 }
 
 int fc_tbow_damage_multiplier_pct(int target_magic_level) {
-    int clamped_magic = target_magic_level;
-    if (clamped_magic < 0) clamped_magic = 0;
-    if (clamped_magic > 250) clamped_magic = 250;
-    float magic = (float)clamped_magic;
-    float x = 0.3f * magic;
-    float pct = 250.0f + ((3.0f * magic) - 14.0f) / 100.0f -
-        ((x - 140.0f) * (x - 140.0f)) / 100.0f;
+    int64_t magic = target_magic_level;
+    if (magic < 0) magic = 0;
+    if (magic > 250) magic = 250;
 
-    if (pct < 0.0f) pct = 0.0f;
-    if (pct > 250.0f) pct = 250.0f;
-    return (int)floorf(pct);
+    int64_t inner = 3 * magic / 10;
+    int64_t delta = inner - 140;
+    int64_t pct = 250 + (3 * magic - 14) / 100 -
+                  delta * delta / 100;
+    if (pct < 0) pct = 0;
+    if (pct > 250) pct = 250;
+    return (int)pct;
+}
+
+static void fc_crystal_modifiers_bp(int crystal_piece_mask,
+                                    int* accuracy_bp, int* damage_bp) {
+    int mask = crystal_piece_mask & FC_CRYSTAL_PIECE_ALL;
+    *accuracy_bp = 0;
+    *damage_bp = 0;
+
+    if (mask & FC_CRYSTAL_PIECE_HELM) {
+        *accuracy_bp += FC_CRYSTAL_HELM_ACCURACY_BP;
+        *damage_bp += FC_CRYSTAL_HELM_DAMAGE_BP;
+    }
+    if (mask & FC_CRYSTAL_PIECE_BODY) {
+        *accuracy_bp += FC_CRYSTAL_BODY_ACCURACY_BP;
+        *damage_bp += FC_CRYSTAL_BODY_DAMAGE_BP;
+    }
+    if (mask & FC_CRYSTAL_PIECE_LEGS) {
+        *accuracy_bp += FC_CRYSTAL_LEGS_ACCURACY_BP;
+        *damage_bp += FC_CRYSTAL_LEGS_DAMAGE_BP;
+    }
+}
+
+static int fc_apply_basis_points(int value, int bonus_bp) {
+    return (int)((int64_t)value * (10000 + bonus_bp) / 10000);
 }
 
 int fc_player_ranged_attack_roll(const FcPlayer* p, const FcNpc* target) {
     int attack_roll = fc_player_ranged_base_attack_roll(p);
 
     if (p->weapon_kind == FC_WEAPON_TWISTED_BOW && target) {
-        attack_roll = (attack_roll *
-            fc_tbow_accuracy_multiplier_pct(fc_tbow_target_magic_level(target))) / 100;
+        attack_roll = (int)((int64_t)attack_roll *
+            fc_tbow_accuracy_multiplier_pct(fc_tbow_target_magic_level(target)) /
+            100);
+    } else if (p->weapon_kind == FC_WEAPON_BOW_OF_FAERDHINEN) {
+        int accuracy_bp;
+        int damage_bp;
+        fc_crystal_modifiers_bp(p->crystal_piece_mask,
+                                &accuracy_bp, &damage_bp);
+        (void)damage_bp;
+        attack_roll = fc_apply_basis_points(attack_roll, accuracy_bp);
     }
 
     return attack_roll;
@@ -128,39 +162,50 @@ int fc_player_ranged_attack_roll(const FcPlayer* p, const FcNpc* target) {
 
 int fc_player_ranged_base_max_hit_hp(const FcPlayer* p) {
     int eff_str = fc_player_effective_ranged_level(p);
-    return (int)floorf(
-        0.5f + ((float)eff_str * (float)(p->ranged_strength_bonus + 64)) / 640.0f);
+    return (int)(((int64_t)eff_str * (p->ranged_strength_bonus + 64) + 320) /
+                 640);
 }
 
 int fc_player_ranged_final_max_hit_hp(const FcPlayer* p, const FcNpc* target) {
     int base_hp = fc_player_ranged_base_max_hit_hp(p);
 
     if (p->weapon_kind == FC_WEAPON_TWISTED_BOW && target) {
-        base_hp = (base_hp *
-            fc_tbow_damage_multiplier_pct(fc_tbow_target_magic_level(target))) / 100;
+        base_hp = (int)((int64_t)base_hp *
+            fc_tbow_damage_multiplier_pct(fc_tbow_target_magic_level(target)) /
+            100);
+    } else if (p->weapon_kind == FC_WEAPON_BOW_OF_FAERDHINEN) {
+        int accuracy_bp;
+        int damage_bp;
+        fc_crystal_modifiers_bp(p->crystal_piece_mask,
+                                &accuracy_bp, &damage_bp);
+        (void)accuracy_bp;
+        base_hp = fc_apply_basis_points(base_hp, damage_bp);
     }
 
     return base_hp;
 }
 
-int fc_player_ranged_max_hit(const FcPlayer* p, const FcNpc* target) {
-    return fc_player_ranged_final_max_hit_hp(p, target) * 10;
-}
-
-static int fc_roll_legacy_tenths_damage(FcState* state, int final_max_hit_hp) {
-    if (state == NULL || final_max_hit_hp < 0 ||
-        final_max_hit_hp > (INT_MAX - 1) / 10) {
-        return 0;
-    }
-    return fc_rng_int(state, final_max_hit_hp * 10 + 1);
+static int fc_damage_max_valid(const FcState* state, int final_max_hit_hp) {
+    return state != NULL && final_max_hit_hp >= 0 &&
+           final_max_hit_hp <= INT_MAX / 10;
 }
 
 int fc_roll_player_damage_tenths(FcState* state, int final_max_hit_hp) {
-    return fc_roll_legacy_tenths_damage(state, final_max_hit_hp);
+    if (!fc_damage_max_valid(state, final_max_hit_hp) ||
+        final_max_hit_hp == 0) {
+        return 0;
+    }
+    int rolled_hp = fc_rng_int(state, final_max_hit_hp + 1);
+    if (rolled_hp == 0) rolled_hp = 1;
+    return rolled_hp * 10;
 }
 
 int fc_roll_npc_damage_tenths(FcState* state, int final_max_hit_hp) {
-    return fc_roll_legacy_tenths_damage(state, final_max_hit_hp);
+    if (!fc_damage_max_valid(state, final_max_hit_hp) ||
+        final_max_hit_hp == 0) {
+        return 0;
+    }
+    return fc_rng_int(state, final_max_hit_hp + 1) * 10;
 }
 
 /* ======================================================================== */
@@ -304,14 +349,11 @@ void fc_resolve_player_pending_hits(FcState* state) {
         FcPendingHit* h = &p->pending_hits[i];
         if (!h->active) continue;
 
-        if (h->prayer_snapshot < 0 && state->tick >= h->prayer_lock_tick) {
-            h->prayer_snapshot = p->prayer;
-        }
-
         h->ticks_remaining--;
         if (h->ticks_remaining <= 0) {
             /* Hit resolves now — use the prayer locked into this hit. */
-            int locked_prayer = (h->prayer_snapshot >= 0) ? h->prayer_snapshot : p->prayer;
+            int locked_prayer = h->prayer_snapshot >= 0
+                ? h->prayer_snapshot : PRAYER_NONE;
             int blocked = fc_prayer_blocks_style(locked_prayer, h->attack_style);
             int final_damage = blocked ? 0 : h->damage;
 
@@ -347,10 +389,7 @@ void fc_resolve_player_pending_hits(FcState* state) {
                     state->npcs[h->source_npc_idx].npc_type == NPC_TZ_KIH) {
                     drain += final_damage;
                 }
-                int prayer_before = p->current_prayer;
-                p->current_prayer -= drain;
-                if (p->current_prayer < 0) p->current_prayer = 0;
-                int actual_drain = prayer_before - p->current_prayer;
+                int actual_drain = fc_prayer_apply_loss_tenths(p, drain);
                 state->prayer_lost_this_tick += actual_drain;
                 state->tz_kih_prayer_drain_this_tick += actual_drain;
                 if (h->source_npc_idx >= 0 && h->source_npc_idx < FC_MAX_NPCS) {

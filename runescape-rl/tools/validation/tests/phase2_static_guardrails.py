@@ -103,6 +103,7 @@ def live_no_supplies_simplified_config() -> int:
             "w_player_death": -1.0,
             "w_correct_danger_prayer": 0.005,
             "w_prayer_lost": -0.02,
+            "w_invalid_action": -0.1,
             "w_tick_penalty": -0.0001,
             "shape_no_progress_penalty_1": -0.001,
             "shape_no_progress_penalty_2": -0.005,
@@ -129,12 +130,12 @@ def live_no_supplies_simplified_config() -> int:
             if parser.getint("env", key, fallback=-1) != expected:
                 failures.append(f"{label}: {key} must be {expected}")
 
-        if parser.get("run", "action_version", fallback="").strip("'\"") != "fight_caves_multidiscrete_3_head_no_supplies_v1":
-            failures.append(f"{label}: action_version is not the 3-head no-supplies contract")
-        if parser.get("run", "observation_version", fallback="").strip("'\"") != "fight_caves_puffer_policy_obs_v7_npc_prayer_drain_healing_aggro_kill_events_mask_heads_0_2_no_supplies":
-            failures.append(f"{label}: observation_version is not the v7 NPC mechanics/kill-events no-supplies contract")
-        if parser.get("run", "reward_version", fallback="").strip("'\"") != "fight_caves_v3_progress_npc_heal_penalty_m0005":
-            failures.append(f"{label}: reward_version is not the v3 simple-reward contract")
+        if parser.get("run", "action_version", fallback="").strip("'\"") != "fight_caves_multidiscrete_3_head_no_supplies_v2_prayer8":
+            failures.append(f"{label}: action_version is not the v2 eight-Prayer-action contract")
+        if parser.get("run", "observation_version", fallback="").strip("'\"") != "fight_caves_puffer_policy_obs_v8_prayer_timing_mask8_no_supplies":
+            failures.append(f"{label}: observation_version is not the v8 Prayer-timing/mask8 contract")
+        if parser.get("run", "reward_version", fallback="").strip("'\"") != "fight_caves_v4_progress_npc_heal_penalty_m0005_prayer_snapshot_flick_drain":
+            failures.append(f"{label}: reward_version is not the v4 Prayer-event contract")
 
         expected_train = {
             "total_timesteps": 1_500_000_000,
@@ -311,10 +312,12 @@ def viewer_policy_pipe_matches_puffer_contract() -> int:
         if "FC_EAT_DIM" in body or "FC_DRINK_DIM" in body:
             failures.append("viewer.c: policy pipe still emits supply masks")
 
-    if "FC_PUFFER_ACT_SIZES" not in eval_py:
-        failures.append("eval_viewer.py must derive decoder action dims from FC_PUFFER_ACT_SIZES")
-    if "FC_PUFFER_NUM_ATNS" not in eval_py:
-        failures.append("eval_viewer.py must validate FC_PUFFER_NUM_ATNS")
+    if "contract_preflight" not in eval_py:
+        failures.append("eval_viewer.py must consume the shared compiled contract")
+    if "puffer_action_dims" not in eval_py:
+        failures.append("eval_viewer.py must derive decoder heads from the compiled dump")
+    if "parse_header_definitions" in eval_py:
+        failures.append("eval_viewer.py must not reproduce contract arithmetic from headers")
     if '"FC_EAT_DIM"' in eval_py or '"FC_DRINK_DIM"' in eval_py:
         failures.append("eval_viewer.py: contract loader still includes supply action heads")
     if "mask_5head" in eval_py or "mask5" in eval_py:
@@ -383,9 +386,159 @@ def viewer_training_parity_contract() -> int:
     return 0
 
 
+def standalone_prayer_action_range() -> int:
+    """The standalone sampler must consume the shared prayer dimension."""
+    path = RUNESCAPE_DIR / "fc-training" / "fight_caves.c"
+    text = path.read_text(encoding="utf-8")
+    assignment = re.search(
+        r"env\.actions\[2\]\s*=\s*(.*?);", text, flags=re.DOTALL
+    )
+
+    if assignment is None:
+        print("FAIL CONTRACT-002: standalone prayer-action assignment was not found")
+        return 1
+
+    expression = assignment.group(1)
+    if "rand() % FC_PRAYER_DIM" not in expression:
+        print(
+            "FAIL CONTRACT-002: standalone prayer sampler does not use "
+            "[0, FC_PRAYER_DIM)"
+        )
+        print(f"  {path.relative_to(RUNESCAPE_DIR)}: {expression.strip()}")
+        return 1
+
+    print("PASS CONTRACT-002: standalone prayer sampler uses FC_PRAYER_DIM")
+    return 0
+
+
+def capi_public_batch_contract() -> int:
+    """The public C header must describe the batch ABI implemented by fc_capi.c."""
+    header_path = RUNESCAPE_DIR / "fc-core" / "include" / "fc_capi.h"
+    source_path = RUNESCAPE_DIR / "fc-core" / "src" / "fc_capi.c"
+    header = header_path.read_text(encoding="utf-8")
+    source = source_path.read_text(encoding="utf-8")
+    failures: list[str] = []
+
+    required_header = [
+        "typedef struct FcBatchCtx FcBatchCtx;",
+        "fc_capi_batch_create",
+        "fc_capi_batch_destroy",
+        "fc_capi_batch_reset",
+        "fc_capi_batch_step_flat",
+        "fc_capi_batch_get_obs",
+    ]
+    for token in required_header:
+        if token not in header:
+            failures.append(f"fc_capi.h is missing {token!r}")
+
+    if re.search(r"\bfc_capi_batch_step\s*\(", header):
+        failures.append("fc_capi.h declares obsolete, unimplemented fc_capi_batch_step")
+    if '#include "fc_capi.h"' not in source:
+        failures.append("fc_capi.c does not compile its definitions against fc_capi.h")
+
+    if failures:
+        print("FAIL CONTRACT-002: public C API header does not match its batch implementation:")
+        for failure in failures:
+            print(f"  {failure}")
+        return 1
+
+    print("PASS CONTRACT-002: public C API header matches the contiguous batch ABI")
+    return 0
+
+
+def parity_stale_literals() -> int:
+    """Runnable parity paths must not retain the superseded five-action contract."""
+    source_roots = [
+        RUNESCAPE_DIR / "fc-core",
+        RUNESCAPE_DIR / "fc-training",
+        RUNESCAPE_DIR / "fc-viewer" / "src",
+        RUNESCAPE_DIR / "fc-viewer" / "eval_viewer.py",
+        RUNESCAPE_DIR / "fc-validation" / "tests",
+        RUNESCAPE_DIR / "tools" / "validation",
+        RUNESCAPE_DIR / "train.sh",
+        RUNESCAPE_DIR / "config" / "fight_caves.ini",
+        *sorted((RUNESCAPE_DIR / "config" / "experiments").glob("*.ini")),
+    ]
+    allowed_suffixes = {".c", ".h", ".py", ".sh", ".ini"}
+    archived_parts = {"baselines", "temporary", "__pycache__"}
+    paths: list[Path] = []
+    for root in source_roots:
+        candidates = root.rglob("*") if root.is_dir() else [root]
+        for path in candidates:
+            if not path.is_file() or path.suffix not in allowed_suffixes:
+                continue
+            if archived_parts.intersection(path.parts):
+                continue
+            paths.append(path)
+
+    # Build historical strings in pieces so the scanner does not have to
+    # exempt its own exact-match definitions.
+    old_versions = [
+        "fight_caves_multidiscrete_3_head_no_supplies_" + "v1",
+        "fight_caves_puffer_policy_obs_" + "v7_npc_prayer_drain_healing_aggro_kill_events_mask_heads_0_2_no_supplies",
+        "fight_caves_v3_progress_npc_heal_penalty_" + "m0005",
+    ]
+    patterns = [
+        ("prayer" + "5", re.compile(r"\bprayer" + r"5\b", re.IGNORECASE)),
+        (
+            "Prayer dimension 5",
+            re.compile(
+                r"(?:#define|_Static_assert|assert|expected).*"
+                r"(?:PRAYER|prayer)[A-Za-z0-9_ ]*(?:DIM|dimension|dims).*"
+                r"(?:==|!=|=|,|\[)\s*5\b"
+            ),
+        ),
+        (
+            "old mask size",
+            re.compile(
+                r"(?:#define|_Static_assert|assert|expected).*"
+                r"(?:MASK|mask)[A-Za-z0-9_ ]*(?:==|!=|=|,|\[)\s*(?:31|166)\b"
+            ),
+        ),
+        (
+            "old observation size",
+            re.compile(
+                r"(?:#define|_Static_assert|assert|expected).*"
+                r"(?:OBS|obs|observation)[A-Za-z0-9_ ]*(?:==|!=|=|,|\[)\s*(?:316|471)\b"
+            ),
+        ),
+        (
+            "Prayer modulo five",
+            re.compile(r"(?:prayer|actions\s*\[\s*2\s*\]).*%\s*5\b", re.IGNORECASE),
+        ),
+    ]
+
+    hits: list[str] = []
+    for path in sorted(set(paths)):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        for lineno, line in enumerate(text.splitlines(), 1):
+            labels = [label for label, pattern in patterns if pattern.search(line)]
+            labels.extend(
+                f"superseded version {version!r}"
+                for version in old_versions
+                if version in line
+            )
+            for label in labels:
+                hits.append(
+                    f"{path.relative_to(RUNESCAPE_DIR)}:{lineno}: {label}: {line.strip()}"
+                )
+
+    if hits:
+        print("FAIL CONTRACT-004: stale parity literals remain in runnable/current paths:")
+        for hit in hits:
+            print(f"  {hit}")
+        return 1
+
+    print("PASS CONTRACT-004: runnable/current paths contain no stale parity literals")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
-        print("usage: phase2_static_guardrails.py <analytics_no_global_metrics|live_no_supplies_simplified_config|env_log_key_budget|native_action_mask_contract|viewer_policy_pipe_matches_puffer_contract|viewer_training_parity_contract>", file=sys.stderr)
+        print("usage: phase2_static_guardrails.py <analytics_no_global_metrics|live_no_supplies_simplified_config|env_log_key_budget|native_action_mask_contract|viewer_policy_pipe_matches_puffer_contract|viewer_training_parity_contract|standalone_prayer_action_range|capi_public_batch_contract|parity_stale_literals>", file=sys.stderr)
         return 2
     if argv[1] == "analytics_no_global_metrics":
         return analytics_no_global_metrics()
@@ -399,6 +552,12 @@ def main(argv: list[str]) -> int:
         return viewer_policy_pipe_matches_puffer_contract()
     if argv[1] == "viewer_training_parity_contract":
         return viewer_training_parity_contract()
+    if argv[1] == "standalone_prayer_action_range":
+        return standalone_prayer_action_range()
+    if argv[1] == "capi_public_batch_contract":
+        return capi_public_batch_contract()
+    if argv[1] == "parity_stale_literals":
+        return parity_stale_literals()
     print(f"unknown guardrail: {argv[1]}", file=sys.stderr)
     return 2
 

@@ -1,0 +1,58 @@
+[  4%] Built target validate_assets
+[  6%] Building C object fc-core/CMakeFiles/fc_core.dir/src/fc_state.c.o
+[  8%] Building C object fc-validation/CMakeFiles/parity_fix_replay_puffer.dir/tests/parity_fix_replay.c.o
+[ 11%] Building C object fc-validation/CMakeFiles/parity_fix_replay_puffer.dir/tests/parity_fix_puffer_core.c.o
+[ 13%] Building C object fc-core/CMakeFiles/fc_core.dir/src/fc_rng.c.o
+[ 15%] Building C object fc-core/CMakeFiles/fc_core.dir/src/fc_tick.c.o
+[ 17%] Building C object fc-core/CMakeFiles/fc_core.dir/src/fc_combat.c.o
+[ 20%] Building C object fc-core/CMakeFiles/fc_core.dir/src/fc_prayer.c.o
+[ 22%] Building C object fc-core/CMakeFiles/fc_core.dir/src/fc_npc.c.o
+[ 24%] Building C object fc-core/CMakeFiles/fc_core.dir/src/fc_wave.c.o
+[ 26%] Building C object fc-core/CMakeFiles/fc_core.dir/src/fc_hash.c.o
+[ 28%] Linking C static library libfc_core.a
+[ 31%] Built target fc_core
+[ 35%] Built target parity_contract_fixture
+[ 37%] Building C object fc-validation/CMakeFiles/parity_compiled_contract.dir/__/fc-training/contract_dump.c.o
+[ 40%] Linking C shared library libparity_compiled_contract.so
+[ 40%] Built target parity_compiled_contract
+[ 42%] Building C object fc-validation/CMakeFiles/phase2_guardrails_core.dir/tests/phase2_guardrails_core.c.o
+[ 44%] Linking C executable parity_fix_replay_puffer
+[ 44%] Built target parity_fix_replay_puffer
+[ 46%] Building C object fc-validation/CMakeFiles/phase2_guardrails_training.dir/tests/phase2_guardrails_training.c.o
+[ 48%] Linking C executable phase2_guardrails_core
+[ 48%] Built target phase2_guardrails_core
+[ 51%] Building C object fc-training/CMakeFiles/fc_capi.dir/__/fc-core/src/fc_capi.c.o
+[ 53%] Linking C shared library libfc_capi.so
+[ 53%] Built target fc_capi
+[ 55%] Building C object fc-viewer/CMakeFiles/test_headless.dir/tests/test_headless.c.o
+[ 57%] Linking C executable test_headless
+[ 57%] Built target test_headless
+[ 60%] Building C object fc-validation/CMakeFiles/parity_fix_core.dir/tests/parity_fix_core.c.o
+[ 62%] Linking C executable parity_fix_core
+[ 62%] Built target parity_fix_core
+[ 64%] Building C object fc-validation/CMakeFiles/parity_fix_integration.dir/tests/parity_fix_integration.c.o
+[ 66%] Linking C executable parity_fix_integration
+[ 66%] Built target parity_fix_integration
+[ 68%] Building C object fc-validation/CMakeFiles/parity_fix_damage.dir/tests/parity_fix_damage.c.o
+[ 71%] Linking C executable phase2_guardrails_training
+[ 73%] Linking C executable parity_fix_damage
+[ 73%] Built target phase2_guardrails_training
+[ 73%] Built target parity_fix_damage
+[ 75%] Building C object fc-validation/CMakeFiles/parity_fix_prayer.dir/tests/parity_fix_prayer.c.o
+[ 77%] Building C object fc-validation/CMakeFiles/parity_fix_hash.dir/tests/parity_fix_hash.c.o
+[ 80%] Linking C executable parity_fix_prayer
+[ 80%] Built target parity_fix_prayer
+[ 82%] Building C object fc-validation/CMakeFiles/parity_fix_replay_linked.dir/tests/parity_fix_replay.c.o
+[ 84%] Linking C executable parity_fix_replay_linked
+[ 86%] Linking C executable parity_fix_hash
+[ 86%] Built target parity_fix_replay_linked
+[ 88%] Building C object fc-validation/CMakeFiles/parity_fix_soak.dir/tests/parity_fix_soak.c.o
+[ 88%] Built target parity_fix_hash
+[ 91%] Building C object fc-validation/CMakeFiles/parity_fix_rng.dir/tests/parity_fix_rng.c.o
+[ 93%] Linking C executable parity_fix_rng
+[ 93%] Built target parity_fix_rng
+[ 95%] Building C object fc-training/CMakeFiles/parity_fix_capi_contract.dir/__/fc-validation/tests/parity_fix_capi.c.o
+[ 97%] Linking C executable parity_fix_capi_contract
+[100%] Linking C executable parity_fix_soak
+[100%] Built target parity_fix_capi_contract
+[100%] Built target parity_fix_soak

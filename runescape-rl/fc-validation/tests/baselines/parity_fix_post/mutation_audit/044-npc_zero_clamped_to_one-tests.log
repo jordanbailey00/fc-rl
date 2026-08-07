@@ -1,0 +1,19 @@
+Internal ctest changing into directory: /tmp/fc-parity-mutations-dy8zuspq/build
+Test project /tmp/fc-parity-mutations-dy8zuspq/build
+    Start 32: parity_dmg_007_minimum_hit_functional
+1/1 Test #32: parity_dmg_007_minimum_hit_functional ...***Failed    0.00 sec
+warning: fightcaves.collision not found; using open fallback arena
+FAIL DMG-007: accurate NPC zero was removed
+
+
+0% tests passed, 1 tests failed out of 1
+
+Label Time Summary:
+integration    =   0.00 sec*proc (1 test)
+parity_fix     =   0.00 sec*proc (1 test)
+
+Total Test time (real) =   0.00 sec
+
+The following tests FAILED:
+	 32 - parity_dmg_007_minimum_hit_functional (Failed)
+Errors while running CTest

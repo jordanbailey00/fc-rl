@@ -21,12 +21,11 @@ Controls (in viewer window):
 """
 
 import argparse
-import ast
 import glob
 import os
-import re
 import subprocess
 import sys
+import sysconfig
 
 import numpy as np
 
@@ -51,116 +50,110 @@ def ensure_local_pufferlib_on_path():
     return puffer_dir
 
 
-def _safe_eval_macro(expr, raw_defs, values):
-    node = ast.parse(expr, mode="eval")
+def find_compiled_backend(puffer_dir=None):
+    override = os.environ.get("FC_COMPILED_BACKEND_PATH")
+    if override:
+        if os.path.isfile(override):
+            return override
+        raise RuntimeError(f"FC_COMPILED_BACKEND_PATH is not a file: {override}")
 
-    def eval_node(n):
-        if isinstance(n, ast.Expression):
-            return eval_node(n.body)
-        if isinstance(n, ast.Constant) and isinstance(n.value, (int, float)):
-            return int(n.value)
-        if isinstance(n, ast.Name):
-            return resolve_macro(n.id, raw_defs, values)
-        if isinstance(n, ast.UnaryOp) and isinstance(n.op, (ast.UAdd, ast.USub)):
-            val = eval_node(n.operand)
-            return val if isinstance(n.op, ast.UAdd) else -val
-        if isinstance(n, ast.BinOp) and isinstance(
-            n.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod)
-        ):
-            left = eval_node(n.left)
-            right = eval_node(n.right)
-            if isinstance(n.op, ast.Add):
-                return left + right
-            if isinstance(n.op, ast.Sub):
-                return left - right
-            if isinstance(n.op, ast.Mult):
-                return left * right
-            if isinstance(n.op, (ast.Div, ast.FloorDiv)):
-                return left // right
-            return left % right
-        raise RuntimeError(f"Unsupported macro expression: {expr}")
-
-    return int(eval_node(node))
-
-
-def resolve_macro(name, raw_defs, values):
-    if name in values:
-        return values[name]
-    if name not in raw_defs:
-        raise RuntimeError(f"Missing macro definition: {name}")
-    values[name] = _safe_eval_macro(raw_defs[name], raw_defs, values)
-    return values[name]
-
-
-def parse_header_definitions(path):
-    with open(path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-
-    raw_defs = {}
-    define_re = re.compile(r"^\s*#define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.+?)\s*$")
-    for line in lines:
-        match = define_re.match(line)
-        if not match:
-            continue
-        name, body = match.groups()
-        body = re.sub(r"/\*.*?\*/", "", body).split("//", 1)[0].strip()
-        if body:
-            raw_defs[name] = body
-
-    return raw_defs
-
-
-def parse_header_constants(path, names, base_values=None):
-    raw_defs = parse_header_definitions(path)
-    values = dict(base_values or {})
-    for name in names:
-        values[name] = resolve_macro(name, raw_defs, values)
-    return values
-
-
-def resolve_macro_list(name, raw_defs, values):
-    if name not in raw_defs:
-        raise RuntimeError(f"Missing macro definition: {name}")
-
-    body = raw_defs[name].strip()
-    if not (body.startswith("{") and body.endswith("}")):
-        raise RuntimeError(f"Expected {name} to be a brace-list macro, got: {body}")
-
-    items = []
-    for item in body[1:-1].split(","):
-        item = item.strip()
-        if item:
-            items.append(_safe_eval_macro(item, raw_defs, values))
-    return items
-
-
-def load_contract_dims():
-    repo = repo_root()
-    shared_header = os.path.join(repo, "fc-core", "include", "fc_contracts.h")
-
-    raw_defs = parse_header_definitions(shared_header)
-    values = {}
-    training_dims = {
-        "FC_POLICY_OBS_SIZE": resolve_macro("FC_POLICY_OBS_SIZE", raw_defs, values),
-        "FC_PUFFER_OBS_SIZE": resolve_macro("FC_PUFFER_OBS_SIZE", raw_defs, values),
-        "FC_PUFFER_NUM_ATNS": resolve_macro("FC_PUFFER_NUM_ATNS", raw_defs, values),
-    }
-    act_dims = resolve_macro_list("FC_PUFFER_ACT_SIZES", raw_defs, values)
-    if len(act_dims) != training_dims["FC_PUFFER_NUM_ATNS"]:
+    puffer_dir = puffer_dir or ensure_local_pufferlib_on_path()
+    extension_suffix = sysconfig.get_config_var("EXT_SUFFIX") or ""
+    preferred = os.path.join(puffer_dir, "pufferlib", f"_C{extension_suffix}")
+    if os.path.isfile(preferred):
+        return preferred
+    candidates = []
+    for pattern in ("_C*.so", "_C*.dylib", "_C*.pyd"):
+        candidates.extend(glob.glob(os.path.join(puffer_dir, "pufferlib", pattern)))
+    if not candidates:
         raise RuntimeError(
-            f"Puffer action dim mismatch: FC_PUFFER_ACT_SIZES has {len(act_dims)} heads, "
-            f"FC_PUFFER_NUM_ATNS expects {training_dims['FC_PUFFER_NUM_ATNS']}"
+            f"compiled Puffer backend not found under {puffer_dir}/pufferlib"
         )
-    mask_size = sum(act_dims)
-    total_line_floats = training_dims["FC_POLICY_OBS_SIZE"] + mask_size
+    return max(candidates, key=os.path.getmtime)
 
-    if total_line_floats != training_dims["FC_PUFFER_OBS_SIZE"]:
-        raise RuntimeError(
-            f"Puffer obs mismatch: viewer line has {total_line_floats} floats, "
-            f"training header expects {training_dims['FC_PUFFER_OBS_SIZE']}"
-        )
 
-    return training_dims["FC_POLICY_OBS_SIZE"], act_dims, mask_size, total_line_floats
+def load_compiled_policy_contract(backend_path=None):
+    validation_dir = os.path.join(repo_root(), "tools", "validation")
+    if validation_dir not in sys.path:
+        sys.path.insert(0, validation_dir)
+    from contract_preflight import load_compiled_contract, validate_compiled_contract
+
+    selected_backend = backend_path or find_compiled_backend()
+    contract = load_compiled_contract(selected_backend)
+    active_loadout = os.environ.get("FC_ACTIVE_LOADOUT", "FC_LOADOUT_SOTA_TBOW")
+    validate_compiled_contract(
+        contract, expected_active_loadout=active_loadout
+    )
+    policy_obs_size = contract["policy_obs_size"]
+    act_dims = contract["puffer_action_dims"]
+    mask_size = contract["puffer_mask_size"]
+    total_line_floats = contract["puffer_obs_size"]
+    return policy_obs_size, act_dims, mask_size, total_line_floats
+
+
+def load_evaluator_preflight(backend_path):
+    validation_dir = os.path.join(repo_root(), "tools", "validation")
+    if validation_dir not in sys.path:
+        sys.path.insert(0, validation_dir)
+    from contract_preflight import build_verified_preflight
+
+    source_config = os.environ.get(
+        "CONFIG_PATH", os.path.join(repo_root(), "config", "fight_caves.ini")
+    )
+    synced_config = os.environ.get(
+        "FC_SYNCED_CONFIG_PATH",
+        os.path.join(workspace_root(), "pufferlib_4", "config", "fight_caves.ini"),
+    )
+    active_loadout = os.environ.get("FC_ACTIVE_LOADOUT", "FC_LOADOUT_SOTA_TBOW")
+    return build_verified_preflight(
+        backend_path, source_config, synced_config, active_loadout
+    )
+
+
+def expected_parameter_bytes(total_input_size, act_dims):
+    source_config = os.environ.get(
+        "CONFIG_PATH", os.path.join(repo_root(), "config", "fight_caves.ini")
+    )
+    default_config = os.path.join(
+        workspace_root(), "pufferlib_4", "config", "default.ini"
+    )
+    validation_dir = os.path.join(repo_root(), "tools", "validation")
+    if validation_dir not in sys.path:
+        sys.path.insert(0, validation_dir)
+    from contract_preflight import expected_checkpoint_parameter_bytes
+
+    return expected_checkpoint_parameter_bytes(
+        {
+            "puffer_obs_size": total_input_size,
+            "puffer_action_dims": list(act_dims),
+        },
+        source_config,
+        default_config,
+    )
+
+
+def checkpoint_diagnostic(reason, checkpoint_path, expected_bytes, contract):
+    actual_bytes = (
+        os.path.getsize(checkpoint_path)
+        if checkpoint_path and os.path.isfile(checkpoint_path)
+        else "missing"
+    )
+    return (
+        f"checkpoint rejected: {reason}\n"
+        f"expected_policy_obs={contract['policy_obs_size']} "
+        f"actual_policy_obs={contract['policy_obs_size']}\n"
+        f"expected_puffer_obs={contract['puffer_obs_size']} "
+        f"actual_puffer_obs={contract['puffer_obs_size']}\n"
+        f"expected_action_dims={contract['puffer_action_dims']} "
+        f"actual_action_dims={contract['puffer_action_dims']}\n"
+        f"expected_parameter_bytes={expected_bytes} "
+        f"actual_parameter_bytes={actual_bytes}\n"
+        f"observation_version={contract['observation_version']}\n"
+        f"action_version={contract['action_version']}\n"
+        f"reward_version={contract['reward_version']}\n"
+        f"prayer_timing_version={contract['prayer_timing_version']}\n"
+        f"state_hash_version={contract['state_hash_version']}"
+    )
 
 
 def latest_source_mtime():
@@ -215,17 +208,6 @@ def find_viewer():
         if os.path.getmtime(path) >= source_mtime:
             return path
     return max(unique, key=os.path.getmtime)
-
-
-def find_latest_checkpoint(env_name="fight_caves"):
-    """Find the most recent .bin checkpoint."""
-    default_puffer_dir = os.path.join(workspace_root(), "pufferlib_4")
-    puffer_dir = os.environ.get("PUFFERLIB_DIR", default_puffer_dir)
-    pattern = os.path.join(puffer_dir, "checkpoints", env_name, "**", "*.bin")
-    candidates = glob.glob(pattern, recursive=True)
-    if not candidates:
-        return None
-    return max(candidates, key=os.path.getctime)
 
 
 def read_obs_line(proc, total_line_floats):
@@ -294,9 +276,19 @@ def main():
     args = parser.parse_args()
     # Clear sys.argv so PufferLib doesn't see our flags
     sys.argv = [sys.argv[0]]
-    ensure_local_pufferlib_on_path()
+    puffer_dir = ensure_local_pufferlib_on_path()
 
-    policy_obs_size, act_dims, mask_size, total_line_floats = load_contract_dims()
+    try:
+        backend_path = find_compiled_backend(puffer_dir)
+        verified_preflight = load_evaluator_preflight(backend_path)
+    except Exception as exc:
+        print(f"Error: evaluator compiled-contract preflight failed: {exc}", file=sys.stderr)
+        return 1
+    contract = verified_preflight["contract"]
+    policy_obs_size = contract["policy_obs_size"]
+    act_dims = contract["puffer_action_dims"]
+    mask_size = contract["puffer_mask_size"]
+    total_line_floats = contract["puffer_obs_size"]
 
     # Find viewer binary
     viewer_path = find_viewer()
@@ -326,12 +318,52 @@ def main():
     # Load checkpoint (unless --random)
     policy = None
     if not args.random:
-        checkpoint_path = args.ckpt
-        if checkpoint_path == "latest":
-            checkpoint_path = find_latest_checkpoint()
-            if not checkpoint_path:
-                print("Error: no checkpoints found", file=sys.stderr)
-                sys.exit(1)
+        try:
+            parameter_bytes = expected_parameter_bytes(total_line_floats, act_dims)
+        except Exception as exc:
+            print(f"Error: cannot derive expected checkpoint size: {exc}", file=sys.stderr)
+            return 1
+
+        validation_dir = os.path.join(repo_root(), "tools", "validation")
+        if validation_dir not in sys.path:
+            sys.path.insert(0, validation_dir)
+        from contract_preflight import ContractError, resolve_checkpoint
+
+        request_mode = "latest" if args.ckpt == "latest" else "explicit"
+        checkpoint_root = os.environ.get(
+            "FC_CHECKPOINT_ROOT",
+            os.path.join(workspace_root(), "pufferlib_4", "checkpoints"),
+        )
+        try:
+            resolution = resolve_checkpoint(
+                request_mode,
+                checkpoint_root,
+                verified_preflight,
+                checkpoint_path=None if request_mode == "latest" else args.ckpt,
+            )
+        except ContractError as exc:
+            print(
+                checkpoint_diagnostic(
+                    exc, None if args.ckpt == "latest" else args.ckpt,
+                    parameter_bytes, contract,
+                ),
+                file=sys.stderr,
+            )
+            return 1
+
+        checkpoint_path = resolution["resolved_path"]
+        actual_bytes = os.path.getsize(checkpoint_path)
+        if actual_bytes != parameter_bytes:
+            print(
+                checkpoint_diagnostic(
+                    "raw weight file size mismatch",
+                    checkpoint_path,
+                    parameter_bytes,
+                    contract,
+                ),
+                file=sys.stderr,
+            )
+            return 1
         print(f"[eval] Checkpoint: {checkpoint_path}", file=sys.stderr)
 
         try:
@@ -407,28 +439,43 @@ def main():
                 [k for k in sd if k.startswith("network.layers.") and k.endswith(".weight")],
                 key=lambda k: int(k.split(".")[2]),
             )
+            model_parameter_floats = (
+                sd["encoder.encoder.weight"].numel()
+                + sd[decoder_key].numel()
+                + sd[value_key].numel()
+                + sum(sd[key].numel() for key in network_keys)
+            )
+            model_parameter_bytes = (
+                model_parameter_floats * np.dtype(np.float32).itemsize
+            )
+            if model_parameter_bytes != parameter_bytes:
+                raise RuntimeError(
+                    "constructed model/raw layout mismatch: "
+                    f"expected_parameter_bytes={parameter_bytes}, "
+                    f"actual_parameter_bytes={model_parameter_bytes}"
+                )
             for key in network_keys:
                 load_tensor(key)
 
             policy.load_state_dict(sd)
             if offset != len(weights):
-                print(
-                    f"[eval] Warning: loaded {offset}/{len(weights)} floats; "
-                    f"{len(weights) - offset} unused",
-                    file=sys.stderr,
+                raise RuntimeError(
+                    f"unused supplied weights: loaded={offset}, actual={len(weights)}"
                 )
-            else:
-                print(f"[eval] Loaded {offset}/{len(weights)} weights", file=sys.stderr)
+            print(f"[eval] Loaded {offset}/{len(weights)} weights", file=sys.stderr)
 
             policy = policy.cpu()
             policy.eval()
             print("[eval] Policy ready (CPU)", file=sys.stderr)
 
-        except Exception as e:
-            print(f"[eval] Cannot load policy: {e}", file=sys.stderr)
-            print("[eval] Checkpoint loading failed before replay started.", file=sys.stderr)
-            print("[eval] Falling back to random actions", file=sys.stderr)
-            args.random = True
+        except Exception as exc:
+            print(
+                checkpoint_diagnostic(
+                    exc, checkpoint_path, parameter_bytes, contract
+                ),
+                file=sys.stderr,
+            )
+            return 1
 
     # Launch viewer subprocess from repo root so sprite paths resolve
     print("[eval] Launching viewer...", file=sys.stderr)
@@ -505,4 +552,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

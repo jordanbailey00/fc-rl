@@ -1,0 +1,23 @@
+Internal ctest changing into directory: /tmp/fc-parity-mutations-dy8zuspq/build
+Test project /tmp/fc-parity-mutations-dy8zuspq/build
+    Start 3: parity_npc_001_exact_stat_table
+1/2 Test #3: parity_npc_001_exact_stat_table ..........***Failed    0.00 sec
+FAIL NPC-001: NPC type 7 field ranged_max_hit_tenths=950, expected 970
+
+    Start 4: parity_npc_002_style_maximum_selection
+2/2 Test #4: parity_npc_002_style_maximum_selection ...***Failed    0.00 sec
+FAIL NPC-002: NPC type 7 field style maximum tenths=950, expected 970
+
+
+0% tests passed, 2 tests failed out of 2
+
+Label Time Summary:
+parity_fix    =   0.00 sec*proc (2 tests)
+unit          =   0.00 sec*proc (2 tests)
+
+Total Test time (real) =   0.00 sec
+
+The following tests FAILED:
+	  3 - parity_npc_001_exact_stat_table (Failed)
+	  4 - parity_npc_002_style_maximum_selection (Failed)
+Errors while running CTest

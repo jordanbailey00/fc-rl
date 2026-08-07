@@ -1,6 +1,24 @@
 #ifndef FC_CONTRACTS_H
 #define FC_CONTRACTS_H
 
+/* Machine-readable training-contract metadata. These identifiers describe
+ * compiled semantics, not tunable reward weights. A selected runnable config
+ * may override FC_REWARD_VERSION at build time when it preserves its own
+ * reward-family name under the same Prayer parity semantics. */
+#define FC_CONTRACT_DUMP_SCHEMA_VERSION 1
+#ifndef FC_OBSERVATION_VERSION
+#define FC_OBSERVATION_VERSION "fight_caves_puffer_policy_obs_v8_prayer_timing_mask8_no_supplies"
+#endif
+#ifndef FC_ACTION_VERSION
+#define FC_ACTION_VERSION "fight_caves_multidiscrete_3_head_no_supplies_v2_prayer8"
+#endif
+#ifndef FC_REWARD_VERSION
+#define FC_REWARD_VERSION "fight_caves_v4_progress_npc_heal_penalty_m0005_prayer_snapshot_flick_drain"
+#endif
+#ifndef FC_PRAYER_TIMING_VERSION
+#define FC_PRAYER_TIMING_VERSION "fight_caves_prayer_timing_v1_tick_start_snapshot_flick_drain_jad_lock"
+#endif
+
 /*
  * fc_contracts.h — Observation, action, reward, and mask contracts.
  *
@@ -247,6 +265,9 @@ static const int FC_MOVE_DY[17] = {
  *   2 = protect from magic
  *   3 = protect from missiles (ranged)
  *   4 = protect from melee
+ *   5 = explicit OFF edge, then protect from magic
+ *   6 = explicit OFF edge, then protect from missiles (ranged)
+ *   7 = explicit OFF edge, then protect from melee
  *
  * PR 2 note — PvM prayer semantics:
  *   Correct protection prayer BLOCKS 100% of the matching NPC attack style.
@@ -254,15 +275,12 @@ static const int FC_MOVE_DY[17] = {
  *   Only exception: attacking while wrong prayer is active against Jad still takes
  *   full damage. Prayer must be switched before the hit's snapshot/lock tick.
  */
-#define FC_PRAYER_DIM            5
+#define FC_PRAYER_DIM            8
 #define FC_PRAYER_NO_CHANGE      0
 #define FC_PRAYER_OFF            1
 #define FC_PRAYER_MAGIC          2
 #define FC_PRAYER_RANGE          3
 #define FC_PRAYER_MELEE          4
-/* Reserved compound commands. A1 exposes their stable IDs while retaining
- * the five-action runtime contract; the prayer workstream raises
- * FC_PRAYER_DIM and activates these commands atomically with consumers. */
 #define FC_PRAYER_FLICK_MAGIC    5
 #define FC_PRAYER_FLICK_RANGE    6
 #define FC_PRAYER_FLICK_MELEE    7
@@ -325,18 +343,18 @@ static const int FC_PUFFER_ACTION_DIMS[FC_PUFFER_NUM_ATNS] = FC_PUFFER_ACT_SIZES
  * Per-tick binary mask: 1.0 = valid, 0.0 = invalid.
  * One float per action value per head. Appended after FC_TOTAL_OBS in the buffer.
  *
- * Layout: [MOVE(17)] [ATTACK(9)] [PRAYER(5)] [EAT(3)] [DRINK(2)] [TARGET_X(65)] [TARGET_Y(65)]
+ * Layout: [MOVE(17)] [ATTACK(9)] [PRAYER(8)] [EAT(3)] [DRINK(2)] [TARGET_X(65)] [TARGET_Y(65)]
  */
-#define FC_ACTION_MASK_SIZE     (FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM + FC_EAT_DIM + FC_DRINK_DIM + FC_MOVE_TARGET_X_DIM + FC_MOVE_TARGET_Y_DIM)  /* 166 */
+#define FC_ACTION_MASK_SIZE     (FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM + FC_EAT_DIM + FC_DRINK_DIM + FC_MOVE_TARGET_X_DIM + FC_MOVE_TARGET_Y_DIM)  /* 169 */
 
 /* Mask region offsets within the mask buffer */
 #define FC_MASK_MOVE_START       0
 #define FC_MASK_ATTACK_START     FC_MOVE_DIM                                    /* 17 */
 #define FC_MASK_PRAYER_START     (FC_MASK_ATTACK_START + FC_ATTACK_DIM)         /* 26 */
-#define FC_MASK_EAT_START        (FC_MASK_PRAYER_START + FC_PRAYER_DIM)         /* 31 */
-#define FC_MASK_DRINK_START      (FC_MASK_EAT_START + FC_EAT_DIM)              /* 34 */
-#define FC_MASK_TARGET_X_START   (FC_MASK_DRINK_START + FC_DRINK_DIM)           /* 36 */
-#define FC_MASK_TARGET_Y_START   (FC_MASK_TARGET_X_START + FC_MOVE_TARGET_X_DIM) /* 101 */
+#define FC_MASK_EAT_START        (FC_MASK_PRAYER_START + FC_PRAYER_DIM)         /* 34 */
+#define FC_MASK_DRINK_START      (FC_MASK_EAT_START + FC_EAT_DIM)              /* 37 */
+#define FC_MASK_TARGET_X_START   (FC_MASK_DRINK_START + FC_DRINK_DIM)           /* 39 */
+#define FC_MASK_TARGET_Y_START   (FC_MASK_TARGET_X_START + FC_MOVE_TARGET_X_DIM) /* 104 */
 
 /* ======================================================================== */
 /* Full buffer size (what PufferLib vecenv allocates per env)                 */
@@ -344,7 +362,7 @@ static const int FC_PUFFER_ACTION_DIMS[FC_PUFFER_NUM_ATNS] = FC_PUFFER_ACT_SIZES
 
 /*
  * Total floats in the full FC backend buffer:
- *   FC_POLICY_OBS_SIZE (285) + FC_REWARD_FEATURES (20) + FC_ACTION_MASK_SIZE (166) = 471
+ *   FC_POLICY_OBS_SIZE (285) + FC_REWARD_FEATURES (20) + FC_ACTION_MASK_SIZE (169) = 474
  *
  * The PufferLib adapter does NOT expose this full buffer directly. It exposes
  * FC_PUFFER_OBS_SIZE, defined above from the Puffer policy-head contract.
@@ -354,7 +372,7 @@ static const int FC_PUFFER_ACTION_DIMS[FC_PUFFER_NUM_ATNS] = FC_PUFFER_ACT_SIZES
  *   reward_feat  = full_obs[FC_REWARD_START:FC_REWARD_START + FC_REWARD_FEATURES]
  *   action_mask  = full_obs[FC_TOTAL_OBS:FC_TOTAL_OBS + FC_ACTION_MASK_SIZE]
  */
-#define FC_OBS_SIZE             (FC_TOTAL_OBS + FC_ACTION_MASK_SIZE)  /* 471 */
+#define FC_OBS_SIZE             (FC_TOTAL_OBS + FC_ACTION_MASK_SIZE)  /* 474 */
 
 /* ======================================================================== */
 /* Normalization divisors                                                     */

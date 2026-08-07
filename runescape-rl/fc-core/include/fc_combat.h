@@ -17,11 +17,6 @@ int fc_player_ranged_attack_roll(const FcPlayer* p, const FcNpc* target);
 int fc_player_ranged_base_max_hit_hp(const FcPlayer* p);
 int fc_player_ranged_final_max_hit_hp(const FcPlayer* p, const FcNpc* target);
 
-/* Transitional compatibility API used by the untouched attack path in A1.
- * It retains the current tenths return until the damage workstream migrates
- * every caller to the unit-explicit helpers above. */
-int fc_player_ranged_max_hit(const FcPlayer* p, const FcNpc* target);
-
 /* Damage helpers accept a whole-HP maximum and return tenths storage units. */
 int fc_roll_player_damage_tenths(FcState* state, int final_max_hit_hp);
 int fc_roll_npc_damage_tenths(FcState* state, int final_max_hit_hp);

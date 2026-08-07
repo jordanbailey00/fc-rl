@@ -99,10 +99,8 @@ int fc_terminal_code(const FcState* state);
 /* Determinism                                                               */
 /* ======================================================================== */
 
-/* Version 0 denotes the pre-canonical viewer hash retained during A1. The
- * cross-cutting hash workstream replaces it with the complete core-owned
- * serialization and advances this identifier. */
-#define FC_STATE_HASH_VERSION 0u
+/* Version 1 is the complete core-owned fixed-width FcState serialization. */
+#define FC_STATE_HASH_VERSION 1u
 
 /*
  * Compute a deterministic hash of the game state.
@@ -115,8 +113,6 @@ int fc_terminal_code(const FcState* state);
  * Usage: Call after each fc_step to verify determinism. Two runs with
  * the same (seed, action_sequence) must produce identical hashes at every tick.
  */
-/* Declared for every compilation path. The canonical core implementation is
- * added after all future-relevant parity state fields have stabilized. */
 uint32_t fc_state_hash(const FcState* state);
 
 /* ======================================================================== */

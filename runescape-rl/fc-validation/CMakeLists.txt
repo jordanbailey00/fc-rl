@@ -2,6 +2,269 @@
 # This module consumes fc-core as a library and keeps validation logic out of
 # simulator code.
 
+# Performance gates are explicit opt-in targets rather than CTest entries.
+# Their wall-clock thresholds are machine-specific, while the executable's
+# deterministic workload and machine-readable result are shared by A0 and the
+# post-fix comparison.
+add_executable(parity_perf_core EXCLUDE_FROM_ALL
+    tests/parity_perf_core.c
+)
+target_include_directories(parity_perf_core PRIVATE
+    ${PROJECT_SOURCE_DIR}/fc-core/include
+)
+target_link_libraries(parity_perf_core PRIVATE fc_core m)
+
+add_executable(parity_fix_core
+    tests/parity_fix_core.c
+)
+target_include_directories(parity_fix_core PRIVATE
+    ${PROJECT_SOURCE_DIR}/fc-core/include
+)
+target_link_libraries(parity_fix_core PRIVATE fc_core m)
+
+add_executable(parity_fix_integration
+    tests/parity_fix_integration.c
+)
+target_include_directories(parity_fix_integration PRIVATE
+    ${PROJECT_SOURCE_DIR}/fc-core/include
+)
+target_link_libraries(parity_fix_integration PRIVATE fc_core m)
+
+add_executable(parity_fix_damage
+    tests/parity_fix_damage.c
+)
+target_include_directories(parity_fix_damage PRIVATE
+    ${PROJECT_SOURCE_DIR}/fc-core/include
+)
+target_link_libraries(parity_fix_damage PRIVATE fc_core m)
+
+add_executable(parity_fix_prayer
+    tests/parity_fix_prayer.c
+)
+target_include_directories(parity_fix_prayer PRIVATE
+    ${PROJECT_SOURCE_DIR}/fc-core/include
+)
+target_link_libraries(parity_fix_prayer PRIVATE fc_core m)
+
+add_executable(parity_fix_hash
+    tests/parity_fix_hash.c
+)
+target_include_directories(parity_fix_hash PRIVATE
+    ${PROJECT_SOURCE_DIR}/fc-core/include
+)
+target_link_libraries(parity_fix_hash PRIVATE fc_core m)
+
+# The same deterministic trace runner is compiled once against the normally
+# linked core and once against the exact direct-included source set used by the
+# Fight Caves Puffer adapter. The Python comparator owns artifact metadata and
+# first-difference diagnostics.
+add_executable(parity_fix_replay_linked
+    tests/parity_fix_replay.c
+)
+target_compile_definitions(parity_fix_replay_linked PRIVATE
+    FC_REPLAY_BACKEND_NAME="linked_fc_core"
+)
+target_include_directories(parity_fix_replay_linked PRIVATE
+    ${PROJECT_SOURCE_DIR}/fc-core/include
+)
+target_link_libraries(parity_fix_replay_linked PRIVATE fc_core m)
+
+add_executable(parity_fix_replay_puffer
+    tests/parity_fix_replay.c
+    tests/parity_fix_puffer_core.c
+)
+target_compile_definitions(parity_fix_replay_puffer PRIVATE
+    FC_REPLAY_BACKEND_NAME="puffer_direct_include"
+)
+if(FC_ACTIVE_LOADOUT)
+    target_compile_definitions(parity_fix_replay_puffer PRIVATE
+        FC_ACTIVE_LOADOUT=${FC_ACTIVE_LOADOUT}
+    )
+endif()
+target_include_directories(parity_fix_replay_puffer PRIVATE
+    ${PROJECT_SOURCE_DIR}/fc-training
+    ${PROJECT_SOURCE_DIR}/fc-core/include
+    ${PROJECT_SOURCE_DIR}/fc-core/src
+)
+target_link_libraries(parity_fix_replay_puffer PRIVATE m)
+
+add_executable(parity_fix_soak
+    tests/parity_fix_soak.c
+)
+target_include_directories(parity_fix_soak PRIVATE
+    ${PROJECT_SOURCE_DIR}/fc-core/include
+)
+target_link_libraries(parity_fix_soak PRIVATE fc_core m)
+
+add_executable(parity_fix_rng
+    tests/parity_fix_rng.c
+)
+target_include_directories(parity_fix_rng PRIVATE
+    ${PROJECT_SOURCE_DIR}/fc-core/include
+)
+target_link_libraries(parity_fix_rng PRIVATE fc_core m)
+
+# Test-only compiled backend used to corrupt each CONTRACT-004 field without
+# rebuilding the production CUDA extension for every negative preflight case.
+add_library(parity_contract_fixture SHARED
+    tests/parity_contract_fixture.c
+)
+
+add_library(parity_compiled_contract SHARED
+    ${PROJECT_SOURCE_DIR}/fc-training/contract_dump.c
+)
+target_include_directories(parity_compiled_contract PRIVATE
+    ${PROJECT_SOURCE_DIR}/fc-core/include
+)
+
+function(add_parity_fix_test name target case_name labels)
+    add_test(NAME ${name} COMMAND ${target} ${case_name})
+    set_tests_properties(${name} PROPERTIES LABELS "${labels}")
+endfunction()
+
+# A2 Workstream 1 NPC/defence assertions.
+add_parity_fix_test(parity_npc_001_exact_stat_table
+    parity_fix_core npc_001 "parity_fix;unit")
+add_parity_fix_test(parity_npc_002_style_maximum_selection
+    parity_fix_core npc_002 "parity_fix;unit")
+add_parity_fix_test(parity_npc_003_exact_offensive_rolls
+    parity_fix_core npc_003 "parity_fix;unit")
+add_parity_fix_test(parity_npc_004_real_dual_style_routing
+    parity_fix_integration npc_004 "parity_fix;integration")
+add_parity_fix_test(parity_npc_005_spawn_and_consumers
+    parity_fix_integration npc_005 "parity_fix;integration")
+add_parity_fix_test(parity_def_001_sota_exact_rolls
+    parity_fix_core def_001 "parity_fix;unit")
+add_parity_fix_test(parity_def_002_equipment_field_isolation
+    parity_fix_core def_002 "parity_fix;unit")
+add_parity_fix_test(parity_def_003_skill_isolation_truncation
+    parity_fix_core def_003 "parity_fix;unit")
+add_parity_fix_test(parity_def_004_exact_attack_type_propagation
+    parity_fix_integration def_004 "parity_fix;integration")
+
+# DEF-005 pins shared accuracy math that is intentionally unchanged and must
+# remain part of the non-red preservation run throughout this tranche.
+add_parity_fix_test(parity_def_005_hit_chance_preserved
+    parity_fix_core def_005 "parity_fix;unit;preservation")
+
+# A2 Workstream 2 base-Ranged/TBow/effect/loadout assertions.
+add_parity_fix_test(parity_rng_001_base_loadout_vectors
+    parity_fix_core rng_001 "parity_fix;unit;preservation")
+add_parity_fix_test(parity_tbow_001_multiplier_vectors
+    parity_fix_core tbow_001 "parity_fix;unit")
+add_parity_fix_test(parity_tbow_002_exhaustive_integer_oracle
+    parity_fix_core tbow_002 "parity_fix;unit")
+add_parity_fix_test(parity_tbow_003_effect_gating
+    parity_fix_core tbow_003 "parity_fix;unit;preservation")
+add_parity_fix_test(parity_cry_001_all_piece_masks
+    parity_fix_core cry_001 "parity_fix;unit")
+add_parity_fix_test(parity_cry_002_weapon_cross_product
+    parity_fix_core cry_002 "parity_fix;unit")
+add_parity_fix_test(parity_cry_003_equipment_metadata
+    parity_fix_core cry_003 "parity_fix;unit;preservation")
+add_parity_fix_test(parity_cry_004_integer_order_bounds
+    parity_fix_core cry_004 "parity_fix;unit")
+add_parity_fix_test(parity_load_001_exact_raw_values
+    parity_fix_core load_001 "parity_fix;unit")
+add_parity_fix_test(parity_load_002_weapon_ammo_metadata
+    parity_fix_core load_002 "parity_fix;integration;preservation")
+add_parity_fix_test(parity_load_003_relationship_checks
+    parity_fix_core load_003 "parity_fix;unit")
+add_parity_fix_test(parity_load_004_reset_propagation
+    parity_fix_core load_004 "parity_fix;integration;preservation")
+
+# A2 Workstream 2 whole-HP damage/tenths-storage assertions.
+add_parity_fix_test(parity_dmg_000_unit_explicit_apis
+    parity_fix_damage dmg_000 "parity_fix;unit")
+add_parity_fix_test(parity_dmg_001_exact_raw_roll_mapping
+    parity_fix_damage dmg_001 "parity_fix;unit")
+add_parity_fix_test(parity_dmg_002_independent_rng_oracle
+    parity_fix_damage dmg_002 "parity_fix;unit;determinism")
+add_parity_fix_test(parity_dmg_003_failed_accuracy_behavior
+    parity_fix_damage dmg_003 "parity_fix;integration;preservation")
+add_parity_fix_test(parity_dmg_004_every_production_call_site
+    parity_fix_damage dmg_004 "parity_fix;integration")
+add_parity_fix_test(parity_dmg_005_final_maximum_ordering
+    parity_fix_damage dmg_005 "parity_fix;unit")
+add_parity_fix_test(parity_dmg_006_storage_consumers
+    parity_fix_damage dmg_006 "parity_fix;integration;preservation")
+add_parity_fix_test(parity_dmg_007_minimum_hit_functional
+    parity_fix_damage dmg_007 "parity_fix;integration")
+add_parity_fix_test(parity_dmg_008_tz_kih_coupling
+    parity_fix_damage dmg_008 "parity_fix;integration;preservation")
+
+# A2 Workstream 3 prayer assertions.
+add_parity_fix_test(parity_pray_001_action_ids
+    parity_fix_prayer pray_001 "parity_fix;unit")
+add_parity_fix_test(parity_pray_002_transition_truth_table
+    parity_fix_prayer pray_002 "parity_fix;unit")
+add_parity_fix_test(parity_pray_003_drain_decision_table
+    parity_fix_prayer pray_003 "parity_fix;unit")
+add_parity_fix_test(parity_pray_004_resistance_persistence
+    parity_fix_prayer pray_004 "parity_fix;unit")
+add_parity_fix_test(parity_pray_005_centralized_depletion
+    parity_fix_prayer pray_005 "parity_fix;integration")
+add_parity_fix_test(parity_pray_006_tick_start_snapshot
+    parity_fix_prayer pray_006 "parity_fix;integration")
+add_parity_fix_test(parity_pray_007_repeated_flick_trace
+    parity_fix_prayer pray_007 "parity_fix;integration")
+add_parity_fix_test(parity_pray_008_jad_delayed_lock
+    parity_fix_prayer pray_008 "parity_fix;integration")
+
+# Config workstream 2 observation/deadline semantics.
+add_parity_fix_test(parity_obs_001_final_overhead_and_loss
+    parity_fix_prayer obs_001 "parity_fix;observation;integration")
+add_parity_fix_test(parity_obs_002_final_decision_urgency
+    parity_fix_prayer obs_002 "parity_fix;observation;integration")
+add_parity_fix_test(parity_obs_003_lock_tick_nonactionable
+    parity_fix_prayer obs_003 "parity_fix;observation;unit")
+add_parity_fix_test(parity_obs_004_ablation_preserves_deadline
+    parity_fix_prayer obs_004 "parity_fix;observation;unit;preservation")
+
+# Config workstream 3 reward-event and metric consumers.
+add_parity_fix_test(parity_rwd_001_locked_snapshot_events
+    parity_fix_prayer rwd_001 "parity_fix;reward;integration;preservation")
+add_parity_fix_test(parity_rwd_002_prayer_loss_sources
+    parity_fix_prayer rwd_002 "parity_fix;reward;integration;preservation")
+add_parity_fix_test(parity_rwd_003_layout_validity_and_shaping
+    parity_fix_prayer rwd_003 "parity_fix;reward;unit;preservation")
+add_parity_fix_test(parity_metric_001_tick_start_prayer_uptime
+    parity_fix_prayer metric_001 "parity_fix;metrics;unit")
+
+# Config workstream 6 canonical hash assertions.
+add_parity_fix_test(parity_det_001_hash_version
+    parity_fix_hash version "parity_fix;determinism")
+add_parity_fix_test(parity_det_001_field_coverage
+    parity_fix_hash field_coverage "parity_fix;determinism")
+add_parity_fix_test(parity_det_001_versioned_golden
+    parity_fix_hash golden "parity_fix;determinism")
+add_parity_fix_test(parity_det_001_presentation_exclusion
+    parity_fix_hash presentation "parity_fix;determinism;preservation")
+
+add_test(NAME parity_det_004_player_damage_draw_counts
+    COMMAND parity_fix_damage dmg_002)
+set_tests_properties(parity_det_004_player_damage_draw_counts PROPERTIES
+    LABELS "parity_fix;determinism;rng")
+
+add_test(NAME parity_det_004_npc_attack_draw_counts
+    COMMAND parity_fix_integration npc_004)
+set_tests_properties(parity_det_004_npc_attack_draw_counts PROPERTIES
+    LABELS "parity_fix;determinism;rng")
+
+add_test(NAME parity_det_004_prayer_action_draw_counts
+    COMMAND parity_fix_rng)
+set_tests_properties(parity_det_004_prayer_action_draw_counts PROPERTIES
+    LABELS "parity_fix;determinism;rng")
+
+add_test(NAME parity_soak_001_fast
+    COMMAND parity_fix_soak
+            --seeds 32
+            --ticks 5000
+            --seed-start 7001
+            --failure-trace ${CMAKE_CURRENT_BINARY_DIR}/parity-soak-001-failure.json)
+set_tests_properties(parity_soak_001_fast PROPERTIES
+    LABELS "parity_fix;soak;integration")
+
 add_executable(phase2_guardrails_core
     tests/phase2_guardrails_core.c
 )
@@ -325,6 +588,26 @@ add_test(NAME revamp_native_action_mask_adapter
 set_tests_properties(revamp_native_action_mask_adapter PROPERTIES
     LABELS "revamp;guardrail;action_mask")
 
+add_test(NAME parity_contract_001_exact_dimensions
+    COMMAND phase2_guardrails_training prayer_contract_dimensions)
+set_tests_properties(parity_contract_001_exact_dimensions PROPERTIES
+    LABELS "parity_fix;contract;action_mask")
+
+add_test(NAME parity_contract_002_puffer_mask_values
+    COMMAND phase2_guardrails_training prayer_puffer_mask_values)
+set_tests_properties(parity_contract_002_puffer_mask_values PROPERTIES
+    LABELS "parity_fix;contract;action_mask")
+
+add_test(NAME parity_contract_003_single_env_canaries
+    COMMAND phase2_guardrails_training prayer_single_env_canaries)
+set_tests_properties(parity_contract_003_single_env_canaries PROPERTIES
+    LABELS "parity_fix;contract;action_mask")
+
+add_test(NAME parity_metric_002_puffer_prayer_publication
+    COMMAND phase2_guardrails_training prayer_metric_publication)
+set_tests_properties(parity_metric_002_puffer_prayer_publication PROPERTIES
+    LABELS "parity_fix;metrics;training")
+
 add_test(NAME cuda_backend_architecture_guardrails
     COMMAND bash
             ${CMAKE_CURRENT_SOURCE_DIR}/../tools/validation/tests/cuda_arch_guardrails.sh)
@@ -333,6 +616,25 @@ set_tests_properties(cuda_backend_architecture_guardrails PROPERTIES
 
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
+    add_test(NAME parity_det_002_same_version_replay
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_replay.py
+                same_version
+                $<TARGET_FILE:parity_fix_replay_linked>
+                ${CMAKE_CURRENT_BINARY_DIR}/parity-det-002.json)
+    set_tests_properties(parity_det_002_same_version_replay PROPERTIES
+        LABELS "parity_fix;determinism;replay")
+
+    add_test(NAME parity_det_003_core_puffer_replay
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_replay.py
+                core_puffer
+                $<TARGET_FILE:parity_fix_replay_linked>
+                $<TARGET_FILE:parity_fix_replay_puffer>
+                ${CMAKE_CURRENT_BINARY_DIR}/parity-det-003.json)
+    set_tests_properties(parity_det_003_core_puffer_replay PROPERTIES
+        LABELS "parity_fix;determinism;replay;training")
+
     add_test(NAME phase3_analytics_no_globals
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/../tools/validation/tests/phase2_static_guardrails.py
@@ -374,6 +676,170 @@ if(Python3_Interpreter_FOUND)
                 viewer_training_parity_contract)
     set_tests_properties(revamp_viewer_training_parity_contract PROPERTIES
         LABELS "revamp;guardrail")
+
+    add_test(NAME parity_contract_002_standalone_action_range
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/../tools/validation/tests/phase2_static_guardrails.py
+                standalone_prayer_action_range)
+    set_tests_properties(parity_contract_002_standalone_action_range PROPERTIES
+        LABELS "parity_fix;contract;action_mask")
+
+    add_test(NAME parity_contract_002_capi_public_header
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/../tools/validation/tests/phase2_static_guardrails.py
+                capi_public_batch_contract)
+    set_tests_properties(parity_contract_002_capi_public_header PROPERTIES
+        LABELS "parity_fix;contract;capi")
+
+    add_test(NAME parity_contract_002_evaluator_dimensions
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_evaluator.py
+                contract_dimensions
+                $<TARGET_FILE:parity_contract_fixture>)
+    set_tests_properties(parity_contract_002_evaluator_dimensions PROPERTIES
+        LABELS "parity_fix;contract;evaluator")
+
+    add_test(NAME parity_contract_003_evaluator_buffers
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_evaluator.py
+                action_and_line_buffers
+                $<TARGET_FILE:parity_contract_fixture>)
+    set_tests_properties(parity_contract_003_evaluator_buffers PROPERTIES
+        LABELS "parity_fix;contract;evaluator;buffer")
+
+    add_test(NAME parity_config_001_active_versions
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_config.py
+                active_versions)
+    set_tests_properties(parity_config_001_active_versions PROPERTIES
+        LABELS "parity_fix;config;contract")
+
+    add_test(NAME parity_config_002_runnable_experiment_versions
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_config.py
+                runnable_experiment_versions)
+    set_tests_properties(parity_config_002_runnable_experiment_versions PROPERTIES
+        LABELS "parity_fix;config;contract")
+
+    add_test(NAME parity_config_003_runtime_mirror_versions
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_config.py
+                runtime_mirror_versions)
+    set_tests_properties(parity_config_003_runtime_mirror_versions PROPERTIES
+        LABELS "parity_fix;config;contract")
+
+    add_test(NAME parity_config_004_nonversion_values_preserved
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_config.py
+                nonversion_values_preserved)
+    set_tests_properties(parity_config_004_nonversion_values_preserved PROPERTIES
+        LABELS "parity_fix;config;contract;preservation")
+
+    add_test(NAME parity_contract_004_compiled_preflight
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_preflight.py
+                compiled_preflight
+                $<TARGET_FILE:parity_compiled_contract>)
+    set_tests_properties(parity_contract_004_compiled_preflight PROPERTIES
+        LABELS "parity_fix;contract;preflight")
+
+    add_test(NAME parity_contract_004_preflight_rejections
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_preflight.py
+                preflight_rejections
+                $<TARGET_FILE:parity_contract_fixture>)
+    set_tests_properties(parity_contract_004_preflight_rejections PROPERTIES
+        LABELS "parity_fix;contract;preflight")
+
+    add_test(NAME parity_contract_004_manifest_schema2
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_preflight.py
+                manifest_schema2
+                $<TARGET_FILE:parity_contract_fixture>)
+    set_tests_properties(parity_contract_004_manifest_schema2 PROPERTIES
+        LABELS "parity_fix;contract;manifest")
+
+    add_test(NAME parity_contract_004_consumer_order
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_preflight.py
+                consumer_order
+                $<TARGET_FILE:parity_contract_fixture>)
+    set_tests_properties(parity_contract_004_consumer_order PROPERTIES
+        LABELS "parity_fix;contract;preflight;manifest")
+
+    add_test(NAME parity_contract_004_active_configs
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_preflight.py
+                active_configs
+                $<TARGET_FILE:parity_contract_fixture>)
+    set_tests_properties(parity_contract_004_active_configs PROPERTIES
+        LABELS "parity_fix;contract;preflight;config")
+
+    add_test(NAME parity_det_001_core_hash_ownership
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_hash_contract.py
+                ownership)
+    set_tests_properties(parity_det_001_core_hash_ownership PROPERTIES
+        LABELS "parity_fix;determinism;contract")
+
+    # Config workstream 8 checkpoint/replay isolation. Explicit random mode
+    # and stale-literal scanning already describe preservation behavior; the
+    # remaining cases are assertion-level expected-red until the production
+    # checkpoint/evaluator correction is approved.
+    add_test(NAME parity_contract_004_evaluator_explicit_random
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_checkpoint.py
+                evaluator_explicit_random
+                $<TARGET_FILE:parity_contract_fixture>)
+    set_tests_properties(parity_contract_004_evaluator_explicit_random PROPERTIES
+        LABELS "parity_fix;contract;evaluator;preservation")
+
+    add_test(NAME parity_contract_004_stale_literals
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/../tools/validation/tests/phase2_static_guardrails.py
+                parity_stale_literals)
+    set_tests_properties(parity_contract_004_stale_literals PROPERTIES
+        LABELS "parity_fix;contract;static;preservation")
+
+    add_test(NAME parity_contract_004_evaluator_hard_failures
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_checkpoint.py
+                evaluator_hard_failures
+                $<TARGET_FILE:parity_contract_fixture>)
+    set_tests_properties(parity_contract_004_evaluator_hard_failures PROPERTIES
+        LABELS "parity_fix;contract;evaluator")
+
+    add_test(NAME parity_contract_004_latest_checkpoint_filter
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_checkpoint.py
+                latest_checkpoint_filter
+                $<TARGET_FILE:parity_contract_fixture>)
+    set_tests_properties(parity_contract_004_latest_checkpoint_filter PROPERTIES
+        LABELS "parity_fix;contract;checkpoint")
+
+    add_test(NAME parity_contract_004_manifest_warm_modes
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_checkpoint.py
+                manifest_warm_modes
+                $<TARGET_FILE:parity_contract_fixture>)
+    set_tests_properties(parity_contract_004_manifest_warm_modes PROPERTIES
+        LABELS "parity_fix;contract;checkpoint;manifest")
+
+    add_test(NAME parity_contract_004_checkpoint_consumer_order
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_checkpoint.py
+                checkpoint_consumer_order
+                $<TARGET_FILE:parity_contract_fixture>)
+    set_tests_properties(parity_contract_004_checkpoint_consumer_order PROPERTIES
+        LABELS "parity_fix;contract;checkpoint;evaluator")
+
+    add_test(NAME parity_det_002_trace_provenance
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_checkpoint.py
+                trace_provenance
+                $<TARGET_FILE:parity_contract_fixture>)
+    set_tests_properties(parity_det_002_trace_provenance PROPERTIES
+        LABELS "parity_fix;contract;determinism;replay")
 else()
     message(STATUS "Python3 not found — skipping phase2 static validation guardrails")
 endif()

@@ -38,6 +38,7 @@
 #include "fc_wave.c"
 #include "fc_tick.c"
 #include "fc_state.c"
+#include "fc_hash.c"
 
 /* Raylib rendering for eval mode (Phase 11).
  * Only compiled when FC_RENDER is defined (build.sh --render). */
