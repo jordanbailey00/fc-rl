@@ -151,7 +151,7 @@ static uint32_t reference_npc(uint32_t hash, const FcNpc* npc) {
     return hash;
 }
 
-static uint32_t reference_state_hash_v1(const FcState* state) {
+static uint32_t reference_state_hash_v2(const FcState* state) {
     uint32_t hash = FNV_OFFSET;
     hash = reference_player(hash, &state->player);
     for (int i = 0; i < FC_MAX_NPCS; ++i) {
@@ -171,6 +171,16 @@ static uint32_t reference_state_hash_v1(const FcState* state) {
     for (int x = 0; x < FC_ARENA_WIDTH; ++x) {
         for (int y = 0; y < FC_ARENA_HEIGHT; ++y) {
             hash = ref_u8(hash, state->walkable[x][y]);
+        }
+    }
+    for (int x = 0; x < FC_ARENA_WIDTH; ++x) {
+        for (int y = 0; y < FC_ARENA_HEIGHT; ++y) {
+            hash = ref_u8(hash, state->movement_flags[x][y]);
+        }
+    }
+    for (int x = 0; x < FC_ARENA_WIDTH; ++x) {
+        for (int y = 0; y < FC_ARENA_HEIGHT; ++y) {
+            hash = ref_u8(hash, state->los_flags[x][y]);
         }
     }
 
@@ -325,19 +335,19 @@ static void make_golden_state(FcState* state) {
 }
 
 static int test_version(void) {
-    if (FC_STATE_HASH_VERSION != 1u) {
-        fprintf(stderr, "FAIL DET-001: FC_STATE_HASH_VERSION=%u, expected 1\n",
+    if (FC_STATE_HASH_VERSION != 2u) {
+        fprintf(stderr, "FAIL DET-001: FC_STATE_HASH_VERSION=%u, expected 2\n",
                 (unsigned)FC_STATE_HASH_VERSION);
         return 1;
     }
-    printf("PASS DET-001: canonical state-hash version is 1\n");
+    printf("PASS DET-001: canonical state-hash version is 2\n");
     return 0;
 }
 
 #define MUTATE(label, expression) do {                                      \
     FcState changed = base;                                                 \
     expression;                                                             \
-    uint32_t expected = reference_state_hash_v1(&changed);                  \
+    uint32_t expected = reference_state_hash_v2(&changed);                  \
     uint32_t actual = fc_state_hash(&changed);                              \
     if (expected == reference_base) {                                       \
         fprintf(stderr, "FAIL DET-001 oracle: %s did not change reference hash\n", label); \
@@ -354,7 +364,7 @@ static int test_field_coverage(void) {
     int failures = 0;
     fc_init(&base);
     fc_reset(&base, UINT32_C(0x31415926));
-    uint32_t reference_base = reference_state_hash_v1(&base);
+    uint32_t reference_base = reference_state_hash_v2(&base);
     uint32_t production_base = fc_state_hash(&base);
 
     MUTATE("player.position", changed.player.x ^= 1);
@@ -423,6 +433,8 @@ static int test_field_coverage(void) {
     MUTATE("rng_state", changed.rng_state ^= UINT32_C(1));
     MUTATE("rng_seed", changed.rng_seed ^= UINT32_C(1));
     MUTATE("arena_walkability", changed.walkable[0][0] ^= UINT8_C(1));
+    MUTATE("arena_movement_flags", changed.movement_flags[0][0] ^= UINT8_C(1));
+    MUTATE("arena_los_flags", changed.los_flags[0][0] ^= UINT8_C(1));
     MUTATE("movement_reservations", changed.movement_start_npc_x[0] ^= 1);
     MUTATE("jad_healer_state", changed.jad_healer_spawn_generations ^= 1);
     MUTATE("reward_damage_event", changed.damage_dealt_this_tick ^= 1);
@@ -455,26 +467,26 @@ static int test_field_coverage(void) {
 #undef MUTATE
 
 static int test_golden(void) {
-    const uint32_t expected_v1 = UINT32_C(0xda423548);
+    const uint32_t expected_v2 = UINT32_C(0x73d93548);
     FcState state;
     make_golden_state(&state);
-    uint32_t oracle = reference_state_hash_v1(&state);
+    uint32_t oracle = reference_state_hash_v2(&state);
     uint32_t actual = fc_state_hash(&state);
 
-    if (oracle != expected_v1) {
+    if (oracle != expected_v2) {
         fprintf(stderr,
                 "FAIL DET-001 oracle golden: got 0x%08" PRIx32 ", expected 0x%08" PRIx32 "\n",
-                oracle, expected_v1);
+                oracle, expected_v2);
         return 1;
     }
-    if (actual != expected_v1) {
+    if (actual != expected_v2) {
         fprintf(stderr,
                 "FAIL DET-001 canonical golden: got 0x%08" PRIx32 ", expected 0x%08" PRIx32 "\n",
-                actual, expected_v1);
+                actual, expected_v2);
         return 1;
     }
-    printf("PASS DET-001: version-1 synthetic-state golden is 0x%08" PRIx32 "\n",
-           expected_v1);
+    printf("PASS DET-001: version-2 synthetic-state golden is 0x%08" PRIx32 "\n",
+           expected_v2);
     return 0;
 }
 

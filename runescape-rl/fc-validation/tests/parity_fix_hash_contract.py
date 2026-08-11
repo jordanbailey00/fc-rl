@@ -23,9 +23,9 @@ def canonical_hash_ownership() -> int:
     version = re.search(r"^#define\s+FC_STATE_HASH_VERSION\s+(\d+)u?\s*$", api, re.MULTILINE)
     if version is None:
         failures.append("fc_api.h does not define numeric FC_STATE_HASH_VERSION")
-    elif int(version.group(1)) != 1:
+    elif int(version.group(1)) != 2:
         failures.append(
-            f"FC_STATE_HASH_VERSION is {version.group(1)}, expected canonical version 1"
+            f"FC_STATE_HASH_VERSION is {version.group(1)}, expected canonical version 2"
         )
 
     core_hash_path = RUNESCAPE / "fc-core/src/fc_hash.c"

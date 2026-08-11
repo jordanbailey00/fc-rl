@@ -51,5 +51,7 @@ int main(void) {
         ok = check_asset(assets[i]) && ok;
 
     ok = check_repo_file("fc-core/assets/fightcaves.collision") && ok;
+    ok = check_repo_file("fc-core/assets/fightcaves.movement") && ok;
+    ok = check_repo_file("fc-core/assets/fightcaves.los") && ok;
     return ok ? 0 : 1;
 }

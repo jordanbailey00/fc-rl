@@ -283,6 +283,21 @@ add_test(NAME phase2_diagonal_corner_clipping
 set_tests_properties(phase2_diagonal_corner_clipping PROPERTIES
     LABELS "phase2;guardrail;movement")
 
+add_test(NAME directional_movement_wall_boundaries
+    COMMAND phase2_guardrails_core directional_movement_wall_boundaries)
+set_tests_properties(directional_movement_wall_boundaries PROPERTIES
+    LABELS "guardrail;movement;collision;osrs")
+
+add_test(NAME directional_movement_diagonal_and_sized
+    COMMAND phase2_guardrails_core directional_movement_diagonal_and_sized)
+set_tests_properties(directional_movement_diagonal_and_sized PROPERTIES
+    LABELS "guardrail;movement;collision;osrs")
+
+add_test(NAME directional_movement_route_regression
+    COMMAND phase2_guardrails_core directional_movement_route_regression)
+set_tests_properties(directional_movement_route_regression PROPERTIES
+    LABELS "guardrail;movement;collision;osrs")
+
 add_test(NAME phase2_npc_moves_when_attack_blocked
     COMMAND phase2_guardrails_core npc_moves_when_attack_blocked)
 set_tests_properties(phase2_npc_moves_when_attack_blocked PROPERTIES

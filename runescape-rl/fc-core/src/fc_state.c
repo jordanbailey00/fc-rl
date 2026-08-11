@@ -22,9 +22,8 @@
 
 /*
  * Binary collision extracted via DumpFcCollision.kt from the Void 634 cache.
- * Format: 64*64 bytes, row-major (y=0..63, x=0..63), 1=walkable, 0=blocked.
- * 2153 walkable tiles, 1943 blocked. The irregular cave shape with walls,
- * pillars, and narrow passages is critical for safespot mechanics.
+ * fightcaves.collision stores whole-tile blocking as 64*64 row-major bytes.
+ * fightcaves.movement stores the corresponding directional wall bits.
  *
  * Loaded from fc-core/assets/fightcaves.collision at runtime.
  * If the file is missing, falls back to an open arena with border walls.
@@ -33,6 +32,8 @@
  * Avoids per-reset file I/O which is not thread-safe under OpenMP. */
 static uint8_t g_collision_cache[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
 static int g_collision_loaded = 0;
+static uint8_t g_movement_cache[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+static int g_movement_loaded = 0;
 static uint8_t g_los_cache[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
 static int g_los_loaded = 0;
 
@@ -84,6 +85,44 @@ static void load_collision_once(void) {
     g_collision_loaded = 1;
 }
 
+static void load_movement_once(void) {
+    if (g_movement_loaded) return;
+
+    static const char* movement_paths[] = {
+        "assets/fightcaves.movement",
+        "runescape-rl/fc-core/assets/fightcaves.movement",
+        "fc-core/assets/fightcaves.movement",
+        "../fc-core/assets/fightcaves.movement",
+        "../../fc-core/assets/fightcaves.movement",
+        NULL
+    };
+    FILE* f = NULL;
+    const char* env_path = getenv("FC_MOVEMENT_PATH");
+    if (env_path) f = fopen(env_path, "rb");
+    for (int p = 0; !f && movement_paths[p]; p++) {
+        f = fopen(movement_paths[p], "rb");
+    }
+    if (f) {
+        uint8_t buf[FC_ARENA_WIDTH * FC_ARENA_HEIGHT];
+        size_t n = fread(buf, 1, sizeof(buf), f);
+        fclose(f);
+        if (n == sizeof(buf)) {
+            for (int y = 0; y < FC_ARENA_HEIGHT; y++) {
+                for (int x = 0; x < FC_ARENA_WIDTH; x++) {
+                    g_movement_cache[x][y] = buf[y * FC_ARENA_WIDTH + x];
+                }
+            }
+            g_movement_loaded = 1;
+            return;
+        }
+    }
+
+    fprintf(stderr,
+            "warning: fightcaves.movement not found; using open movement-wall fallback\n");
+    memset(g_movement_cache, 0, sizeof(g_movement_cache));
+    g_movement_loaded = 1;
+}
+
 static void load_los_once(void) {
     if (g_los_loaded) return;
 
@@ -124,8 +163,10 @@ static void load_los_once(void) {
 
 static void setup_arena(FcState* state) {
     load_collision_once();
+    load_movement_once();
     load_los_once();
     memcpy(state->walkable, g_collision_cache, sizeof(state->walkable));
+    memcpy(state->movement_flags, g_movement_cache, sizeof(state->movement_flags));
     memcpy(state->los_flags, g_los_cache, sizeof(state->los_flags));
 }
 
@@ -346,7 +387,8 @@ static int move_action_valid(const FcState* state, int action) {
     int ty = p->y;
     int max_steps = (action >= FC_MOVE_RUN_N) ? 2 : 1;
     return fc_move_toward(&tx, &ty, FC_MOVE_DX[action], FC_MOVE_DY[action],
-                          max_steps, state->walkable) > 0;
+                          max_steps, state->walkable,
+                          state->movement_flags) > 0;
 }
 
 static int attack_action_valid(const FcState* state, int action) {
@@ -500,7 +542,8 @@ static int npc_telegraph_style(const FcState* state, const FcNpc* npc) {
     const FcNpcStats* stats = fc_npc_get_stats(npc->npc_type);
     int can_melee = fc_npc_can_melee_player(state->player.x, state->player.y,
                                             npc->x, npc->y, npc->size,
-                                            state->walkable);
+                                            state->walkable,
+                                            state->movement_flags);
     if (npc->npc_type == NPC_KET_ZEK && can_melee &&
         fc_has_los_between_areas(
             npc->x, npc->y, npc->size,

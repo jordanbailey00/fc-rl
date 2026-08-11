@@ -99,8 +99,9 @@ int fc_terminal_code(const FcState* state);
 /* Determinism                                                               */
 /* ======================================================================== */
 
-/* Version 1 is the complete core-owned fixed-width FcState serialization. */
-#define FC_STATE_HASH_VERSION 1u
+/* Version 2 adds directional movement and projectile collision maps to the
+ * complete core-owned fixed-width FcState serialization. */
+#define FC_STATE_HASH_VERSION 2u
 
 /*
  * Compute a deterministic hash of the game state.

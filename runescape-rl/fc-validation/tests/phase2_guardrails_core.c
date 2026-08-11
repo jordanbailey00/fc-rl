@@ -35,6 +35,7 @@ static void make_open_manual_state(FcState* state, int player_x, int player_y) {
     fc_reset(state, 123);
     memset(state->npcs, 0, sizeof(state->npcs));
     memset(state->walkable, 1, sizeof(state->walkable));
+    memset(state->movement_flags, 0, sizeof(state->movement_flags));
     memset(state->los_flags, 0, sizeof(state->los_flags));
     state->terminal = TERMINAL_NONE;
     state->current_wave = 1;
@@ -1633,7 +1634,9 @@ static int test_diagonal_corner_clipping(void) {
     int nx = 10;
     int ny = 10;
     state.walkable[11][10] = 0;
-    if (!fc_npc_step_toward_sized(&nx, &ny, 12, 12, 2, state.walkable)) {
+    if (!fc_npc_step_toward_sized(
+            &nx, &ny, 12, 12, 2,
+            state.walkable, state.movement_flags)) {
         fc_destroy(&state);
         return fail("sized NPC failed to take cardinal fallback around blocked corner");
     }
@@ -1644,6 +1647,148 @@ static int test_diagonal_corner_clipping(void) {
     fc_destroy(&state);
 
     return pass("diagonal movement obeys side-tile clipping");
+}
+
+static int test_directional_movement_wall_boundaries(void) {
+    FcState state;
+    float mask[FC_ACTION_MASK_SIZE];
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+    int invalid[FC_INVALID_ACTION_CLASS_COUNT] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    state.movement_flags[10][10] |= FC_MOVE_WALL_EAST;
+    state.movement_flags[11][10] |= FC_MOVE_WALL_WEST;
+
+    if (!fc_tile_walkable(11, 10, state.walkable) ||
+        !fc_footprint_step_walkable(
+            11, 10, 0, 1, 1, state.walkable, state.movement_flags)) {
+        fc_destroy(&state);
+        return fail("directional wall made the destination tile wholly unwalkable");
+    }
+    if (fc_footprint_step_walkable(
+            10, 10, 1, 0, 1, state.walkable, state.movement_flags) ||
+        fc_footprint_step_walkable(
+            11, 10, -1, 0, 1, state.walkable, state.movement_flags)) {
+        fc_destroy(&state);
+        return fail("east-west movement crossed a directional wall boundary");
+    }
+
+    actions[0] = FC_MOVE_WALK_E;
+    fc_write_mask(&state, mask);
+    fc_action_invalid_classes(&state, actions, invalid);
+    if (mask[FC_MASK_MOVE_START + FC_MOVE_WALK_E] != 0.0f ||
+        mask[FC_MASK_MOVE_START + FC_MOVE_RUN_E] != 0.0f ||
+        !invalid[FC_INVALID_ACTION_MOVE]) {
+        fc_destroy(&state);
+        return fail("player action validation did not enforce the directional wall");
+    }
+
+    fc_step(&state, actions);
+    if (state.player.x != 10 || state.player.y != 10) {
+        char msg[128];
+        snprintf(msg, sizeof(msg),
+                 "player crossed directional wall to (%d,%d)",
+                 state.player.x, state.player.y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    int nx = 10;
+    int ny = 10;
+    if (fc_npc_step_toward_sized(
+            &nx, &ny, 12, 10, 1,
+            state.walkable, state.movement_flags) ||
+        nx != 10 || ny != 10) {
+        fc_destroy(&state);
+        return fail("NPC crossed the directional wall boundary");
+    }
+
+    fc_destroy(&state);
+    return pass("directional walls block boundary crossings without blocking their tiles");
+}
+
+static int test_directional_movement_diagonal_and_sized(void) {
+    FcState state;
+
+    make_open_manual_state(&state, 10, 10);
+    state.movement_flags[11][11] = FC_MOVE_WALL_SOUTH_WEST;
+    if (fc_footprint_step_walkable(
+            10, 10, 1, 1, 1, state.walkable, state.movement_flags)) {
+        fc_destroy(&state);
+        return fail("diagonal movement crossed a matching diagonal wall");
+    }
+
+    memset(state.movement_flags, 0, sizeof(state.movement_flags));
+    state.movement_flags[11][10] = FC_MOVE_WALL_WEST;
+    if (fc_footprint_step_walkable(
+            10, 10, 1, 1, 1, state.walkable, state.movement_flags)) {
+        fc_destroy(&state);
+        return fail("diagonal movement crossed a blocked cardinal side boundary");
+    }
+
+    memset(state.movement_flags, 0, sizeof(state.movement_flags));
+    state.movement_flags[12][11] = FC_MOVE_WALL_WEST;
+    if (fc_footprint_step_walkable(
+            10, 10, 1, 0, 2, state.walkable, state.movement_flags)) {
+        fc_destroy(&state);
+        return fail("sized footprint crossed a wall on part of its leading edge");
+    }
+    if (!fc_footprint_step_walkable(
+            10, 10, 0, 1, 2, state.walkable, state.movement_flags)) {
+        fc_destroy(&state);
+        return fail("unrelated directional wall blocked sized movement");
+    }
+
+    fc_destroy(&state);
+    return pass("diagonal and sized movement enforce directional boundaries");
+}
+
+static int test_directional_movement_route_regression(void) {
+    FcState state;
+    int route_x[FC_MAX_ROUTE];
+    int route_y[FC_MAX_ROUTE];
+
+    fc_init(&state);
+    fc_reset(&state, 123);
+
+    if (!state.walkable[44][16] ||
+        !(state.movement_flags[44][16] & FC_MOVE_WALL_EAST)) {
+        fc_destroy(&state);
+        return fail("Fight Caves movement asset lost the wall-only regression tile");
+    }
+
+    int steps = fc_pathfind_bfs(
+        32, 32, 44, 14,
+        state.walkable, state.movement_flags,
+        route_x, route_y, FC_MAX_ROUTE);
+    if (steps != 18 || route_x[steps - 1] != 44 || route_y[steps - 1] != 14) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "expected optimal 18-step route to (44,14), got %d steps ending at (%d,%d)",
+                 steps,
+                 steps > 0 ? route_x[steps - 1] : -1,
+                 steps > 0 ? route_y[steps - 1] : -1);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    int includes_wall_only_tile = 0;
+    int reached_x44 = 0;
+    for (int i = 0; i < steps; i++) {
+        if (route_x[i] == 44) reached_x44 = 1;
+        if (reached_x44 && route_x[i] < 44) {
+            fc_destroy(&state);
+            return fail("route bent left after reaching the destination column");
+        }
+        if (route_x[i] == 44 && route_y[i] == 16) includes_wall_only_tile = 1;
+    }
+    if (!includes_wall_only_tile) {
+        fc_destroy(&state);
+        return fail("route still detoured around the standable wall-only tile");
+    }
+
+    fc_destroy(&state);
+    return pass("Fight Caves route uses standable wall-only tiles without crossing their walls");
 }
 
 static int test_npc_moves_when_attack_blocked(void) {
@@ -2247,7 +2392,9 @@ static int test_step2_dynamic_diagonal_blocks_occupied_corner(void) {
     fc_mark_footprint_occupied(occupied, 10, 11, 1);
 
     int moved = fc_npc_step_toward_sized_dynamic(&x, &y, 11, 11, 1,
-                                                 state.walkable, occupied);
+                                                 state.walkable,
+                                                 state.movement_flags,
+                                                 occupied);
     if (moved || x != 10 || y != 10) {
         char msg[128];
         snprintf(msg, sizeof(msg),
@@ -2272,7 +2419,8 @@ static int test_step2_dynamic_bfs_avoids_occupied_steps(void) {
     fc_mark_footprint_occupied(occupied, 11, 10, 1);
 
     int steps = fc_pathfind_bfs_sized_dynamic(10, 10, 12, 10, 1,
-                                              state.walkable, occupied,
+                                              state.walkable,
+                                              state.movement_flags, occupied,
                                               out_x, out_y, FC_MAX_ROUTE);
     if (steps <= 0 || out_x[steps - 1] != 12 || out_y[steps - 1] != 10) {
         char msg[160];
@@ -2305,7 +2453,8 @@ static int test_step2_dynamic_sized_bfs_checks_full_footprint(void) {
     fc_mark_footprint_occupied(occupied, 13, 10, 1);
 
     int steps = fc_pathfind_bfs_sized_dynamic(10, 10, 12, 10, 2,
-                                              state.walkable, occupied,
+                                              state.walkable,
+                                              state.movement_flags, occupied,
                                               out_x, out_y, FC_MAX_ROUTE);
     if (steps != 0) {
         char msg[128];
@@ -2318,7 +2467,8 @@ static int test_step2_dynamic_sized_bfs_checks_full_footprint(void) {
 
     fc_clear_occupancy(occupied);
     steps = fc_pathfind_bfs_sized_dynamic(10, 10, 12, 10, 2,
-                                          state.walkable, occupied,
+                                          state.walkable,
+                                          state.movement_flags, occupied,
                                           out_x, out_y, FC_MAX_ROUTE);
     if (steps <= 0 || out_x[steps - 1] != 12 || out_y[steps - 1] != 10) {
         fc_destroy(&state);
@@ -2340,7 +2490,9 @@ static int test_step2_start_reservation_blocks_swap_tile(void) {
     fc_mark_footprint_occupied(occupied, 10, 10, 1);
 
     int moved = fc_npc_step_toward_sized_dynamic(&x, &y, 10, 10, 1,
-                                                 state.walkable, occupied);
+                                                 state.walkable,
+                                                 state.movement_flags,
+                                                 occupied);
     if (moved || x != 11 || y != 10) {
         char msg[128];
         snprintf(msg, sizeof(msg),
@@ -3192,7 +3344,7 @@ static int test_mechanics_observation_events(void) {
 
 int main(int argc, char** argv) {
     if (argc != 2) {
-        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|safespot_reward_disabled|npc_heal_penalty_actual_heal|prayer_loss_penalty|correct_prayer_reward_all_npcs|no_attack_penalty_wave_scaled|player_death_progress_scaled|simple_reward_zeroed_channels|npc_kill_reward_eligibility|tz_kek_split_kill_rewards|wave_clear_reward_scaling|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|special_tz_kih_prayer_drain|special_mejkot_heal_replaces_attack|special_adjacent_style_selection|special_hurkot_behavior|mechanics_observation_events|safespot_los|diagonal_corner_clipping|npc_moves_when_attack_blocked|option_b_no_move_into_range_fire_same_tick|option_b_no_move_into_los_fire_same_tick|option_b_attack_then_move_when_already_valid|option_b_queued_projectile_survives_later_movement|step1_movement_only_clears_stale_target|step1_projectile_survives_movement_cancel|step1_attack_move_clears_continued_target|step1_attack_move_out_of_range_clears_target|step1_directional_cancels_old_approach_route|step1_directional_beats_old_tile_route|step1_attack_approach_without_explicit_movement|step2_occupancy_marks_and_ignores_entities|step2_dynamic_footprint_static_and_occupied|step2_entity_wrapper_ignores_self_blocks_others|step2_dynamic_diagonal_blocks_occupied_corner|step2_dynamic_bfs_avoids_occupied_steps|step2_dynamic_sized_bfs_checks_full_footprint|step2_start_reservation_blocks_swap_tile|player_directional_ignores_npc_occupancy|player_tile_route_accepts_npc_occupied_target|player_prebuilt_route_ignores_npc_and_keeps_static_collision|player_move_mask_ignores_npc_and_keeps_static_collision|player_combat_approach_ignores_npc_occupancy|step3_npc_blocked_by_other_npc|step3_large_npc_blocked_by_healer_footprint|step3_tz_kek_split_avoids_occupied_tiles|step4_ranged_npc_chases_player_bounds_not_los_tile|step4_large_npc_chase_checks_full_footprint|step4_npc_stays_when_current_position_can_attack|invalid_action_classes|hp_regeneration_interval>\n",
+        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|safespot_reward_disabled|npc_heal_penalty_actual_heal|prayer_loss_penalty|correct_prayer_reward_all_npcs|no_attack_penalty_wave_scaled|player_death_progress_scaled|simple_reward_zeroed_channels|npc_kill_reward_eligibility|tz_kek_split_kill_rewards|wave_clear_reward_scaling|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|special_tz_kih_prayer_drain|special_mejkot_heal_replaces_attack|special_adjacent_style_selection|special_hurkot_behavior|mechanics_observation_events|safespot_los|diagonal_corner_clipping|directional_movement_wall_boundaries|directional_movement_diagonal_and_sized|directional_movement_route_regression|npc_moves_when_attack_blocked|option_b_no_move_into_range_fire_same_tick|option_b_no_move_into_los_fire_same_tick|option_b_attack_then_move_when_already_valid|option_b_queued_projectile_survives_later_movement|step1_movement_only_clears_stale_target|step1_projectile_survives_movement_cancel|step1_attack_move_clears_continued_target|step1_attack_move_out_of_range_clears_target|step1_directional_cancels_old_approach_route|step1_directional_beats_old_tile_route|step1_attack_approach_without_explicit_movement|step2_occupancy_marks_and_ignores_entities|step2_dynamic_footprint_static_and_occupied|step2_entity_wrapper_ignores_self_blocks_others|step2_dynamic_diagonal_blocks_occupied_corner|step2_dynamic_bfs_avoids_occupied_steps|step2_dynamic_sized_bfs_checks_full_footprint|step2_start_reservation_blocks_swap_tile|player_directional_ignores_npc_occupancy|player_tile_route_accepts_npc_occupied_target|player_prebuilt_route_ignores_npc_and_keeps_static_collision|player_move_mask_ignores_npc_and_keeps_static_collision|player_combat_approach_ignores_npc_occupancy|step3_npc_blocked_by_other_npc|step3_large_npc_blocked_by_healer_footprint|step3_tz_kek_split_avoids_occupied_tiles|step4_ranged_npc_chases_player_bounds_not_los_tile|step4_large_npc_chase_checks_full_footprint|step4_npc_stays_when_current_position_can_attack|invalid_action_classes|hp_regeneration_interval>\n",
                 argv[0]);
         return 2;
     }
@@ -3227,6 +3379,9 @@ int main(int argc, char** argv) {
     if (strcmp(argv[1], "mechanics_observation_events") == 0) return test_mechanics_observation_events();
     if (strcmp(argv[1], "safespot_los") == 0) return test_safespot_los();
     if (strcmp(argv[1], "diagonal_corner_clipping") == 0) return test_diagonal_corner_clipping();
+    if (strcmp(argv[1], "directional_movement_wall_boundaries") == 0) return test_directional_movement_wall_boundaries();
+    if (strcmp(argv[1], "directional_movement_diagonal_and_sized") == 0) return test_directional_movement_diagonal_and_sized();
+    if (strcmp(argv[1], "directional_movement_route_regression") == 0) return test_directional_movement_route_regression();
     if (strcmp(argv[1], "npc_moves_when_attack_blocked") == 0) return test_npc_moves_when_attack_blocked();
     if (strcmp(argv[1], "option_b_no_move_into_range_fire_same_tick") == 0) return test_option_b_no_move_into_range_fire_same_tick();
     if (strcmp(argv[1], "option_b_no_move_into_los_fire_same_tick") == 0) return test_option_b_no_move_into_los_fire_same_tick();

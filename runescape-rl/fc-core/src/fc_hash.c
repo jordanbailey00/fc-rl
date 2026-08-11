@@ -4,8 +4,9 @@
 #include <string.h>
 
 /*
- * Version 1 serializes every FcState field explicitly in the documented order
- * below. Signed integers and floats are represented by 32 bits, then fed
+ * Version 2 serializes every FcState field explicitly in the documented order
+ * below, including whole-tile, directional movement, and projectile collision
+ * maps. Signed integers and floats are represented by 32 bits, then fed
  * least-significant byte first. Arena bytes are fed directly. This order is
  * the canonical contract: never hash struct storage, padding, or pointers.
  */
@@ -180,6 +181,11 @@ uint32_t fc_state_hash(const FcState* state) {
     for (int x = 0; x < FC_ARENA_WIDTH; ++x) {
         for (int y = 0; y < FC_ARENA_HEIGHT; ++y) {
             hash = fc_hash_u8(hash, state->walkable[x][y]);
+        }
+    }
+    for (int x = 0; x < FC_ARENA_WIDTH; ++x) {
+        for (int y = 0; y < FC_ARENA_HEIGHT; ++y) {
+            hash = fc_hash_u8(hash, state->movement_flags[x][y]);
         }
     }
     for (int x = 0; x < FC_ARENA_WIDTH; ++x) {

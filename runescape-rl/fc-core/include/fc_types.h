@@ -102,6 +102,17 @@ typedef enum {
 #define FC_ARENA_WIDTH   64
 #define FC_ARENA_HEIGHT  64
 
+/* OSRS movement-wall flags. These retain the cache's low-byte directional
+ * layout so a wall blocks only the boundary it occupies, not the whole tile. */
+#define FC_MOVE_WALL_NORTH_WEST (1u << 0)
+#define FC_MOVE_WALL_NORTH      (1u << 1)
+#define FC_MOVE_WALL_NORTH_EAST (1u << 2)
+#define FC_MOVE_WALL_EAST       (1u << 3)
+#define FC_MOVE_WALL_SOUTH_EAST (1u << 4)
+#define FC_MOVE_WALL_SOUTH      (1u << 5)
+#define FC_MOVE_WALL_SOUTH_WEST (1u << 6)
+#define FC_MOVE_WALL_WEST       (1u << 7)
+
 /* Directional projectile/line-of-sight collision flags. These are separate
  * from walkability: an obstacle may block movement without blocking attacks. */
 #define FC_LOS_NORTH (1u << 0)
@@ -388,8 +399,11 @@ typedef struct {
     uint32_t rng_state;
     uint32_t rng_seed;      /* saved for replay */
 
-    /* Arena walkability (1 = walkable, 0 = obstacle) */
+    /* Whole-tile movement collision (1 = standable, 0 = blocked). */
     uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+
+    /* Directional movement walls, independent from whole-tile blocking. */
+    uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
 
     /* Directional projectile collision, independent from movement. */
     uint8_t los_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];

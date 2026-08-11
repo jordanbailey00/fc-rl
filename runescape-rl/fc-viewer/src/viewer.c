@@ -578,7 +578,8 @@ static void route_player_to_tile(ViewerState* v, int tx, int ty) {
         return;
     FcPlayer* p = &v->state.player;
     if (!v->state.walkable[tx][ty]) return;
-    int steps = fc_pathfind_bfs(p->x, p->y, tx, ty, v->state.walkable,
+    int steps = fc_pathfind_bfs(p->x, p->y, tx, ty,
+                                v->state.walkable, v->state.movement_flags,
                                 p->route_x, p->route_y, FC_MAX_ROUTE);
     p->route_len = steps;
     p->route_idx = 0;
@@ -1690,7 +1691,8 @@ static void process_human_clicks(ViewerState* v, int ui_capture) {
                     fprintf(stderr, " walkable=%d", walkable);
                     if (walkable) {
                         int steps = fc_pathfind_bfs(
-                            p->x, p->y, tx, ty, v->state.walkable,
+                            p->x, p->y, tx, ty,
+                            v->state.walkable, v->state.movement_flags,
                             p->route_x, p->route_y, FC_MAX_ROUTE);
                         p->route_len = steps;
                         p->route_idx = 0;
@@ -4431,7 +4433,8 @@ int main(int argc, char** argv) {
                     if (fc_npc_can_melee_player(v.state.player.x,
                                                 v.state.player.y,
                                                 n->x, n->y, n->size,
-                                                v.state.walkable)) {
+                                                v.state.walkable,
+                                                v.state.movement_flags)) {
                         mark_npc_attack_visual(&v, ni, ATTACK_MELEE);
                     }
                 }

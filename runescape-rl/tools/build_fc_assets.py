@@ -454,29 +454,47 @@ def load_fc_collision_flags(cache_dir: Path):
 
 
 def export_fc_collision(cache_dir: Path, output: Path) -> None:
-    from export_collision_map import (
-        BLOCKED,
-        IMPENETRABLE_BLOCKED,
-        WALL_EAST,
-        WALL_NORTH,
-        WALL_SOUTH,
-        WALL_WEST,
-    )
+    from export_collision_map import BLOCKED
 
     rx, ry, flags = load_fc_collision_flags(cache_dir)
 
-    blocked_mask = (
-        BLOCKED | IMPENETRABLE_BLOCKED | WALL_NORTH | WALL_SOUTH | WALL_EAST | WALL_WEST
-    )
     output.parent.mkdir(parents=True, exist_ok=True)
     walkable_count = 0
     with output.open("wb") as f:
         for y in range(64):
             for x in range(64):
-                walkable = 0 if (flags[0][x][y] & blocked_mask) else 1
+                walkable = 0 if (flags[0][x][y] & BLOCKED) else 1
                 walkable_count += walkable
                 f.write(bytes([walkable]))
     print(f"collision region {rx},{ry}: {walkable_count} walkable tiles")
+
+
+def export_fc_movement(cache_dir: Path, output: Path) -> None:
+    from export_collision_map import (
+        WALL_EAST,
+        WALL_NORTH,
+        WALL_NORTH_EAST,
+        WALL_NORTH_WEST,
+        WALL_SOUTH,
+        WALL_SOUTH_EAST,
+        WALL_SOUTH_WEST,
+        WALL_WEST,
+    )
+
+    rx, ry, flags = load_fc_collision_flags(cache_dir)
+    wall_mask = (
+        WALL_NORTH_WEST | WALL_NORTH | WALL_NORTH_EAST | WALL_EAST |
+        WALL_SOUTH_EAST | WALL_SOUTH | WALL_SOUTH_WEST | WALL_WEST
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    walled_count = 0
+    with output.open("wb") as f:
+        for y in range(64):
+            for x in range(64):
+                movement = flags[0][x][y] & wall_mask
+                walled_count += movement != 0
+                f.write(bytes([movement]))
+    print(f"movement region {rx},{ry}: {walled_count} tiles with directional walls")
 
 
 def export_fc_los(cache_dir: Path, output: Path) -> None:
@@ -677,6 +695,7 @@ def main(argv: list[str]) -> int:
     )
     export_fc_sprites(cache_dir, sprites_dir)
     export_fc_collision(cache_dir, core_assets_dir / "fightcaves.collision")
+    export_fc_movement(cache_dir, core_assets_dir / "fightcaves.movement")
     export_fc_los(cache_dir, core_assets_dir / "fightcaves.los")
 
     manifest = build_manifest(out_dir, cache_dir)

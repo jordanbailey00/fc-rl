@@ -270,7 +270,9 @@ static int npc_dynamic_step_toward(FcState* state, int npc_idx,
     build_npc_movement_occupancy(state, npc_idx, occupied);
     return fc_npc_step_toward_sized_dynamic(&npc->x, &npc->y,
                                             target_x, target_y, npc->size,
-                                            state->walkable, occupied);
+                                            state->walkable,
+                                            state->movement_flags,
+                                            occupied);
 }
 
 static int min_i(int a, int b) {
@@ -356,7 +358,8 @@ int fc_npc_position_can_attack_player(const FcState* state, const FcNpc* npc,
 
     int can_melee = fc_npc_can_melee_player(p->x, p->y,
                                             candidate.x, candidate.y,
-                                            candidate.size, state->walkable);
+                                            candidate.size, state->walkable,
+                                            state->movement_flags);
     if (can_melee &&
         (stats->melee_max_hit_tenths > 0 ||
          candidate.attack_style == ATTACK_MELEE)) {
@@ -456,7 +459,8 @@ static void jad_attack(FcState* state, FcNpc* npc, int npc_idx) {
     FcPlayer* p = &state->player;
     int dist = fc_distance_to_npc(p->x, p->y, npc);
     int can_melee = fc_npc_can_melee_player(p->x, p->y, npc->x, npc->y,
-                                            npc->size, state->walkable);
+                                            npc->size, state->walkable,
+                                            state->movement_flags);
 
     if (npc->attack_timer > 0) return;
 
@@ -572,7 +576,8 @@ static FcNpc* yt_mejkot_heal_target(FcState* state, FcNpc* npc) {
 static int yt_mejkot_try_heal(FcState* state, FcNpc* npc) {
     if (npc->attack_timer > 0) return 0;
     if (!fc_npc_can_melee_player(state->player.x, state->player.y,
-                                 npc->x, npc->y, npc->size, state->walkable)) {
+                                 npc->x, npc->y, npc->size,
+                                 state->walkable, state->movement_flags)) {
         return 0;
     }
 
@@ -663,7 +668,8 @@ static void npc_generic_attack(FcState* state, FcNpc* npc, int npc_idx) {
     FcPlayer* p = &state->player;
     int dist = fc_distance_to_npc(p->x, p->y, npc);
     int can_melee = fc_npc_can_melee_player(p->x, p->y, npc->x, npc->y,
-                                            npc->size, state->walkable);
+                                            npc->size, state->walkable,
+                                            state->movement_flags);
 
     if (npc->attack_timer > 0) return;
 

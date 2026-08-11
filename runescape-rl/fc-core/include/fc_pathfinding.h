@@ -20,7 +20,8 @@ int fc_footprint_walkable(int x, int y, int size,
  * movement checks the final footprint and both cardinal side footprints. */
 int fc_footprint_step_walkable(
     int x, int y, int dx, int dy, int size,
-    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
+    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 
 /* ======================================================================== */
 /* Dynamic occupancy                                                         */
@@ -54,6 +55,7 @@ int fc_footprint_available_dynamic(
 int fc_footprint_step_available_dynamic(
     int x, int y, int dx, int dy, int size,
     const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
     const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 
 /* Convenience wrapper that builds current occupancy from the state before
@@ -70,7 +72,8 @@ int fc_footprint_available_for_entity(const FcState* state,
 /* Move a size-1 entity from (x,y) toward offset (dx,dy) for up to max_steps.
  * Diagonal-first fallback. Returns number of tiles moved. Updates *x,*y. */
 int fc_move_toward(int* x, int* y, int dx, int dy, int max_steps,
-                   const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
+                   const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+                   const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 
 /* Dynamic-aware size-1 movement. The occupied grid should already omit the
  * moving entity's own current footprint and include any start-of-tick
@@ -78,6 +81,7 @@ int fc_move_toward(int* x, int* y, int dx, int dy, int max_steps,
 int fc_move_toward_dynamic(
     int* x, int* y, int dx, int dy, int max_steps,
     const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
     const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 
 /* Move an NPC of given size one tile closer to (target_x, target_y).
@@ -86,18 +90,21 @@ int fc_move_toward_dynamic(
  * Returns 1 if moved, 0 if blocked. */
 int fc_npc_step_toward_sized(int* x, int* y, int target_x, int target_y,
                              int size,
-                             const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
+                             const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+                             const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 
 /* Dynamic-aware sized step. Diagonal movement checks the final footprint and
  * both cardinal side footprints to prevent static or dynamic corner clipping. */
 int fc_npc_step_toward_sized_dynamic(
     int* x, int* y, int target_x, int target_y, int size,
     const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
     const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 
 /* Legacy size-1 wrapper (used by existing code). */
 int fc_npc_step_toward(int* x, int* y, int target_x, int target_y,
-                       const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
+                       const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+                       const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 
 /* ======================================================================== */
 /* Line of sight                                                             */
@@ -120,7 +127,8 @@ int fc_has_los_between_areas(
  * the same corner-cut rules used by movement/pathing. */
 int fc_npc_can_melee_player(int player_x, int player_y,
                             int npc_x, int npc_y, int npc_size,
-                            const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
+                            const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+                            const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 
 /* ======================================================================== */
 /* BFS pathfinding (for click-to-move)                                       */
@@ -132,6 +140,7 @@ int fc_npc_can_melee_player(int player_x, int player_y,
  * max_steps limits output array size. Path does NOT include the start tile. */
 int fc_pathfind_bfs(int sx, int sy, int dx, int dy,
                     const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+                    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
                     int out_x[], int out_y[], int max_steps);
 
 /* Dynamic-aware sized route finder. Every candidate route step must satisfy
@@ -140,6 +149,7 @@ int fc_pathfind_bfs(int sx, int sy, int dx, int dy,
 int fc_pathfind_bfs_sized_dynamic(
     int sx, int sy, int dx, int dy, int size,
     const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
     const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
     int out_x[], int out_y[], int max_steps);
 

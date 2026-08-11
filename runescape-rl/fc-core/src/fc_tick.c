@@ -313,6 +313,7 @@ static void process_player_actions(FcState* state,
                 int static_route_y[FC_MAX_ROUTE];
                 int static_route_len = fc_pathfind_bfs(p->x, p->y, npc_cx, npc_cy,
                                                        state->walkable,
+                                                       state->movement_flags,
                                                        static_route_x, static_route_y,
                                                        FC_MAX_ROUTE);
                 p->route_len = 0;
@@ -417,7 +418,8 @@ static void process_player_actions(FcState* state,
         if (tx >= 0 && tx < FC_ARENA_WIDTH && ty >= 0 && ty < FC_ARENA_HEIGHT &&
             state->walkable[tx][ty]) {
             int steps = fc_pathfind_bfs(
-                p->x, p->y, tx, ty, state->walkable,
+                p->x, p->y, tx, ty,
+                state->walkable, state->movement_flags,
                 p->route_x, p->route_y, FC_MAX_ROUTE);
             p->route_len = steps;
             p->route_idx = 0;
@@ -442,7 +444,8 @@ static void process_player_actions(FcState* state,
             int dx = nx - p->x;
             int dy = ny - p->y;
             if (fc_footprint_step_walkable(p->x, p->y, dx, dy, 1,
-                                           state->walkable)) {
+                                           state->walkable,
+                                           state->movement_flags)) {
                 /* Update facing based on movement direction */
                 if (dx != 0 || dy != 0) {
                     /* atan2 of world X delta and negated world Y delta (for Raylib Z) */
@@ -467,7 +470,8 @@ static void process_player_actions(FcState* state,
         int old_x = p->x;
         int old_y = p->y;
         int moved = fc_move_toward(&p->x, &p->y, dx, dy, max_steps,
-                                   state->walkable);
+                                   state->walkable,
+                                   state->movement_flags);
         if (moved > 0) {
             int moved_dx = p->x - old_x;
             int moved_dy = p->y - old_y;

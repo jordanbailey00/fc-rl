@@ -50,7 +50,7 @@ EXPECTED_COMPILED_FIELDS: dict[str, Any] = {
     "observation_version": OBSERVATION_VERSION,
     "action_version": ACTION_VERSION,
     "prayer_timing_version": PRAYER_TIMING_VERSION,
-    "state_hash_version": 1,
+    "state_hash_version": 2,
 }
 REQUIRED_CONTRACT_FIELDS = frozenset(
     {*EXPECTED_COMPILED_FIELDS, "reward_version", "active_loadout"}
