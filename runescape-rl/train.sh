@@ -82,6 +82,7 @@ case "$PYTHON_BIN" in
 esac
 export PUFFERLIB_DIR="$PUFFER_DIR"
 export FC_COLLISION_PATH="$SRC_DIR/fc-core/assets/fightcaves.collision"
+export FC_LOS_PATH="$SRC_DIR/fc-core/assets/fightcaves.los"
 export WANDB_DIR="$PUFFER_DIR/wandb"
 export WANDB_CACHE_DIR="$PUFFER_DIR/wandb/.cache"
 export WANDB_CONFIG_DIR="$PUFFER_DIR/wandb/.config"

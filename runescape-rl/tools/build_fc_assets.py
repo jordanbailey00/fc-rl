@@ -432,16 +432,8 @@ def export_fc_animations(
     export_animations.export_animations_from_modern_cache(cache_dir, output, needed)
 
 
-def export_fc_collision(cache_dir: Path, output: Path) -> None:
-    from export_collision_map import (
-        BLOCKED,
-        IMPENETRABLE_BLOCKED,
-        WALL_EAST,
-        WALL_NORTH,
-        WALL_SOUTH,
-        WALL_WEST,
-        parse_terrain,
-    )
+def load_fc_collision_flags(cache_dir: Path):
+    from export_collision_map import parse_terrain
     from export_collision_map_modern import (
         decode_modern_obj_defs_rc,
         parse_objects_modern,
@@ -458,6 +450,20 @@ def export_fc_collision(cache_dir: Path, output: Path) -> None:
     locations = read_map_region_file(store, rx, ry, "locations")
     if locations:
         parse_objects_modern(locations, flags, down_heights, obj_defs)
+    return rx, ry, flags
+
+
+def export_fc_collision(cache_dir: Path, output: Path) -> None:
+    from export_collision_map import (
+        BLOCKED,
+        IMPENETRABLE_BLOCKED,
+        WALL_EAST,
+        WALL_NORTH,
+        WALL_SOUTH,
+        WALL_WEST,
+    )
+
+    rx, ry, flags = load_fc_collision_flags(cache_dir)
 
     blocked_mask = (
         BLOCKED | IMPENETRABLE_BLOCKED | WALL_NORTH | WALL_SOUTH | WALL_EAST | WALL_WEST
@@ -471,6 +477,38 @@ def export_fc_collision(cache_dir: Path, output: Path) -> None:
                 walkable_count += walkable
                 f.write(bytes([walkable]))
     print(f"collision region {rx},{ry}: {walkable_count} walkable tiles")
+
+
+def export_fc_los(cache_dir: Path, output: Path) -> None:
+    from export_collision_map import (
+        IMPENETRABLE_BLOCKED,
+        IMPENETRABLE_WALL_EAST,
+        IMPENETRABLE_WALL_NORTH,
+        IMPENETRABLE_WALL_SOUTH,
+        IMPENETRABLE_WALL_WEST,
+    )
+
+    rx, ry, flags = load_fc_collision_flags(cache_dir)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    blocked_count = 0
+    with output.open("wb") as f:
+        for y in range(64):
+            for x in range(64):
+                source = flags[0][x][y]
+                los = 0
+                if source & IMPENETRABLE_WALL_NORTH:
+                    los |= 1 << 0
+                if source & IMPENETRABLE_WALL_EAST:
+                    los |= 1 << 1
+                if source & IMPENETRABLE_WALL_SOUTH:
+                    los |= 1 << 2
+                if source & IMPENETRABLE_WALL_WEST:
+                    los |= 1 << 3
+                if source & IMPENETRABLE_BLOCKED:
+                    los |= 1 << 4
+                blocked_count += los != 0
+                f.write(bytes([los]))
+    print(f"LOS region {rx},{ry}: {blocked_count} tiles with projectile flags")
 
 
 def alias_fc_sprites(sprites_dir: Path) -> None:
@@ -639,6 +677,7 @@ def main(argv: list[str]) -> int:
     )
     export_fc_sprites(cache_dir, sprites_dir)
     export_fc_collision(cache_dir, core_assets_dir / "fightcaves.collision")
+    export_fc_los(cache_dir, core_assets_dir / "fightcaves.los")
 
     manifest = build_manifest(out_dir, cache_dir)
     manifest_path = out_dir / "manifest.json"

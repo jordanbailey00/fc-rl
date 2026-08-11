@@ -294,7 +294,8 @@ static void dbg_draw_los_2d(const FcState* state, Camera3D cam) {
         int ncy = n->y + n->size / 2;
         Vector2 ns = dbg_tile_to_screen(ncx, ncy, cam);
 
-        int has_los = fc_has_line_of_sight(p->x, p->y, n->x, n->y, state->walkable);
+        int has_los = fc_has_los_between_areas(
+            p->x, p->y, 1, n->x, n->y, n->size, state->los_flags);
         Color c = has_los ? DBG_COL_LOS_OK : DBG_COL_LOS_FAIL;
         DrawLineEx(ps, ns, 3.0f, c);
         DrawCircleV(ns, 6.0f, c);

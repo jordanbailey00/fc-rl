@@ -107,35 +107,6 @@ static void build_movement_start_reservations(FcState* state) {
     state->movement_start_occupied_valid = 1;
 }
 
-static void mark_movement_start_npcs(
-    const FcState* state,
-    uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
-    if (!state->movement_start_occupied_valid) return;
-    for (int i = 0; i < FC_MAX_NPCS; i++) {
-        if (!state->movement_start_npc_active[i]) continue;
-        fc_mark_footprint_occupied(occupied,
-                                   state->movement_start_npc_x[i],
-                                   state->movement_start_npc_y[i],
-                                   state->movement_start_npc_size[i]);
-    }
-}
-
-static void build_player_movement_occupancy(
-    const FcState* state,
-    uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
-    fc_build_occupancy(state, occupied, -1, 1);
-    mark_movement_start_npcs(state, occupied);
-}
-
-static void ensure_player_movement_occupancy(
-    const FcState* state,
-    uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-    int* valid) {
-    if (*valid) return;
-    build_player_movement_occupancy(state, occupied);
-    *valid = 1;
-}
-
 /* ======================================================================== */
 /* Resolve NPC visible-slot index to NPC array index                         */
 /* ======================================================================== */
@@ -172,9 +143,6 @@ static void process_player_actions(FcState* state,
     int requested_attack_idx = -1;
     int invalid_classes[FC_INVALID_ACTION_CLASS_COUNT];
     int target_metrics_recorded = 0;
-    uint8_t player_occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
-    int player_occupied_valid = 0;
-
     if (state->npcs_remaining > 0) {
         if (act_move == FC_MOVE_IDLE) {
             state->ep_action_move_idle_ticks++;
@@ -313,8 +281,9 @@ static void process_player_actions(FcState* state,
         } else {
             int dist = fc_distance_to_npc(p->x, p->y, target);
             int weapon_range = p->weapon_range;
-            int has_los = fc_has_los_to_npc(
-                p->x, p->y, target->x, target->y, target->size, state->walkable);
+            int has_los = fc_has_los_between_areas(
+                p->x, p->y, 1,
+                target->x, target->y, target->size, state->los_flags);
             int target_can_fire = (dist <= weapon_range && has_los);
             int target_ready = (p->attack_timer <= 0);
 
@@ -357,13 +326,15 @@ static void process_player_actions(FcState* state,
                     int rdy = (ry > ny) ? ry - ny : ny - ry;
                     int rdist = (rdx > rdy) ? rdx : rdy;
                     if (rdist <= weapon_range &&
-                        fc_has_los_to_npc(rx, ry, target->x, target->y,
-                                          target->size, state->walkable)) {
-                        ensure_player_movement_occupancy(
-                            state, player_occupied, &player_occupied_valid);
-                        p->route_len = fc_pathfind_bfs_sized_dynamic(
-                            p->x, p->y, rx, ry, 1, state->walkable,
-                            player_occupied, p->route_x, p->route_y, FC_MAX_ROUTE);
+                        fc_has_los_between_areas(
+                            rx, ry, 1,
+                            target->x, target->y, target->size,
+                            state->los_flags)) {
+                        p->route_len = ri + 1;
+                        for (int rj = 0; rj < p->route_len; rj++) {
+                            p->route_x[rj] = static_route_x[rj];
+                            p->route_y[rj] = static_route_y[rj];
+                        }
                         break;
                     }
                 }
@@ -445,10 +416,8 @@ static void process_player_actions(FcState* state,
         int ty = act_target_y - 1;
         if (tx >= 0 && tx < FC_ARENA_WIDTH && ty >= 0 && ty < FC_ARENA_HEIGHT &&
             state->walkable[tx][ty]) {
-            ensure_player_movement_occupancy(
-                state, player_occupied, &player_occupied_valid);
-            int steps = fc_pathfind_bfs_sized_dynamic(
-                p->x, p->y, tx, ty, 1, state->walkable, player_occupied,
+            int steps = fc_pathfind_bfs(
+                p->x, p->y, tx, ty, state->walkable,
                 p->route_x, p->route_y, FC_MAX_ROUTE);
             p->route_len = steps;
             p->route_idx = 0;
@@ -470,14 +439,11 @@ static void process_player_actions(FcState* state,
         for (int s = 0; s < steps && p->route_idx < p->route_len; s++) {
             int nx = p->route_x[p->route_idx];
             int ny = p->route_y[p->route_idx];
-            ensure_player_movement_occupancy(
-                state, player_occupied, &player_occupied_valid);
-            if (fc_footprint_available_dynamic(nx, ny, 1,
-                                               state->walkable,
-                                               player_occupied)) {
+            int dx = nx - p->x;
+            int dy = ny - p->y;
+            if (fc_footprint_step_walkable(p->x, p->y, dx, dy, 1,
+                                           state->walkable)) {
                 /* Update facing based on movement direction */
-                int dx = nx - p->x;
-                int dy = ny - p->y;
                 if (dx != 0 || dy != 0) {
                     /* atan2 of world X delta and negated world Y delta (for Raylib Z) */
                     p->facing_angle = atan2f((float)dx, (float)(-dy)) * (180.0f / 3.14159f);
@@ -500,10 +466,8 @@ static void process_player_actions(FcState* state,
         int max_steps = (act_move >= FC_MOVE_RUN_N) ? 2 : 1;
         int old_x = p->x;
         int old_y = p->y;
-        ensure_player_movement_occupancy(
-            state, player_occupied, &player_occupied_valid);
-        int moved = fc_move_toward_dynamic(&p->x, &p->y, dx, dy, max_steps,
-                                           state->walkable, player_occupied);
+        int moved = fc_move_toward(&p->x, &p->y, dx, dy, max_steps,
+                                   state->walkable);
         if (moved > 0) {
             int moved_dx = p->x - old_x;
             int moved_dy = p->y - old_y;

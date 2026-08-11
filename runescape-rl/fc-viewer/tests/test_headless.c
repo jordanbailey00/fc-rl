@@ -46,6 +46,7 @@ static int test_rand(int max) {
 static void init_manual_test_state(FcState* state) {
     fc_init(state);
     memset(state->walkable, 1, sizeof(state->walkable));
+    memset(state->los_flags, 0, sizeof(state->los_flags));
 
     state->player.x = 10;
     state->player.y = 10;
@@ -559,9 +560,15 @@ static void test_player_attack_requires_los(void) {
     int actions[FC_NUM_ACTION_HEADS] = {0};
 
     init_manual_test_state(&state);
-    state.walkable[11][10] = 0;  /* Italy-rock style blocker between player and Jad */
+    state.walkable[11][10] = 0;  /* Full LOS blocker between player and target. */
+    state.los_flags[11][10] = FC_LOS_FULL;
 
-    fc_npc_spawn(&state.npcs[0], NPC_TZTOK_JAD, 12, 10, 0);
+    /* A size-1 target makes this a single-ray blocking fixture. A single tile
+     * cannot block every valid ray to Jad's 5x5 footprint. */
+    fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 12, 10, 0);
+    state.npcs[0].movement_speed = 0;
+    state.npcs[0].attack_timer = 999;
+    state.npcs_remaining = 1;
     state.player.attack_target_idx = 0;
     state.player.approach_target = 1;
     state.player.attack_timer = 0;
@@ -570,9 +577,12 @@ static void test_player_attack_requires_los(void) {
     fc_step(&state, actions);
 
     TEST("Player does not fire ranged attacks through blocked LOS");
-    if (state.npcs[0].num_pending_hits == 0) PASS();
+    if (!state.attack_attempt_this_tick &&
+        state.npcs[0].num_pending_hits == 0) PASS();
     else {
-        snprintf(err, sizeof(err), "queued %d pending hits", state.npcs[0].num_pending_hits);
+        snprintf(err, sizeof(err), "attack=%d pending_hits=%d",
+                 state.attack_attempt_this_tick,
+                 state.npcs[0].num_pending_hits);
         FAIL(err);
     }
 
@@ -581,9 +591,10 @@ static void test_player_attack_requires_los(void) {
         int ri = state.player.route_len - 1;
         int rx = state.player.route_x[ri];
         int ry = state.player.route_y[ri];
-        int has_los = fc_has_los_to_npc(rx, ry,
-                                        state.npcs[0].x, state.npcs[0].y,
-                                        state.npcs[0].size, state.walkable);
+        int has_los = fc_has_los_between_areas(
+            rx, ry, 1,
+            state.npcs[0].x, state.npcs[0].y,
+            state.npcs[0].size, state.los_flags);
         int rdist = fc_distance_to_npc(rx, ry, &state.npcs[0]);
         if (has_los && rdist <= state.player.weapon_range) PASS();
         else {
@@ -591,7 +602,11 @@ static void test_player_attack_requires_los(void) {
             FAIL(err);
         }
     } else {
-        FAIL("no route planned");
+        snprintf(err, sizeof(err),
+                 "no route planned; player=(%d,%d) route_idx=%d target=(%d,%d)",
+                 state.player.x, state.player.y, state.player.route_idx,
+                 state.npcs[0].x, state.npcs[0].y);
+        FAIL(err);
     }
 
     fc_destroy(&state);

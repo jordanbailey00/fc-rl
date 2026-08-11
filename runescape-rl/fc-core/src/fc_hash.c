@@ -182,6 +182,11 @@ uint32_t fc_state_hash(const FcState* state) {
             hash = fc_hash_u8(hash, state->walkable[x][y]);
         }
     }
+    for (int x = 0; x < FC_ARENA_WIDTH; ++x) {
+        for (int y = 0; y < FC_ARENA_HEIGHT; ++y) {
+            hash = fc_hash_u8(hash, state->los_flags[x][y]);
+        }
+    }
 
     FC_HASH_I32(state->movement_start_occupied_valid);
     FC_HASH_I32(state->movement_start_player_x);

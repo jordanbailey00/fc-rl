@@ -381,9 +381,9 @@ static void fc_puffer_record_no_progress_diagnostics(
         target_active = target->active && !target->is_dead;
         if (target_active && player->attack_timer > 0) {
             int dist = fc_distance_to_npc(player->x, player->y, target);
-            int has_los = fc_has_los_to_npc(
-                player->x, player->y, target->x, target->y, target->size,
-                state->walkable);
+            int has_los = fc_has_los_between_areas(
+                player->x, player->y, 1,
+                target->x, target->y, target->size, state->los_flags);
             if (dist <= player->weapon_range && has_los) return;
         }
     }

@@ -398,15 +398,30 @@ add_test(NAME step2_start_reservation_blocks_swap_tile
 set_tests_properties(step2_start_reservation_blocks_swap_tile PROPERTIES
     LABELS "step2;guardrail;movement;collision")
 
-add_test(NAME step3_player_directional_blocked_by_npc
-    COMMAND phase2_guardrails_core step3_player_directional_blocked_by_npc)
-set_tests_properties(step3_player_directional_blocked_by_npc PROPERTIES
-    LABELS "step3;guardrail;movement;collision")
+add_test(NAME player_directional_ignores_npc_occupancy
+    COMMAND phase2_guardrails_core player_directional_ignores_npc_occupancy)
+set_tests_properties(player_directional_ignores_npc_occupancy PROPERTIES
+    LABELS "guardrail;movement;collision;osrs")
 
-add_test(NAME step3_player_tile_route_rejects_occupied_target
-    COMMAND phase2_guardrails_core step3_player_tile_route_rejects_occupied_target)
-set_tests_properties(step3_player_tile_route_rejects_occupied_target PROPERTIES
-    LABELS "step3;guardrail;movement;collision")
+add_test(NAME player_tile_route_accepts_npc_occupied_target
+    COMMAND phase2_guardrails_core player_tile_route_accepts_npc_occupied_target)
+set_tests_properties(player_tile_route_accepts_npc_occupied_target PROPERTIES
+    LABELS "guardrail;movement;collision;osrs")
+
+add_test(NAME player_prebuilt_route_ignores_npc_and_keeps_static_collision
+    COMMAND phase2_guardrails_core player_prebuilt_route_ignores_npc_and_keeps_static_collision)
+set_tests_properties(player_prebuilt_route_ignores_npc_and_keeps_static_collision PROPERTIES
+    LABELS "guardrail;movement;collision;osrs")
+
+add_test(NAME player_move_mask_ignores_npc_and_keeps_static_collision
+    COMMAND phase2_guardrails_core player_move_mask_ignores_npc_and_keeps_static_collision)
+set_tests_properties(player_move_mask_ignores_npc_and_keeps_static_collision PROPERTIES
+    LABELS "guardrail;movement;collision;mask;osrs")
+
+add_test(NAME player_combat_approach_ignores_npc_occupancy
+    COMMAND phase2_guardrails_core player_combat_approach_ignores_npc_occupancy)
+set_tests_properties(player_combat_approach_ignores_npc_occupancy PROPERTIES
+    LABELS "guardrail;movement;collision;combat;osrs")
 
 add_test(NAME step3_npc_blocked_by_other_npc
     COMMAND phase2_guardrails_core step3_npc_blocked_by_other_npc)

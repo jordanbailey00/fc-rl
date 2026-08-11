@@ -365,9 +365,9 @@ int fc_npc_position_can_attack_player(const FcState* state, const FcNpc* npc,
 
     if (candidate.attack_style != ATTACK_MELEE &&
         fc_distance_to_npc(p->x, p->y, &candidate) <= candidate.attack_range) {
-        return fc_has_los_to_npc(p->x, p->y,
-                                 candidate.x, candidate.y, candidate.size,
-                                 state->walkable);
+        return fc_has_los_between_areas(
+            candidate.x, candidate.y, candidate.size,
+            p->x, p->y, 1, state->los_flags);
     }
 
     return 0;
@@ -465,8 +465,9 @@ static void jad_attack(FcState* state, FcNpc* npc, int npc_idx) {
 
     int can_use_distance_styles =
         dist <= npc->attack_range &&
-        fc_has_los_to_npc(p->x, p->y, npc->x, npc->y, npc->size,
-                          state->walkable);
+        fc_has_los_between_areas(
+            npc->x, npc->y, npc->size,
+            p->x, p->y, 1, state->los_flags);
 
     if (can_melee && stats->melee_max_hit_tenths > 0) {
         /* In melee range Jad can still choose Magic or Ranged. All three
@@ -672,8 +673,9 @@ static void npc_generic_attack(FcState* state, FcNpc* npc, int npc_idx) {
     int primary_in_range =
         npc->attack_style != ATTACK_MELEE &&
         dist <= npc->attack_range &&
-        fc_has_los_to_npc(p->x, p->y, npc->x, npc->y, npc->size,
-                          state->walkable);
+        fc_has_los_between_areas(
+            npc->x, npc->y, npc->size,
+            p->x, p->y, 1, state->los_flags);
 
     if (can_melee && stats->melee_max_hit_tenths > 0) {
         if (npc->npc_type == NPC_KET_ZEK && primary_in_range &&

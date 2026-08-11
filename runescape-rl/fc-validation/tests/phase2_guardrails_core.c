@@ -35,6 +35,7 @@ static void make_open_manual_state(FcState* state, int player_x, int player_y) {
     fc_reset(state, 123);
     memset(state->npcs, 0, sizeof(state->npcs));
     memset(state->walkable, 1, sizeof(state->walkable));
+    memset(state->los_flags, 0, sizeof(state->los_flags));
     state->terminal = TERMINAL_NONE;
     state->current_wave = 1;
     state->npcs_remaining = 0;
@@ -1552,6 +1553,7 @@ static int test_safespot_los(void) {
 
     make_open_manual_state(&state, 10, 10);
     state.walkable[11][10] = 0;  /* Italy-rock-style blocker */
+    state.los_flags[11][10] = FC_LOS_FULL;
     fc_npc_spawn(&state.npcs[0], NPC_TZTOK_JAD, 12, 10, 0);
     state.npcs_remaining = 1;
     state.current_wave = FC_NUM_WAVES;
@@ -1650,6 +1652,7 @@ static int test_npc_moves_when_attack_blocked(void) {
 
     make_open_manual_state(&state, 10, 10);
     state.walkable[11][10] = 0;
+    state.los_flags[11][10] = FC_LOS_FULL;
     fc_npc_spawn(&state.npcs[0], NPC_TOK_XIL, 12, 11, 0);
     state.npcs[0].size = 1;
     state.npcs_remaining = 1;
@@ -1731,11 +1734,14 @@ static int test_option_b_no_move_into_los_fire_same_tick(void) {
     configure_option_b_player(&state, 5);
     spawn_static_guardrail_target(&state, 5, 7);
     state.walkable[5][6] = 0;
+    state.los_flags[5][6] = FC_LOS_FULL;
 
-    int pre_los = fc_has_los_to_npc(5, 5, state.npcs[0].x, state.npcs[0].y,
-                                    state.npcs[0].size, state.walkable);
-    int post_los = fc_has_los_to_npc(6, 5, state.npcs[0].x, state.npcs[0].y,
-                                     state.npcs[0].size, state.walkable);
+    int pre_los = fc_has_los_between_areas(
+        5, 5, 1, state.npcs[0].x, state.npcs[0].y,
+        state.npcs[0].size, state.los_flags);
+    int post_los = fc_has_los_between_areas(
+        6, 5, 1, state.npcs[0].x, state.npcs[0].y,
+        state.npcs[0].size, state.los_flags);
     if (pre_los || !post_los) {
         char msg[160];
         snprintf(msg, sizeof(msg),
@@ -1774,9 +1780,10 @@ static int test_option_b_attack_then_move_when_already_valid(void) {
     spawn_static_guardrail_target(&state, 12, 10);
 
     int pre_dist = fc_distance_to_npc(state.player.x, state.player.y, &state.npcs[0]);
-    int pre_los = fc_has_los_to_npc(state.player.x, state.player.y,
-                                    state.npcs[0].x, state.npcs[0].y,
-                                    state.npcs[0].size, state.walkable);
+    int pre_los = fc_has_los_between_areas(
+        state.player.x, state.player.y, 1,
+        state.npcs[0].x, state.npcs[0].y,
+        state.npcs[0].size, state.los_flags);
     int post_dist = fc_distance_to_npc(9, 10, &state.npcs[0]);
     if (pre_dist > state.player.weapon_range || !pre_los ||
         post_dist <= state.player.weapon_range) {
@@ -2347,11 +2354,12 @@ static int test_step2_start_reservation_blocks_swap_tile(void) {
     return pass("start-of-tick reservation occupancy blocks swap-through tile");
 }
 
-static int test_step3_player_directional_blocked_by_npc(void) {
+static int test_player_directional_ignores_npc_occupancy(void) {
     FcState state;
     int actions[FC_NUM_ACTION_HEADS] = {0};
 
     make_open_manual_state(&state, 10, 10);
+    state.player.is_running = 0;
     fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 11, 10, 0);
     state.npcs[0].movement_speed = 0;
     state.npcs[0].attack_timer = 999;
@@ -2360,24 +2368,25 @@ static int test_step3_player_directional_blocked_by_npc(void) {
     actions[0] = FC_MOVE_WALK_E;
     fc_step(&state, actions);
 
-    if (state.player.x != 10 || state.player.y != 10) {
+    if (state.player.x != 11 || state.player.y != 10) {
         char msg[160];
         snprintf(msg, sizeof(msg),
-                 "player moved into NPC footprint, got player=(%d,%d) npc=(%d,%d)",
+                 "player did not walk through NPC footprint: player=(%d,%d) npc=(%d,%d)",
                  state.player.x, state.player.y, state.npcs[0].x, state.npcs[0].y);
         fc_destroy(&state);
         return fail(msg);
     }
 
     fc_destroy(&state);
-    return pass("player directional movement is blocked by NPC footprint");
+    return pass("player directional movement ignores NPC occupancy");
 }
 
-static int test_step3_player_tile_route_rejects_occupied_target(void) {
+static int test_player_tile_route_accepts_npc_occupied_target(void) {
     FcState state;
     int actions[FC_NUM_ACTION_HEADS] = {0};
 
     make_open_manual_state(&state, 10, 10);
+    state.player.is_running = 0;
     fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 11, 10, 0);
     state.npcs[0].movement_speed = 0;
     state.npcs[0].attack_timer = 999;
@@ -2387,20 +2396,155 @@ static int test_step3_player_tile_route_rejects_occupied_target(void) {
     actions[6] = 11;  /* target y = 10 */
     fc_step(&state, actions);
 
-    if (state.player.x == 11 && state.player.y == 10) {
+    if (state.player.x != 11 || state.player.y != 10) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "walk-to-tile did not enter NPC-occupied target: player=(%d,%d)",
+                 state.player.x, state.player.y);
         fc_destroy(&state);
-        return fail("walk-to-tile route moved player onto occupied NPC tile");
+        return fail(msg);
     }
-    if (state.player.route_len != 0 || state.player.route_idx != 0) {
+    if (state.player.route_len != 1 || state.player.route_idx != 1) {
         char msg[128];
-        snprintf(msg, sizeof(msg), "occupied tile route was retained: route=%d/%d",
+        snprintf(msg, sizeof(msg), "NPC-occupied target route state=%d/%d expected=1/1",
                  state.player.route_idx, state.player.route_len);
         fc_destroy(&state);
         return fail(msg);
     }
 
     fc_destroy(&state);
-    return pass("walk-to-tile routing rejects occupied target tile");
+    return pass("player tile routing ignores NPC occupancy at its target");
+}
+
+static int test_player_prebuilt_route_ignores_npc_and_keeps_static_collision(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    state.player.is_running = 0;
+    fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 11, 10, 0);
+    state.npcs[0].movement_speed = 0;
+    state.npcs[0].attack_timer = 999;
+    state.npcs_remaining = 1;
+    state.player.route_x[0] = 11;
+    state.player.route_y[0] = 10;
+    state.player.route_len = 1;
+    state.player.route_idx = 0;
+
+    fc_step(&state, actions);
+
+    if (state.player.x != 11 || state.player.y != 10 ||
+        state.player.route_idx != 1 || state.player.route_len != 1) {
+        char msg[192];
+        snprintf(msg, sizeof(msg),
+                 "prebuilt route did not cross NPC: player=(%d,%d) route=%d/%d",
+                 state.player.x, state.player.y,
+                 state.player.route_idx, state.player.route_len);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    fc_destroy(&state);
+
+    make_open_manual_state(&state, 10, 10);
+    state.player.is_running = 0;
+    state.walkable[11][10] = 0;
+    state.walkable[10][11] = 0;
+    state.player.route_x[0] = 11;
+    state.player.route_y[0] = 11;
+    state.player.route_len = 1;
+    state.player.route_idx = 0;
+
+    fc_step(&state, actions);
+
+    if (state.player.x != 10 || state.player.y != 10 ||
+        state.player.route_idx != 0 || state.player.route_len != 0) {
+        char msg[192];
+        snprintf(msg, sizeof(msg),
+                 "prebuilt route clipped static corner: player=(%d,%d) route=%d/%d",
+                 state.player.x, state.player.y,
+                 state.player.route_idx, state.player.route_len);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("route execution ignores NPCs but preserves static corner collision");
+}
+
+static int test_player_move_mask_ignores_npc_and_keeps_static_collision(void) {
+    FcState state;
+    float mask[FC_ACTION_MASK_SIZE];
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+    int invalid[FC_INVALID_ACTION_CLASS_COUNT] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 11, 10, 0);
+    state.npcs[0].movement_speed = 0;
+    state.npcs[0].attack_timer = 999;
+    state.npcs_remaining = 1;
+
+    fc_write_mask(&state, mask);
+    actions[0] = FC_MOVE_WALK_E;
+    fc_action_invalid_classes(&state, actions, invalid);
+    if (mask[FC_MASK_MOVE_START + FC_MOVE_WALK_E] != 1.0f ||
+        mask[FC_MASK_MOVE_START + FC_MOVE_RUN_E] != 1.0f ||
+        invalid[FC_INVALID_ACTION_MOVE]) {
+        fc_destroy(&state);
+        return fail("NPC occupancy incorrectly masked or invalidated eastward player movement");
+    }
+
+    state.walkable[11][10] = 0;
+    fc_write_mask(&state, mask);
+    fc_action_invalid_classes(&state, actions, invalid);
+    if (mask[FC_MASK_MOVE_START + FC_MOVE_WALK_E] != 0.0f ||
+        mask[FC_MASK_MOVE_START + FC_MOVE_RUN_E] != 0.0f ||
+        !invalid[FC_INVALID_ACTION_MOVE]) {
+        fc_destroy(&state);
+        return fail("static wall did not mask and invalidate eastward player movement");
+    }
+
+    fc_destroy(&state);
+    return pass("player movement masks ignore NPCs and preserve static collision");
+}
+
+static int test_player_combat_approach_ignores_npc_occupancy(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    make_open_manual_state(&state, 10, 10);
+    configure_option_b_player(&state, 3);
+    state.player.is_running = 0;
+
+    fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 11, 11, 0);
+    fc_npc_spawn(&state.npcs[1], NPC_TOK_XIL, 18, 10, 1);
+    for (int i = 0; i < 2; i++) {
+        state.npcs[i].movement_speed = 0;
+        state.npcs[i].attack_timer = 999;
+    }
+    state.npcs_remaining = 2;
+
+    actions[1] = 2;  /* Target the farther Tok-Xil visible slot. */
+    fc_step(&state, actions);
+
+    if (state.attack_attempt_this_tick ||
+        state.player.x != 11 || state.player.y != 11 ||
+        state.player.attack_target_idx != 1 ||
+        state.player.approach_target != 1 ||
+        state.player.route_idx != 1 ||
+        state.player.route_len <= state.player.route_idx) {
+        char msg[256];
+        snprintf(msg, sizeof(msg),
+                 "combat approach did not cross blocker: player=(%d,%d) target=%d approach=%d route=%d/%d attack=%d",
+                 state.player.x, state.player.y,
+                 state.player.attack_target_idx, state.player.approach_target,
+                 state.player.route_idx, state.player.route_len,
+                 state.attack_attempt_this_tick);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+
+    fc_destroy(&state);
+    return pass("player combat approach routes through NPC occupancy");
 }
 
 static int test_step3_npc_blocked_by_other_npc(void) {
@@ -2527,6 +2671,7 @@ static int test_step4_ranged_npc_chases_player_bounds_not_los_tile(void) {
 
     make_open_manual_state(&state, 10, 10);
     state.walkable[12][10] = 0;  /* blocks direct LOS on the horizontal lane */
+    state.los_flags[12][10] = FC_LOS_FULL;
     state.walkable[13][9] = 0;   /* old attack-position search would sidestep south */
     fc_npc_spawn(&state.npcs[0], NPC_TOK_XIL, 14, 10, 0);
     state.npcs[0].size = 1;
@@ -3047,7 +3192,7 @@ static int test_mechanics_observation_events(void) {
 
 int main(int argc, char** argv) {
     if (argc != 2) {
-        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|safespot_reward_disabled|npc_heal_penalty_actual_heal|prayer_loss_penalty|correct_prayer_reward_all_npcs|no_attack_penalty_wave_scaled|player_death_progress_scaled|simple_reward_zeroed_channels|npc_kill_reward_eligibility|tz_kek_split_kill_rewards|wave_clear_reward_scaling|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|special_tz_kih_prayer_drain|special_mejkot_heal_replaces_attack|special_adjacent_style_selection|special_hurkot_behavior|mechanics_observation_events|safespot_los|diagonal_corner_clipping|npc_moves_when_attack_blocked|option_b_no_move_into_range_fire_same_tick|option_b_no_move_into_los_fire_same_tick|option_b_attack_then_move_when_already_valid|option_b_queued_projectile_survives_later_movement|step1_movement_only_clears_stale_target|step1_projectile_survives_movement_cancel|step1_attack_move_clears_continued_target|step1_attack_move_out_of_range_clears_target|step1_directional_cancels_old_approach_route|step1_directional_beats_old_tile_route|step1_attack_approach_without_explicit_movement|step2_occupancy_marks_and_ignores_entities|step2_dynamic_footprint_static_and_occupied|step2_entity_wrapper_ignores_self_blocks_others|step2_dynamic_diagonal_blocks_occupied_corner|step2_dynamic_bfs_avoids_occupied_steps|step2_dynamic_sized_bfs_checks_full_footprint|step2_start_reservation_blocks_swap_tile|step3_player_directional_blocked_by_npc|step3_player_tile_route_rejects_occupied_target|step3_npc_blocked_by_other_npc|step3_large_npc_blocked_by_healer_footprint|step3_tz_kek_split_avoids_occupied_tiles|step4_ranged_npc_chases_player_bounds_not_los_tile|step4_large_npc_chase_checks_full_footprint|step4_npc_stays_when_current_position_can_attack|invalid_action_classes|hp_regeneration_interval>\n",
+        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|safespot_reward_disabled|npc_heal_penalty_actual_heal|prayer_loss_penalty|correct_prayer_reward_all_npcs|no_attack_penalty_wave_scaled|player_death_progress_scaled|simple_reward_zeroed_channels|npc_kill_reward_eligibility|tz_kek_split_kill_rewards|wave_clear_reward_scaling|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|special_tz_kih_prayer_drain|special_mejkot_heal_replaces_attack|special_adjacent_style_selection|special_hurkot_behavior|mechanics_observation_events|safespot_los|diagonal_corner_clipping|npc_moves_when_attack_blocked|option_b_no_move_into_range_fire_same_tick|option_b_no_move_into_los_fire_same_tick|option_b_attack_then_move_when_already_valid|option_b_queued_projectile_survives_later_movement|step1_movement_only_clears_stale_target|step1_projectile_survives_movement_cancel|step1_attack_move_clears_continued_target|step1_attack_move_out_of_range_clears_target|step1_directional_cancels_old_approach_route|step1_directional_beats_old_tile_route|step1_attack_approach_without_explicit_movement|step2_occupancy_marks_and_ignores_entities|step2_dynamic_footprint_static_and_occupied|step2_entity_wrapper_ignores_self_blocks_others|step2_dynamic_diagonal_blocks_occupied_corner|step2_dynamic_bfs_avoids_occupied_steps|step2_dynamic_sized_bfs_checks_full_footprint|step2_start_reservation_blocks_swap_tile|player_directional_ignores_npc_occupancy|player_tile_route_accepts_npc_occupied_target|player_prebuilt_route_ignores_npc_and_keeps_static_collision|player_move_mask_ignores_npc_and_keeps_static_collision|player_combat_approach_ignores_npc_occupancy|step3_npc_blocked_by_other_npc|step3_large_npc_blocked_by_healer_footprint|step3_tz_kek_split_avoids_occupied_tiles|step4_ranged_npc_chases_player_bounds_not_los_tile|step4_large_npc_chase_checks_full_footprint|step4_npc_stays_when_current_position_can_attack|invalid_action_classes|hp_regeneration_interval>\n",
                 argv[0]);
         return 2;
     }
@@ -3101,8 +3246,11 @@ int main(int argc, char** argv) {
     if (strcmp(argv[1], "step2_dynamic_bfs_avoids_occupied_steps") == 0) return test_step2_dynamic_bfs_avoids_occupied_steps();
     if (strcmp(argv[1], "step2_dynamic_sized_bfs_checks_full_footprint") == 0) return test_step2_dynamic_sized_bfs_checks_full_footprint();
     if (strcmp(argv[1], "step2_start_reservation_blocks_swap_tile") == 0) return test_step2_start_reservation_blocks_swap_tile();
-    if (strcmp(argv[1], "step3_player_directional_blocked_by_npc") == 0) return test_step3_player_directional_blocked_by_npc();
-    if (strcmp(argv[1], "step3_player_tile_route_rejects_occupied_target") == 0) return test_step3_player_tile_route_rejects_occupied_target();
+    if (strcmp(argv[1], "player_directional_ignores_npc_occupancy") == 0) return test_player_directional_ignores_npc_occupancy();
+    if (strcmp(argv[1], "player_tile_route_accepts_npc_occupied_target") == 0) return test_player_tile_route_accepts_npc_occupied_target();
+    if (strcmp(argv[1], "player_prebuilt_route_ignores_npc_and_keeps_static_collision") == 0) return test_player_prebuilt_route_ignores_npc_and_keeps_static_collision();
+    if (strcmp(argv[1], "player_move_mask_ignores_npc_and_keeps_static_collision") == 0) return test_player_move_mask_ignores_npc_and_keeps_static_collision();
+    if (strcmp(argv[1], "player_combat_approach_ignores_npc_occupancy") == 0) return test_player_combat_approach_ignores_npc_occupancy();
     if (strcmp(argv[1], "step3_npc_blocked_by_other_npc") == 0) return test_step3_npc_blocked_by_other_npc();
     if (strcmp(argv[1], "step3_large_npc_blocked_by_healer_footprint") == 0) return test_step3_large_npc_blocked_by_healer_footprint();
     if (strcmp(argv[1], "step3_tz_kek_split_avoids_occupied_tiles") == 0) return test_step3_tz_kek_split_avoids_occupied_tiles();

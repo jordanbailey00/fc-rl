@@ -6,8 +6,8 @@
  * Key design:
  *   - NPCs have sizes 1-5 (Jad and Ket-Zek are 5x5!). Movement must check
  *     the entire footprint at the destination tile.
- *   - LOS uses Bresenham line algorithm on the walkability grid.
- *   - All functions use the authoritative walkable[64][64] grid, never visual mesh.
+ *   - Projectile LOS uses its own directional collision flags.
+ *   - Movement functions use the authoritative walkable[64][64] grid, never visual mesh.
  */
 
 /* ======================================================================== */
@@ -99,8 +99,13 @@ int fc_footprint_available_for_entity(const FcState* state,
     return fc_footprint_available_dynamic(x, y, size, state->walkable, occupied);
 }
 
-static int fc_step_walkable(int x, int y, int dx, int dy, int size,
-                            const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
+int fc_footprint_step_walkable(
+    int x, int y, int dx, int dy, int size,
+    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
+    if (dx < -1 || dx > 1 || dy < -1 || dy > 1 ||
+        (dx == 0 && dy == 0)) {
+        return 0;
+    }
     if (dx != 0 && dy != 0) {
         return fc_footprint_walkable(x + dx, y + dy, size, walkable) &&
                fc_footprint_walkable(x + dx, y, size, walkable) &&
@@ -139,7 +144,8 @@ int fc_move_toward(int* x, int* y, int dx, int dy, int max_steps,
         if (ty > *y) sy = 1; else if (ty < *y) sy = -1;
 
         /* Try diagonal first, then x-only, then y-only */
-        if (sx != 0 && sy != 0 && fc_step_walkable(*x, *y, sx, sy, 1, walkable)) {
+        if (sx != 0 && sy != 0 &&
+            fc_footprint_step_walkable(*x, *y, sx, sy, 1, walkable)) {
             *x += sx; *y += sy; steps++;
         } else if (sx != 0 && fc_tile_walkable(*x + sx, *y, walkable)) {
             *x += sx; steps++;
@@ -201,7 +207,7 @@ int fc_npc_step_toward_sized(int* x, int* y, int target_x, int target_y,
     /* Try diagonal, then x-only, then y-only.
      * Each candidate must have the full footprint walkable. */
     if (dx != 0 && dy != 0 &&
-        fc_step_walkable(*x, *y, dx, dy, size, walkable)) {
+        fc_footprint_step_walkable(*x, *y, dx, dy, size, walkable)) {
         *x += dx; *y += dy; return 1;
     }
     if (dx != 0 && fc_footprint_walkable(*x + dx, *y, size, walkable)) {
@@ -245,52 +251,94 @@ int fc_npc_step_toward(int* x, int* y, int target_x, int target_y,
 }
 
 /* ======================================================================== */
-/* Line of sight — Bresenham                                                 */
+/* Line of sight — directional projectile collision                         */
 /* ======================================================================== */
 
 int fc_has_line_of_sight(int x0, int y0, int x1, int y1,
-                         const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
+                         const uint8_t los_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
+    if (x0 < 0 || y0 < 0 || x0 >= FC_ARENA_WIDTH || y0 >= FC_ARENA_HEIGHT ||
+        x1 < 0 || y1 < 0 || x1 >= FC_ARENA_WIDTH || y1 >= FC_ARENA_HEIGHT) {
+        return 0;
+    }
+    if (x0 == x1 && y0 == y1) return 1;
+
     int dx = x1 - x0;
     int dy = y1 - y0;
-    int sx = (dx > 0) ? 1 : (dx < 0) ? -1 : 0;
-    int sy = (dy > 0) ? 1 : (dy < 0) ? -1 : 0;
+    int dx_abs = dx < 0 ? -dx : dx;
+    int dy_abs = dy < 0 ? -dy : dy;
+    uint8_t x_flags = FC_LOS_FULL | (dx < 0 ? FC_LOS_EAST : FC_LOS_WEST);
+    uint8_t y_flags = FC_LOS_FULL | (dy < 0 ? FC_LOS_NORTH : FC_LOS_SOUTH);
 
-    if (dx < 0) dx = -dx;
-    if (dy < 0) dy = -dy;
+    /* Fixed-point major-axis traversal matches directional OSRS tile LOS.
+     * Each crossed destination tile supplies the boundary flag to test. */
+    if (dx_abs > dy_abs) {
+        int x = x0;
+        int y_big = (y0 << 16) + 0x8000;
+        int slope = (dy * 65536) / dx_abs;
+        if (dy < 0) y_big--;
+        int direction = dx < 0 ? -1 : 1;
 
-    int err = dx - dy;
-    int cx = x0, cy = y0;
-
-    while (cx != x1 || cy != y1) {
-        /* Check intermediate tiles (skip source tile) */
-        if (cx != x0 || cy != y0) {
-            if (!fc_tile_walkable(cx, cy, walkable)) return 0;
+        while (x != x1) {
+            x += direction;
+            int y = y_big >> 16;
+            if (los_flags[x][y] & x_flags) return 0;
+            y_big += slope;
+            int next_y = y_big >> 16;
+            if (next_y != y && (los_flags[x][next_y] & y_flags)) return 0;
         }
+    } else {
+        int y = y0;
+        int x_big = (x0 << 16) + 0x8000;
+        int slope = (dx * 65536) / dy_abs;
+        if (dx < 0) x_big--;
+        int direction = dy < 0 ? -1 : 1;
 
-        int e2 = 2 * err;
-        if (e2 > -dy) {
-            err -= dy;
-            cx += sx;
-        }
-        if (e2 < dx) {
-            err += dx;
-            cy += sy;
+        while (y != y1) {
+            y += direction;
+            int x = x_big >> 16;
+            if (los_flags[x][y] & y_flags) return 0;
+            x_big += slope;
+            int next_x = x_big >> 16;
+            if (next_x != x && (los_flags[next_x][y] & x_flags)) return 0;
         }
     }
 
-    return 1;  /* all intermediate tiles walkable */
+    return 1;
 }
 
-int fc_has_los_to_npc(int px, int py, int npc_x, int npc_y, int npc_size,
-                      const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
-    /* Find the closest tile of the NPC footprint to the player */
-    int cx = px, cy = py;
-    if (cx < npc_x) cx = npc_x;
-    else if (cx > npc_x + npc_size - 1) cx = npc_x + npc_size - 1;
-    if (cy < npc_y) cy = npc_y;
-    else if (cy > npc_y + npc_size - 1) cy = npc_y + npc_size - 1;
+static int fc_los_edge_tile(int offset_x, int offset_y, int size) {
+    return offset_x == 0 || offset_y == 0 ||
+           offset_x == size - 1 || offset_y == size - 1;
+}
 
-    return fc_has_line_of_sight(px, py, cx, cy, walkable);
+int fc_has_los_between_areas(
+    int src_x, int src_y, int src_size,
+    int dst_x, int dst_y, int dst_size,
+    const uint8_t los_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
+    if (src_size <= 0 || dst_size <= 0) return 0;
+    if (src_x < 0 || src_y < 0 || src_x + src_size > FC_ARENA_WIDTH ||
+        src_y + src_size > FC_ARENA_HEIGHT ||
+        dst_x < 0 || dst_y < 0 || dst_x + dst_size > FC_ARENA_WIDTH ||
+        dst_y + dst_size > FC_ARENA_HEIGHT) {
+        return 0;
+    }
+
+    for (int sx = 0; sx < src_size; sx++) {
+        for (int sy = 0; sy < src_size; sy++) {
+            if (!fc_los_edge_tile(sx, sy, src_size)) continue;
+            for (int dx = 0; dx < dst_size; dx++) {
+                for (int dy = 0; dy < dst_size; dy++) {
+                    if (!fc_los_edge_tile(dx, dy, dst_size)) continue;
+                    if (fc_has_line_of_sight(
+                            src_x + sx, src_y + sy,
+                            dst_x + dx, dst_y + dy, los_flags)) {
+                        return 1;
+                    }
+                }
+            }
+        }
+    }
+    return 0;
 }
 
 int fc_npc_can_melee_player(int player_x, int player_y,

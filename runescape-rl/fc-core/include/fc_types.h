@@ -102,6 +102,14 @@ typedef enum {
 #define FC_ARENA_WIDTH   64
 #define FC_ARENA_HEIGHT  64
 
+/* Directional projectile/line-of-sight collision flags. These are separate
+ * from walkability: an obstacle may block movement without blocking attacks. */
+#define FC_LOS_NORTH (1u << 0)
+#define FC_LOS_EAST  (1u << 1)
+#define FC_LOS_SOUTH (1u << 2)
+#define FC_LOS_WEST  (1u << 3)
+#define FC_LOS_FULL  (1u << 4)
+
 /* Entity limits */
 #define FC_MAX_NPCS      16   /* max simultaneous NPCs in the arena */
 #define FC_VISIBLE_NPCS   8   /* max NPCs in observation (see fc_contracts.h) */
@@ -382,6 +390,9 @@ typedef struct {
 
     /* Arena walkability (1 = walkable, 0 = obstacle) */
     uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+
+    /* Directional projectile collision, independent from movement. */
+    uint8_t los_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
 
     /* Start-of-movement footprint reservations. Built once near the beginning
      * of each tick and merged into dynamic movement checks so entities cannot

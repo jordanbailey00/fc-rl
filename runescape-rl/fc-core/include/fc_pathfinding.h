@@ -16,6 +16,12 @@ int fc_tile_walkable(int x, int y,
 int fc_footprint_walkable(int x, int y, int size,
                           const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 
+/* Check whether one sized movement step is legal on static terrain. Diagonal
+ * movement checks the final footprint and both cardinal side footprints. */
+int fc_footprint_step_walkable(
+    int x, int y, int dx, int dy, int size,
+    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
+
 /* ======================================================================== */
 /* Dynamic occupancy                                                         */
 /* ======================================================================== */
@@ -97,16 +103,17 @@ int fc_npc_step_toward(int* x, int* y, int target_x, int target_y,
 /* Line of sight                                                             */
 /* ======================================================================== */
 
-/* Bresenham LOS check between two points.
- * Returns 1 if all tiles along the line are walkable (no wall blocks LOS).
- * Uses the simple walkability grid — walls block LOS. */
+/* Directional projectile LOS check between two tiles. Source and destination
+ * order is significant because directional collision is not assumed symmetric. */
 int fc_has_line_of_sight(int x0, int y0, int x1, int y1,
-                         const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
+                         const uint8_t los_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 
-/* LOS check from a size-1 point to the nearest tile of a multi-tile NPC.
- * Finds the closest footprint tile and checks LOS to it. */
-int fc_has_los_to_npc(int px, int py, int npc_x, int npc_y, int npc_size,
-                      const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
+/* Footprint-aware directional LOS. Returns true when any valid pair of edge
+ * tiles in the source and destination areas has projectile LOS. */
+int fc_has_los_between_areas(
+    int src_x, int src_y, int src_size,
+    int dst_x, int dst_y, int dst_size,
+    const uint8_t los_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 
 /* Returns 1 if the player is in actual melee contact with any tile of the NPC
  * footprint. Diagonal contact is only valid when the corner is open, matching

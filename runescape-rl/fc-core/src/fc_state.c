@@ -33,6 +33,8 @@
  * Avoids per-reset file I/O which is not thread-safe under OpenMP. */
 static uint8_t g_collision_cache[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
 static int g_collision_loaded = 0;
+static uint8_t g_los_cache[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+static int g_los_loaded = 0;
 
 static void load_collision_once(void) {
     if (g_collision_loaded) return;
@@ -82,9 +84,49 @@ static void load_collision_once(void) {
     g_collision_loaded = 1;
 }
 
+static void load_los_once(void) {
+    if (g_los_loaded) return;
+
+    static const char* los_paths[] = {
+        "assets/fightcaves.los",
+        "runescape-rl/fc-core/assets/fightcaves.los",
+        "fc-core/assets/fightcaves.los",
+        "../fc-core/assets/fightcaves.los",
+        "../../fc-core/assets/fightcaves.los",
+        NULL
+    };
+    FILE* f = NULL;
+    const char* env_path = getenv("FC_LOS_PATH");
+    if (env_path) f = fopen(env_path, "rb");
+    for (int p = 0; !f && los_paths[p]; p++) {
+        f = fopen(los_paths[p], "rb");
+    }
+    if (f) {
+        uint8_t buf[FC_ARENA_WIDTH * FC_ARENA_HEIGHT];
+        size_t n = fread(buf, 1, sizeof(buf), f);
+        fclose(f);
+        if (n == sizeof(buf)) {
+            for (int y = 0; y < FC_ARENA_HEIGHT; y++) {
+                for (int x = 0; x < FC_ARENA_WIDTH; x++) {
+                    g_los_cache[x][y] = buf[y * FC_ARENA_WIDTH + x];
+                }
+            }
+            g_los_loaded = 1;
+            return;
+        }
+    }
+
+    fprintf(stderr,
+            "warning: fightcaves.los not found; using open LOS fallback arena\n");
+    memset(g_los_cache, 0, sizeof(g_los_cache));
+    g_los_loaded = 1;
+}
+
 static void setup_arena(FcState* state) {
     load_collision_once();
+    load_los_once();
     memcpy(state->walkable, g_collision_cache, sizeof(state->walkable));
+    memcpy(state->los_flags, g_los_cache, sizeof(state->los_flags));
 }
 
 /* Player initialization — the loadout table is the combat-state authority. */
@@ -291,29 +333,7 @@ int fc_visible_npc_indices(const FcState* state, int out_indices[FC_VISIBLE_NPCS
     return visible;
 }
 
-static int move_action_valid_with_occupancy(
-    const FcState* state,
-    int action,
-    const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
-
 static int move_action_valid(const FcState* state, int action) {
-    const FcPlayer* p = &state->player;
-    uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
-
-    if (action < 0 || action >= FC_MOVE_DIM) return 0;
-    if (action == FC_MOVE_IDLE) return 1;
-    if (action >= FC_MOVE_RUN_N && p->run_energy <= 0) {
-        return 0;
-    }
-
-    fc_build_occupancy(state, occupied, -1, 1);
-    return move_action_valid_with_occupancy(state, action, occupied);
-}
-
-static int move_action_valid_with_occupancy(
-    const FcState* state,
-    int action,
-    const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
     const FcPlayer* p = &state->player;
 
     if (action < 0 || action >= FC_MOVE_DIM) return 0;
@@ -325,8 +345,8 @@ static int move_action_valid_with_occupancy(
     int tx = p->x;
     int ty = p->y;
     int max_steps = (action >= FC_MOVE_RUN_N) ? 2 : 1;
-    return fc_move_toward_dynamic(&tx, &ty, FC_MOVE_DX[action], FC_MOVE_DY[action],
-                                  max_steps, state->walkable, occupied) > 0;
+    return fc_move_toward(&tx, &ty, FC_MOVE_DX[action], FC_MOVE_DY[action],
+                          max_steps, state->walkable) > 0;
 }
 
 static int attack_action_valid(const FcState* state, int action) {
@@ -482,8 +502,9 @@ static int npc_telegraph_style(const FcState* state, const FcNpc* npc) {
                                             npc->x, npc->y, npc->size,
                                             state->walkable);
     if (npc->npc_type == NPC_KET_ZEK && can_melee &&
-        fc_has_los_to_npc(state->player.x, state->player.y,
-                          npc->x, npc->y, npc->size, state->walkable)) {
+        fc_has_los_between_areas(
+            npc->x, npc->y, npc->size,
+            state->player.x, state->player.y, 1, state->los_flags)) {
         return ATTACK_NONE;
     }
     /* Tok-Xil telegraphs melee when adjacent. Ket-Zek returns NONE above while
@@ -594,8 +615,8 @@ void fc_write_obs(const FcState* state, float* out) {
         npc_out[FC_NPC_HP]            = (n->max_hp > 0) ? (float)n->current_hp / (float)n->max_hp : 0.0f;
         npc_out[FC_NPC_DISTANCE]      =
             (float)fc_distance_to_npc(p->x, p->y, n) / (float)FC_ARENA_WIDTH;
-        float has_los = (float)fc_has_los_to_npc(
-            p->x, p->y, n->x, n->y, n->size, state->walkable);
+        float has_los = (float)fc_has_los_between_areas(
+            p->x, p->y, 1, n->x, n->y, n->size, state->los_flags);
         int tele = npc_telegraph_style(state, n);
         npc_out[FC_NPC_TELE_MELEE]    = (tele == ATTACK_MELEE)  ? 1.0f : 0.0f;
         npc_out[FC_NPC_TELE_RANGED]   = (tele == ATTACK_RANGED) ? 1.0f : 0.0f;
@@ -765,10 +786,8 @@ void fc_write_mask(const FcState* state, float* out) {
     }
 
     /* MOVE: idle always valid. Walk/run directions masked if destination not walkable */
-    uint8_t movement_occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
-    fc_build_occupancy(state, movement_occupied, -1, 1);
     for (int m = 1; m < FC_MOVE_DIM; m++) {
-        if (!move_action_valid_with_occupancy(state, m, movement_occupied)) {
+        if (!move_action_valid(state, m)) {
             out[FC_MASK_MOVE_START + m] = 0.0f;
         }
     }
