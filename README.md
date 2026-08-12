@@ -269,4 +269,4 @@ The Fight Caves agent now clears Jad at ~95% peak. Active focus is post-sweep an
 
 ## License
 
-MIT License. See [LICENSE](../LICENSE) for details.
+MIT License.

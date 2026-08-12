@@ -533,13 +533,10 @@ def alias_fc_sprites(sprites_dir: Path) -> None:
     aliases = {
         "protect_magic_on.png": "prayeron_12.png",
         "protect_magic_off.png": "prayeroff_12.png",
-        "pray_magic.png": "prayeron_12.png",
         "protect_missiles_on.png": "prayeron_13.png",
         "protect_missiles_off.png": "prayeroff_13.png",
-        "pray_missiles.png": "prayeron_13.png",
         "protect_melee_on.png": "prayeron_14.png",
         "protect_melee_off.png": "prayeroff_14.png",
-        "pray_melee.png": "prayeron_14.png",
         "tab_combat.png": "side_icon_combat.png",
         "tab_inventory.png": "side_icon_inventory.png",
         "tab_prayer.png": "side_icon_prayer.png",
@@ -560,6 +557,28 @@ def carry_forward_legacy_item_sprites(sprites_dir: Path) -> None:
             shutil.copy2(src, dst)
 
 
+FC_VIEWER_COMPAT_SPRITES = {
+    "prayer_potion.png",
+    "protect_magic_off.png",
+    "protect_magic_on.png",
+    "protect_melee_off.png",
+    "protect_melee_on.png",
+    "protect_missiles_off.png",
+    "protect_missiles_on.png",
+    "shark.png",
+    "tab_combat.png",
+    "tab_inventory.png",
+    "tab_prayer.png",
+}
+
+
+def prune_unreferenced_compat_sprites(sprites_dir: Path) -> None:
+    """Keep only the legacy top-level sprites consumed by the viewer."""
+    for path in sprites_dir.iterdir():
+        if path.is_file() and path.name not in FC_VIEWER_COMPAT_SPRITES:
+            path.unlink()
+
+
 def export_fc_sprites(cache_dir: Path, output: Path) -> None:
     import export_sprites_modern
 
@@ -569,6 +588,7 @@ def export_fc_sprites(cache_dir: Path, output: Path) -> None:
         raise SystemExit(f"sprite export failed with exit code {rc}")
     alias_fc_sprites(output)
     carry_forward_legacy_item_sprites(output)
+    prune_unreferenced_compat_sprites(output)
 
 
 def build_manifest(staging_root: Path, cache_dir: Path) -> dict[str, object]:

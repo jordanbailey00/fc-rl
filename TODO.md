@@ -1,40 +1,117 @@
-# Local TODO
+# Central Project TODO
 
-This file is intentionally local-only and ignored by git. Use it as a working list
-for project follow-ups that should not become public repo documentation yet.
+This is the authoritative working list for remaining FC-RL work. Historical
+plans and experiment reports remain in their original files as evidence, but
+active and deferred work should be tracked here so there is one current source
+of truth.
+
+## Tomorrow's Priority: Environment/Training Review and Refactor
+
+Review all four areas below together before making changes. More detailed
+review criteria and implementation direction will be supplied during the
+review.
+
+### 1. Policy-Visible Combat Information
+
+- [ ] Review the NPC observations that explicitly expose committed attack
+  style, exact remaining hit ticks, whether prayer can still affect the hit,
+  and prayer-deadline urgency.
+- [ ] Decide whether this explicit information is appropriate for the intended
+  abstract Fight Caves MDP or makes the environment materially easier than
+  actual OSRS, where players infer attacks from animations and timing.
+- [ ] Treat this as a task-definition and parity decision, not reward leakage:
+  the observed attack has already been committed.
+
+### 2. Native Action Masks and Policy Input
+
+- [ ] Review the intended use of native Puffer action masks for preventing
+  impossible movement and nonexistent NPC targets.
+- [ ] Review why the model receives the full 319-value environment observation
+  (`285` policy features plus `34` mask bits) even though comments describe the
+  policy input as only the 285 policy features.
+- [ ] Decide whether policy-visible legality bits are intentional and should be
+  documented, or whether they should be removed from the neural-network input
+  while remaining available for native action enforcement.
+- [ ] Account for the extra collision and target-availability information those
+  mask bits provide; classify it as an unintended convenience rather than
+  catastrophic leakage.
+
+### 3. Run Energy and Movement Parity
+
+- [ ] Audit run-energy initialization, movement validity, gameplay drain, and
+  regeneration. The current behavior appears to allow effectively unlimited
+  running because normal drain/regeneration is not meaningfully simulated.
+- [ ] Review the resulting OSRS parity and movement/kiting difficulty impact.
+- [ ] Review remaining NPC movement and pathfinding approximations, especially
+  obstacle and body-blocking behavior, while preserving the improvements from
+  the recent LOS and collision work.
+
+### 4. Recurrent-State and Evaluation Hygiene
+
+- [ ] Review MinGRU hidden-state lifecycle. It currently appears to reset at
+  rollout boundaries rather than when an individual Fight Caves episode
+  auto-resets, allowing a new episode to temporarily inherit recurrent state
+  from the previous episode.
+- [ ] Review post-training evaluation isolation. It currently appears to
+  continue the same environment and RNG streams rather than starting a fully
+  isolated held-out evaluation set.
+- [ ] Treat both findings as correctness and evaluation-quality concerns, not
+  evidence of intentional leakage.
+
+### 5. Codebase Refactor and Maintainability Pass
+
+- [ ] After reviewing the four areas above, refactor existing code and logic to
+  make the codebase cleaner and more maintainable.
+- [ ] Define the refactor scope during the review before editing, favoring
+  consolidation, clearer ownership, removal of duplication and dead paths, and
+  simpler authoritative data flow over new abstractions.
+- [ ] Preserve behavior unless a reviewed and approved correction from the four
+  areas above intentionally changes it; validate each affected contract and
+  module boundary.
 
 ## Current Baseline: v4_simple_reward
 
 - The authoritative live config is `runescape-rl/config/fight_caves.ini`.
 - It promotes the exact `mmyxbyn4` trainer recipe to a 1.5B-step budget with
   current 60-second HP regeneration mechanics.
-- Use W&B run `l9o32hhz` as the seed-73 empirical comparison baseline.
+- Use W&B run `z5vbs56z` as the current seed-73 empirical comparison baseline.
+  It is the post-parity, post-LOS, post-player-collision/pathing run.
+- W&B run `hevp6ehc` is the immediately preceding parity-backend comparison
+  before the LOS/collision/pathing corrections. W&B run `l9o32hhz` remains the
+  original `v4_simple_reward` reference.
 - The source and synchronized Puffer INIs are byte-identical with SHA-256
-  `509af1168dca12f1c9f72ffc51d31bc2e7c7476536785915f20b034418127514`.
-- Full derivation, exact config, trajectory, and final metrics are recorded at
-  the top of `runescape-rl/docs/run_history.md`.
+  `71afdc57de97ec432752130bae9de4165affa564661116f5d79bda728f87faa9`.
+- The original `v4_simple_reward` derivation, exact config, trajectory, and
+  `l9o32hhz` metrics are recorded at the top of
+  `runescape-rl/docs/run_history.md`. The later `hevp6ehc` and `z5vbs56z`
+  comparisons have not yet been added there.
 
 ## Immediate Next Steps: Validate v4 Before Stage 2
 
 This section is the authoritative next work.
 
 Planning document for all proposed sweep stages:
-`v3_simple_reward_sweep.md`. Stage 1 is complete. Stage 2 is the planned value
+`sweep_history/v3_simple_reward_sweep.md`. Stage 1 is complete. Stage 2 is the planned value
 and optimizer sweep, but it must use `v4_simple_reward` as its fixed baseline
 and must not start until the validation gate below passes.
 
-### 1. Visually Evaluate the New Baseline
+### 1. Close the New-Backend Baseline Gate
 
-- [ ] Select useful checkpoints from W&B baseline run `l9o32hhz`, including an
-  early/transition policy, a strong late policy near the sampled 1.254B Jad
-  peak, and the final 1.499B policy.
+- [ ] Formally accept `z5vbs56z` as the frozen backend baseline for future
+  trainer experiments.
+- [ ] Select useful checkpoints from W&B baseline run `z5vbs56z`, including an
+  early/transition policy, a strong late policy, and the final 1.499B policy.
 - [ ] Replay each selected checkpoint in the eval viewer, preferably across
   multiple episodes rather than drawing conclusions from one cave.
 - [ ] Validate learned behavior: movement and combat timing, targeting and
   target priority, prayer switching and conservation, attack activity,
   safespot/LOS use, wave progression, Yt-MejKot handling, Jad prayer, healer
   aggro, healer targeting, and healer/Jad interactions.
-- [ ] Compare visible behavior against `l9o32hhz` metrics so apparent issues
+- [ ] Specifically inspect the pre-Jad behavior highlighted by the
+  `z5vbs56z` versus `hevp6ehc` comparison: safespot positioning, reduced
+  running, increased idling, wrong-prayer hits, damage taken, and where deaths
+  occur.
+- [ ] Compare visible behavior against `z5vbs56z` metrics so apparent issues
   are supported or contradicted quantitatively.
 - [ ] Record checkpoint paths, observed behavior, and any suspected mechanics
   defects before changing code or configuration.
@@ -60,7 +137,7 @@ and must not start until the validation gate below passes.
   suspicion.
 - [ ] For every confirmed defect, add a failing guardrail first, implement the
   smallest correction, rerun the full validation suite, and assess whether the
-  change invalidates `l9o32hhz` as the empirical baseline.
+  change invalidates `z5vbs56z` as the empirical baseline.
 
 ### 3. Stage 2 Go/No-Go Gate
 
@@ -73,7 +150,7 @@ and must not start until the validation gate below passes.
 - [ ] If validation changes backend behavior, rerun `v4_simple_reward` before
   sweeping so Stage 2 has a valid post-fix baseline.
 - [ ] If the gate passes without training-impacting changes, configure Stage 2
-  from `v3_simple_reward_sweep.md` around the v4 trainer recipe. Sweep only
+  from `sweep_history/v3_simple_reward_sweep.md` around the v4 trainer recipe. Sweep only
   `vf_coef`, `vf_clip_coef`, `max_grad_norm`, and `beta1`; keep the environment,
   rewards, observations, actions, architecture, loadout, seed, and all selected
   Stage 1 trainer values fixed.
@@ -81,9 +158,114 @@ and must not start until the validation gate below passes.
   before creating its INI. Do not mix environment fixes or reward changes into
   that sweep.
 
+## Planned Trainer Experiment Sequence
+
+### 4. Stage 2: Value and Optimizer Sweep
+
+- [ ] Use `z5vbs56z` and the unchanged `v4_simple_reward` environment contract
+  as the fixed center.
+- [ ] Decide the number of trials and per-trial timestep budget.
+- [ ] Create the Stage 2 experiment configuration.
+- [ ] Sweep only:
+  - `vf_coef`
+  - `vf_clip_coef`
+  - `max_grad_norm`
+  - `beta1`
+- [ ] Keep the environment, rewards, observations, actions, architecture,
+  loadout, seed, learning rate, entropy, discounting, rollout, replay,
+  priority, and V-trace values fixed.
+- [ ] Rank results using Jad completion, wave-63 reach, conditional Jad
+  conversion, stability, and value-learning behavior rather than shaped
+  reward alone.
+
+### 5. Stage 3: Learning-Rate Schedule
+
+- [ ] Starting from the selected Stage 2 configuration, compare:
+  - constant learning rate;
+  - decay to zero;
+  - decay to a `0.05` final learning-rate ratio;
+  - decay to a `0.10` final learning-rate ratio;
+  - decay to a `0.25` final learning-rate ratio.
+- [ ] Keep total timesteps fixed because Puffer schedules annealing against the
+  configured run budget.
+- [ ] Evaluate whether scheduling preserves strong late policies and reduces
+  peak-to-final degradation.
+
+### 6. Stage 4: Architecture and Batch Sweep
+
+- [ ] After trainer settings stabilize, test:
+  - `policy.hidden_size`: `128`, `256`, `512`;
+  - `policy.num_layers`: `2`, `3`, `4`;
+  - `vec.total_agents`: `2048`, `4096`, `8192`.
+- [ ] Compare Jad completion, consistency, parameter count, VRAM, SPS, and
+  wall-clock cost. Do not select a larger model from cave progress alone.
+
+### 7. Final Multi-Seed Confirmation
+
+- [ ] Rerun the strongest configurations at the same development budget with
+  trainer seeds `73`, `101`, and `202`.
+- [ ] Select finalists using aggregate Jad completion and consistency rather
+  than one lucky run.
+- [ ] Run the top two or three configurations at fixed 1.5B and/or 2.5B-step
+  budgets.
+- [ ] Account for Puffer's priority-beta schedule when comparing different
+  configured timestep budgets.
+- [ ] Rerun sweep-selected configurations outside sweep mode when checkpoints
+  are required.
+
+## Deferred Environment and Control Debt
+
+These items are known but are not blockers for the Stage 2 trainer sweep.
+
+- [ ] Revisit the intermittent suboptimal click-to-tile route issue. The last
+  routing correction improved collision behavior but did not eliminate every
+  observed non-shortest route. Require a reproducible scenario and focused
+  failing guardrail before another correction.
+- [ ] Revisit target persistence and automatic approach/pathing control only if
+  checkpoint replays show clear targeting, disengagement, retargeting, or
+  movement-control failures.
+- [ ] If that work is justified, first add focused diagnostics for target
+  acquisition/drop/switching, retarget latency, stale targets, route starts,
+  completions, cancellations, stale routes, policy movement overrides, and
+  approach success/timeouts.
+- [ ] Keep static terrain, walls, diagonal clipping, arena boundaries, and NPC
+  occupancy rules under regression coverage while changing player routing.
+
+## Trainer Validation Debt
+
+These are reference-level learner checks from the earlier reward/observation
+training plan. Implement them as external validation in `fc-validation`; do
+not modify vendored PufferLib for FC-RL-specific tests.
+
+- [ ] Verify rollout and PPO masked log-probabilities against a reference
+  implementation.
+- [ ] Verify masked entropy against a reference implementation.
+- [ ] Prove every environment reward is consumed exactly once by GAE.
+- [ ] Prove horizon-boundary rewards are retained.
+- [ ] Prove terminal rewards at every possible rollout index are retained.
+- [ ] Verify scalar and vector advantage implementations agree.
+- [ ] Verify recurrent state resets correctly at episode boundaries, or record
+  and test the intentionally selected behavior.
+
+## Later Research Backlog
+
+These are not the current next step. Review them against the current parity
+contracts and baseline before reviving them.
+
+- [ ] Test a late-wave/Jad-focused curriculum with a separate fixed full-cave
+  evaluation distribution.
+- [ ] Compare minimal terminal/progress reward designs without mixing reward,
+  observation, and trainer changes in one experiment.
+- [ ] Run grouped observation ablations, including coherent incoming-hit, NPC
+  identity/type, slot-layout, rotation, and encoder comparisons.
+- [ ] Establish a vanilla PPO control, then reintroduce replay, prioritized
+  sampling, and V-trace one at a time if each proves beneficial.
+- [ ] Revisit further reward simplification only as a controlled experiment;
+  do not treat the older rejected Phase 7 variants as active baselines.
+
 ## Repo / PufferLib PR Readiness
 
-- Clean up the entire repo so it is ready to PR into PufferLib on GitHub.
+- [ ] Clean up the entire repo so it is ready to PR into PufferLib on GitHub.
   - Align file layout, build scripts, config style, docs, tests, and asset handling
     with PufferLib conventions.
   - Organize assets, UI, and viewer frontend data into clean installable/downloadable
@@ -94,3 +276,23 @@ and must not start until the validation gate below passes.
     them.
   - Ensure the environment can build, train, evaluate, and render from a clean clone
     using documented commands.
+- [ ] Do not modify vendored PufferLib for FC-RL-specific behavior; keep the
+  integration in FC-RL modules and adapters.
+- [ ] Update the root README's outdated SOTA and project-status sections.
+- [ ] Add the README architecture diagram currently marked TODO.
+
+## Documentation and Repository Tracking
+
+- [ ] Keep this file updated as the single authoritative working list; leave
+  historical experiment and implementation plans intact as evidence.
+- [ ] Record the `hevp6ehc` parity-backend run, the `z5vbs56z`
+  LOS/collision/pathing run, and their comparison in
+  `runescape-rl/docs/run_history.md`.
+- [ ] Decide whether the following currently ignored local documents should be
+  force-added/tracked or deliberately remain local-only:
+  - `obs.md`
+  - `parity_fix.md`
+  - `parity_fix_tests.md`
+  - `parity_fix_config.md`
+  - `hparam_sweep_07-16.md`
+  - `SOTA_DIFF_AUDIT.md`

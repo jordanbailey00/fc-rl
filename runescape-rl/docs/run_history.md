@@ -7001,7 +7001,7 @@ Backend notes:
 Actual run:
 - `wiee1ezs`
 - local run log:
-  - [wiee1ezs.json](../../pufferlib_4/logs/fight_caves/wiee1ezs.json)
+  - `wiee1ezs.json` (not retained locally)
 
 Results (`wiee1ezs`):
 - completed normally
@@ -7173,7 +7173,7 @@ Backend notes:
 Actual run:
 - `sluy9lmm`
 - local run log:
-  - [sluy9lmm.json](../../pufferlib_4/logs/fight_caves/sluy9lmm.json)
+  - `sluy9lmm.json` (not retained locally)
 
 Results (`sluy9lmm`):
 - completed normally
@@ -7328,7 +7328,7 @@ Exact active config:
 Actual run:
 - `7qhjnxa2`
 - local run log:
-  - [7qhjnxa2.json](../../pufferlib_4/logs/fight_caves/7qhjnxa2.json)
+  - `7qhjnxa2.json` (not retained locally)
 
 Results (`7qhjnxa2`):
 - completed normally
@@ -7451,7 +7451,7 @@ Recommendation:
 Actual run:
 - `6gi2pyei`
 - local run log:
-  - [6gi2pyei.json](../../pufferlib_4/logs/fight_caves/6gi2pyei.json)
+  - `6gi2pyei.json` (not retained locally)
 
 Status:
 - completed normally
@@ -7629,7 +7629,7 @@ Recommendation:
 Actual run:
 - `frt9a1j4`
 - local run log:
-  - [frt9a1j4.json](../../pufferlib_4/logs/fight_caves/frt9a1j4.json)
+  - `frt9a1j4.json` (not retained locally)
 
 Status:
 - completed normally
@@ -7836,7 +7836,7 @@ Recommendation for `v25.3`:
 Actual run:
 - `zyhv95mi`
 - local run log:
-  - [zyhv95mi.json](../../pufferlib_4/logs/fight_caves/zyhv95mi.json)
+  - `zyhv95mi.json` (not retained locally)
 
 Status:
 - completed normally
@@ -8053,7 +8053,7 @@ Suggested `v25.2` framing:
 Actual run:
 - `yf24fz84`
 - local run log:
-  - [yf24fz84.json](../../pufferlib_4/logs/fight_caves/yf24fz84.json)
+  - `yf24fz84.json` (not retained locally)
 
 Status:
 - completed normally
@@ -8555,10 +8555,10 @@ Critical validity issue:
 - evidence in code:
   - `train.sh` threads `LOAD_MODEL_PATH` into CLI args
   - the slow Python backend in
-    [torch_pufferl.py](../../pufferlib_4/pufferlib/torch_pufferl.py:499)
+    [torch_pufferl.py](../../pufferlib_4/pufferlib/torch_pufferl.py#L499)
     does load `args['load_model_path']`
   - the compiled backend used by normal training creates its trainer in
-    [bindings.cu](../../pufferlib_4/src/bindings.cu:308)
+    [bindings.cu](../../pufferlib_4/src/bindings.cu#L308)
     and never reads `load_model_path`
   - the compiled backend only exposes `load_weights(...)` as a callable API;
     `_train` does not invoke it for train mode
@@ -8707,7 +8707,7 @@ Actual run:
 - W&B path:
   - `jordanbaileypmp-georgia-institute-of-technology/puffer4/h2kpwkdk`
 - local run log:
-  - [h2kpwkdk.json](../../pufferlib_4/logs/fight_caves/h2kpwkdk.json)
+  - `h2kpwkdk.json` (not retained locally)
 
 Status:
 - completed to the full `5B` budget
@@ -8838,7 +8838,7 @@ Actual run:
 - W&B path:
   - `jordanbaileypmp-georgia-institute-of-technology/puffer4/fdzlxlwm`
 - local run log:
-  - [fdzlxlwm.json](../../pufferlib_4/logs/fight_caves/fdzlxlwm.json)
+  - `fdzlxlwm.json` (not retained locally)
 
 Status:
 - completed to the full `5B` budget
@@ -9004,7 +9004,7 @@ Actual run:
 - W&B path:
   - `jordanbaileypmp-georgia-institute-of-technology/puffer4/yq3tbole`
 - local run log:
-  - [yq3tbole.json](../../pufferlib_4/logs/fight_caves/yq3tbole.json)
+  - `yq3tbole.json` (not retained locally)
 
 Status:
 - completed to the full `5B` budget
@@ -9262,7 +9262,7 @@ Current planning stance:
 Actual run:
 - `721zk2cg`
 - local run log:
-  - [721zk2cg.json](../../pufferlib_4/logs/fight_caves/721zk2cg.json)
+  - `721zk2cg.json` (not retained locally)
 
 Status:
 - completed to the full `5B` budget
@@ -9509,7 +9509,7 @@ Actual run:
 - W&B run name:
   - `good-planet-129`
 - local run log:
-  - [7vuw9jy8.json](../../pufferlib_4/logs/fight_caves/7vuw9jy8.json)
+  - `7vuw9jy8.json` (not retained locally)
 
 Status:
 - completed to the full `5B` budget
@@ -9755,7 +9755,7 @@ Actual run id:
 - W&B run name:
   - `fallen-water-102`
 - local run log:
-  - [j63y66ed.json](../../v_tmp2/pufferlib_4/logs/fight_caves/j63y66ed.json)
+  - `j63y66ed.json` (temporary-worktree artifact not retained locally)
 
 Mainline direction:
 - keep the prayer/combat backend with locked-prayer hit resolution
@@ -9788,7 +9788,7 @@ Backend / config provenance:
 - this run used the `v_tmp2` backend path, not the old pre-prayer baseline
 - evidence:
   - the local log artifact lives under the `v_tmp2` PufferLib tree:
-    [j63y66ed.json](../../v_tmp2/pufferlib_4/logs/fight_caves/j63y66ed.json)
+    `j63y66ed.json` (temporary-worktree artifact not retained locally)
   - that artifact records the exact unique `v_tmp2.1` values:
     - `w_correct_danger_prayer = 0.25`
     - `shape_wrong_prayer_penalty = -1.25`
@@ -9915,7 +9915,7 @@ Actual run:
 - W&B run name:
   - `light-sky-128`
 - local run log:
-  - [u58coupx.json](../../pufferlib_4/logs/fight_caves/u58coupx.json)
+  - `u58coupx.json` (not retained locally)
 
 Status:
 - completed normally
@@ -10131,7 +10131,7 @@ Actual run:
 - W&B run name:
   - `fanciful-disco-127`
 - local run log:
-  - [nxj1iw0b.json](../../pufferlib_4/logs/fight_caves/nxj1iw0b.json)
+  - `nxj1iw0b.json` (not retained locally)
 
 Status:
 - completed normally
@@ -11575,7 +11575,7 @@ Naming note:
 - warm-start source run id:
   - `8u6flr5y` (`v19.1`)
 - warm-start checkpoint used:
-  - [0000000263192576.bin](../../pufferlib_4/checkpoints/fight_caves/8u6flr5y/0000000263192576.bin)
+  - `0000000263192576.bin` (not retained locally)
 
 Mainline direction:
 - checkpoint transfer run
@@ -11887,7 +11887,7 @@ Checkpoint choice:
 - warm-start source run id:
   - `8u6flr5y` (`v19.1`)
 - warm-start from:
-  - [0000000263192576.bin](../../pufferlib_4/checkpoints/fight_caves/8u6flr5y/0000000263192576.bin)
+  - `0000000263192576.bin` (not retained locally)
 - rationale:
   - this sits in the first strong `v19.1` peak window (`~237M-367M`)
   - it captures the early late-wave competence before the long-run regression

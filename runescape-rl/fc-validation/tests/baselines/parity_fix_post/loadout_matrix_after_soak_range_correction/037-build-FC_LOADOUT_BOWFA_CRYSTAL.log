@@ -1,9 +1,0 @@
-[ 83%] Built target fc_core
-[100%] Built target parity_fix_core
-[ 83%] Built target fc_core
-[100%] Built target parity_fix_replay_linked
-[100%] Built target parity_fix_replay_puffer
-[ 83%] Built target fc_core
-[ 91%] Building C object fc-validation/CMakeFiles/parity_fix_soak.dir/tests/parity_fix_soak.c.o
-[100%] Linking C executable parity_fix_soak
-[100%] Built target parity_fix_soak

@@ -45,6 +45,7 @@ static void load_collision_once(void) {
         "runescape-rl/fc-core/assets/fightcaves.collision",
         "fc-core/assets/fightcaves.collision",
         "../fc-core/assets/fightcaves.collision",
+        "../runescape-rl/fc-core/assets/fightcaves.collision",
         "../../fc-core/assets/fightcaves.collision",
         NULL
     };
@@ -93,6 +94,7 @@ static void load_movement_once(void) {
         "runescape-rl/fc-core/assets/fightcaves.movement",
         "fc-core/assets/fightcaves.movement",
         "../fc-core/assets/fightcaves.movement",
+        "../runescape-rl/fc-core/assets/fightcaves.movement",
         "../../fc-core/assets/fightcaves.movement",
         NULL
     };
@@ -131,6 +133,7 @@ static void load_los_once(void) {
         "runescape-rl/fc-core/assets/fightcaves.los",
         "fc-core/assets/fightcaves.los",
         "../fc-core/assets/fightcaves.los",
+        "../runescape-rl/fc-core/assets/fightcaves.los",
         "../../fc-core/assets/fightcaves.los",
         NULL
     };

@@ -9,22 +9,16 @@ node_modules/
 runescape-rl/build/
 
 # Large binaries (>100MB, exceed GitHub file limit)
-runescape-rl/reference/legacy-headless-env/data/cache/
-runescape-rl/reference/legacy-headless-env/game/build/
-runescape-rl/reference/legacy-rsps/**/build/
 *.jar
 *.zip
-pufferlib/box2d-web/
 
-# Documentation — keep the root README and scoped agent instructions
+# Documentation — only README files are eligible for tracking
 *.md
-!/README.md
-!**/AGENTS.md
-!/sweep_history/
-!/sweep_history/*.md
-/AGENT_README
+!README.md
+!**/README.md
 
 # Stray wandb run files written to repo root, and locally-built ELF
 /config.yaml
 /wandb-metadata.json
 /pufferlib_4/fight_caves
+/pufferlib_4/config/fight_caves.ini

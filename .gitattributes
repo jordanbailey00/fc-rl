@@ -1,16 +1,7 @@
-changelog.md export-ignore
-handoff.md export-ignore
-
-runescape-rl/DESIGN.md export-ignore
-runescape-rl/analyze_run.sh export-ignore
 runescape-rl/docs export-ignore
 runescape-rl/fc-viewer export-ignore
-runescape-rl/eval_viewer.py export-ignore
-runescape-rl/raylib-5.5_linux_amd64 export-ignore
-runescape-rl/fc-training/tests export-ignore
 
 pufferlib_4/.github export-ignore
-pufferlib_4/assets export-ignore
 pufferlib_4/constellation export-ignore
 pufferlib_4/examples export-ignore
 pufferlib_4/resources export-ignore
