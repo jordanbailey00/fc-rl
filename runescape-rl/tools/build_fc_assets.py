@@ -26,7 +26,11 @@ LOADOUT_HEADER = REPO_ROOT / "fc-core" / "include" / "fc_player_init.h"
 FIGHT_CAVES_REGIONS = [(37, 79)]
 FIGHT_CAVES_NPC_IDS = [3116, 3118, 3120, 3121, 3123, 3125, 3127, 3128]
 FIGHT_CAVES_SPOTANIM_IDS = [
-    27,   # crossbow bolt
+    15,   # rune arrow travel
+    24,   # rune arrow launch
+    27,   # standard crossbow bolt travel
+    230,  # adamant dart travel
+    236,  # adamant dart launch
     439,  # Jad magic launch
     440,  # Jad ranged launch
     443,  # Tok-Xil ranged travel
@@ -35,9 +39,15 @@ FIGHT_CAVES_SPOTANIM_IDS = [
     446,  # Ket-Zek/Jad magic impact
     448,  # Jad ranged travel
     451,  # Jad ranged impact
+    1116, # dragon arrow launch
+    1120, # dragon arrow travel
+    1468, # diamond dragon bolt (e) travel
+    1922, # corrupted Bowfa travel
+    1923, # corrupted Bowfa launch
 ]
 FIGHT_CAVES_ANIM_IDS = {
-    4591, 4226, 4228, 4230, 829, 836,
+    426, 808, 819, 820, 821, 822, 823, 824, 829, 836,
+    4591, 4226, 4228, 4230, 5061, 7552,
     2618, 2619, 2620, 2621,
     2623, 2624, 2625, 2627,
     2628, 2630, 2631, 2632,

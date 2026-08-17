@@ -130,6 +130,9 @@ uint32_t fc_state_hash(const FcState* state);
  */
 void fc_fill_render_entities(const FcState* state, FcRenderEntity* entities, int* count);
 
+/* Copy the authoritative transition facts captured during the last tick. */
+void fc_fill_render_events(const FcState* state, FcRenderEvents* events);
+
 /* ======================================================================== */
 /* RNG (exposed for testing; normal callers use fc_reset to seed)             */
 /* ======================================================================== */

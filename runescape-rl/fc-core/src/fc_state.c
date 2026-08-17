@@ -313,6 +313,9 @@ void fc_reset(FcState* state, uint32_t seed) {
     /* Initialize player */
     init_player(&state->player);
     state->active_loadout = FC_ACTIVE_LOADOUT;
+    state->render_events.player_attack_target_npc_slot = -1;
+    state->render_events.player_move_start_x = state->player.x;
+    state->render_events.player_move_start_y = state->player.y;
 
     /* Spawn wave 1 NPCs */
     state->current_wave = 1;
@@ -915,4 +918,9 @@ void fc_fill_render_entities(const FcState* state, FcRenderEntity* entities, int
     }
 
     *count = idx;
+}
+
+void fc_fill_render_events(const FcState* state, FcRenderEvents* events) {
+    if (!state || !events) return;
+    *events = state->render_events;
 }

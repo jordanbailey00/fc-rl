@@ -33,7 +33,8 @@
 
 #define ANIM_MAGIC 0x414E494D  /* legacy bytes "MINA" when read little-endian */
 #define ANIM2_MAGIC 0x324D4E41 /* bytes "ANM2" when read little-endian */
-#define ANIM2_VERSION 2
+#define ANIM2_MIN_VERSION 2
+#define ANIM2_VERSION 3
 #define ANIM2_HEADER_SIZE 24
 #define ANIM_MAX_SLOTS 256
 #define ANIM_MAX_LABELS 256
@@ -81,7 +82,7 @@ typedef struct {
 } AnimFrameData;
 
 typedef struct {
-    uint16_t delay;             /* game ticks (600ms each) */
+    uint16_t delay;             /* client ticks (20ms each) */
     AnimFrameData frame;
 } AnimSequenceFrame;
 
@@ -90,7 +91,14 @@ typedef struct {
     uint16_t           frame_count;
     uint8_t            interleave_count;
     uint8_t*           interleave_order;
-    int8_t             walk_flag;  /* -1=default (no stall), 0=stall movement during anim */
+    int16_t            frame_step;
+    int8_t             preanim_move;  /* 0=delay move, 1=delay anim, 2=merge */
+    int8_t             postanim_move; /* 0=delay move, 1=abort anim, 2=merge */
+    uint8_t            forced_priority;
+    uint8_t            max_loops;
+    int8_t             reply_mode;
+    uint8_t            stretches;
+    int8_t             walk_flag; /* v2 compatibility alias for postanim_move */
     AnimSequenceFrame* frames;
 } AnimSequence;
 
@@ -156,6 +164,13 @@ static int anim_read_i16(AnimCursor* c, int16_t* out, const char* what) {
     return 1;
 }
 
+static int anim_read_i8(AnimCursor* c, int8_t* out, const char* what) {
+    uint8_t u = 0;
+    if (!anim_read_u8(c, &u, what)) return 0;
+    *out = (int8_t)u;
+    return 1;
+}
+
 static int anim_read_u32(AnimCursor* c, uint32_t* out, const char* what) {
     uint8_t b[4];
     if (!anim_take(c, b, sizeof(b), what)) return 0;
@@ -173,6 +188,7 @@ static AnimCache* anim_cache_load(const char* path) {
     uint32_t magic = 0;
     uint32_t base_count = 0;
     uint32_t seq_count = 0;
+    uint16_t format_version = 1;
     AnimCache* cache;
 
     if (!buf) return NULL;
@@ -210,12 +226,14 @@ static AnimCache* anim_cache_load(const char* path) {
             free(buf);
             return NULL;
         }
-        if (version != ANIM2_VERSION || header_size < ANIM2_HEADER_SIZE) {
+        if (version < ANIM2_MIN_VERSION || version > ANIM2_VERSION ||
+            header_size < ANIM2_HEADER_SIZE) {
             fprintf(stderr, "anim_cache_load: unsupported ANM2 v%u header %u\n",
                     version, header_size);
             free(buf);
             return NULL;
         }
+        format_version = version;
         if (header_size > ANIM2_HEADER_SIZE &&
             !anim_take(&cur, NULL, header_size - ANIM2_HEADER_SIZE,
                        "anim header extension")) {
@@ -346,7 +364,27 @@ static AnimCache* anim_cache_load(const char* path) {
             }
         }
 
-        {
+        if (format_version >= 3) {
+            if (!anim_read_i16(&cur, &seq->frame_step,
+                               "sequence frame step") ||
+                !anim_read_i8(&cur, &seq->preanim_move,
+                              "sequence pre-animation movement") ||
+                !anim_read_i8(&cur, &seq->postanim_move,
+                              "sequence post-animation movement") ||
+                !anim_read_u8(&cur, &seq->forced_priority,
+                              "sequence forced priority") ||
+                !anim_read_u8(&cur, &seq->max_loops,
+                              "sequence max loops") ||
+                !anim_read_i8(&cur, &seq->reply_mode,
+                              "sequence reply mode") ||
+                !anim_read_u8(&cur, &seq->stretches,
+                              "sequence stretches")) {
+                free(buf);
+                anim_cache_free(cache);
+                return NULL;
+            }
+            seq->walk_flag = seq->postanim_move;
+        } else {
             uint8_t walk_flag = 0;
             if (!anim_read_u8(&cur, &walk_flag, "sequence walk flag")) {
                 free(buf);
@@ -354,6 +392,15 @@ static AnimCache* anim_cache_load(const char* path) {
                 return NULL;
             }
             seq->walk_flag = (int8_t)walk_flag;
+            seq->frame_step = -1;
+            seq->preanim_move = seq->interleave_count > 0 ? 2 : 0;
+            seq->postanim_move = seq->walk_flag >= 0
+                ? seq->walk_flag
+                : (seq->interleave_count > 0 ? 2 : 0);
+            seq->forced_priority = 5;
+            seq->max_loops = 99;
+            seq->reply_mode = -1;
+            seq->stretches = 0;
         }
 
         seq->frames = (AnimSequenceFrame*)calloc(seq->frame_count, sizeof(AnimSequenceFrame));

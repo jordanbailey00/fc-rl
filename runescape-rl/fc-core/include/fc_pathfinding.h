@@ -75,6 +75,14 @@ int fc_move_toward(int* x, int* y, int dx, int dy, int max_steps,
                    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
                    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 
+/* Same movement operation, additionally returning each successfully consumed
+ * tile in step_x/step_y up to step_capacity entries. */
+int fc_move_toward_traced(
+    int* x, int* y, int dx, int dy, int max_steps,
+    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    int* step_x, int* step_y, int step_capacity);
+
 /* Dynamic-aware size-1 movement. The occupied grid should already omit the
  * moving entity's own current footprint and include any start-of-tick
  * reservations that should remain blocked for this movement pass. */

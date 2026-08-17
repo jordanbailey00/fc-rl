@@ -408,10 +408,10 @@ def _parse_sequence(seq_id: int, data: bytes) -> SequenceDef | None:
 
 ANIM_MAGIC = 0x414E494D  # legacy v1 wrote this little-endian, producing bytes "MINA"
 ANIM2_MAGIC = b"ANM2"
-ANIM_FORMAT_VERSION = 2
+ANIM_FORMAT_VERSION = 3
 ANIM_HEADER_SIZE = 24
 ANIM_FLAG_NORMAL_FRAMES = 1 << 0
-ANIM_FLAG_PRESENTATION_METADATA_OMITTED = 1 << 1
+ANIM_FLAG_PRESENTATION_METADATA = 1 << 1
 
 
 @dataclass
@@ -440,7 +440,7 @@ def write_animations_binary(
     Binary layout:
       header:
         char[4] magic ("ANM2")
-        uint16  version (=2)
+        uint16  version (=3)
         uint16  header_size
         uint32  framebase_count
         uint32  sequence_count
@@ -462,7 +462,13 @@ def write_animations_binary(
           uint16 frame_count
           uint8  interleave_count (0 if none)
           uint8[interleave_count] interleave_order
-          int8   walk_flag (-1=default, 0=stall movement during anim)
+          int16  frame_step (-1=no replay loop)
+          int8   preanim_move (0=delay move, 1=delay anim, 2=merge)
+          int8   postanim_move (0=delay move, 1=abort anim, 2=merge)
+          uint8  forced_priority
+          uint8  max_loops
+          int8   reply_mode
+          uint8  stretches
           for each frame in sequence:
             uint16 delay (game ticks)
             uint16 framebase_id
@@ -520,7 +526,7 @@ def write_animations_binary(
                             len(valid_seqs),
                             sequence_frame_count,
                             ANIM_FLAG_NORMAL_FRAMES
-                            | ANIM_FLAG_PRESENTATION_METADATA_OMITTED))
+                            | ANIM_FLAG_PRESENTATION_METADATA))
 
         # framebases section
         for base_id in sorted_bases:
@@ -544,9 +550,37 @@ def write_animations_binary(
             for v in il:
                 f.write(struct.pack("B", v))
 
-            # walk_flag: signed int8 (-1=default/no stall, 0=stall movement)
-            # matches Animation.java walkFlag from opcode 10
-            f.write(struct.pack("b", _as_i8(seq.walk_flag)))
+            # Modern sequence movement defaults are derived from the presence
+            # of an interleave mask when opcodes 9/10 are omitted.
+            if hasattr(seq, "forced_priority"):
+                forced_priority = seq.forced_priority
+                max_loops = seq.max_loops
+                preanim_move = seq.precedence_animating
+                postanim_move = seq.priority
+                reply_mode = seq.reply_mode
+                stretches = seq.stretches
+            else:
+                forced_priority = seq.priority
+                max_loops = seq.loop_count
+                preanim_move = seq.run_flag
+                postanim_move = seq.walk_flag
+                reply_mode = -1
+                stretches = False
+            default_move = 2 if il else 0
+            if preanim_move < 0:
+                preanim_move = default_move
+            if postanim_move < 0:
+                postanim_move = default_move
+            f.write(struct.pack(
+                "<hbbBBbB",
+                max(-1, min(32767, int(seq.frame_step))),
+                _as_i8(preanim_move),
+                _as_i8(postanim_move),
+                max(0, min(255, int(forced_priority))),
+                max(0, min(255, int(max_loops))),
+                _as_i8(reply_mode),
+                1 if stretches else 0,
+            ))
 
             for i in range(seq.frame_count):
                 delay = seq.frame_delays[i]

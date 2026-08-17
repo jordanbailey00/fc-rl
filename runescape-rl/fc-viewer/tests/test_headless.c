@@ -871,6 +871,96 @@ static void test_jad_prayer_reward_timing(void) {
 }
 
 /* ====================================================================== */
+/* Test 12: Authoritative per-tick render events                           */
+/* ====================================================================== */
+
+static void test_render_events(void) {
+    printf("\n=== Render Events ===\n");
+
+    FcState state;
+    FcRenderEvents events;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+    char err[192];
+
+    init_manual_test_state(&state);
+    fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 12, 10, 0);
+    state.npcs[0].movement_speed = 0;
+    state.npcs[0].attack_timer = 999;
+    state.npcs_remaining = 1;
+    state.player.attack_timer = 0;
+    state.player.ammo_count = 50;
+    actions[0] = FC_MOVE_RUN_N;
+    actions[1] = 1;
+
+    fc_step(&state, actions);
+    fc_fill_render_events(&state, &events);
+
+    TEST("Attack+move event preserves pre-movement source and target");
+    if (events.player_attack_fired == 1 &&
+        events.player_attack_source_x == 10 &&
+        events.player_attack_source_y == 10 &&
+        events.player_attack_target_npc_slot == 0 &&
+        events.player_attack_target_x == 12 &&
+        events.player_attack_target_y == 10 &&
+        state.player.attack_target_idx == -1) {
+        PASS();
+    } else {
+        snprintf(err, sizeof(err),
+                 "fired=%d src=(%d,%d) target=%d@(%d,%d) post_target=%d",
+                 events.player_attack_fired,
+                 events.player_attack_source_x,
+                 events.player_attack_source_y,
+                 events.player_attack_target_npc_slot,
+                 events.player_attack_target_x,
+                 events.player_attack_target_y,
+                 state.player.attack_target_idx);
+        FAIL(err);
+    }
+
+    TEST("Run event records both exact consumed movement tiles");
+    if (events.player_move_waypoint_count == 2 &&
+        events.player_move_waypoint_x[0] == 10 &&
+        events.player_move_waypoint_y[0] == 11 &&
+        events.player_move_waypoint_x[1] == 10 &&
+        events.player_move_waypoint_y[1] == 12) {
+        PASS();
+    } else {
+        snprintf(err, sizeof(err), "count=%d path=(%d,%d)->(%d,%d)",
+                 events.player_move_waypoint_count,
+                 events.player_move_waypoint_x[0],
+                 events.player_move_waypoint_y[0],
+                 events.player_move_waypoint_x[1],
+                 events.player_move_waypoint_y[1]);
+        FAIL(err);
+    }
+
+    memset(actions, 0, sizeof(actions));
+    state.player.prayer = PRAYER_PROTECT_MAGIC;
+    state.player.prayer_at_tick_start = PRAYER_PROTECT_MAGIC;
+    actions[2] = FC_PRAYER_FLICK_MAGIC;
+    fc_step(&state, actions);
+    fc_fill_render_events(&state, &events);
+
+    TEST("Prayer flick event preserves the invisible off-then-on edge");
+    if (events.prayer_flick_performed == 1 &&
+        events.prayer_prior == PRAYER_PROTECT_MAGIC &&
+        events.prayer_final == PRAYER_PROTECT_MAGIC &&
+        events.prayer_off_performed == 1 &&
+        events.prayer_on_succeeded == 1) {
+        PASS();
+    } else {
+        snprintf(err, sizeof(err),
+                 "flick=%d prior=%d final=%d off=%d on=%d",
+                 events.prayer_flick_performed, events.prayer_prior,
+                 events.prayer_final, events.prayer_off_performed,
+                 events.prayer_on_succeeded);
+        FAIL(err);
+    }
+
+    fc_destroy(&state);
+}
+
+/* ====================================================================== */
 /* Main                                                                    */
 /* ====================================================================== */
 
@@ -892,6 +982,7 @@ int main(void) {
     test_jad_healer_respawn_requires_full_heal();
     test_ready_idle_prayer_gate();
     test_jad_prayer_reward_timing();
+    test_render_events();
 
     printf("\n============================================================\n");
     printf("RESULTS: %d/%d passed, %d failed\n", tests_passed, tests_run, tests_failed);

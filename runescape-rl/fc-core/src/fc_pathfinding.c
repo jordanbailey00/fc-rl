@@ -1,4 +1,5 @@
 #include "fc_pathfinding.h"
+#include <stddef.h>
 
 /*
  * fc_pathfinding.c — Grid movement, footprint checks, and LOS for Fight Caves.
@@ -183,9 +184,11 @@ int fc_footprint_step_available_dynamic(
 /* Size-1 movement (player, small NPCs)                                      */
 /* ======================================================================== */
 
-int fc_move_toward(int* x, int* y, int dx, int dy, int max_steps,
-                   const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-                   const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
+int fc_move_toward_traced(
+    int* x, int* y, int dx, int dy, int max_steps,
+    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    int* step_x, int* step_y, int step_capacity) {
     int tx = *x + dx;
     int ty = *y + dy;
     int steps = 0;
@@ -198,21 +201,36 @@ int fc_move_toward(int* x, int* y, int dx, int dy, int max_steps,
         if (ty > *y) sy = 1; else if (ty < *y) sy = -1;
 
         /* Try diagonal first, then x-only, then y-only */
+        int moved = 0;
         if (sx != 0 && sy != 0 &&
             fc_footprint_step_walkable(
                 *x, *y, sx, sy, 1, walkable, movement_flags)) {
-            *x += sx; *y += sy; steps++;
+            *x += sx; *y += sy; moved = 1;
         } else if (sx != 0 && fc_footprint_step_walkable(
                        *x, *y, sx, 0, 1, walkable, movement_flags)) {
-            *x += sx; steps++;
+            *x += sx; moved = 1;
         } else if (sy != 0 && fc_footprint_step_walkable(
                        *x, *y, 0, sy, 1, walkable, movement_flags)) {
-            *y += sy; steps++;
+            *y += sy; moved = 1;
         } else {
             break;
         }
+        if (moved) {
+            if (steps < step_capacity && step_x && step_y) {
+                step_x[steps] = *x;
+                step_y[steps] = *y;
+            }
+            steps++;
+        }
     }
     return steps;
+}
+
+int fc_move_toward(int* x, int* y, int dx, int dy, int max_steps,
+                   const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+                   const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
+    return fc_move_toward_traced(x, y, dx, dy, max_steps, walkable,
+                                 movement_flags, NULL, NULL, 0);
 }
 
 int fc_move_toward_dynamic(

@@ -31,6 +31,10 @@
 /* ======================================================================== */
 
 static void clear_per_tick_flags(FcState* state) {
+    state->render_events = (FcRenderEvents){0};
+    state->render_events.player_attack_target_npc_slot = -1;
+    state->render_events.player_move_start_x = state->player.x;
+    state->render_events.player_move_start_y = state->player.y;
     state->damage_dealt_this_tick = 0;
     state->hits_landed_this_tick = 0;
     state->damage_taken_this_tick = 0;
@@ -85,6 +89,15 @@ static void clear_per_tick_flags(FcState* state) {
         state->npcs[i].healed_self_this_tick = 0;
         state->npcs[i].died_this_tick = 0;
     }
+}
+
+static void record_player_move_waypoint(FcState* state) {
+    FcRenderEvents* events = &state->render_events;
+    int index = events->player_move_waypoint_count;
+    if (index >= FC_MAX_RENDER_MOVE_WAYPOINTS) return;
+    events->player_move_waypoint_x[index] = state->player.x;
+    events->player_move_waypoint_y[index] = state->player.y;
+    events->player_move_waypoint_count++;
 }
 
 /* ======================================================================== */
@@ -184,6 +197,14 @@ static void process_player_actions(FcState* state,
     /* ---- Prayer (instant, processed first) ---- */
     {
         *prayer_transition = fc_prayer_apply_action(p, act_prayer);
+        state->render_events.prayer_prior = prayer_transition->prior_prayer;
+        state->render_events.prayer_final = prayer_transition->actual_final_prayer;
+        state->render_events.prayer_off_performed = prayer_transition->off_performed;
+        state->render_events.prayer_on_succeeded = prayer_transition->on_succeeded;
+        state->render_events.prayer_flick_performed =
+            prayer_transition->explicit_off_then_on &&
+            prayer_transition->off_performed &&
+            prayer_transition->on_succeeded;
         if (prayer_transition->final_state_changed ||
             (prayer_transition->explicit_off_then_on &&
              prayer_transition->off_performed &&
@@ -373,6 +394,15 @@ static void process_player_actions(FcState* state,
                                      damage, delay, ATTACK_RANGED, -1, 0);
 
                 state->attack_attempt_this_tick = 1;
+                state->render_events.player_attack_fired = 1;
+                state->render_events.player_attack_source_x = p->x;
+                state->render_events.player_attack_source_y = p->y;
+                state->render_events.player_attack_target_npc_slot =
+                    p->attack_target_idx;
+                state->render_events.player_attack_target_x = target->x;
+                state->render_events.player_attack_target_y = target->y;
+                state->render_events.player_attack_target_size = target->size;
+                state->render_events.player_attack_hit_delay_ticks = delay;
                 if (target->npc_type > NPC_NONE && target->npc_type < NPC_TYPE_COUNT) {
                     state->ep_attack_cycles_to_npc_type[target->npc_type]++;
                 }
@@ -454,6 +484,7 @@ static void process_player_actions(FcState* state,
                 p->x = nx;
                 p->y = ny;
                 state->movement_this_tick = 1;
+                record_player_move_waypoint(state);
             } else {
                 p->route_len = p->route_idx;
                 break;
@@ -469,10 +500,21 @@ static void process_player_actions(FcState* state,
         int max_steps = (act_move >= FC_MOVE_RUN_N) ? 2 : 1;
         int old_x = p->x;
         int old_y = p->y;
-        int moved = fc_move_toward(&p->x, &p->y, dx, dy, max_steps,
-                                   state->walkable,
-                                   state->movement_flags);
+        int step_x[FC_MAX_RENDER_MOVE_WAYPOINTS];
+        int step_y[FC_MAX_RENDER_MOVE_WAYPOINTS];
+        int moved = fc_move_toward_traced(
+            &p->x, &p->y, dx, dy, max_steps,
+            state->walkable, state->movement_flags,
+            step_x, step_y, FC_MAX_RENDER_MOVE_WAYPOINTS);
         if (moved > 0) {
+            int recorded = moved;
+            if (recorded > FC_MAX_RENDER_MOVE_WAYPOINTS)
+                recorded = FC_MAX_RENDER_MOVE_WAYPOINTS;
+            state->render_events.player_move_waypoint_count = recorded;
+            for (int i = 0; i < recorded; i++) {
+                state->render_events.player_move_waypoint_x[i] = step_x[i];
+                state->render_events.player_move_waypoint_y[i] = step_y[i];
+            }
             int moved_dx = p->x - old_x;
             int moved_dy = p->y - old_y;
             if (moved_dx != 0 || moved_dy != 0) {

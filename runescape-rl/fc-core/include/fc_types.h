@@ -372,6 +372,47 @@ typedef struct {
 #define FC_MAX_RENDER_ENTITIES (1 + FC_MAX_NPCS)  /* player + NPCs */
 
 /* ======================================================================== */
+/* Per-tick rendering events                                                 */
+/* ======================================================================== */
+
+#define FC_MAX_RENDER_MOVE_WAYPOINTS 2
+
+/*
+ * Authoritative, read-only facts captured while a simulation tick executes.
+ * These events let renderers reproduce transitions whose intermediate state
+ * is no longer present in the final FcState snapshot. They do not participate
+ * in combat, observations, rewards, or action validation.
+ */
+typedef struct {
+    /* Prayer transition. A successful flick can begin and end on the same
+     * prayer, so final player.prayer alone cannot represent the off edge. */
+    int prayer_prior;
+    int prayer_final;
+    int prayer_off_performed;
+    int prayer_on_succeeded;
+    int prayer_flick_performed;
+
+    /* Player ranged attack, captured before same-tick movement can clear the
+     * persistent target or overwrite the player's facing direction. */
+    int player_attack_fired;
+    int player_attack_source_x;
+    int player_attack_source_y;
+    int player_attack_target_npc_slot;
+    int player_attack_target_x;
+    int player_attack_target_y;
+    int player_attack_target_size;
+    int player_attack_hit_delay_ticks;
+
+    /* Exact player movement path consumed during this tick. Waypoints contain
+     * each successfully reached tile, including the final tile. */
+    int player_move_start_x;
+    int player_move_start_y;
+    int player_move_waypoint_count;
+    int player_move_waypoint_x[FC_MAX_RENDER_MOVE_WAYPOINTS];
+    int player_move_waypoint_y[FC_MAX_RENDER_MOVE_WAYPOINTS];
+} FcRenderEvents;
+
+/* ======================================================================== */
 /* Top-level simulation state                                                */
 /* ======================================================================== */
 
@@ -381,6 +422,9 @@ typedef struct {
 
     /* Compile-selected loadout copied into state for diagnostics/contracts. */
     int active_loadout;
+
+    /* Viewer-facing transition facts for the most recently completed tick. */
+    FcRenderEvents render_events;
 
     /* Wave progression */
     int current_wave;       /* 1-indexed: 1..63. 0 = not started */

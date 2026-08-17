@@ -498,6 +498,9 @@ static int test_presentation_exclusion(void) {
     uint32_t before = fc_state_hash(&state);
     presentation.x = 41;
     presentation.damage_taken_this_tick = 990;
+    state.render_events.player_attack_fired = 1;
+    state.render_events.player_attack_source_x = 17;
+    state.render_events.prayer_flick_performed = 1;
     if (presentation.x != 41 || presentation.damage_taken_this_tick != 990) {
         fprintf(stderr, "FAIL DET-001: viewer-only presentation fixture did not mutate\n");
         return 1;
@@ -506,7 +509,7 @@ static int test_presentation_exclusion(void) {
         fprintf(stderr, "FAIL DET-001: viewer-only presentation changed FcState hash\n");
         return 1;
     }
-    printf("PASS DET-001: viewer-only presentation is outside FcState hash\n");
+    printf("PASS DET-001: viewer-only entities/events are outside FcState hash\n");
     return 0;
 }
 
