@@ -1,17 +1,59 @@
 #!/bin/bash
 # Train Fight Caves RL agent with wandb logging.
-# Usage: ./train.sh [--no-wandb]
+# Usage: ./train.sh [train|eval|sweep|paretosweep] [--config PATH] [--no-wandb]
 # Optional:
 #   LOAD_MODEL_PATH=/path/to/checkpoint.bin ./train.sh
 #   LOAD_MODEL_PATH=latest ./train.sh
+#   ./train.sh sweep --config config/experiments/example.ini \
+#       --tag example --wandb-group example
 
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SRC_DIR/.." && pwd)"
 PUFFER_DIR="${PUFFER_DIR:-$ROOT_DIR/pufferlib_4}"
-CONFIG_PATH="${CONFIG_PATH:-$SRC_DIR/config/fight_caves.ini}"
 TRAINING_BUILD_SH="$SRC_DIR/fc-training/build.sh"
 CUDA_ARCH_SH="$SRC_DIR/fc-training/cuda_arch.sh"
 CONTRACT_PREFLIGHT="$SRC_DIR/tools/validation/contract_preflight.py"
+
+MODE="train"
+if [ "$#" -gt 0 ]; then
+    case "$1" in
+        train|eval|sweep|paretosweep)
+            MODE="$1"
+            shift
+            ;;
+    esac
+fi
+
+CLI_CONFIG_PATH=""
+VALIDATE_ONLY=0
+FORWARD_ARGS=()
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --config)
+            if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+                echo "Error: --config requires a path" >&2
+                exit 1
+            fi
+            CLI_CONFIG_PATH="$2"
+            shift 2
+            ;;
+        --config=*)
+            CLI_CONFIG_PATH="${1#--config=}"
+            shift
+            ;;
+        --validate-only)
+            VALIDATE_ONLY=1
+            shift
+            ;;
+        *)
+            FORWARD_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+set -- "${FORWARD_ARGS[@]}"
+
+CONFIG_PATH="${CLI_CONFIG_PATH:-${CONFIG_PATH:-$SRC_DIR/config/fight_caves.ini}}"
 
 if [ ! -d "$PUFFER_DIR" ]; then
     echo "Error: PufferLib not found at $PUFFER_DIR"
@@ -22,6 +64,8 @@ if [ ! -f "$CONFIG_PATH" ]; then
     echo "Error: config not found at $CONFIG_PATH"
     exit 1
 fi
+CONFIG_PATH="$(realpath -e "$CONFIG_PATH")" || exit 1
+echo "[train.sh] Selected config: $CONFIG_PATH"
 
 if [ ! -f "$TRAINING_BUILD_SH" ]; then
     echo "Error: local training backend build script not found at $TRAINING_BUILD_SH"
@@ -36,17 +80,6 @@ if [ ! -f "$CONTRACT_PREFLIGHT" ]; then
     exit 1
 fi
 source "$CUDA_ARCH_SH"
-
-# Sync config to where PufferLib reads it
-cp "$CONFIG_PATH" "$PUFFER_DIR/config/fight_caves.ini"
-echo "[train.sh] Synced config from $CONFIG_PATH to $PUFFER_DIR/config/fight_caves.ini"
-
-mkdir -p \
-    "$PUFFER_DIR/checkpoints" \
-    "$PUFFER_DIR/logs/fight_caves" \
-    "$PUFFER_DIR/wandb"
-
-cd "$PUFFER_DIR"
 VENV_DIR="$SRC_DIR/.venv"
 python_has_training_deps() {
     "$1" -c "import numpy, pybind11, torch" >/dev/null 2>&1
@@ -96,16 +129,6 @@ fi
 export CC="${CC:-gcc}"
 export CXX="${CXX:-g++}"
 
-MODE="train"
-if [ "$#" -gt 0 ]; then
-    case "$1" in
-        train|eval|sweep|paretosweep)
-            MODE="$1"
-            shift
-            ;;
-    esac
-fi
-
 WANDB_FLAG="--wandb"
 EXTRA_ARGS=()
 HELP_REQUESTED=0
@@ -120,11 +143,82 @@ for arg in "$@"; do
     fi
 done
 
+SWEEP_GROUP=""
+CLI_TAG=""
+for ((index = 0; index < ${#EXTRA_ARGS[@]}; index++)); do
+    arg="${EXTRA_ARGS[$index]}"
+    case "$arg" in
+        --wandb-group)
+            if ((index + 1 >= ${#EXTRA_ARGS[@]})); then
+                echo "Error: --wandb-group requires a value" >&2
+                exit 1
+            fi
+            SWEEP_GROUP="${EXTRA_ARGS[$((index + 1))]}"
+            ;;
+        --wandb-group=*)
+            SWEEP_GROUP="${arg#--wandb-group=}"
+            ;;
+        --tag)
+            if ((index + 1 >= ${#EXTRA_ARGS[@]})); then
+                echo "Error: --tag requires a value" >&2
+                exit 1
+            fi
+            CLI_TAG="${EXTRA_ARGS[$((index + 1))]}"
+            ;;
+        --tag=*)
+            CLI_TAG="${arg#--tag=}"
+            ;;
+    esac
+done
+
+cd "$PUFFER_DIR"
+
 # Help only needs the Python command surface. Never replace a working backend
 # as a side effect of inspecting CLI options.
 if [ "$HELP_REQUESTED" = "1" ]; then
     exec "$PYTHON_BIN" -m pufferlib.pufferl "$MODE" fight_caves "${EXTRA_ARGS[@]}"
 fi
+
+if [ "$MODE" = "sweep" ] || [ "$MODE" = "paretosweep" ]; then
+    if [ -z "$SWEEP_GROUP" ] || [ "$SWEEP_GROUP" = "debug" ]; then
+        echo "Error: sweep mode requires an explicit non-default --wandb-group" >&2
+        exit 1
+    fi
+    SWEEP_TAG="${CLI_TAG:-${WANDB_TAG:-}}"
+    if [ -z "$SWEEP_TAG" ]; then
+        echo "Error: sweep mode requires an explicit --tag or WANDB_TAG" >&2
+        exit 1
+    fi
+    if [ -n "$CLI_TAG" ] && [ -n "${WANDB_TAG:-}" ] \
+            && [ "$CLI_TAG" != "$WANDB_TAG" ]; then
+        echo "Error: --tag and WANDB_TAG disagree" >&2
+        exit 1
+    fi
+    SWEEP_CONFIG_OUTPUT="$(
+        "$PYTHON_BIN" "$CONTRACT_PREFLIGHT" validate-sweep-config \
+            --config-path "$CONFIG_PATH" \
+            --default-config-path "$PUFFER_DIR/config/default.ini"
+    )" || exit 1
+    echo "[train.sh] Sweep preflight passed: $SWEEP_CONFIG_OUTPUT"
+elif [ "$VALIDATE_ONLY" = "1" ]; then
+    echo "Error: --validate-only is only supported for sweep modes" >&2
+    exit 1
+fi
+
+if [ "$VALIDATE_ONLY" = "1" ]; then
+    echo "[train.sh] Validation-only complete; no config was synced and no run was launched."
+    exit 0
+fi
+
+# Puffer reads this generated runtime mirror. The selected path is absolute so
+# subsequent directory changes cannot silently redirect config validation.
+cp "$CONFIG_PATH" "$PUFFER_DIR/config/fight_caves.ini"
+echo "[train.sh] Synced config from $CONFIG_PATH to $PUFFER_DIR/config/fight_caves.ini"
+
+mkdir -p \
+    "$PUFFER_DIR/checkpoints" \
+    "$PUFFER_DIR/logs/fight_caves" \
+    "$PUFFER_DIR/wandb"
 
 CONTRACT_VALUES_OUTPUT="$(
     "$PYTHON_BIN" "$CONTRACT_PREFLIGHT" config-values \
@@ -238,7 +332,7 @@ if [ -n "$WANDB_FLAG" ]; then
     CMD+=("$WANDB_FLAG")
 fi
 CMD+=(--wandb-project "$WANDB_PROJECT")
-if [ -n "${WANDB_TAG:-}" ]; then
+if [ -n "${WANDB_TAG:-}" ] && [ -z "$CLI_TAG" ]; then
     CMD+=(--tag "$WANDB_TAG")
 fi
 

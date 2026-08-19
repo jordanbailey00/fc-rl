@@ -74,32 +74,36 @@ review.
 - The authoritative live config is `runescape-rl/config/fight_caves.ini`.
 - It promotes the exact `mmyxbyn4` trainer recipe to a 1.5B-step budget with
   current 60-second HP regeneration mechanics.
-- Use W&B run `z5vbs56z` as the current seed-73 empirical comparison baseline.
-  It is the post-parity, post-LOS, post-player-collision/pathing run.
+- Use W&B run `88l9p7ie` (`v4.5_correct_movement`) as the current seed-73
+  empirical comparison baseline. It preserves the prior recipe on the backend
+  where a successful player attack suppresses same-tick movement.
+- W&B run `z5vbs56z` is the immediately preceding seed-73 baseline before the
+  stationary-attack-tick correction.
 - W&B run `hevp6ehc` is the immediately preceding parity-backend comparison
   before the LOS/collision/pathing corrections. W&B run `l9o32hhz` remains the
   original `v4_simple_reward` reference.
 - The source and synchronized Puffer INIs are byte-identical with SHA-256
-  `71afdc57de97ec432752130bae9de4165affa564661116f5d79bda728f87faa9`.
+  `f32bb98ba8c992a84eac0757ced1bc275ac5fa3b9aea815d35a039d561ecd856`.
 - The original `v4_simple_reward` derivation, exact config, trajectory, and
   `l9o32hhz` metrics are recorded at the top of
-  `runescape-rl/docs/run_history.md`. The later `hevp6ehc` and `z5vbs56z`
-  comparisons have not yet been added there.
+  `runescape-rl/docs/run_history.md`. The later `hevp6ehc`, `z5vbs56z`, and
+  `88l9p7ie` comparisons have not yet been added there.
 
 ## Immediate Next Steps: Validate v4 Before Stage 2
 
 This section is the authoritative next work.
 
 Planning document for all proposed sweep stages:
-`sweep_history/v3_simple_reward_sweep.md`. Stage 1 is complete. Stage 2 is the planned value
-and optimizer sweep, but it must use `v4_simple_reward` as its fixed baseline
-and must not start until the validation gate below passes.
+`sweep_history/v3_simple_reward_sweep.md`. Stage 1 is complete. Stage 2 combines
+the planned value/optimizer and architecture/batch searches around the
+post-fix `88l9p7ie` baseline. It must not start until the validation gate below
+passes.
 
 ### 1. Close the New-Backend Baseline Gate
 
-- [ ] Formally accept `z5vbs56z` as the frozen backend baseline for future
+- [ ] Formally accept `88l9p7ie` as the frozen backend baseline for future
   trainer experiments.
-- [ ] Select useful checkpoints from W&B baseline run `z5vbs56z`, including an
+- [ ] Select useful checkpoints from W&B baseline run `88l9p7ie`, including an
   early/transition policy, a strong late policy, and the final 1.499B policy.
 - [ ] Replay each selected checkpoint in the eval viewer, preferably across
   multiple episodes rather than drawing conclusions from one cave.
@@ -107,11 +111,11 @@ and must not start until the validation gate below passes.
   target priority, prayer switching and conservation, attack activity,
   safespot/LOS use, wave progression, Yt-MejKot handling, Jad prayer, healer
   aggro, healer targeting, and healer/Jad interactions.
-- [ ] Specifically inspect the pre-Jad behavior highlighted by the
-  `z5vbs56z` versus `hevp6ehc` comparison: safespot positioning, reduced
-  running, increased idling, wrong-prayer hits, damage taken, and where deaths
-  occur.
-- [ ] Compare visible behavior against `z5vbs56z` metrics so apparent issues
+- [ ] Specifically inspect the behavior differences highlighted by the
+  `88l9p7ie` versus `z5vbs56z` and `z5vbs56z` versus `hevp6ehc` comparisons:
+  safespot positioning, movement/attack timing, running, idling, wrong-prayer
+  hits, damage taken, and where deaths occur.
+- [ ] Compare visible behavior against `88l9p7ie` metrics so apparent issues
   are supported or contradicted quantitatively.
 - [ ] Record checkpoint paths, observed behavior, and any suspected mechanics
   defects before changing code or configuration.
@@ -137,7 +141,7 @@ and must not start until the validation gate below passes.
   suspicion.
 - [ ] For every confirmed defect, add a failing guardrail first, implement the
   smallest correction, rerun the full validation suite, and assess whether the
-  change invalidates `z5vbs56z` as the empirical baseline.
+  change invalidates `88l9p7ie` as the empirical baseline.
 
 ### 3. Stage 2 Go/No-Go Gate
 
@@ -149,31 +153,38 @@ and must not start until the validation gate below passes.
   `v4_simple_reward` contract.
 - [ ] If validation changes backend behavior, rerun `v4_simple_reward` before
   sweeping so Stage 2 has a valid post-fix baseline.
-- [ ] If the gate passes without training-impacting changes, configure Stage 2
-  from `sweep_history/v3_simple_reward_sweep.md` around the v4 trainer recipe. Sweep only
-  `vf_coef`, `vf_clip_coef`, `max_grad_norm`, and `beta1`; keep the environment,
-  rewards, observations, actions, architecture, loadout, seed, and all selected
-  Stage 1 trainer values fixed.
-- [ ] Decide and document the Stage 2 trial count and per-trial timestep budget
-  before creating its INI. Do not mix environment fixes or reward changes into
-  that sweep.
+- [x] Configure the combined Stage 2 search around the post-fix v4.5 trainer
+  recipe. Sweep only `vf_coef`, `vf_clip_coef`, `max_grad_norm`, `beta1`,
+  `policy.hidden_size`, `policy.num_layers`, and `vec.total_agents`; keep the
+  environment, rewards, observations, actions, loadout, seed, and all other
+  selected Stage 1 trainer values fixed.
+- [x] Set Stage 2 to 130 trials at 1.5B timesteps per trial. Do not mix
+  environment fixes or reward changes into that sweep.
 
 ## Planned Trainer Experiment Sequence
 
-### 4. Stage 2: Value and Optimizer Sweep
+### 4. Stage 2: Combined Value, Optimizer, Architecture, and Batch Sweep
 
-- [ ] Use `z5vbs56z` and the unchanged `v4_simple_reward` environment contract
-  as the fixed center.
-- [ ] Decide the number of trials and per-trial timestep budget.
-- [ ] Create the Stage 2 experiment configuration.
-- [ ] Sweep only:
+- [x] Use `88l9p7ie` and its unchanged environment contract as the fixed
+  center.
+- [x] Use 130 trials with a fixed 1.5B-timestep budget.
+- [x] Create
+  `runescape-rl/config/experiments/fight_caves_v45_value_arch_batch_sweep_1p5b.ini`.
+- [x] Add a fail-closed launcher preflight after the first attempted launch
+  silently fell back to Puffer's generic 1,200-run sweep. Preserve but exclude
+  the 125 runs in `v45_value_arch_batch_sweep_1p5b_130`; use a fresh
+  `_corrected` group for the intended search.
+- [x] Sweep only:
   - `vf_coef`
   - `vf_clip_coef`
   - `max_grad_norm`
   - `beta1`
-- [ ] Keep the environment, rewards, observations, actions, architecture,
-  loadout, seed, learning rate, entropy, discounting, rollout, replay,
-  priority, and V-trace values fixed.
+  - `policy.hidden_size`
+  - `policy.num_layers`
+  - `vec.total_agents`
+- [x] Keep the environment, rewards, observations, actions, loadout, seed,
+  learning rate, entropy, discounting, rollout, minibatch, replay, priority,
+  and V-trace values fixed.
 - [ ] Rank results using Jad completion, wave-63 reach, conditional Jad
   conversion, stability, and value-learning behavior rather than shaped
   reward alone.
@@ -191,9 +202,9 @@ and must not start until the validation gate below passes.
 - [ ] Evaluate whether scheduling preserves strong late policies and reduces
   peak-to-final degradation.
 
-### 6. Stage 4: Architecture and Batch Sweep
+### 6. Stage 4: Architecture and Batch Sweep (Combined into Stage 2)
 
-- [ ] After trainer settings stabilize, test:
+- [x] Include these dimensions in the combined Stage 2 search:
   - `policy.hidden_size`: `128`, `256`, `512`;
   - `policy.num_layers`: `2`, `3`, `4`;
   - `vec.total_agents`: `2048`, `4096`, `8192`.

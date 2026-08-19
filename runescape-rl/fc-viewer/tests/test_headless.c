@@ -895,29 +895,38 @@ static void test_render_events(void) {
     fc_step(&state, actions);
     fc_fill_render_events(&state, &events);
 
-    TEST("Attack+move event preserves pre-movement source and target");
+    TEST("Attack event is stationary and preserves source and target");
     if (events.player_attack_fired == 1 &&
         events.player_attack_source_x == 10 &&
         events.player_attack_source_y == 10 &&
         events.player_attack_target_npc_slot == 0 &&
         events.player_attack_target_x == 12 &&
         events.player_attack_target_y == 10 &&
-        state.player.attack_target_idx == -1) {
+        events.player_move_waypoint_count == 0 &&
+        state.player.x == 10 && state.player.y == 10 &&
+        state.player.attack_target_idx == 0) {
         PASS();
     } else {
         snprintf(err, sizeof(err),
-                 "fired=%d src=(%d,%d) target=%d@(%d,%d) post_target=%d",
+                 "fired=%d src=(%d,%d) target=%d@(%d,%d) waypoints=%d pos=(%d,%d) post_target=%d",
                  events.player_attack_fired,
                  events.player_attack_source_x,
                  events.player_attack_source_y,
                  events.player_attack_target_npc_slot,
                  events.player_attack_target_x,
                  events.player_attack_target_y,
+                 events.player_move_waypoint_count,
+                 state.player.x, state.player.y,
                  state.player.attack_target_idx);
         FAIL(err);
     }
 
-    TEST("Run event records both exact consumed movement tiles");
+    memset(actions, 0, sizeof(actions));
+    actions[0] = FC_MOVE_RUN_N;
+    fc_step(&state, actions);
+    fc_fill_render_events(&state, &events);
+
+    TEST("Next-tick run event records both exact consumed movement tiles");
     if (events.player_move_waypoint_count == 2 &&
         events.player_move_waypoint_x[0] == 10 &&
         events.player_move_waypoint_y[0] == 11 &&

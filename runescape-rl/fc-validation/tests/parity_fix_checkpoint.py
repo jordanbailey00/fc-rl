@@ -25,7 +25,7 @@ PUFFER_DEFAULT_CONFIG = WORKSPACE_DIR / "pufferlib_4" / "config" / "default.ini"
 OBSERVATION_VERSION = (
     "fight_caves_puffer_policy_obs_v8_prayer_timing_mask8_no_supplies"
 )
-ACTION_VERSION = "fight_caves_multidiscrete_3_head_no_supplies_v2_prayer8"
+ACTION_VERSION = "fight_caves_multidiscrete_3_head_no_supplies_v3_prayer8_stationary_attack_tick"
 REWARD_VERSION = (
     "fight_caves_v4_progress_npc_heal_penalty_m0005_"
     "prayer_snapshot_flick_drain"

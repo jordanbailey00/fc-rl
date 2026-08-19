@@ -29,7 +29,7 @@ FC_TEST_EXPORT const char* fc_training_contract_json(void) {
            "\"core_action_mask\":169,"
            "\"reward_feature_count\":20,"
            "\"observation_version\":\"fight_caves_puffer_policy_obs_v8_prayer_timing_mask8_no_supplies\","
-           "\"action_version\":\"fight_caves_multidiscrete_3_head_no_supplies_v2_prayer8\","
+           "\"action_version\":\"fight_caves_multidiscrete_3_head_no_supplies_v3_prayer8_stationary_attack_tick\","
            "\"reward_version\":\"fight_caves_v4_progress_npc_heal_penalty_m0005_prayer_snapshot_flick_drain\","
            "\"prayer_timing_version\":\"fight_caves_prayer_timing_v1_tick_start_snapshot_flick_drain_jad_lock\","
            "\"state_hash_version\":2,"

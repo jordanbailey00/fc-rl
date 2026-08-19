@@ -858,6 +858,80 @@ static AnimSequence* advance_anim_track(AnimCache* cache,
     return seq;
 }
 
+static float anim_frame_duration_seconds(const AnimSequence* seq,
+                                         int frame_index) {
+    if (!seq || frame_index < 0 || frame_index >= seq->frame_count)
+        return 0.016f;
+    float duration = (float)seq->frames[frame_index].delay * 0.02f;
+    return duration < 0.016f ? 0.016f : duration;
+}
+
+static float anim_track_duration_seconds(const AnimSequence* seq) {
+    if (!seq || seq->frame_count <= 0) return 0.0f;
+    float duration = 0.0f;
+    for (int i = 0; i < seq->frame_count; i++)
+        duration += anim_frame_duration_seconds(seq, i);
+    return duration;
+}
+
+/* Movement direction changes do not restart the client movement cycle. Map
+ * the elapsed phase into the newly selected locomotion sequence so rapid
+ * forward/side/back changes cannot pin the legs to frame zero. */
+static void retarget_anim_track_preserving_phase(
+    AnimCache* cache, uint16_t desired_seq, uint16_t* current_seq,
+    int* frame_index, float* frame_timer) {
+    if (!cache || desired_seq == 0 || !current_seq || !frame_index ||
+        !frame_timer || *current_seq == 0 || *current_seq == desired_seq)
+        return;
+
+    AnimSequence* old_seq = anim_get_sequence(cache, *current_seq);
+    AnimSequence* new_seq = anim_get_sequence(cache, desired_seq);
+    if (!old_seq || old_seq->frame_count <= 0 ||
+        !new_seq || new_seq->frame_count <= 0)
+        return;
+
+    int old_frame = *frame_index;
+    if (old_frame < 0 || old_frame >= old_seq->frame_count)
+        old_frame = 0;
+    float old_total = anim_track_duration_seconds(old_seq);
+    float new_total = anim_track_duration_seconds(new_seq);
+    if (old_total <= 0.0f || new_total <= 0.0f) return;
+
+    float old_elapsed = 0.0f;
+    for (int i = 0; i < old_frame; i++)
+        old_elapsed += anim_frame_duration_seconds(old_seq, i);
+    float old_frame_duration = anim_frame_duration_seconds(old_seq, old_frame);
+    float old_remaining = *frame_timer;
+    if (old_remaining < 0.0f) old_remaining = 0.0f;
+    if (old_remaining > old_frame_duration) old_remaining = old_frame_duration;
+    old_elapsed += old_frame_duration - old_remaining;
+
+    float target_elapsed = fmodf(old_elapsed, old_total) / old_total * new_total;
+    float elapsed_before_frame = 0.0f;
+    int new_frame = 0;
+    for (; new_frame < new_seq->frame_count - 1; new_frame++) {
+        float duration = anim_frame_duration_seconds(new_seq, new_frame);
+        if (target_elapsed < elapsed_before_frame + duration) break;
+        elapsed_before_frame += duration;
+    }
+
+    float new_frame_duration = anim_frame_duration_seconds(new_seq, new_frame);
+    *current_seq = desired_seq;
+    *frame_index = new_frame;
+    *frame_timer = elapsed_before_frame + new_frame_duration - target_elapsed;
+    if (*frame_timer < 0.001f) *frame_timer = 0.001f;
+}
+
+static int player_profile_is_movement_sequence(
+    const PlayerVisualProfile* profile, uint16_t sequence_id) {
+    if (!profile || sequence_id == 0) return 0;
+    return sequence_id == profile->walk_anim ||
+           sequence_id == profile->walk_back_anim ||
+           sequence_id == profile->walk_left_anim ||
+           sequence_id == profile->walk_right_anim ||
+           sequence_id == profile->run_anim;
+}
+
 static AnimSequence* advance_anim_track_once(AnimCache* cache,
                                              uint16_t desired_seq,
                                              uint16_t* current_seq,
@@ -4605,7 +4679,7 @@ int main(int argc, char** argv) {
                                        HITSPLAT_PRAYER_DRAIN);
                 }
 
-                /* Player ranged visuals use the authoritative pre-movement
+                /* Player ranged visuals use the authoritative stationary
                  * attack event and the active loadout's OSRS visual profile. */
                 if (v.render_events.player_attack_fired) {
                     const PlayerVisualProfile* profile =
@@ -4950,6 +5024,16 @@ int main(int argc, char** argv) {
              * In policy replay, movement and attack can be valid on the same
              * tick, so attack visuals are driven by the actual attack event. */
             uint16_t action_seq = player_visual_action_sequence(&v);
+
+            if (pose_seq != v.player_pose_anim_seq &&
+                player_profile_is_movement_sequence(
+                    profile, v.player_pose_anim_seq) &&
+                player_profile_is_movement_sequence(profile, pose_seq)) {
+                retarget_anim_track_preserving_phase(
+                    v.anim_cache, pose_seq,
+                    &v.player_pose_anim_seq, &v.player_pose_anim_frame,
+                    &v.player_pose_anim_timer);
+            }
 
             AnimSequence* pose = advance_anim_track(
                 v.anim_cache, pose_seq,

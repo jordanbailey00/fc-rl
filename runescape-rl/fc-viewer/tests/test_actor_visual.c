@@ -67,10 +67,38 @@ static void test_live_target_turning_and_directional_pose(void) {
           "facing should turn gradually toward the target's live position");
 }
 
+static void test_fast_target_facing_movement_keeps_directional_pose(void) {
+    FcVisualScene scene;
+    fc_visual_scene_init(&scene);
+    fc_visual_scene_reset_player(&scene, 10, 10, 1, 0.0f);
+    fc_visual_scene_reset_npc(&scene, 0, 10, 8, 1, 180.0f);
+    fc_visual_actor_set_target(&scene.player, FC_VISUAL_TARGET_NPC, 0);
+    fc_visual_actor_enqueue_tile(&scene.player, 11, 10, 1);
+    fc_visual_actor_enqueue_tile(&scene.player, 12, 10, 1);
+
+    tick_scene(&scene, 1);
+    CHECK(scene.player.locomotion == FC_VISUAL_LOCOMOTION_WALK_RIGHT,
+          "fast sideways movement should retain the sideways pose");
+    CHECK(fabsf(scene.player.local_x - (10.5f * 128.0f + 8.0f)) < 0.01f,
+          "directional pose selection must not reduce running movement speed");
+
+    fc_visual_scene_init(&scene);
+    fc_visual_scene_reset_player(&scene, 10, 10, 1, 0.0f);
+    fc_visual_scene_reset_npc(&scene, 0, 10, 8, 1, 180.0f);
+    fc_visual_actor_set_target(&scene.player, FC_VISUAL_TARGET_NPC, 0);
+    fc_visual_actor_enqueue_tile(&scene.player, 10, 9, 1);
+    fc_visual_actor_enqueue_tile(&scene.player, 10, 8, 1);
+
+    tick_scene(&scene, 1);
+    CHECK(scene.player.locomotion == FC_VISUAL_LOCOMOTION_RUN,
+          "fast forward movement should use the run pose");
+}
+
 int main(void) {
     test_walk_uses_client_local_steps();
     test_run_preserves_two_waypoint_route();
     test_live_target_turning_and_directional_pose();
+    test_fast_target_facing_movement_keeps_directional_pose();
     if (failures) {
         fprintf(stderr, "%d actor visual test(s) failed\n", failures);
         return 1;

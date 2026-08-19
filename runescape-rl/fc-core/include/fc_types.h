@@ -392,8 +392,8 @@ typedef struct {
     int prayer_on_succeeded;
     int prayer_flick_performed;
 
-    /* Player ranged attack, captured before same-tick movement can clear the
-     * persistent target or overwrite the player's facing direction. */
+    /* Player ranged attack, captured at its authoritative stationary launch
+     * tile before later phases can change target state or facing direction. */
     int player_attack_fired;
     int player_attack_source_x;
     int player_attack_source_y;

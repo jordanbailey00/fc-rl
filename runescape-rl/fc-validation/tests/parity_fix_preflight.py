@@ -22,11 +22,18 @@ TRAIN_SH = RUNESCAPE_DIR / "train.sh"
 EVALUATOR = RUNESCAPE_DIR / "fc-viewer" / "eval_viewer.py"
 CANONICAL_CONFIG = RUNESCAPE_DIR / "config" / "fight_caves.ini"
 PUFFER_MIRROR = WORKSPACE_DIR / "pufferlib_4" / "config" / "fight_caves.ini"
+PUFFER_DEFAULT_CONFIG = WORKSPACE_DIR / "pufferlib_4" / "config" / "default.ini"
+COMBINED_SWEEP_CONFIG = (
+    RUNESCAPE_DIR
+    / "config"
+    / "experiments"
+    / "fight_caves_v45_value_arch_batch_sweep_1p5b.ini"
+)
 
 OBSERVATION_VERSION = (
     "fight_caves_puffer_policy_obs_v8_prayer_timing_mask8_no_supplies"
 )
-ACTION_VERSION = "fight_caves_multidiscrete_3_head_no_supplies_v2_prayer8"
+ACTION_VERSION = "fight_caves_multidiscrete_3_head_no_supplies_v3_prayer8_stationary_attack_tick"
 REWARD_VERSION = (
     "fight_caves_v4_progress_npc_heal_penalty_m0005_"
     "prayer_snapshot_flick_drain"
@@ -621,12 +628,147 @@ def test_active_configs(fixture_so: Path) -> int:
     return fail("active schema-2 configs", failures)
 
 
+def test_sweep_launch_preflight(_fixture_so: Path) -> int:
+    failures: list[str] = []
+    mirror_before = PUFFER_MIRROR.read_bytes()
+    command = [
+        sys.executable,
+        str(PREFLIGHT),
+        "validate-sweep-config",
+        "--config-path",
+        str(COMBINED_SWEEP_CONFIG),
+        "--default-config-path",
+        str(PUFFER_DEFAULT_CONFIG),
+    ]
+    proc = run(command)
+    if proc.returncode != 0:
+        failures.append(
+            "intended combined sweep failed launch preflight: "
+            f"{(proc.stderr or proc.stdout).strip()}"
+        )
+    else:
+        try:
+            payload = json.loads(proc.stdout)
+        except json.JSONDecodeError as exc:
+            failures.append(f"sweep preflight did not emit JSON: {exc}")
+        else:
+            expected = {
+                "method": "Protein",
+                "metric": "jad_kill_rate",
+                "goal": "maximize",
+                "max_runs": 130,
+                "total_timesteps": 1_500_000_000,
+                "sweep_only": [
+                    "train/vf_coef",
+                    "train/vf_clip_coef",
+                    "train/max_grad_norm",
+                    "train/beta1",
+                    "policy/hidden_size",
+                    "policy/num_layers",
+                    "vec/total_agents",
+                ],
+            }
+            for key, value in expected.items():
+                if payload.get(key) != value:
+                    failures.append(
+                        f"sweep preflight {key}={payload.get(key)!r}, expected {value!r}"
+                    )
+
+    canonical = run(
+        [
+            sys.executable,
+            str(PREFLIGHT),
+            "validate-sweep-config",
+            "--config-path",
+            str(CANONICAL_CONFIG),
+            "--default-config-path",
+            str(PUFFER_DEFAULT_CONFIG),
+        ]
+    )
+    if canonical.returncode == 0:
+        failures.append("canonical fight_caves.ini was accepted as a sweep config")
+
+    launch = run(
+        [
+            str(TRAIN_SH),
+            "sweep",
+            "--config",
+            str(COMBINED_SWEEP_CONFIG.relative_to(RUNESCAPE_DIR)),
+            "--tag",
+            "sweep-preflight-test",
+            "--wandb-group",
+            "sweep-preflight-test",
+            "--validate-only",
+        ],
+        env={**os.environ, "PYTHON_BIN": sys.executable},
+    )
+    if launch.returncode != 0:
+        failures.append(
+            "train.sh rejected the intended validation-only sweep launch: "
+            f"{(launch.stderr or launch.stdout).strip()}"
+        )
+    elif "Validation-only complete" not in launch.stdout:
+        failures.append("train.sh validation-only launch omitted completion evidence")
+    if PUFFER_MIRROR.read_bytes() != mirror_before:
+        failures.append("validation-only sweep launch modified the Puffer runtime mirror")
+
+    bad_launch = run(
+        [
+            str(TRAIN_SH),
+            "sweep",
+            "--config",
+            str(CANONICAL_CONFIG),
+            "--tag",
+            "sweep-preflight-test",
+            "--wandb-group",
+            "sweep-preflight-test",
+            "--validate-only",
+        ],
+        env={**os.environ, "PYTHON_BIN": sys.executable},
+    )
+    if bad_launch.returncode == 0:
+        failures.append("train.sh accepted canonical fight_caves.ini in sweep mode")
+
+    with tempfile.TemporaryDirectory(prefix="fc-sweep-preflight-") as tmp:
+        tmpdir = Path(tmp)
+        source_text = COMBINED_SWEEP_CONFIG.read_text(encoding="utf-8")
+        cases = {
+            "missing-sweep-only.ini": source_text.replace(
+                "sweep_only = train/vf_coef, train/vf_clip_coef, "
+                "train/max_grad_norm, train/beta1, policy/hidden_size, "
+                "policy/num_layers, vec/total_agents\n",
+                "",
+            ),
+            "variable-budget.ini": source_text.replace(
+                "sweep_only = ", "sweep_only = train/total_timesteps, ", 1
+            ),
+        }
+        for name, text in cases.items():
+            path = tmpdir / name
+            path.write_text(text, encoding="utf-8")
+            proc = run(
+                [
+                    sys.executable,
+                    str(PREFLIGHT),
+                    "validate-sweep-config",
+                    "--config-path",
+                    str(path),
+                    "--default-config-path",
+                    str(PUFFER_DEFAULT_CONFIG),
+                ]
+            )
+            if proc.returncode == 0:
+                failures.append(f"sweep preflight accepted {name}")
+
+    return fail("sweep launch preflight", failures)
+
+
 def main(argv: list[str]) -> int:
     if len(argv) != 3:
         print(
             f"usage: {argv[0]} "
             "<compiled_preflight|preflight_rejections|manifest_schema2|"
-            "consumer_order|active_configs> <fixture-so>",
+            "consumer_order|active_configs|sweep_launch_preflight> <fixture-so>",
             file=sys.stderr,
         )
         return 2
@@ -642,6 +784,7 @@ def main(argv: list[str]) -> int:
         "manifest_schema2": test_manifest_schema2,
         "consumer_order": test_consumer_order,
         "active_configs": test_active_configs,
+        "sweep_launch_preflight": test_sweep_launch_preflight,
     }
     case = cases.get(argv[1])
     if case is None:

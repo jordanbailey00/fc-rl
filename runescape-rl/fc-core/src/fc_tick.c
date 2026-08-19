@@ -17,7 +17,7 @@
  *      a. Prayer toggle (instant)
  *      b. Eat food / drink potion (if timer ready)
  *      c. Attack initiation from the pre-movement tile
- *      d. Movement (route or directional head)
+ *      d. Movement (route or directional head), unless an attack fired
  *   3. Decrement player timers (attack, food, potion, combo)
  *   4. Prayer drain (only if prayer stayed active across the tick boundary)
  *   5. NPC AI tick (movement + attack) for all active NPCs
@@ -280,8 +280,9 @@ static void process_player_actions(FcState* state,
     }
 
     /* ---- Attack target selection ---- */
-    /* Option B action semantics: select and evaluate attacks before movement,
-     * so a same-tick move cannot create range or LOS for a new shot. */
+    /* Select and evaluate attacks before movement, so a same-tick move cannot
+     * create range or LOS for a new shot. A successful attack also consumes
+     * this tick's movement opportunity below. */
     if (explicit_attack) {
         if (requested_attack_idx >= 0 &&
             state->npcs[requested_attack_idx].active &&
@@ -429,9 +430,9 @@ static void process_player_actions(FcState* state,
         }
     }
 
-    /* Attack+move is a single attack opportunity from the pre-movement tile.
-     * Future shots require the policy to explicitly select/continue attack. */
-    if (explicit_move) {
+    /* If no attack fired, explicit movement replaces the combat interaction.
+     * A fired attack wins the conflict and keeps its target for this tick. */
+    if (explicit_move && !state->attack_attempt_this_tick) {
         p->approach_target = 0;
         if (explicit_attack) {
             p->attack_target_idx = -1;
@@ -442,7 +443,8 @@ static void process_player_actions(FcState* state,
     /* When both target_x and target_y are non-zero, BFS pathfind to that tile.
      * This is identical to a human clicking a tile in the viewer. The route is
      * consumed one step per tick by the movement code below. */
-    if (act_target_x > 0 && act_target_y > 0) {
+    if (!state->attack_attempt_this_tick &&
+        act_target_x > 0 && act_target_y > 0) {
         int tx = act_target_x - 1;  /* 1-64 → 0-63 */
         int ty = act_target_y - 1;
         if (tx >= 0 && tx < FC_ARENA_WIDTH && ty >= 0 && ty < FC_ARENA_HEIGHT &&
@@ -465,7 +467,13 @@ static void process_player_actions(FcState* state,
      * 2. Directional (RL action head 0): immediate step in direction
      * 3. Idle
      * Route takes priority. If route active, directional input is ignored. */
-    if (p->route_idx < p->route_len) {
+    if (state->attack_attempt_this_tick) {
+        /* An attack interaction stops ordinary movement for this game tick,
+         * but does not create an animation-length movement lock. A movement
+         * action may be processed normally on the next tick. */
+        p->route_len = 0;
+        p->route_idx = 0;
+    } else if (p->route_idx < p->route_len) {
         /* Consume steps from the route: 1 if walking, 2 if running */
         int steps = p->is_running ? 2 : 1;
         for (int s = 0; s < steps && p->route_idx < p->route_len; s++) {

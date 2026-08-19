@@ -130,8 +130,8 @@ def live_no_supplies_simplified_config() -> int:
             if parser.getint("env", key, fallback=-1) != expected:
                 failures.append(f"{label}: {key} must be {expected}")
 
-        if parser.get("run", "action_version", fallback="").strip("'\"") != "fight_caves_multidiscrete_3_head_no_supplies_v2_prayer8":
-            failures.append(f"{label}: action_version is not the v2 eight-Prayer-action contract")
+        if parser.get("run", "action_version", fallback="").strip("'\"") != "fight_caves_multidiscrete_3_head_no_supplies_v3_prayer8_stationary_attack_tick":
+            failures.append(f"{label}: action_version is not the v3 stationary-attack-tick contract")
         if parser.get("run", "observation_version", fallback="").strip("'\"") != "fight_caves_puffer_policy_obs_v8_prayer_timing_mask8_no_supplies":
             failures.append(f"{label}: observation_version is not the v8 Prayer-timing/mask8 contract")
         if parser.get("run", "reward_version", fallback="").strip("'\"") != "fight_caves_v4_progress_npc_heal_penalty_m0005_prayer_snapshot_flick_drain":

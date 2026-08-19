@@ -10,7 +10,7 @@
 #define FC_OBSERVATION_VERSION "fight_caves_puffer_policy_obs_v8_prayer_timing_mask8_no_supplies"
 #endif
 #ifndef FC_ACTION_VERSION
-#define FC_ACTION_VERSION "fight_caves_multidiscrete_3_head_no_supplies_v2_prayer8"
+#define FC_ACTION_VERSION "fight_caves_multidiscrete_3_head_no_supplies_v3_prayer8_stationary_attack_tick"
 #endif
 #ifndef FC_REWARD_VERSION
 #define FC_REWARD_VERSION "fight_caves_v4_progress_npc_heal_penalty_m0005_prayer_snapshot_flick_drain"

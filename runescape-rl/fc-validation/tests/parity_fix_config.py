@@ -19,7 +19,7 @@ EXPECTED_OBSERVATION_VERSION = (
     "fight_caves_puffer_policy_obs_v8_prayer_timing_mask8_no_supplies"
 )
 EXPECTED_ACTION_VERSION = (
-    "fight_caves_multidiscrete_3_head_no_supplies_v2_prayer8"
+    "fight_caves_multidiscrete_3_head_no_supplies_v3_prayer8_stationary_attack_tick"
 )
 EXPECTED_CANONICAL_REWARD_VERSION = (
     "fight_caves_v4_progress_npc_heal_penalty_m0005_"
@@ -30,6 +30,8 @@ RUNNABLE_EXPERIMENT_REWARD_VERSIONS = {
     "fight_caves_il0xq0uf_hp_regen_60s_1p5b.ini":
         EXPECTED_CANONICAL_REWARD_VERSION,
     "fight_caves_mmyxbyn4_hp_regen_60s_1p5b.ini":
+        EXPECTED_CANONICAL_REWARD_VERSION,
+    "fight_caves_v45_value_arch_batch_sweep_1p5b.ini":
         EXPECTED_CANONICAL_REWARD_VERSION,
     "fight_caves_v1_mechanics_hparam_sweep_750m.ini": (
         "fight_caves_v38_fc_revamp_step2_raw_work_progress_"

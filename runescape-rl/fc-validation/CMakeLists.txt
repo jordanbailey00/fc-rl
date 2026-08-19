@@ -318,65 +318,55 @@ add_test(NAME phase3_target_identity_stable
 set_tests_properties(phase3_target_identity_stable PROPERTIES
     LABELS "phase3;guardrail")
 
-add_test(NAME option_b_no_move_into_range_fire_same_tick
-    COMMAND phase2_guardrails_core option_b_no_move_into_range_fire_same_tick)
-set_tests_properties(option_b_no_move_into_range_fire_same_tick PROPERTIES
-    LABELS "option_b;guardrail;movement;combat")
+add_test(NAME movement_cannot_enable_same_tick_attack_range
+    COMMAND phase2_guardrails_core movement_cannot_enable_same_tick_attack_range)
+set_tests_properties(movement_cannot_enable_same_tick_attack_range PROPERTIES
+    LABELS "interaction_order;guardrail;movement;combat")
 
-add_test(NAME option_b_no_move_into_los_fire_same_tick
-    COMMAND phase2_guardrails_core option_b_no_move_into_los_fire_same_tick)
-set_tests_properties(option_b_no_move_into_los_fire_same_tick PROPERTIES
-    LABELS "option_b;guardrail;movement;combat")
+add_test(NAME movement_cannot_enable_same_tick_attack_los
+    COMMAND phase2_guardrails_core movement_cannot_enable_same_tick_attack_los)
+set_tests_properties(movement_cannot_enable_same_tick_attack_los PROPERTIES
+    LABELS "interaction_order;guardrail;movement;combat")
 
-add_test(NAME option_b_attack_then_move_when_already_valid
-    COMMAND phase2_guardrails_core option_b_attack_then_move_when_already_valid)
-set_tests_properties(option_b_attack_then_move_when_already_valid PROPERTIES
-    LABELS "option_b;guardrail;movement;combat")
+add_test(NAME attack_suppresses_same_tick_movement_when_already_valid
+    COMMAND phase2_guardrails_core attack_suppresses_same_tick_movement_when_already_valid)
+set_tests_properties(attack_suppresses_same_tick_movement_when_already_valid PROPERTIES
+    LABELS "interaction_order;guardrail;movement;combat")
 
-add_test(NAME option_b_queued_projectile_survives_later_movement
-    COMMAND phase2_guardrails_core option_b_queued_projectile_survives_later_movement)
-set_tests_properties(option_b_queued_projectile_survives_later_movement PROPERTIES
-    LABELS "option_b;guardrail;movement;combat")
-
-add_test(NAME option_b_attack_slot_identity_stable
-    COMMAND phase2_guardrails_core target_identity)
-set_tests_properties(option_b_attack_slot_identity_stable PROPERTIES
-    LABELS "option_b;guardrail;movement;combat")
+add_test(NAME movement_resumes_tick_after_attack
+    COMMAND phase2_guardrails_core movement_resumes_tick_after_attack)
+set_tests_properties(movement_resumes_tick_after_attack PROPERTIES
+    LABELS "interaction_order;guardrail;movement;combat")
 
 add_test(NAME step1_movement_only_clears_stale_target
     COMMAND phase2_guardrails_core step1_movement_only_clears_stale_target)
 set_tests_properties(step1_movement_only_clears_stale_target PROPERTIES
-    LABELS "step1;option_b;guardrail;movement;combat")
+    LABELS "step1;interaction_order;guardrail;movement;combat")
 
 add_test(NAME step1_projectile_survives_movement_cancel
     COMMAND phase2_guardrails_core step1_projectile_survives_movement_cancel)
 set_tests_properties(step1_projectile_survives_movement_cancel PROPERTIES
-    LABELS "step1;option_b;guardrail;movement;combat")
-
-add_test(NAME step1_attack_move_clears_continued_target
-    COMMAND phase2_guardrails_core step1_attack_move_clears_continued_target)
-set_tests_properties(step1_attack_move_clears_continued_target PROPERTIES
-    LABELS "step1;option_b;guardrail;movement;combat")
+    LABELS "step1;interaction_order;guardrail;movement;combat")
 
 add_test(NAME step1_attack_move_out_of_range_clears_target
     COMMAND phase2_guardrails_core step1_attack_move_out_of_range_clears_target)
 set_tests_properties(step1_attack_move_out_of_range_clears_target PROPERTIES
-    LABELS "step1;option_b;guardrail;movement;combat")
+    LABELS "step1;interaction_order;guardrail;movement;combat")
 
 add_test(NAME step1_directional_cancels_old_approach_route
     COMMAND phase2_guardrails_core step1_directional_cancels_old_approach_route)
 set_tests_properties(step1_directional_cancels_old_approach_route PROPERTIES
-    LABELS "step1;option_b;guardrail;movement;combat")
+    LABELS "step1;interaction_order;guardrail;movement;combat")
 
 add_test(NAME step1_directional_beats_old_tile_route
     COMMAND phase2_guardrails_core step1_directional_beats_old_tile_route)
 set_tests_properties(step1_directional_beats_old_tile_route PROPERTIES
-    LABELS "step1;option_b;guardrail;movement;combat")
+    LABELS "step1;interaction_order;guardrail;movement;combat")
 
 add_test(NAME step1_attack_approach_without_explicit_movement
     COMMAND phase2_guardrails_core step1_attack_approach_without_explicit_movement)
 set_tests_properties(step1_attack_approach_without_explicit_movement PROPERTIES
-    LABELS "step1;option_b;guardrail;movement;combat")
+    LABELS "step1;interaction_order;guardrail;movement;combat")
 
 add_test(NAME step2_occupancy_marks_and_ignores_entities
     COMMAND phase2_guardrails_core step2_occupancy_marks_and_ignores_entities)
@@ -804,6 +794,14 @@ if(Python3_Interpreter_FOUND)
                 $<TARGET_FILE:parity_contract_fixture>)
     set_tests_properties(parity_contract_004_active_configs PROPERTIES
         LABELS "parity_fix;contract;preflight;config")
+
+    add_test(NAME parity_contract_004_sweep_launch_preflight
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_preflight.py
+                sweep_launch_preflight
+                $<TARGET_FILE:parity_contract_fixture>)
+    set_tests_properties(parity_contract_004_sweep_launch_preflight PROPERTIES
+        LABELS "parity_fix;contract;preflight;config;sweep")
 
     add_test(NAME parity_det_001_core_hash_ownership
         COMMAND ${Python3_EXECUTABLE}

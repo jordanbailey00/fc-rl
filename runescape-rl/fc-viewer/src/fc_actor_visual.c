@@ -180,11 +180,12 @@ static void move_toward(float* value, float destination, float speed) {
 
 static FcVisualLocomotion directional_locomotion(float movement_yaw,
                                                   float actor_yaw,
-                                                  int running) {
-    if (running) return FC_VISUAL_LOCOMOTION_RUN;
+                                                  int fast_movement) {
     float relative = normalize_degrees(movement_yaw - actor_yaw);
-    if (relative >= -45.0f && relative <= 45.0f)
-        return FC_VISUAL_LOCOMOTION_WALK_FORWARD;
+    if (relative >= -45.0f && relative <= 45.0f) {
+        return fast_movement ? FC_VISUAL_LOCOMOTION_RUN
+                             : FC_VISUAL_LOCOMOTION_WALK_FORWARD;
+    }
     if (relative > 45.0f && relative < 135.0f)
         return FC_VISUAL_LOCOMOTION_WALK_RIGHT;
     if (relative < -45.0f && relative > -135.0f)

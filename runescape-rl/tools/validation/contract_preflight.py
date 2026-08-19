@@ -21,7 +21,7 @@ class ContractError(RuntimeError):
 OBSERVATION_VERSION = (
     "fight_caves_puffer_policy_obs_v8_prayer_timing_mask8_no_supplies"
 )
-ACTION_VERSION = "fight_caves_multidiscrete_3_head_no_supplies_v2_prayer8"
+ACTION_VERSION = "fight_caves_multidiscrete_3_head_no_supplies_v3_prayer8_stationary_attack_tick"
 PRAYER_TIMING_VERSION = (
     "fight_caves_prayer_timing_v1_tick_start_snapshot_flick_drain_jad_lock"
 )
@@ -32,6 +32,9 @@ SUPPORTED_REWARD_VERSIONS = frozenset(
         "fight_caves_v38_fc_revamp_step2_raw_work_progress_"
         "prayer_conserve_no_attack_prayer_snapshot_flick_drain",
     }
+)
+SUPPORTED_SWEEP_DISTRIBUTIONS = frozenset(
+    {"uniform", "int_uniform", "uniform_pow2", "log_normal", "logit_normal"}
 )
 
 # This is the one validation-side exact oracle required by CONTRACT-004. The
@@ -187,6 +190,176 @@ def read_config_contract(config_path: str | Path) -> dict[str, Any]:
             f"actual={values['reward_version']!r}"
         )
     return values
+
+
+def validate_sweep_config(
+    config_path: str | Path,
+    default_config_path: str | Path,
+) -> dict[str, Any]:
+    """Validate an explicitly selected, fixed-budget Puffer sweep."""
+    selected_path = Path(config_path).resolve()
+    default_path = Path(default_config_path).resolve()
+    selected = configparser.ConfigParser()
+    try:
+        loaded = selected.read(selected_path, encoding="utf-8")
+    except configparser.Error as exc:
+        raise ContractError(
+            f"cannot parse selected sweep config {selected_path}: {exc}"
+        ) from exc
+    if not loaded:
+        raise ContractError(f"selected sweep config is unavailable: {selected_path}")
+    if not default_path.is_file():
+        raise ContractError(f"Puffer default config is unavailable: {default_path}")
+    if not selected.has_section("sweep"):
+        raise ContractError(
+            f"selected sweep config omits explicit [sweep]: {selected_path}"
+        )
+
+    required_options = (
+        "method",
+        "metric",
+        "goal",
+        "max_runs",
+        "gpus",
+        "sweep_only",
+    )
+    for option in required_options:
+        if not selected.has_option("sweep", option):
+            raise ContractError(
+                f"selected sweep config omits explicit [sweep].{option}: "
+                f"{selected_path}"
+            )
+
+    method = selected.get("sweep", "method").strip()
+    metric = selected.get("sweep", "metric").strip()
+    goal = selected.get("sweep", "goal").strip()
+    if method != "Protein":
+        raise ContractError(
+            f"unsupported Fight Caves sweep method: expected='Protein', actual={method!r}"
+        )
+    if not metric:
+        raise ContractError("selected sweep metric must be nonempty")
+    if goal not in {"maximize", "minimize"}:
+        raise ContractError(
+            f"invalid sweep goal: expected='maximize' or 'minimize', actual={goal!r}"
+        )
+    try:
+        max_runs = selected.getint("sweep", "max_runs")
+        sweep_gpus = selected.getint("sweep", "gpus")
+        total_timesteps = selected.getint("train", "total_timesteps")
+    except (configparser.Error, ValueError) as exc:
+        raise ContractError(f"selected sweep has an invalid integer value: {exc}") from exc
+    if max_runs <= 0:
+        raise ContractError(f"sweep max_runs must be positive: actual={max_runs}")
+    if sweep_gpus <= 0:
+        raise ContractError(
+            "selected sweep must explicitly reserve at least one GPU: "
+            f"actual={sweep_gpus}"
+        )
+    if total_timesteps <= 0:
+        raise ContractError(
+            f"fixed sweep total_timesteps must be positive: actual={total_timesteps}"
+        )
+
+    sweep_only = [
+        value.strip()
+        for value in selected.get("sweep", "sweep_only").split(",")
+        if value.strip()
+    ]
+    if not sweep_only:
+        raise ContractError("selected sweep has an empty sweep_only list")
+    if len(sweep_only) != len(set(sweep_only)):
+        raise ContractError(f"selected sweep has duplicate sweep_only entries: {sweep_only!r}")
+    if "train/total_timesteps" in sweep_only:
+        raise ContractError(
+            "Fight Caves adaptive sweeps require a fixed timestep budget; "
+            "remove train/total_timesteps from sweep_only"
+        )
+
+    explicit_spaces: dict[str, str] = {}
+    for section in selected.sections():
+        if not section.startswith("sweep."):
+            continue
+        parts = section.split(".")
+        if len(parts) != 3 or not all(parts[1:]):
+            raise ContractError(f"invalid sweep parameter section: [{section}]")
+        target = f"{parts[1]}/{parts[2]}"
+        explicit_spaces[target] = section
+    if set(sweep_only) != set(explicit_spaces):
+        raise ContractError(
+            "sweep_only and explicit sweep parameter sections differ: "
+            f"sweep_only={sweep_only!r}, "
+            f"explicit={sorted(explicit_spaces)!r}"
+        )
+
+    spaces: dict[str, dict[str, Any]] = {}
+    for target in sweep_only:
+        scope, key = target.split("/", 1)
+        section = explicit_spaces[target]
+        if not selected.has_section(scope) or not selected.has_option(scope, key):
+            raise ContractError(
+                f"swept parameter has no selected baseline value: target={target!r}"
+            )
+        for option in ("distribution", "min", "max", "scale"):
+            if not selected.has_option(section, option):
+                raise ContractError(
+                    f"sweep parameter [{section}] omits {option}"
+                )
+        distribution = selected.get(section, "distribution").strip()
+        if distribution not in SUPPORTED_SWEEP_DISTRIBUTIONS:
+            raise ContractError(
+                f"unsupported sweep distribution in [{section}]: {distribution!r}"
+            )
+        try:
+            minimum = selected.getfloat(section, "min")
+            maximum = selected.getfloat(section, "max")
+        except ValueError as exc:
+            raise ContractError(
+                f"sweep parameter [{section}] has a nonnumeric bound: {exc}"
+            ) from exc
+        if minimum > maximum:
+            raise ContractError(
+                f"sweep parameter [{section}] has min > max: {minimum} > {maximum}"
+            )
+        if distribution in {"int_uniform", "uniform_pow2"} and (
+            not minimum.is_integer() or not maximum.is_integer()
+        ):
+            raise ContractError(
+                f"integer sweep parameter [{section}] has noninteger bounds"
+            )
+        spaces[target] = {
+            "distribution": distribution,
+            "min": minimum,
+            "max": maximum,
+            "scale": selected.get(section, "scale").strip(),
+        }
+
+    merged = configparser.ConfigParser()
+    try:
+        merged_paths = merged.read(
+            [default_path, selected_path], encoding="utf-8"
+        )
+    except configparser.Error as exc:
+        raise ContractError(f"cannot merge Puffer and selected sweep configs: {exc}") from exc
+    if len(merged_paths) != 2:
+        raise ContractError(
+            "Puffer/selected sweep config merge is incomplete: "
+            f"actual={merged_paths!r}"
+        )
+
+    return {
+        "config_path": str(selected_path),
+        "config_sha256": sha256_file(selected_path),
+        "default_config_path": str(default_path),
+        "method": method,
+        "metric": metric,
+        "goal": goal,
+        "max_runs": max_runs,
+        "gpus": sweep_gpus,
+        "total_timesteps": total_timesteps,
+        "sweep_only": sweep_only,
+        "spaces": spaces,
+    }
 
 
 def verify_selected_config(
@@ -795,6 +968,12 @@ def _command_source_hash(args: argparse.Namespace) -> int:
     return 0
 
 
+def _command_validate_sweep_config(args: argparse.Namespace) -> int:
+    payload = validate_sweep_config(args.config_path, args.default_config_path)
+    print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+    return 0
+
+
 def _command_check(args: argparse.Namespace) -> int:
     payload = build_verified_preflight(
         args.backend_so,
@@ -873,6 +1052,14 @@ def build_parser() -> argparse.ArgumentParser:
     source_hash.add_argument("--runescape-dir", required=True)
     source_hash.add_argument("--puffer-dir", required=True)
     source_hash.set_defaults(handler=_command_source_hash)
+
+    sweep_config = subparsers.add_parser(
+        "validate-sweep-config",
+        help="validate an explicit fixed-budget Puffer sweep config",
+    )
+    sweep_config.add_argument("--config-path", required=True)
+    sweep_config.add_argument("--default-config-path", required=True)
+    sweep_config.set_defaults(handler=_command_validate_sweep_config)
 
     check = subparsers.add_parser("check", help="run fail-closed launch preflight")
     check.add_argument("--backend-so", required=True)
