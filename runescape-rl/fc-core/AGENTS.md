@@ -61,7 +61,6 @@ The phase ordering in `fc_tick.c` is a behavioral contract. A change to prayer t
 - Remove superseded helpers and call paths in the same patch.
 - Do not move implementation into headers merely for convenience. Header-only logic is appropriate only for small, stable, performance-relevant helpers with no duplicate definition risk.
 - If adding a new core source file, update both the normal CMake build and the training amalgamation/build path. Do not create two implementations to satisfy the two build modes.
-- Keep `fc_capi.c` a thin ABI boundary; do not place simulator rules there.
 
 ## Tests
 

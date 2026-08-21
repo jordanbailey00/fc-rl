@@ -26,7 +26,8 @@
  * fightcaves.movement stores the corresponding directional wall bits.
  *
  * Loaded from fc-core/assets/fightcaves.collision at runtime.
- * If the file is missing, falls back to an open arena with border walls.
+ * All three arena maps are required; running without one would change the
+ * simulation's movement or line-of-sight rules.
  */
 /* Cached collision data — loaded once, shared by all envs.
  * Avoids per-reset file I/O which is not thread-safe under OpenMP. */
@@ -36,6 +37,19 @@ static uint8_t g_movement_cache[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
 static int g_movement_loaded = 0;
 static uint8_t g_los_cache[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
 static int g_los_loaded = 0;
+
+static void fail_required_arena_asset(const char* filename,
+                                      const char* override_name) {
+    fprintf(stderr,
+            "fatal: required Fight Caves arena asset '%s' is missing, "
+            "unreadable, or not exactly %d bytes.\n"
+            "Set %s to the asset's absolute path or run from a checkout "
+            "containing fc-core/assets/%s.\n",
+            filename, FC_ARENA_WIDTH * FC_ARENA_HEIGHT,
+            override_name, filename);
+    fflush(stderr);
+    exit(EXIT_FAILURE);
+}
 
 static void load_collision_once(void) {
     if (g_collision_loaded) return;
@@ -71,19 +85,7 @@ static void load_collision_once(void) {
         }
     }
 
-    /* Fallback: open arena with border walls */
-    fprintf(stderr,
-            "warning: fightcaves.collision not found; using open fallback arena\n");
-    memset(g_collision_cache, 1, sizeof(g_collision_cache));
-    for (int x = 0; x < FC_ARENA_WIDTH; x++) {
-        g_collision_cache[x][0] = 0;
-        g_collision_cache[x][FC_ARENA_HEIGHT - 1] = 0;
-    }
-    for (int y = 0; y < FC_ARENA_HEIGHT; y++) {
-        g_collision_cache[0][y] = 0;
-        g_collision_cache[FC_ARENA_WIDTH - 1][y] = 0;
-    }
-    g_collision_loaded = 1;
+    fail_required_arena_asset("fightcaves.collision", "FC_COLLISION_PATH");
 }
 
 static void load_movement_once(void) {
@@ -119,10 +121,7 @@ static void load_movement_once(void) {
         }
     }
 
-    fprintf(stderr,
-            "warning: fightcaves.movement not found; using open movement-wall fallback\n");
-    memset(g_movement_cache, 0, sizeof(g_movement_cache));
-    g_movement_loaded = 1;
+    fail_required_arena_asset("fightcaves.movement", "FC_MOVEMENT_PATH");
 }
 
 static void load_los_once(void) {
@@ -158,10 +157,7 @@ static void load_los_once(void) {
         }
     }
 
-    fprintf(stderr,
-            "warning: fightcaves.los not found; using open LOS fallback arena\n");
-    memset(g_los_cache, 0, sizeof(g_los_cache));
-    g_los_loaded = 1;
+    fail_required_arena_asset("fightcaves.los", "FC_LOS_PATH");
 }
 
 static void setup_arena(FcState* state) {

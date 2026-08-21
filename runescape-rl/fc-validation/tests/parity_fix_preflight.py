@@ -27,7 +27,7 @@ COMBINED_SWEEP_CONFIG = (
     RUNESCAPE_DIR
     / "config"
     / "experiments"
-    / "fight_caves_v45_value_arch_batch_sweep_1p5b.ini"
+    / "fight_caves_v45_value_arch_batch_sweep_750m.ini"
 )
 
 OBSERVATION_VERSION = (
@@ -539,6 +539,9 @@ def test_consumer_order(_fixture_so: Path) -> int:
     train = TRAIN_SH.read_text(encoding="utf-8")
     required_train_tokens = {
         "config sync": 'cp "$CONFIG_PATH" "$PUFFER_DIR/config/fight_caves.ini"',
+        "backend stamp hash check": (
+            'grep -Fxq "BACKEND_SHA256=$CURRENT_BACKEND_SHA256"'
+        ),
         "compiled preflight": '"$CONTRACT_PREFLIGHT" check',
         "backend build": 'bash "$TRAINING_BUILD_SH"',
         "command construction": 'CMD=("$PYTHON_BIN"',
@@ -556,6 +559,7 @@ def test_consumer_order(_fixture_so: Path) -> int:
     if not failures:
         if not (
             positions["config sync"]
+            < positions["backend stamp hash check"]
             < positions["backend build"]
             < positions["compiled preflight"]
             < positions["command construction"]
@@ -657,7 +661,7 @@ def test_sweep_launch_preflight(_fixture_so: Path) -> int:
                 "metric": "jad_kill_rate",
                 "goal": "maximize",
                 "max_runs": 130,
-                "total_timesteps": 1_500_000_000,
+                "total_timesteps": 750_000_000,
                 "sweep_only": [
                     "train/vf_coef",
                     "train/vf_clip_coef",

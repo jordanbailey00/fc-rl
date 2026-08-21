@@ -69,25 +69,30 @@ review.
   areas above intentionally changes it; validate each affected contract and
   module boundary.
 
-## Current Baseline: v4_simple_reward
+## Current Baseline: v4.5 `1nvvx5qu`
 
 - The authoritative live config is `runescape-rl/config/fight_caves.ini`.
-- It promotes the exact `mmyxbyn4` trainer recipe to a 1.5B-step budget with
-  current 60-second HP regeneration mechanics.
-- Use W&B run `88l9p7ie` (`v4.5_correct_movement`) as the current seed-73
-  empirical comparison baseline. It preserves the prior recipe on the backend
-  where a successful player attack suppresses same-tick movement.
+- It promotes the exact 750M-step configuration selected by sweep run
+  `1nvvx5qu` with the current backend and 60-second HP regeneration mechanics.
+- W&B run `8oivozuq` is the standalone seed-73 reproduction. Its full trainer,
+  environment, architecture, and contract configuration matches `1nvvx5qu`,
+  and all 124 environment metric series reproduced exactly. It retained the
+  replayable checkpoint that sweep mode did not save.
+- W&B run `88l9p7ie` (`v4.5_correct_movement`) is the preceding seed-73
+  empirical comparison baseline using the prior trainer recipe.
 - W&B run `z5vbs56z` is the immediately preceding seed-73 baseline before the
   stationary-attack-tick correction.
 - W&B run `hevp6ehc` is the immediately preceding parity-backend comparison
   before the LOS/collision/pathing corrections. W&B run `l9o32hhz` remains the
   original `v4_simple_reward` reference.
 - The source and synchronized Puffer INIs are byte-identical with SHA-256
-  `f32bb98ba8c992a84eac0757ced1bc275ac5fa3b9aea815d35a039d561ecd856`.
+  `31291c7ec281bda1e4a5eee911a8c47298662654c6670525c9f215f2dbfb54d6`.
 - The original `v4_simple_reward` derivation, exact config, trajectory, and
   `l9o32hhz` metrics are recorded at the top of
   `runescape-rl/docs/run_history.md`. The later `hevp6ehc`, `z5vbs56z`, and
-  `88l9p7ie` comparisons have not yet been added there.
+  `88l9p7ie`, `1nvvx5qu`, and `8oivozuq` comparisons have not yet been added
+  there. The completed top-eight sweep analysis is recorded in
+  `sweep_top8.md`.
 
 ## Immediate Next Steps: Validate v4 Before Stage 2
 
@@ -158,7 +163,7 @@ passes.
   `policy.hidden_size`, `policy.num_layers`, and `vec.total_agents`; keep the
   environment, rewards, observations, actions, loadout, seed, and all other
   selected Stage 1 trainer values fixed.
-- [x] Set Stage 2 to 130 trials at 1.5B timesteps per trial. Do not mix
+- [x] Set Stage 2 to 130 trials at 750M timesteps per trial. Do not mix
   environment fixes or reward changes into that sweep.
 
 ## Planned Trainer Experiment Sequence
@@ -167,9 +172,9 @@ passes.
 
 - [x] Use `88l9p7ie` and its unchanged environment contract as the fixed
   center.
-- [x] Use 130 trials with a fixed 1.5B-timestep budget.
+- [x] Use 130 trials with a fixed 750M-timestep budget.
 - [x] Create
-  `runescape-rl/config/experiments/fight_caves_v45_value_arch_batch_sweep_1p5b.ini`.
+  `runescape-rl/config/experiments/fight_caves_v45_value_arch_batch_sweep_750m.ini`.
 - [x] Add a fail-closed launcher preflight after the first attempted launch
   silently fell back to Puffer's generic 1,200-run sweep. Preserve but exclude
   the 125 runs in `v45_value_arch_batch_sweep_1p5b_130`; use a fresh

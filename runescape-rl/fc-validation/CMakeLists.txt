@@ -104,6 +104,14 @@ target_include_directories(parity_fix_rng PRIVATE
 )
 target_link_libraries(parity_fix_rng PRIVATE fc_core m)
 
+add_executable(required_arena_assets
+    tests/required_arena_assets.c
+)
+target_include_directories(required_arena_assets PRIVATE
+    ${PROJECT_SOURCE_DIR}/fc-core/include
+)
+target_link_libraries(required_arena_assets PRIVATE fc_core m)
+
 # Test-only compiled backend used to corrupt each CONTRACT-004 field without
 # rebuilding the production CUDA extension for every negative preflight case.
 add_library(parity_contract_fixture SHARED
@@ -636,6 +644,14 @@ set_tests_properties(cuda_backend_architecture_guardrails PROPERTIES
 
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
+    add_test(NAME arena_assets_001_required_maps_fail_closed
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/required_arena_assets.py
+                $<TARGET_FILE:required_arena_assets>
+                ${PROJECT_SOURCE_DIR}/fc-core/assets)
+    set_tests_properties(arena_assets_001_required_maps_fail_closed PROPERTIES
+        LABELS "assets;guardrail")
+
     add_test(NAME parity_det_002_same_version_replay
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_replay.py
@@ -703,13 +719,6 @@ if(Python3_Interpreter_FOUND)
                 standalone_prayer_action_range)
     set_tests_properties(parity_contract_002_standalone_action_range PROPERTIES
         LABELS "parity_fix;contract;action_mask")
-
-    add_test(NAME parity_contract_002_capi_public_header
-        COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/../tools/validation/tests/phase2_static_guardrails.py
-                capi_public_batch_contract)
-    set_tests_properties(parity_contract_002_capi_public_header PROPERTIES
-        LABELS "parity_fix;contract;capi")
 
     add_test(NAME parity_contract_002_evaluator_dimensions
         COMMAND ${Python3_EXECUTABLE}

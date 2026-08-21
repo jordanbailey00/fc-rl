@@ -253,6 +253,10 @@ EXT_SUFFIX="$("$PYTHON_BIN" -c "import sysconfig; print(sysconfig.get_config_var
 BACKEND_SO="$PUFFER_DIR/pufferlib/_C${EXT_SUFFIX}"
 BACKEND_STAMP="$PUFFER_DIR/build/fight_caves_build.env"
 ACTIVE_LOADOUT_KEY="${FC_ACTIVE_LOADOUT:-FC_LOADOUT_SOTA_TBOW}"
+CURRENT_BACKEND_SHA256=""
+if [ -f "$BACKEND_SO" ]; then
+    CURRENT_BACKEND_SHA256="$(sha256sum "$BACKEND_SO" | awk '{print $1}')"
+fi
 BACKEND_REBUILD_REASON=""
 if [ ! -f "$BACKEND_SO" ]; then
     BACKEND_REBUILD_REASON="missing backend"
@@ -271,6 +275,8 @@ elif [ "${FORCE_BACKEND_REBUILD:-0}" = "1" ]; then
     BACKEND_REBUILD_REASON="FORCE_BACKEND_REBUILD=1"
 elif [ ! -f "$BACKEND_STAMP" ]; then
     BACKEND_REBUILD_REASON="missing backend build stamp"
+elif ! grep -Fxq "BACKEND_SHA256=$CURRENT_BACKEND_SHA256" "$BACKEND_STAMP"; then
+    BACKEND_REBUILD_REASON="backend binary does not match build stamp"
 elif ! grep -Fxq "FC_ACTIVE_LOADOUT=$ACTIVE_LOADOUT_KEY" "$BACKEND_STAMP"; then
     BACKEND_REBUILD_REASON="FC_ACTIVE_LOADOUT changed to $ACTIVE_LOADOUT_KEY"
 elif ! grep -Fxq "NVCC_ARCH=$EXPECTED_CUDA_ARCH" "$BACKEND_STAMP"; then

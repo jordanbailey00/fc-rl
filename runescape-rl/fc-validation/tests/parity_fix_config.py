@@ -31,7 +31,9 @@ RUNNABLE_EXPERIMENT_REWARD_VERSIONS = {
         EXPECTED_CANONICAL_REWARD_VERSION,
     "fight_caves_mmyxbyn4_hp_regen_60s_1p5b.ini":
         EXPECTED_CANONICAL_REWARD_VERSION,
-    "fight_caves_v45_value_arch_batch_sweep_1p5b.ini":
+    "fight_caves_v45_1nvvx5qu_retrain_750m.ini":
+        EXPECTED_CANONICAL_REWARD_VERSION,
+    "fight_caves_v45_value_arch_batch_sweep_750m.ini":
         EXPECTED_CANONICAL_REWARD_VERSION,
     "fight_caves_v1_mechanics_hparam_sweep_750m.ini": (
         "fight_caves_v38_fc_revamp_step2_raw_work_progress_"
@@ -46,11 +48,13 @@ RUNNABLE_EXPERIMENT_REWARD_VERSIONS = {
 # settings, or experiment provenance in the same workstream.
 EXPECTED_NONVERSION_HASHES = {
     "config/fight_caves.ini":
-        "2e9fcc454cdc9869667bcff9cf374e542b5fd1e64bd679a99d4f0113e2557090",
+        "44905862b9790a7cf02d861066bd1bafa468f0c3fa62f16a7b42aa2637ca2ed2",
     "config/experiments/fight_caves_il0xq0uf_hp_regen_60s_1p5b.ini":
         "72cb5ce5ab31bd438fcfae8ccd93928c98c1065a5f18024723746d7615849213",
     "config/experiments/fight_caves_mmyxbyn4_hp_regen_60s_1p5b.ini":
         "343833b08ce9422e0dd2a16165f9b42c8ecb990481530c7affc0d7a2d1ac94e2",
+    "config/experiments/fight_caves_v45_1nvvx5qu_retrain_750m.ini":
+        "44905862b9790a7cf02d861066bd1bafa468f0c3fa62f16a7b42aa2637ca2ed2",
     "config/experiments/fight_caves_v1_mechanics_hparam_sweep_750m.ini":
         "e5ea0e795bff03aa4bf6735f8f8024242a79087c7d6cb127ffd7d74c96bb707e",
     "config/experiments/v3_simple_reward_sweep1.ini":

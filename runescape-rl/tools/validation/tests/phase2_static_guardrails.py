@@ -138,7 +138,7 @@ def live_no_supplies_simplified_config() -> int:
             failures.append(f"{label}: reward_version is not the v4 Prayer-event contract")
 
         expected_train = {
-            "total_timesteps": 1_500_000_000,
+            "total_timesteps": 750_000_000,
             "anneal_lr": 0,
             "learning_rate": 0.00207567504650331,
             "ent_coef": 0.000625460620549345,
@@ -148,14 +148,14 @@ def live_no_supplies_simplified_config() -> int:
             "minibatch_size": 32768,
             "replay_ratio": 2.055184291514704,
             "clip_coef": 0.05,
-            "vf_coef": 1,
-            "vf_clip_coef": 0.15124043205980495,
-            "max_grad_norm": 0.25,
+            "vf_coef": 0.9336215311545304,
+            "vf_clip_coef": 0.16791546282962394,
+            "max_grad_norm": 0.1418276517190492,
             "vtrace_rho_clip": 2.0,
             "vtrace_c_clip": 0.9746667741536915,
             "prio_alpha": 0.9110743956381228,
             "prio_beta0": 0.2258134371255269,
-            "beta1": 0.95,
+            "beta1": 0.9832670364021693,
             "beta2": 0.9995810484472892,
             "eps": 1e-10,
         }
@@ -166,8 +166,8 @@ def live_no_supplies_simplified_config() -> int:
 
         if parser.getint("base", "seed", fallback=-1) != 73:
             failures.append(f"{label}: base.seed must be 73")
-        if parser.getint("policy", "hidden_size", fallback=-1) != 256:
-            failures.append(f"{label}: policy.hidden_size must be 256")
+        if parser.getint("policy", "hidden_size", fallback=-1) != 512:
+            failures.append(f"{label}: policy.hidden_size must be 512")
         if parser.getint("policy", "num_layers", fallback=-1) != 3:
             failures.append(f"{label}: policy.num_layers must be 3")
 
@@ -177,7 +177,7 @@ def live_no_supplies_simplified_config() -> int:
             print(f"  {failure}")
         return 1
 
-    print("PASS: live config matches the 8rg9wurg v3 no-supplies baseline")
+    print("PASS: live config matches the 1nvvx5qu v4.5 baseline")
     return 0
 
 
@@ -411,41 +411,6 @@ def standalone_prayer_action_range() -> int:
     return 0
 
 
-def capi_public_batch_contract() -> int:
-    """The public C header must describe the batch ABI implemented by fc_capi.c."""
-    header_path = RUNESCAPE_DIR / "fc-core" / "include" / "fc_capi.h"
-    source_path = RUNESCAPE_DIR / "fc-core" / "src" / "fc_capi.c"
-    header = header_path.read_text(encoding="utf-8")
-    source = source_path.read_text(encoding="utf-8")
-    failures: list[str] = []
-
-    required_header = [
-        "typedef struct FcBatchCtx FcBatchCtx;",
-        "fc_capi_batch_create",
-        "fc_capi_batch_destroy",
-        "fc_capi_batch_reset",
-        "fc_capi_batch_step_flat",
-        "fc_capi_batch_get_obs",
-    ]
-    for token in required_header:
-        if token not in header:
-            failures.append(f"fc_capi.h is missing {token!r}")
-
-    if re.search(r"\bfc_capi_batch_step\s*\(", header):
-        failures.append("fc_capi.h declares obsolete, unimplemented fc_capi_batch_step")
-    if '#include "fc_capi.h"' not in source:
-        failures.append("fc_capi.c does not compile its definitions against fc_capi.h")
-
-    if failures:
-        print("FAIL CONTRACT-002: public C API header does not match its batch implementation:")
-        for failure in failures:
-            print(f"  {failure}")
-        return 1
-
-    print("PASS CONTRACT-002: public C API header matches the contiguous batch ABI")
-    return 0
-
-
 def parity_stale_literals() -> int:
     """Runnable parity paths must not retain the superseded five-action contract."""
     source_roots = [
@@ -538,7 +503,7 @@ def parity_stale_literals() -> int:
 
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
-        print("usage: phase2_static_guardrails.py <analytics_no_global_metrics|live_no_supplies_simplified_config|env_log_key_budget|native_action_mask_contract|viewer_policy_pipe_matches_puffer_contract|viewer_training_parity_contract|standalone_prayer_action_range|capi_public_batch_contract|parity_stale_literals>", file=sys.stderr)
+        print("usage: phase2_static_guardrails.py <analytics_no_global_metrics|live_no_supplies_simplified_config|env_log_key_budget|native_action_mask_contract|viewer_policy_pipe_matches_puffer_contract|viewer_training_parity_contract|standalone_prayer_action_range|parity_stale_literals>", file=sys.stderr)
         return 2
     if argv[1] == "analytics_no_global_metrics":
         return analytics_no_global_metrics()
@@ -554,8 +519,6 @@ def main(argv: list[str]) -> int:
         return viewer_training_parity_contract()
     if argv[1] == "standalone_prayer_action_range":
         return standalone_prayer_action_range()
-    if argv[1] == "capi_public_batch_contract":
-        return capi_public_batch_contract()
     if argv[1] == "parity_stale_literals":
         return parity_stale_literals()
     print(f"unknown guardrail: {argv[1]}", file=sys.stderr)

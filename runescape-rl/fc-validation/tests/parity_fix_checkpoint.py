@@ -53,12 +53,12 @@ EXPECTED_CONTRACT: dict[str, object] = {
     "active_loadout": ACTIVE_LOADOUT,
 }
 
-# The fake evaluator policy preserves the real 319/{17,9,8}/256x3 topology
+# The fake evaluator policy preserves the real 319/{17,9,8}/512x3 topology
 # shapes while avoiding CUDA, viewer graphics, and a real training process.
 EXPECTED_PARAMETER_FLOATS = (
-    256 * 319       # encoder
-    + (17 + 9 + 8 + 1) * 256  # fused action/value decoder
-    + 3 * 3 * 256 * 256  # three MinGRU 3H-by-H weight matrices
+    512 * 319       # encoder
+    + (17 + 9 + 8 + 1) * 512  # fused action/value decoder
+    + 3 * 3 * 512 * 512  # three MinGRU 3H-by-H weight matrices
 )
 EXPECTED_PARAMETER_BYTES = EXPECTED_PARAMETER_FLOATS * 4
 
@@ -227,7 +227,7 @@ class Policy:
         """
 def load_config(_env_name):
     return {
-        'policy': {'hidden_size': 256, 'num_layers': 3, 'expansion_factor': 1},
+        'policy': {'hidden_size': 512, 'num_layers': 3, 'expansion_factor': 1},
         'torch': {
             'network': 'MinGRU',
             'encoder': 'DefaultEncoder',

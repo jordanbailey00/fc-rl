@@ -54,11 +54,11 @@ Do not edit `pufferlib_4` to implement an FC-RL-specific feature when the behavi
 
 ## Build and validation
 
-The shared core C API shim and training adapter guardrails should continue to build:
+The training adapter guardrails should continue to build:
 
 ```bash
 cmake -S runescape-rl -B runescape-rl/build -DCMAKE_BUILD_TYPE=Release
-cmake --build runescape-rl/build -j --target fc_capi phase2_guardrails_training
+cmake --build runescape-rl/build -j --target phase2_guardrails_training
 ctest --test-dir runescape-rl/build \
   -R 'rng_seed_diversity|no_supplies_policy_contract|native_action_mask_adapter' \
   --output-on-failure

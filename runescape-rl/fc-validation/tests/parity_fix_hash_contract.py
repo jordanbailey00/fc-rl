@@ -51,12 +51,9 @@ def canonical_hash_ownership() -> int:
     if '#include "fc_hash.c"' not in training_header:
         failures.append("direct-included Puffer backend does not compile fc_hash.c")
 
-    for relative in (
-        "runescape-rl/fc-training/CMakeLists.txt",
-        "runescape-rl/fc-training/build.sh",
-    ):
-        if "FC_NO_HASH" in read(relative):
-            failures.append(f"{relative} still disables hashing with FC_NO_HASH")
+    training_build = "runescape-rl/fc-training/build.sh"
+    if "FC_NO_HASH" in read(training_build):
+        failures.append(f"{training_build} still disables hashing with FC_NO_HASH")
 
     viewer_cmake = read("runescape-rl/fc-viewer/CMakeLists.txt")
     if "src/fc_hash.c" in viewer_cmake:
