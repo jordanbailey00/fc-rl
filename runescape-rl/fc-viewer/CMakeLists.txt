@@ -4,6 +4,7 @@
 set(FC_VIEWER_SOURCES
     src/viewer.c
     src/fc_actor_visual.c
+    src/fc_projectile_visual.c
     src/fc_debug.c
     src/ui.c
     src/ui_assets.c
@@ -61,6 +62,16 @@ target_include_directories(test_actor_visual PRIVATE
 )
 target_link_libraries(test_actor_visual PRIVATE m)
 add_test(NAME test_actor_visual COMMAND test_actor_visual)
+
+add_executable(test_projectile_visual
+    tests/test_projectile_visual.c
+    src/fc_projectile_visual.c
+)
+target_include_directories(test_projectile_visual PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(test_projectile_visual PRIVATE m)
+add_test(NAME test_projectile_visual COMMAND test_projectile_visual)
 
 add_executable(validate_assets
     tests/validate_assets.c

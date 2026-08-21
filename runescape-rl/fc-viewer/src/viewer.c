@@ -6,7 +6,7 @@
  * Controls:
  *   WASD        — move (N/W/S/E)            Space    — pause/resume
  *   1/2/3       — protect melee/range/magic  Right    — single-step tick
- *   F           — eat shark                  Clan tab — TPS buttons
+ *   F           — eat shark                  Console  — targets/wave/TPS
  *   P           — drink prayer potion        R        — reset episode
  *   Tab         — cycle attack target        A        — toggle auto/manual
  *   O or D*     — toggle debug overlay       G        — grid  C — collision
@@ -36,6 +36,7 @@
 #include "fc_spotanims.h"
 #include "fc_asset_raylib.h"
 #include "fc_actor_visual.h"
+#include "fc_projectile_visual.h"
 #include "fc_debug_overlay.h"
 #include "ui.h"
 #include "ui_reference.h"
@@ -89,9 +90,13 @@ typedef struct {
     uint32_t projectile_impact_spot;
     Color projectile_color;
     float projectile_radius;
+    float projectile_start_height;
+    float projectile_end_height;
     float projectile_launch_delay_client_ticks;
     float projectile_angle;
+    float projectile_length_adjustment;
     float projectile_progress;
+    float projectile_step_multiplier;
 } PlayerVisualProfile;
 
 /* Visuals are keyed by loadout because FC_WEAPON_GENERIC_RANGED includes
@@ -103,63 +108,72 @@ static const PlayerVisualProfile PLAYER_VISUALS[FC_NUM_LOADOUTS] = {
         PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
         PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
         PLAYER_ANIM_XBOW_RUN, PLAYER_ANIM_XBOW_ATTACK,
-        27, 0, 0, {200, 200, 50, 255}, 0.12f, 41.0f, 15.0f, 11.0f,
+        27, 0, 0, {200, 200, 50, 255}, 0.12f,
+        155.0f, 146.0f, 41.0f, 5.0f, 5.0f, 11.0f, 5.0f,
     },
     [FC_LOADOUT_SOTA_TBOW] = {
         PLAYER_ANIM_HUMAN_IDLE, PLAYER_ANIM_HUMAN_WALK,
         PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
         PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
         PLAYER_ANIM_HUMAN_RUN, PLAYER_ANIM_BOW_ATTACK,
-        1120, 1116, 0, {190, 120, 55, 255}, 0.13f, 41.0f, 15.0f, 11.0f,
+        1120, 1116, 0, {190, 120, 55, 255}, 0.13f,
+        163.0f, 146.0f, 41.0f, 15.0f, 5.0f, 11.0f, 5.0f,
     },
     [FC_LOADOUT_LOW_DEF_RCB] = {
         PLAYER_ANIM_XBOW_IDLE, PLAYER_ANIM_XBOW_WALK,
         PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
         PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
         PLAYER_ANIM_XBOW_RUN, PLAYER_ANIM_XBOW_ATTACK,
-        27, 0, 0, {200, 200, 50, 255}, 0.12f, 41.0f, 15.0f, 11.0f,
+        27, 0, 0, {200, 200, 50, 255}, 0.12f,
+        155.0f, 146.0f, 41.0f, 5.0f, 5.0f, 11.0f, 5.0f,
     },
     [FC_LOADOUT_RCB_PURE] = {
         PLAYER_ANIM_XBOW_IDLE, PLAYER_ANIM_XBOW_WALK,
         PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
         PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
         PLAYER_ANIM_XBOW_RUN, PLAYER_ANIM_XBOW_ATTACK,
-        27, 0, 0, {200, 200, 50, 255}, 0.12f, 41.0f, 15.0f, 11.0f,
+        27, 0, 0, {200, 200, 50, 255}, 0.12f,
+        155.0f, 146.0f, 41.0f, 5.0f, 5.0f, 11.0f, 5.0f,
     },
     [FC_LOADOUT_MSBI_PURE] = {
         PLAYER_ANIM_HUMAN_IDLE, PLAYER_ANIM_HUMAN_WALK,
         PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
         PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
         PLAYER_ANIM_HUMAN_RUN, PLAYER_ANIM_BOW_ATTACK,
-        15, 24, 0, {145, 155, 165, 255}, 0.10f, 41.0f, 15.0f, 11.0f,
+        15, 24, 0, {145, 155, 165, 255}, 0.10f,
+        163.0f, 146.0f, 41.0f, 15.0f, 5.0f, 11.0f, 5.0f,
     },
     [FC_LOADOUT_BLOWPIPE_PURE] = {
         PLAYER_ANIM_HUMAN_IDLE, PLAYER_ANIM_HUMAN_WALK,
         PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
         PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
         PLAYER_ANIM_HUMAN_RUN, PLAYER_ANIM_BLOWPIPE_ATTACK,
-        230, 236, 0, {115, 175, 85, 255}, 0.09f, 21.0f, 15.0f, 11.0f,
+        230, 236, 0, {115, 175, 85, 255}, 0.09f,
+        163.0f, 146.0f, 32.0f, 15.0f, 0.0f, 11.0f, 5.0f,
     },
     [FC_LOADOUT_ACB_ARMADYL] = {
         PLAYER_ANIM_XBOW_IDLE, PLAYER_ANIM_XBOW_WALK,
         PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
         PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
         PLAYER_ANIM_XBOW_RUN, PLAYER_ANIM_XBOW_ATTACK,
-        1468, 0, 0, {165, 210, 240, 255}, 0.12f, 41.0f, 15.0f, 11.0f,
+        1468, 0, 0, {165, 210, 240, 255}, 0.12f,
+        155.0f, 146.0f, 41.0f, 5.0f, 5.0f, 11.0f, 5.0f,
     },
     [FC_LOADOUT_BOWFA_CRYSTAL] = {
         PLAYER_ANIM_HUMAN_IDLE, PLAYER_ANIM_HUMAN_WALK,
         PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
         PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
         PLAYER_ANIM_HUMAN_RUN, PLAYER_ANIM_BOW_ATTACK,
-        1922, 1923, 0, {120, 235, 225, 255}, 0.13f, 41.0f, 15.0f, 11.0f,
+        1922, 1923, 0, {120, 235, 225, 255}, 0.13f,
+        163.0f, 146.0f, 41.0f, 15.0f, 5.0f, 11.0f, 5.0f,
     },
     [FC_LOADOUT_TBOW_MASORI] = {
         PLAYER_ANIM_HUMAN_IDLE, PLAYER_ANIM_HUMAN_WALK,
         PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
         PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
         PLAYER_ANIM_HUMAN_RUN, PLAYER_ANIM_BOW_ATTACK,
-        1120, 1116, 0, {190, 120, 55, 255}, 0.13f, 41.0f, 15.0f, 11.0f,
+        1120, 1116, 0, {190, 120, 55, 255}, 0.13f,
+        163.0f, 146.0f, 41.0f, 15.0f, 5.0f, 11.0f, 5.0f,
     },
 };
 
@@ -189,14 +203,12 @@ static const uint16_t NPC_ANIM_DEATH[] = {
 
 /* Projectile spotanim IDs for model lookup */
 #define PROJ_JAD_MAGIC_LAUNCH   439
-#define PROJ_JAD_RANGE_LAUNCH   440
 #define PROJ_TOK_XIL_SPINE      443
 #define PROJ_TOK_XIL_IMPACT     444
 #define PROJ_KET_ZEK_FIRE       445
 #define PROJ_KET_ZEK_IMPACT     446
-#define PROJ_JAD_MAGIC_TRAVEL   445
-#define PROJ_JAD_MAGIC_IMPACT   446
-#define PROJ_JAD_RANGED_TRAVEL  448
+#define PROJ_JAD_MAGIC_TRAVEL   448
+#define PROJ_JAD_MAGIC_IMPACT   157
 #define PROJ_JAD_RANGED_IMPACT  451
 #define PROJ_SPOTANIM_MODEL_BASE 0xA2000000u
 
@@ -259,7 +271,6 @@ typedef struct {
     float dst_x, dst_y, dst_z;
     float x, y, z;
     float velocity_x, velocity_y, velocity_z;
-    float acceleration_y;
     float total_time;
     float elapsed;
     float launch_delay;
@@ -270,6 +281,7 @@ typedef struct {
     FcVisualTargetKind target_kind;
     int target_slot;
     float target_y_offset;
+    int track_target;
     Color color;
     float radius;
     uint32_t spot_id;            /* travel spotanim ID (0 = no travel visual) */
@@ -391,8 +403,10 @@ typedef struct {
     int panel_npc_slot[8];   /* NPC array index for each panel row */
     int panel_npc_y[8];      /* screen Y of each panel row */
     int panel_npc_count;     /* how many rows drawn */
-    int clan_wave_dropdown_open;
-    int clan_wave_scroll;
+    int console_tab;              /* controls, player, obs, mask, reward, log */
+    int console_wave_dropdown_open;
+    int console_scroll[4];        /* player/obs/mask/reward vertical offsets */
+    int console_content_height[4];
     /* Visual projectiles in flight */
     VisualProjectile projectiles[MAX_PROJECTILES];
     VisualEffect effects[MAX_VISUAL_EFFECTS];
@@ -979,6 +993,14 @@ static float anim_sequence_duration_seconds(const AnimSequence* seq) {
     return total;
 }
 
+static float anim_sequence_duration_client_cycles(const AnimSequence* seq) {
+    if (!seq || seq->frame_count <= 0) return 0.0f;
+    float total = 0.0f;
+    for (int i = 0; i < seq->frame_count; i++)
+        total += seq->frames[i].delay > 0 ? seq->frames[i].delay : 1;
+    return total;
+}
+
 static void update_entry_animation(NpcModelEntry* entry,
                                    AnimCache* cache,
                                    AnimModelState** state,
@@ -1181,6 +1203,21 @@ static NpcModelEntry* projectile_model_for_spot(ViewerState* v,
     if (!pm)
         pm = fc_npc_model_find(v->projectile_models, spot_id);
     return (pm && pm->loaded) ? pm : NULL;
+}
+
+static float projectile_effect_duration(ViewerState* v, uint32_t spot_id,
+                                        float retain_client_cycles) {
+    float animation_client_cycles = 0.0f;
+    const SpotAnimDef* spot = (v && v->spotanims && spot_id > 0)
+        ? spotanim_find(v->spotanims, (int)spot_id) : NULL;
+    if (spot && spot->animation_id >= 0 && v->anim_cache) {
+        AnimSequence* seq = anim_get_sequence(
+            v->anim_cache, (uint16_t)spot->animation_id);
+        animation_client_cycles = anim_sequence_duration_client_cycles(seq);
+    }
+    return fc_projectile_effect_duration_seconds(
+        animation_client_cycles, retain_client_cycles,
+        v && v->tps > 0.0f ? v->tps : (float)POLICY_REPLAY_BASE_TPS);
 }
 
 static uint16_t npc_attack_animation_id(int npc_type, int attack_style) {
@@ -1536,6 +1573,17 @@ static void set_manual_speed(ViewerState* v, float tps) {
     set_viewer_tps(v, best);
 }
 
+static void toggle_debug_overlay(ViewerState* v) {
+    if (!v) return;
+    v->dbg_flags = v->dbg_flags ? 0 : DBG_ALL;
+}
+
+static void toggle_godmode(ViewerState* v) {
+    if (!v) return;
+    v->godmode = !v->godmode;
+    fprintf(stderr, "GODMODE: %s\n", v->godmode ? "ON" : "OFF");
+}
+
 static void format_speed_label(const ViewerState* v, char* buf, size_t buf_size) {
     if (v->policy_pipe) {
         int multiplier = policy_replay_tps_to_multiplier(v->tps);
@@ -1878,30 +1926,39 @@ static int visual_actor_world_point(ViewerState* v,
     return 1;
 }
 
-static float client_ticks_to_viewer_seconds(const ViewerState* v,
-                                            float client_ticks) {
-    float tick_seconds = (v && v->tps > 0.0f) ? 1.0f / v->tps : 0.6f;
-    return client_ticks * tick_seconds / 30.0f;
+static int projectile_tile_distance(int source_x, int source_y,
+                                    int target_x, int target_y) {
+    int dx = abs(target_x - source_x);
+    int dy = abs(target_y - source_y);
+    return dx > dy ? dx : dy;
 }
 
 static void configure_projectile_tracking(
     ViewerState* v, VisualProjectile* vp,
     FcVisualTargetKind source_kind, int source_slot,
     FcVisualTargetKind target_kind, int target_slot,
-    float launch_delay_client_ticks, float angle, float progress) {
+    float launch_delay_client_ticks, float end_time_client_ticks,
+    float angle, float progress, int track_target) {
     if (!v || !vp) return;
     vp->source_kind = source_kind;
     vp->source_slot = source_slot;
     vp->target_kind = target_kind;
     vp->target_slot = target_slot;
+    vp->track_target = track_target;
     vp->projectile_angle = angle >= 0.0f ? angle : 15.0f;
     vp->projectile_progress = progress >= 0.0f ? progress : 0.0f;
-    vp->launch_delay = client_ticks_to_viewer_seconds(
-        v, launch_delay_client_ticks > 0.0f ? launch_delay_client_ticks : 0.0f);
-    float minimum_flight = client_ticks_to_viewer_seconds(v, 10.0f);
-    float latest_launch = vp->total_time - minimum_flight;
-    if (latest_launch < 0.0f) latest_launch = 0.0f;
-    if (vp->launch_delay > latest_launch) vp->launch_delay = latest_launch;
+    /* RuneC's launch and endpoint metadata is already the client-authoritative
+     * visual clock. Preserve those client cycles instead of compressing the
+     * path into the simulator's coarser whole-tick pending-hit countdown. */
+    FcProjectileTiming timing = {0};
+    if (fc_projectile_timing_from_client_cycles(
+            launch_delay_client_ticks, end_time_client_ticks,
+            v->tps, &timing)) {
+        vp->launch_delay = timing.launch_delay;
+        vp->total_time = timing.total_duration;
+    } else {
+        vp->launch_delay = 0.0f;
+    }
 
     {
         float resolved_x, resolved_y, resolved_z;
@@ -1912,7 +1969,8 @@ static void configure_projectile_tracking(
             vp->src_y = resolved_y + vp->source_y_offset;
             vp->src_z = resolved_z;
         }
-        if (visual_actor_world_point(v, target_kind, target_slot,
+        if (track_target &&
+            visual_actor_world_point(v, target_kind, target_slot,
                                      &resolved_x, &resolved_y, &resolved_z)) {
             vp->target_y_offset = vp->dst_y - resolved_y;
             vp->dst_x = resolved_x;
@@ -1925,9 +1983,10 @@ static void configure_projectile_tracking(
     vp->z = vp->src_z;
 
     if (vp->launch_spot_id != 0) {
-        float launch_duration = vp->launch_delay;
-        if (launch_duration < client_ticks_to_viewer_seconds(v, 5.0f))
-            launch_duration = client_ticks_to_viewer_seconds(v, 5.0f);
+        float launch_retain = launch_delay_client_ticks > 30.0f
+            ? launch_delay_client_ticks : 30.0f;
+        float launch_duration = projectile_effect_duration(
+            v, vp->launch_spot_id, launch_retain);
         float launch_yaw = atan2f(vp->dst_x - vp->src_x,
                                   vp->dst_z - vp->src_z) * RAD2DEG;
         VisualEffect* launch = spawn_spot_effect(
@@ -1960,7 +2019,7 @@ static void refresh_projectile_actor_points(ViewerState* v,
         vp->src_y = y + vp->source_y_offset;
         vp->src_z = z;
     }
-    if (visual_actor_world_point(
+    if (vp->track_target && visual_actor_world_point(
             v, vp->target_kind, vp->target_slot, &x, &y, &z)) {
         vp->dst_x = x;
         vp->dst_y = y + vp->target_y_offset;
@@ -1984,52 +2043,32 @@ static int update_visual_projectile(ViewerState* v, VisualProjectile* vp,
         return 0;
     }
 
-    float flight_start = start_elapsed > vp->launch_delay
-        ? start_elapsed : vp->launch_delay;
-    float flight_dt = end_elapsed - flight_start;
-    if (flight_dt < 0.0f) flight_dt = 0.0f;
-
     if (!vp->launched) {
-        float dx = vp->dst_x - vp->src_x;
-        float dz = vp->dst_z - vp->src_z;
-        float distance = sqrtf(dx * dx + dz * dz);
-        float start_offset = vp->projectile_progress / 128.0f;
-        vp->x = vp->src_x;
-        vp->y = vp->src_y;
-        vp->z = vp->src_z;
-        if (distance > 0.0001f && start_offset > 0.0f) {
-            vp->x += dx / distance * start_offset;
-            vp->z += dz / distance * start_offset;
-        }
         vp->launched = 1;
-        float remaining = vp->total_time - flight_start;
-        if (remaining < 0.001f) remaining = 0.001f;
-        vp->velocity_x = (vp->dst_x - vp->x) / remaining;
-        vp->velocity_z = (vp->dst_z - vp->z) / remaining;
-        float horizontal_speed = sqrtf(
-            vp->velocity_x * vp->velocity_x +
-            vp->velocity_z * vp->velocity_z);
-        vp->velocity_y = horizontal_speed *
-            tanf(vp->projectile_angle * (3.14159265358979323846f / 128.0f));
     }
 
-    if (flight_dt > 0.0f) {
-        float remaining = vp->total_time - flight_start;
-        if (remaining < flight_dt) remaining = flight_dt;
-        if (remaining < 0.001f) remaining = 0.001f;
-        /* Match the client homing model: preserve current vertical velocity,
-         * but continually solve the remaining horizontal velocity and arc
-         * against the target actor's current rendered position. */
-        vp->velocity_x = (vp->dst_x - vp->x) / remaining;
-        vp->velocity_z = (vp->dst_z - vp->z) / remaining;
-        vp->acceleration_y = 2.0f *
-            (vp->dst_y - vp->y - vp->velocity_y * remaining) /
-            (remaining * remaining);
-        vp->x += vp->velocity_x * flight_dt;
-        vp->z += vp->velocity_z * flight_dt;
-        vp->y += vp->velocity_y * flight_dt +
-                 0.5f * vp->acceleration_y * flight_dt * flight_dt;
-        vp->velocity_y += vp->acceleration_y * flight_dt;
+    float flight_duration = vp->total_time - vp->launch_delay;
+    if (flight_duration < 0.001f) flight_duration = 0.001f;
+    FcProjectilePath path = {
+        .source_x = vp->src_x,
+        .source_y = vp->src_y,
+        .source_z = vp->src_z,
+        .target_x = vp->dst_x,
+        .target_y = vp->dst_y,
+        .target_z = vp->dst_z,
+        .duration = flight_duration,
+        .angle = vp->projectile_angle,
+        .progress = vp->projectile_progress / 128.0f,
+    };
+    FcProjectileSample sample = {0};
+    if (fc_projectile_path_sample(
+            &path, end_elapsed - vp->launch_delay, &sample)) {
+        vp->x = sample.x;
+        vp->y = sample.y;
+        vp->z = sample.z;
+        vp->velocity_x = sample.velocity_x;
+        vp->velocity_y = sample.velocity_y;
+        vp->velocity_z = sample.velocity_z;
     }
 
     vp->elapsed = end_elapsed;
@@ -2312,10 +2351,7 @@ static void process_human_keys(ViewerState* v) {
 
     /* --- Debug toggles (testing only) --- */
     /* F9: toggle godmode (player can't die) */
-    if (IsKeyPressed(KEY_F9)) {
-        v->godmode = !v->godmode;
-        fprintf(stderr, "GODMODE: %s\n", v->godmode ? "ON" : "OFF");
-    }
+    if (IsKeyPressed(KEY_F9)) toggle_godmode(v);
     /* F1-F8: spawn NPC type 1-8 near the player */
     for (int fk = 0; fk < 8; fk++) {
         if (IsKeyPressed(KEY_F1 + fk)) {
@@ -2724,7 +2760,10 @@ static void draw_scene(ViewerState* v) {
                 vp->velocity_x * vp->velocity_x +
                 vp->velocity_z * vp->velocity_z);
             float angle = atan2f(vp->velocity_x, vp->velocity_z) * RAD2DEG;
-            float pitch = atan2f(vp->velocity_y, horizontal_speed);
+            /* Cache spotanim meshes carry their intended model orientation.
+             * RuneC only applies trajectory pitch to raw projectile models. */
+            float pitch = spot ? 0.0f
+                : atan2f(vp->velocity_y, horizontal_speed);
             float scale_xy = (spot && spot->resize_xy > 0)
                 ? (float)spot->resize_xy / 128.0f : 1.0f;
             float scale_z = (spot && spot->resize_z > 0)
@@ -2962,142 +3001,387 @@ static Rectangle runec_side_content_rect(const ViewerState* v) {
     };
 }
 
-static void draw_runec_debug_friends_tab(ViewerState* v, Rectangle content) {
-    BeginScissorMode((int)content.x, (int)content.y,
-                     (int)content.width, (int)content.height);
+#define RUNEC_CONSOLE_TAB_COUNT 6
+#define RUNEC_CONSOLE_NPC_ROWS 8
+#define RUNEC_CONSOLE_NPC_ROW_H 13
+#define RUNEC_CONSOLE_TPS_COLS 4
 
-    int px = (int)content.x;
-    int x = px + 4;
-    int by = (int)content.y + 3;
-    int pw = (int)content.width;
-    char b[160];
-    char speed_label[32];
-    format_speed_label(v, speed_label, sizeof(speed_label));
-
-    snprintf(b, sizeof(b), "%s %s  Wave %d  Tick %d",
-             v->paused ? "PAUSED" : "RUN", speed_label,
-             v->state.current_wave, v->state.tick);
-    DrawText(b, x, by, 8, COL_TEXT_YELLOW); by += 10;
-    snprintf(b, sizeof(b), "P:(%d,%d) Ent:%d Hash:%08x",
-             v->state.player.x, v->state.player.y,
-             v->entity_count, v->last_hash);
-    DrawText(b, x, by, 8, COL_TEXT_DIM); by += 10;
-    snprintf(b, sizeof(b), "Dmg +%d/-%d Kills:%d%s",
-             v->state.damage_dealt_this_tick / 10,
-             v->state.damage_taken_this_tick / 10,
-             v->state.npcs_killed_this_tick,
-             v->godmode ? " GOD" : "");
-    DrawText(b, x, by, 8, v->godmode ? COL_TEXT_YELLOW : COL_TEXT_DIM);
-    by += 12;
-
-    if (v->dbg_flags) {
-        v->dbg_tab_y = by;
-        dbg_draw_panel_tabs(&v->state, &v->reward_params,
-                            &v->reward_breakdown, &v->reward_runtime,
-                            v->reward_config_loaded,
-                            v->reward_config_path,
-                            px, x, by, pw, v->dbg_tab);
-    } else {
-        v->dbg_tab_y = 0;
-        DrawLine(px + 4, by, px + pw - 4, by, COL_PANEL_BORDER);
-        by += 10;
-        DrawText("Debug overlay off", x, by, 9, COL_TEXT_DIM);
-    }
-
-    EndScissorMode();
+static Rectangle runec_console_panel_rect(const ViewerState* v) {
+    return runec_ui_chat_panel_rect(v ? &v->ui : NULL,
+                                    GetScreenWidth(), GetScreenHeight());
 }
 
-#define CLAN_NPC_MAX_ROWS 8
-#define CLAN_NPC_ROW_H 18
-#define CLAN_SPEED_BTN_COLS 4
-#define CLAN_SPEED_BTN_H 16
-#define CLAN_SPEED_BTN_GAP 4
-#define CLAN_SPEED_BOX_PAD 5
-#define CLAN_SPEED_LABEL_H 16
+static Rectangle runec_console_body_rect(Rectangle panel) {
+    return (Rectangle){panel.x + 7.0f, panel.y + 7.0f,
+                       panel.width - 13.0f, panel.height - 39.0f};
+}
 
-static int clan_visible_npc_count(const ViewerState* v) {
-    if (!v) return 0;
+static Rectangle runec_console_tab_rect(Rectangle panel, int index) {
+    float width = (panel.width - 6.0f) / (float)RUNEC_CONSOLE_TAB_COUNT;
+    return (Rectangle){panel.x + 3.0f + width * (float)index,
+                       panel.y + panel.height - 23.0f,
+                       width, 21.0f};
+}
+
+static Rectangle runec_console_debug_button_rect(Rectangle body) {
+    float right_x = body.x + 286.0f;
+    float width = body.x + body.width - right_x;
+    return (Rectangle){right_x, body.y + 15.0f,
+                       (width - 4.0f) * 0.5f, 18.0f};
+}
+
+static Rectangle runec_console_god_button_rect(Rectangle body) {
+    Rectangle debug = runec_console_debug_button_rect(body);
+    return (Rectangle){debug.x + debug.width + 4.0f, debug.y,
+                       debug.width, debug.height};
+}
+
+static Rectangle runec_console_wave_button_rect(Rectangle body) {
+    return (Rectangle){body.x + 286.0f, body.y + 37.0f,
+                       body.width - 286.0f, 20.0f};
+}
+
+static Rectangle runec_console_tps_button_rect(Rectangle body,
+                                               int index) {
+    float box_x = body.x + 286.0f;
+    float box_w = body.width - 286.0f;
+    const float gap = 3.0f;
+    float button_w = (box_w - gap * (RUNEC_CONSOLE_TPS_COLS - 1)) /
+                     RUNEC_CONSOLE_TPS_COLS;
+    int row = index / RUNEC_CONSOLE_TPS_COLS;
+    int col = index % RUNEC_CONSOLE_TPS_COLS;
+    return (Rectangle){box_x + col * (button_w + gap),
+                       body.y + 78.0f + row * 20.0f,
+                       button_w, 17.0f};
+}
+
+static Rectangle runec_console_target_row_rect(Rectangle body,
+                                               int row) {
+    return (Rectangle){body.x + 1.0f,
+                       body.y + 16.0f + row * RUNEC_CONSOLE_NPC_ROW_H,
+                       277.0f, RUNEC_CONSOLE_NPC_ROW_H};
+}
+
+static Rectangle runec_console_wave_cell_rect(Rectangle body,
+                                              int wave) {
+    const int columns = 9;
+    const float gap = 1.0f;
+    float cell_w = (body.width - 6.0f - gap * (columns - 1)) / columns;
+    int index = wave - 1;
+    int row = index / columns;
+    int col = index % columns;
+    return (Rectangle){body.x + 3.0f + col * (cell_w + gap),
+                       body.y + 18.0f + row * 15.0f,
+                       cell_w, 14.0f};
+}
+
+static void draw_runec_console_button(Rectangle rect, const char* label,
+                                      int selected) {
+    int hovered = CheckCollisionPointRec(GetMousePosition(), rect);
+    Color background = selected ? CLITERAL(Color){82, 73, 61, 245}
+        : (hovered ? CLITERAL(Color){72, 63, 51, 245}
+                   : CLITERAL(Color){42, 36, 28, 235});
+    Color text = selected ? COL_TEXT_YELLOW : COL_TEXT_WHITE;
+    DrawRectangleRec(rect, background);
+    DrawRectangleLinesEx(rect, 1, COL_PANEL_BORDER);
+    int font_size = 8;
+    DrawText(label,
+             (int)(rect.x + (rect.width - MeasureText(label, font_size)) * 0.5f),
+             (int)(rect.y + (rect.height - font_size) * 0.5f),
+             font_size, text);
+}
+
+static void draw_runec_console_wave_grid(ViewerState* v, Rectangle body) {
+    Vector2 mouse = GetMousePosition();
+    DrawRectangleRec(body, CLITERAL(Color){18, 16, 13, 252});
+    DrawRectangleLinesEx(body, 1, COL_PANEL_BORDER);
+    DrawText("Select Wave", (int)body.x + 4, (int)body.y + 3,
+             9, COL_TEXT_YELLOW);
+    DrawText("click current selection to close",
+             (int)(body.x + body.width) - 155, (int)body.y + 4,
+             7, COL_TEXT_DIM);
+    for (int wave = 1; wave <= FC_NUM_WAVES; wave++) {
+        Rectangle cell = runec_console_wave_cell_rect(body, wave);
+        int current = wave == v->state.current_wave;
+        int hovered = CheckCollisionPointRec(mouse, cell);
+        Color bg = current ? CLITERAL(Color){60, 80, 40, 250}
+            : (hovered ? CLITERAL(Color){72, 63, 51, 245}
+                       : CLITERAL(Color){35, 30, 24, 240});
+        DrawRectangleRec(cell, bg);
+        DrawRectangleLinesEx(cell, 1, COL_PANEL_BORDER);
+        char label[8];
+        snprintf(label, sizeof(label), "%d", wave);
+        DrawText(label,
+                 (int)(cell.x + (cell.width - MeasureText(label, 8)) * 0.5f),
+                 (int)cell.y + 3, 8,
+                 current ? COL_TEXT_YELLOW : COL_TEXT_WHITE);
+    }
+}
+
+static void draw_runec_console_controls(ViewerState* v, Rectangle body) {
+    static const char* NPC_SHORT[] = {
+        "?", "Tz-Kih", "Tz-Kek", "Kek-Sm", "Tok-Xil",
+        "MejKot", "Ket-Zek", "Jad", "HurKot"
+    };
+    Vector2 mouse = GetMousePosition();
+    int x = (int)body.x + 4;
+    char text[128];
+
+    DrawText("NPC Targets", x, (int)body.y + 3, 9, COL_TEXT_YELLOW);
     int shown = 0;
-    for (int ni = 0; ni < FC_MAX_NPCS && shown < CLAN_NPC_MAX_ROWS; ni++) {
-        const FcNpc* n = &v->state.npcs[ni];
-        if (!n->active || n->is_dead)
-            continue;
+    for (int ni = 0; ni < FC_MAX_NPCS && shown < RUNEC_CONSOLE_NPC_ROWS; ni++) {
+        FcNpc* npc = &v->state.npcs[ni];
+        if (!npc->active || npc->is_dead) continue;
+        Rectangle row = runec_console_target_row_rect(body, shown);
+        int selected = ni == v->state.player.attack_target_idx;
+        int hovered = CheckCollisionPointRec(mouse, row);
+        if (selected || hovered) {
+            DrawRectangleRec(row, selected
+                ? CLITERAL(Color){82, 73, 61, 205}
+                : CLITERAL(Color){52, 45, 35, 190});
+        }
+        const char* name = npc->npc_type > 0 && npc->npc_type < 9
+            ? NPC_SHORT[npc->npc_type] : "?";
+        snprintf(text, sizeof(text), "%s%s[%d] d:%d",
+                 selected ? ">" : " ", name, ni,
+                 fc_distance_to_npc(v->state.player.x,
+                                    v->state.player.y, npc));
+        DrawText(text, (int)row.x + 2, (int)row.y + 3, 8,
+                 selected ? COL_TEXT_YELLOW : COL_TEXT_WHITE);
+
+        int bar_x = (int)row.x + 116;
+        int bar_w = 116;
+        float hp = npc->max_hp > 0
+            ? (float)npc->current_hp / (float)npc->max_hp : 0.0f;
+        if (hp < 0.0f) hp = 0.0f;
+        if (hp > 1.0f) hp = 1.0f;
+        DrawRectangle(bar_x, (int)row.y + 3, bar_w, 7, COL_HP_RED);
+        DrawRectangle(bar_x, (int)row.y + 3,
+                      (int)((float)bar_w * hp), 7, COL_HP_GREEN);
+        snprintf(text, sizeof(text), "%d", npc->current_hp / 10);
+        DrawText(text, bar_x + bar_w + 4, (int)row.y + 2,
+                 8, COL_TEXT_DIM);
         shown++;
     }
-    return shown;
+    if (shown == 0)
+        DrawText("No NPCs alive", x + 2, (int)body.y + 20,
+                 8, COL_TEXT_DIM);
+
+    int right_x = (int)body.x + 286;
+    DrawLine(right_x - 5, (int)body.y + 2,
+             right_x - 5, (int)(body.y + body.height) - 2,
+             COL_PANEL_BORDER);
+    DrawText("Viewer Controls", right_x, (int)body.y + 3,
+             9, COL_TEXT_YELLOW);
+
+    char debug_label[24];
+    snprintf(debug_label, sizeof(debug_label), "Debug: %s",
+             v->dbg_flags ? "ON" : "OFF");
+    draw_runec_console_button(runec_console_debug_button_rect(body),
+                              debug_label, v->dbg_flags != 0);
+    char god_label[24];
+    snprintf(god_label, sizeof(god_label), "God: %s",
+             v->godmode ? "ON" : "OFF");
+    draw_runec_console_button(runec_console_god_button_rect(body),
+                              god_label, v->godmode);
+
+    Rectangle wave = runec_console_wave_button_rect(body);
+    snprintf(text, sizeof(text), "Jump to Wave: %d  v",
+             v->state.current_wave);
+    draw_runec_console_button(wave, text, 0);
+
+    DrawText(v->policy_pipe ? "Replay TPS" : "TPS Presets",
+             right_x, (int)body.y + 62, 8, COL_TEXT_DIM);
+    for (int i = 0; i < NUM_MANUAL_TPS_PRESETS; i++) {
+        draw_runec_console_button(runec_console_tps_button_rect(body, i),
+                                  MANUAL_TPS_LABELS[i],
+                                  float_near(v->tps, MANUAL_TPS_PRESETS[i]));
+    }
+
+    if (v->console_wave_dropdown_open)
+        draw_runec_console_wave_grid(v, body);
 }
 
-static Rectangle clan_wave_button_rect(const ViewerState* v, Rectangle content) {
-    int shown = clan_visible_npc_count(v);
-    int y = (int)content.y + 4 + 16;
-    y += shown > 0 ? shown * CLAN_NPC_ROW_H : 16;
-    y += 7;
-    int btn_rows = (NUM_MANUAL_TPS_PRESETS + CLAN_SPEED_BTN_COLS - 1) /
-        CLAN_SPEED_BTN_COLS;
-    int speed_box_h = CLAN_SPEED_BOX_PAD * 2 + CLAN_SPEED_LABEL_H +
-        btn_rows * CLAN_SPEED_BTN_H + (btn_rows - 1) * CLAN_SPEED_BTN_GAP;
-    int max_y = (int)(content.y + content.height) - 22 - 6 - speed_box_h;
-    if (y > max_y) y = max_y;
-    if (y < (int)content.y + 22) y = (int)content.y + 22;
-    return (Rectangle){content.x + 4.0f, (float)y, content.width - 8.0f, 20.0f};
+static void draw_runec_console_diagnostics(ViewerState* v, Rectangle body) {
+    int debug_tab = v->console_tab - 1;
+    int available_height = (int)body.height - 6;
+    int scroll = 0;
+    if (debug_tab >= 0 && debug_tab < 4) {
+        int max_scroll = v->console_content_height[debug_tab] - available_height;
+        if (max_scroll < 0) max_scroll = 0;
+        if (v->console_scroll[debug_tab] < 0)
+            v->console_scroll[debug_tab] = 0;
+        if (v->console_scroll[debug_tab] > max_scroll)
+            v->console_scroll[debug_tab] = max_scroll;
+        scroll = v->console_scroll[debug_tab];
+    }
+
+    int content_y = (int)body.y + 3 - scroll;
+    BeginScissorMode((int)body.x, (int)body.y,
+                     (int)body.width, (int)body.height);
+    int end_y = dbg_draw_panel_tabs(
+        &v->state, &v->reward_params,
+        &v->reward_breakdown, &v->reward_runtime,
+        v->reward_config_loaded, v->reward_config_path,
+        (int)body.x, (int)body.x + 4, content_y,
+        (int)body.width, debug_tab, 0, available_height);
+    EndScissorMode();
+
+    if (debug_tab >= 0 && debug_tab < 4) {
+        int height = end_y - content_y;
+        v->console_content_height[debug_tab] = height > 0 ? height : 0;
+        int max_scroll = height - available_height;
+        if (max_scroll < 0) max_scroll = 0;
+        if (v->console_scroll[debug_tab] > max_scroll)
+            v->console_scroll[debug_tab] = max_scroll;
+        if (max_scroll > 0) {
+            int track_x = (int)(body.x + body.width) - 6;
+            int track_y = (int)body.y + 3;
+            int track_h = available_height;
+            DrawRectangle(track_x, track_y, 4, track_h,
+                          CLITERAL(Color){30, 26, 20, 230});
+            float visible_fraction =
+                (float)available_height / (float)height;
+            int thumb_h = (int)((float)track_h * visible_fraction);
+            if (thumb_h < 12) thumb_h = 12;
+            float scroll_fraction = max_scroll > 0
+                ? (float)v->console_scroll[debug_tab] / (float)max_scroll
+                : 0.0f;
+            int thumb_y = track_y +
+                (int)((float)(track_h - thumb_h) * scroll_fraction);
+            DrawRectangle(track_x, thumb_y, 4, thumb_h,
+                          CLITERAL(Color){120, 110, 90, 255});
+        }
+    }
 }
 
-static Rectangle clan_speed_box_rect(const ViewerState* v, Rectangle content) {
-    Rectangle wave_btn = clan_wave_button_rect(v, content);
-    int btn_rows = (NUM_MANUAL_TPS_PRESETS + CLAN_SPEED_BTN_COLS - 1) /
-        CLAN_SPEED_BTN_COLS;
-    int box_h = CLAN_SPEED_BOX_PAD * 2 + CLAN_SPEED_LABEL_H +
-        btn_rows * CLAN_SPEED_BTN_H + (btn_rows - 1) * CLAN_SPEED_BTN_GAP;
-    int y = (int)(wave_btn.y + wave_btn.height + 6.0f);
-    int max_y = (int)(content.y + content.height) - box_h - 2;
-    if (y > max_y) y = max_y;
-    if (y < (int)content.y + 2) y = (int)content.y + 2;
-    return (Rectangle){content.x + 4.0f, (float)y,
-                       content.width - 8.0f, (float)box_h};
+static void draw_runec_console(ViewerState* v) {
+    static const char* labels[RUNEC_CONSOLE_TAB_COUNT] = {
+        "Controls", "Player", "Obs", "Mask", "Reward", "Log"
+    };
+    Rectangle panel = runec_console_panel_rect(v);
+    Rectangle body = runec_console_body_rect(panel);
+    DrawRectangleRec(body, CLITERAL(Color){0, 0, 0, 76});
+    if (v->console_tab == 0)
+        draw_runec_console_controls(v, body);
+    else
+        draw_runec_console_diagnostics(v, body);
+
+    for (int tab = 0; tab < RUNEC_CONSOLE_TAB_COUNT; tab++) {
+        Rectangle rect = runec_console_tab_rect(panel, tab);
+        runec_ui_draw_asset(&v->ui.assets, "chat_tab_button_0", rect, WHITE);
+        int selected = tab == v->console_tab;
+        int hovered = CheckCollisionPointRec(GetMousePosition(), rect);
+        DrawRectangleRec(rect, selected
+            ? CLITERAL(Color){82, 73, 61, 96}
+            : (hovered ? CLITERAL(Color){90, 78, 62, 72}
+                       : CLITERAL(Color){0, 0, 0, 18}));
+        if (selected)
+            DrawLine((int)rect.x + 2, (int)(rect.y + rect.height) - 2,
+                     (int)(rect.x + rect.width) - 2,
+                     (int)(rect.y + rect.height) - 2,
+                     COL_TEXT_YELLOW);
+        DrawText(labels[tab],
+                 (int)(rect.x +
+                     (rect.width - MeasureText(labels[tab], 8)) * 0.5f),
+                 (int)rect.y + 7, 8,
+                 selected ? COL_TEXT_YELLOW : COL_TEXT_WHITE);
+    }
 }
 
-static Rectangle clan_speed_button_rect(const ViewerState* v, Rectangle content,
-                                        int index) {
-    Rectangle box = clan_speed_box_rect(v, content);
-    int inner_x = (int)box.x + CLAN_SPEED_BOX_PAD;
-    int inner_w = (int)box.width - CLAN_SPEED_BOX_PAD * 2;
-    int btn_w = (inner_w - CLAN_SPEED_BTN_GAP *
-        (CLAN_SPEED_BTN_COLS - 1)) / CLAN_SPEED_BTN_COLS;
-    int row = index / CLAN_SPEED_BTN_COLS;
-    int col = index % CLAN_SPEED_BTN_COLS;
-    int x = inner_x + col * (btn_w + CLAN_SPEED_BTN_GAP);
-    int y = (int)box.y + CLAN_SPEED_BOX_PAD + CLAN_SPEED_LABEL_H +
-        row * (CLAN_SPEED_BTN_H + CLAN_SPEED_BTN_GAP);
-    return (Rectangle){(float)x, (float)y, (float)btn_w,
-                       (float)CLAN_SPEED_BTN_H};
-}
+static int process_runec_console_input(ViewerState* v) {
+    if (!v) return 0;
+    Rectangle panel = runec_console_panel_rect(v);
+    Vector2 mouse = GetMousePosition();
+    if (!CheckCollisionPointRec(mouse, panel))
+        return 0;
 
-static int clan_wave_dropdown_visible_count(Rectangle content, Rectangle button) {
-    int item_h = 14;
-    int available = (int)(button.y - content.y - 5);
-    int visible = available / item_h;
-    if (visible < 4) visible = 4;
-    if (visible > 14) visible = 14;
-    if (visible > FC_NUM_WAVES) visible = FC_NUM_WAVES;
-    return visible;
-}
+    int clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+    if (clicked) {
+        for (int tab = 0; tab < RUNEC_CONSOLE_TAB_COUNT; tab++) {
+            if (!CheckCollisionPointRec(mouse,
+                                        runec_console_tab_rect(panel, tab)))
+                continue;
+            v->console_tab = tab;
+            v->console_wave_dropdown_open = 0;
+            return 1;
+        }
+    }
 
-static Rectangle clan_wave_dropdown_rect(Rectangle content, Rectangle button,
-                                         int visible) {
-    int item_h = 14;
-    int h = visible * item_h;
-    int y = (int)button.y - h;
-    if (y < (int)content.y + 2)
-        y = (int)content.y + 2;
-    return (Rectangle){button.x, (float)y, button.width, (float)h};
-}
+    Rectangle body = runec_console_body_rect(panel);
+    if (v->console_tab == 0 && clicked) {
+        if (v->console_wave_dropdown_open) {
+            for (int wave = 1; wave <= FC_NUM_WAVES; wave++) {
+                if (!CheckCollisionPointRec(
+                        mouse, runec_console_wave_cell_rect(body, wave)))
+                    continue;
+                if (wave != v->state.current_wave)
+                    viewer_jump_to_wave(v, wave);
+                v->console_wave_dropdown_open = 0;
+                return 1;
+            }
+            v->console_wave_dropdown_open = 0;
+            return 1;
+        }
 
-static void clamp_clan_wave_scroll(ViewerState* v, int visible) {
-    if (!v) return;
-    int max_scroll = FC_NUM_WAVES - visible;
-    if (max_scroll < 0) max_scroll = 0;
-    if (v->clan_wave_scroll < 0) v->clan_wave_scroll = 0;
-    if (v->clan_wave_scroll > max_scroll) v->clan_wave_scroll = max_scroll;
+        if (CheckCollisionPointRec(mouse,
+                                   runec_console_debug_button_rect(body))) {
+            toggle_debug_overlay(v);
+            return 1;
+        }
+        if (CheckCollisionPointRec(mouse,
+                                   runec_console_god_button_rect(body))) {
+            toggle_godmode(v);
+            return 1;
+        }
+        if (CheckCollisionPointRec(mouse,
+                                   runec_console_wave_button_rect(body))) {
+            v->console_wave_dropdown_open = 1;
+            return 1;
+        }
+        for (int i = 0; i < NUM_MANUAL_TPS_PRESETS; i++) {
+            if (!CheckCollisionPointRec(
+                    mouse, runec_console_tps_button_rect(body, i)))
+                continue;
+            set_manual_speed(v, MANUAL_TPS_PRESETS[i]);
+            return 1;
+        }
+
+        int shown = 0;
+        for (int ni = 0; ni < FC_MAX_NPCS &&
+                 shown < RUNEC_CONSOLE_NPC_ROWS; ni++) {
+            FcNpc* npc = &v->state.npcs[ni];
+            if (!npc->active || npc->is_dead) continue;
+            if (CheckCollisionPointRec(
+                    mouse, runec_console_target_row_rect(body, shown))) {
+                FcPlayer* player = &v->state.player;
+                player->attack_target_idx = ni;
+                player->approach_target = 1;
+                player->route_len = 0;
+                player->route_idx = 0;
+                fprintf(stderr, "CONSOLE CLICK -> ATTACK npc_idx=%d\n", ni);
+                return 1;
+            }
+            shown++;
+        }
+    }
+
+    if (v->console_tab >= 1 && v->console_tab <= 4 &&
+        CheckCollisionPointRec(mouse, body)) {
+        float wheel = GetMouseWheelMove();
+        if (wheel != 0.0f) {
+            int index = v->console_tab - 1;
+            int max_scroll = v->console_content_height[index] -
+                             ((int)body.height - 6);
+            if (max_scroll < 0) max_scroll = 0;
+            v->console_scroll[index] -= (int)wheel * 24;
+            if (v->console_scroll[index] < 0)
+                v->console_scroll[index] = 0;
+            if (v->console_scroll[index] > max_scroll)
+                v->console_scroll[index] = max_scroll;
+        }
+    }
+    return 1;
 }
 
 static Rectangle runec_legacy_prayer_button_rect(Rectangle content, int index) {
@@ -3201,157 +3485,9 @@ static void draw_runec_legacy_prayer_tab(ViewerState* v, Rectangle content) {
     EndScissorMode();
 }
 
-static void draw_runec_clan_npc_tab(ViewerState* v, Rectangle content) {
-    BeginScissorMode((int)content.x, (int)content.y,
-                     (int)content.width, (int)content.height);
-
-    int x = (int)content.x + 4;
-    int by = (int)content.y + 4;
-    int row_h = CLAN_NPC_ROW_H;
-    int bar_x = x + 66;
-    int bar_w = (int)content.width - 92;
-    char b[128];
-    static const char* NPC_SHORT[] = {"?","Tz-Kih","Tz-Kek","Kek-Sm","Tok-Xil",
-        "MejKot","Ket-Zek","Jad","HurKot"};
-
-    v->panel_npc_count = 0;
-    DrawText("NPC Targets", x, by, 10, COL_TEXT_YELLOW);
-    by += 16;
-    DrawLine((int)content.x + 3, by - 3,
-             (int)(content.x + content.width - 3), by - 3, COL_PANEL_BORDER);
-
-    int shown = 0;
-    Vector2 mouse = GetMousePosition();
-    for (int ni = 0; ni < FC_MAX_NPCS && shown < CLAN_NPC_MAX_ROWS; ni++) {
-        FcNpc* n = &v->state.npcs[ni];
-        if (!n->active || n->is_dead)
-            continue;
-
-        Rectangle row = {
-            content.x + 2,
-            (float)by - 2,
-            content.width - 4,
-            (float)row_h
-        };
-        int hovered = CheckCollisionPointRec(mouse, row);
-        int is_target = (ni == v->state.player.attack_target_idx);
-        if (hovered || is_target) {
-            DrawRectangleRec(row, is_target
-                ? CLITERAL(Color){82,73,61,190}
-                : CLITERAL(Color){52,45,35,180});
-        }
-
-        if (v->panel_npc_count < 8) {
-            v->panel_npc_slot[v->panel_npc_count] = ni;
-            v->panel_npc_y[v->panel_npc_count] = by - 2;
-            v->panel_npc_count++;
-        }
-
-        const char* nname = (n->npc_type > 0 && n->npc_type < 9) ? NPC_SHORT[n->npc_type] : "?";
-        if (is_target)
-            DrawText(">", x, by + 1, 9, COL_TEXT_YELLOW);
-        snprintf(b, sizeof(b), "%s[%d]", nname, ni);
-        DrawText(b, x + 10, by, 8, is_target ? COL_TEXT_YELLOW : COL_TEXT_WHITE);
-
-        float hp_frac = (n->max_hp > 0) ? (float)n->current_hp / (float)n->max_hp : 0.0f;
-        if (hp_frac < 0.0f) hp_frac = 0.0f;
-        if (hp_frac > 1.0f) hp_frac = 1.0f;
-        DrawRectangle(bar_x, by + 1, bar_w, 7, COL_HP_RED);
-        DrawRectangle(bar_x, by + 1, (int)((float)bar_w * hp_frac), 7, COL_HP_GREEN);
-        snprintf(b, sizeof(b), "%d", n->current_hp / 10);
-        DrawText(b, bar_x + bar_w + 3, by, 8, COL_TEXT_DIM);
-
-        int dist = fc_distance_to_npc(v->state.player.x, v->state.player.y, n);
-        snprintf(b, sizeof(b), "dist:%d atk:%d", dist, n->attack_timer);
-        DrawText(b, x + 10, by + 10, 7, COL_TEXT_DIM);
-
-        by += row_h;
-        shown++;
-    }
-
-    if (shown == 0) {
-        DrawText("No NPCs alive", x, by, 9, COL_TEXT_DIM);
-        by += 16;
-    }
-
-    Rectangle wave_btn = clan_wave_button_rect(v, content);
-    DrawLine((int)content.x + 3, (int)wave_btn.y - 5,
-             (int)(content.x + content.width - 3), (int)wave_btn.y - 5,
-             COL_PANEL_BORDER);
-    int btn_hover = CheckCollisionPointRec(mouse, wave_btn);
-    DrawRectangleRec(wave_btn, btn_hover
-        ? CLITERAL(Color){72,63,51,230}
-        : CLITERAL(Color){42,36,28,220});
-    DrawRectangleLinesEx(wave_btn, 1, COL_PANEL_BORDER);
-    snprintf(b, sizeof(b), "Jump to Wave: %d", v->state.current_wave);
-    DrawText(b, (int)wave_btn.x + 6, (int)wave_btn.y + 5, 9, COL_TEXT_YELLOW);
-    DrawText(v->clan_wave_dropdown_open ? "^" : "v",
-             (int)(wave_btn.x + wave_btn.width) - 16,
-             (int)wave_btn.y + 5, 9, COL_TEXT_DIM);
-
-    if (v->clan_wave_dropdown_open) {
-        int item_h = 14;
-        int visible = clan_wave_dropdown_visible_count(content, wave_btn);
-        clamp_clan_wave_scroll(v, visible);
-        Rectangle list = clan_wave_dropdown_rect(content, wave_btn, visible);
-        DrawRectangleRec(list, CLITERAL(Color){20,18,14,245});
-        DrawRectangleLinesEx(list, 1, COL_PANEL_BORDER);
-        for (int i = 0; i < visible; i++) {
-            int wave = v->clan_wave_scroll + i + 1;
-            if (wave > FC_NUM_WAVES)
-                break;
-            Rectangle row = {
-                list.x + 1.0f,
-                list.y + (float)(i * item_h),
-                list.width - 2.0f,
-                (float)item_h
-            };
-            int hover = CheckCollisionPointRec(mouse, row);
-            int current = (wave == v->state.current_wave);
-            if (current)
-                DrawRectangleRec(row, CLITERAL(Color){60,80,40,245});
-            else if (hover)
-                DrawRectangleRec(row, CLITERAL(Color){72,63,51,230});
-            snprintf(b, sizeof(b), "Wave %d", wave);
-            DrawText(b, (int)row.x + 5, (int)row.y + 2, 9,
-                     current ? COL_TEXT_YELLOW : COL_TEXT_WHITE);
-        }
-    }
-
-    Rectangle speed_box = clan_speed_box_rect(v, content);
-    DrawRectangleRec(speed_box, CLITERAL(Color){20, 18, 14, 220});
-    DrawRectangleLinesEx(speed_box, 1, COL_PANEL_BORDER);
-    DrawText(v->policy_pipe ? "Replay TPS" : "TPS Presets",
-             (int)speed_box.x + CLAN_SPEED_BOX_PAD,
-             (int)speed_box.y + 4, 9, COL_TEXT_DIM);
-
-    for (int i = 0; i < NUM_MANUAL_TPS_PRESETS; i++) {
-        Rectangle br = clan_speed_button_rect(v, content, i);
-        int hovered = CheckCollisionPointRec(mouse, br);
-        int selected = float_near(v->tps, MANUAL_TPS_PRESETS[i]);
-        Color bg = selected ? CLITERAL(Color){82,73,61,255}
-            : (hovered ? CLITERAL(Color){72,63,51,255}
-                       : CLITERAL(Color){52,45,35,255});
-        Color tc = selected ? COL_TEXT_YELLOW : COL_TEXT_WHITE;
-
-        DrawRectangleRec(br, bg);
-        DrawRectangleLinesEx(br, 1, COL_PANEL_BORDER);
-        DrawText(MANUAL_TPS_LABELS[i],
-                 (int)br.x + ((int)br.width -
-                     MeasureText(MANUAL_TPS_LABELS[i], 9)) / 2,
-                 (int)br.y + 4, 9, tc);
-    }
-
-    EndScissorMode();
-}
-
-static void draw_runec_debug_tabs(ViewerState* v) {
+static void draw_runec_side_overrides(ViewerState* v) {
     Rectangle content = runec_side_content_rect(v);
-    if (v->ui.active_tab == RUNEC_UI_TAB_FRIENDS) {
-        draw_runec_debug_friends_tab(v, content);
-    } else if (v->ui.active_tab == RUNEC_UI_TAB_CLAN_CHAT) {
-        draw_runec_clan_npc_tab(v, content);
-    } else if (v->ui.active_tab == RUNEC_UI_TAB_PRAYER) {
+    if (v->ui.active_tab == RUNEC_UI_TAB_PRAYER) {
         v->panel_npc_count = 0;
         v->dbg_tab_y = 0;
         draw_runec_legacy_prayer_tab(v, content);
@@ -3359,119 +3495,6 @@ static void draw_runec_debug_tabs(ViewerState* v) {
         v->panel_npc_count = 0;
         v->dbg_tab_y = 0;
     }
-}
-
-static int process_runec_debug_tab_clicks(ViewerState* v) {
-    if (!IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
-        return 0;
-
-    Vector2 mouse = GetMousePosition();
-    Rectangle content = runec_side_content_rect(v);
-    if (!CheckCollisionPointRec(mouse, content))
-        return 0;
-
-    if (v->ui.active_tab == RUNEC_UI_TAB_FRIENDS) {
-        if (v->dbg_flags && v->dbg_tab_y > 0) {
-            int px = (int)content.x;
-            int dtab_w = ((int)content.width - 12) / 5;
-            int dtab_h = 16;
-            int dtab_y = v->dbg_tab_y + 2;
-            for (int t = 0; t < 5; t++) {
-                int tx = px + 4 + t * dtab_w;
-                if (mouse.x >= tx && mouse.x < tx + dtab_w &&
-                    mouse.y >= dtab_y && mouse.y < dtab_y + dtab_h) {
-                    v->dbg_tab = t;
-                    return 1;
-                }
-            }
-        }
-        return 1;
-    }
-
-    if (v->ui.active_tab == RUNEC_UI_TAB_CLAN_CHAT) {
-        FcPlayer* p = &v->state.player;
-
-        Rectangle wave_btn = clan_wave_button_rect(v, content);
-        int visible = clan_wave_dropdown_visible_count(content, wave_btn);
-        Rectangle wave_list = clan_wave_dropdown_rect(content, wave_btn, visible);
-        clamp_clan_wave_scroll(v, visible);
-
-        if (v->clan_wave_dropdown_open && CheckCollisionPointRec(mouse, wave_list)) {
-            int item_h = 14;
-            int row = (int)((mouse.y - wave_list.y) / (float)item_h);
-            int wave = v->clan_wave_scroll + row + 1;
-            if (wave >= 1 && wave <= FC_NUM_WAVES) {
-                viewer_jump_to_wave(v, wave);
-                v->clan_wave_dropdown_open = 0;
-            }
-            return 1;
-        }
-
-        if (CheckCollisionPointRec(mouse, wave_btn)) {
-            v->clan_wave_dropdown_open = !v->clan_wave_dropdown_open;
-            v->clan_wave_scroll = v->state.current_wave - visible / 2 - 1;
-            clamp_clan_wave_scroll(v, visible);
-            return 1;
-        }
-
-        for (int i = 0; i < NUM_MANUAL_TPS_PRESETS; i++) {
-            Rectangle br = clan_speed_button_rect(v, content, i);
-            if (!CheckCollisionPointRec(mouse, br))
-                continue;
-            set_manual_speed(v, MANUAL_TPS_PRESETS[i]);
-            v->clan_wave_dropdown_open = 0;
-            return 1;
-        }
-
-        int by = (int)content.y + 4 + 16;
-        int shown = 0;
-        for (int ni = 0; ni < FC_MAX_NPCS && shown < CLAN_NPC_MAX_ROWS; ni++) {
-            FcNpc* n = &v->state.npcs[ni];
-            if (!n->active || n->is_dead)
-                continue;
-            Rectangle row = {
-                content.x + 2.0f,
-                (float)by - 2.0f,
-                content.width - 4.0f,
-                (float)CLAN_NPC_ROW_H
-            };
-            if (CheckCollisionPointRec(mouse, row)) {
-                p->attack_target_idx = ni;
-                p->approach_target = 1;
-                p->route_len = 0;
-                p->route_idx = 0;
-                fprintf(stderr, "CLAN TAB CLICK -> ATTACK npc_idx=%d\n", ni);
-                return 1;
-            }
-            by += CLAN_NPC_ROW_H;
-            shown++;
-        }
-        return 1;
-    }
-
-    return 0;
-}
-
-static int process_runec_clan_wave_scroll(ViewerState* v) {
-    if (!v || v->ui.active_tab != RUNEC_UI_TAB_CLAN_CHAT ||
-        !v->clan_wave_dropdown_open)
-        return 0;
-
-    Rectangle content = runec_side_content_rect(v);
-    Vector2 mouse = GetMousePosition();
-    Rectangle wave_btn = clan_wave_button_rect(v, content);
-    int visible = clan_wave_dropdown_visible_count(content, wave_btn);
-    Rectangle wave_list = clan_wave_dropdown_rect(content, wave_btn, visible);
-    if (!CheckCollisionPointRec(mouse, wave_list))
-        return 0;
-
-    float wheel = GetMouseWheelMove();
-    if (wheel == 0.0f)
-        return 1;
-
-    v->clan_wave_scroll -= (int)wheel * 3;
-    clamp_clan_wave_scroll(v, visible);
-    return 1;
 }
 
 static int process_runec_prayer_click(ViewerState* v) {
@@ -4059,7 +4082,8 @@ static void draw_panel(ViewerState* v) {
                                         &v->reward_breakdown, &v->reward_runtime,
                                         v->reward_config_loaded,
                                         v->reward_config_path,
-                                        px, x, npc_end_y, PANEL_WIDTH, v->dbg_tab);
+                                        px, x, npc_end_y, PANEL_WIDTH,
+                                        v->dbg_tab, 1, 0);
     } else {
         v->dbg_tab_y = 0;
     }
@@ -4502,16 +4526,12 @@ int main(int argc, char** argv) {
                 else v.dbg_flags = 0;
             } else {
                 /* Toggle all on/off */
-                v.dbg_flags = v.dbg_flags ? 0 : DBG_ALL;
+                toggle_debug_overlay(&v);
             }
-            if (v.dbg_flags)
-                v.ui.active_tab = RUNEC_UI_TAB_FRIENDS;
         }
         /* D: match the on-screen controls without interfering with east movement */
         if (IsKeyPressed(KEY_D) && !IsKeyDown(KEY_W) && !IsKeyDown(KEY_A) && !IsKeyDown(KEY_S)) {
-            v.dbg_flags = v.dbg_flags ? 0 : DBG_ALL;
-            if (v.dbg_flags)
-                v.ui.active_tab = RUNEC_UI_TAB_FRIENDS;
+            toggle_debug_overlay(&v);
         }
         if (IsKeyPressed(KEY_GRAVE)) v.show_debug = !v.show_debug;
 
@@ -4531,16 +4551,14 @@ int main(int argc, char** argv) {
 
         sync_fc_ui(&v);
         ui_capture = process_runec_prayer_click(&v);
+        if (!ui_capture)
+            ui_capture = process_runec_console_input(&v);
         if (!ui_capture) {
             ui_capture = runec_ui_handle_input(&v.ui, GetScreenWidth(), GetScreenHeight());
             handle_runec_ui_intent(&v);
         } else {
             v.ui.last_intent.kind = RUNEC_UI_INTENT_NONE;
         }
-        if (process_runec_clan_wave_scroll(&v))
-            ui_capture = 1;
-        if (process_runec_debug_tab_clicks(&v))
-            ui_capture = 1;
 
         /* Camera orbit + zoom */
         if (!ui_capture && IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
@@ -4621,6 +4639,14 @@ int main(int argc, char** argv) {
 
             /* Step simulation */
             fc_step(&v.state, v.actions);
+
+            /* Playable-viewer test aid only. The simulator has already
+             * resolved the hit; keep the local session alive at one HP. */
+            if (v.godmode &&
+                v.state.terminal == TERMINAL_PLAYER_DEATH) {
+                v.state.player.current_hp = 10;
+                v.state.terminal = TERMINAL_NONE;
+            }
             fc_fill_render_events(&v.state, &v.render_events);
             ingest_visual_actor_tick(&v);
             update_reward_breakdown(&v);
@@ -4629,13 +4655,7 @@ int main(int argc, char** argv) {
             mark_prayer_flick_visual(&v);
 
             /* Debug event log — record events from this tick */
-            if (v.dbg_flags) dbg_log_tick(&v.state);
-
-            /* Debug: godmode — prevent player death */
-            if (v.godmode && v.state.player.current_hp <= 0) {
-                v.state.player.current_hp = v.state.player.max_hp;
-                v.state.terminal = TERMINAL_NONE;
-            }
+            dbg_log_tick(&v.state);
 
             /* Snap prev positions for newly spawned NPCs so they don't fly.
              * An NPC that wasn't active last tick but is now = new spawn. */
@@ -4663,8 +4683,6 @@ int main(int argc, char** argv) {
                 float p3x = vis_px + 0.5f;
                 float p3y = gy_p + 1.5f;
                 float p3z = -(vis_py + 0.5f);
-                float tick_sec = (v.tps > 0) ? (1.0f / (float)v.tps) : 0.5f;
-
                 /* Player hitsplat: only show when an incoming NPC hit resolved.
                  * hit_landed_this_tick is overloaded in the core and also flips
                  * when the player fires their own ranged attack, which would
@@ -4690,22 +4708,23 @@ int main(int argc, char** argv) {
                     int ty = v.render_events.player_attack_target_y;
                     int target_size = v.render_events.player_attack_target_size;
                     float src_x = (float)sx + 0.5f;
-                    float src_y = ground_y(&v, sx, sy) + 1.5f;
+                    float src_y = ground_y(&v, sx, sy) +
+                                  profile->projectile_start_height / 128.0f;
                     float src_z = -((float)sy + 0.5f);
                     float dst_x = (float)tx + (float)target_size * 0.5f;
-                    float dst_y = ground_y(&v, tx, ty) + 1.0f +
-                                  (float)target_size * 0.3f;
+                    float dst_y = ground_y(&v, tx, ty) +
+                                  profile->projectile_end_height / 128.0f;
                     float dst_z = -((float)ty + (float)target_size * 0.5f);
-                    /* The core decrements newly queued hits later in this same
-                     * step. From this post-step snapshot, one fewer full game
-                     * tick remains before the hitsplat is produced. */
-                    int remaining_hit_ticks =
-                        v.render_events.player_attack_hit_delay_ticks - 1;
-                    float travel = (float)remaining_hit_ticks * tick_sec;
-                    if (travel < 0.1f) travel = 0.1f;
+                    int projectile_distance = projectile_tile_distance(
+                        sx, sy, tx, ty);
+                    float profile_end_time = fc_projectile_profile_end_cycle(
+                        profile->projectile_launch_delay_client_ticks,
+                        profile->projectile_length_adjustment,
+                        profile->projectile_step_multiplier,
+                        projectile_distance);
                     VisualProjectile* vp = spawn_projectile(
                         &v, src_x, src_y, src_z, dst_x, dst_y, dst_z,
-                        travel, profile->projectile_color,
+                        0.1f, profile->projectile_color,
                         profile->projectile_radius,
                         profile->projectile_travel_spot,
                         profile->projectile_launch_spot,
@@ -4716,8 +4735,9 @@ int main(int argc, char** argv) {
                         FC_VISUAL_TARGET_NPC,
                         v.render_events.player_attack_target_npc_slot,
                         profile->projectile_launch_delay_client_ticks,
+                        profile_end_time,
                         profile->projectile_angle,
-                        profile->projectile_progress);
+                        profile->projectile_progress, 1);
                 }
 
                 /* NPC damage taken — hitsplats */
@@ -4789,8 +4809,6 @@ int main(int argc, char** argv) {
                     float s3y = src_ground + 1.0f + (float)src->size*0.3f;
                     float s3z = -((float)sy_tile + 0.5f);
                     float dst_y = p3y;
-                    float travel = (float)ph->ticks_remaining * tick_sec;
-                    if (travel < 0.1f) travel = 0.1f;
                     Color pc = (ph->attack_style == ATTACK_MAGIC)
                         ? CLITERAL(Color){255, 104, 36, 235}
                         : CLITERAL(Color){218, 178, 92, 235};
@@ -4798,55 +4816,79 @@ int main(int argc, char** argv) {
                     uint32_t travel_spot = 0;
                     uint32_t launch_spot = 0;
                     uint32_t impact_spot = 0;
-                    int use_profile = 0;
+                    float profile_start_height = -1.0f;
+                    float profile_end_height = -1.0f;
                     float profile_start_time = 0.0f;
                     float profile_angle = -1.0f;
+                    float profile_length_adjustment = 0.0f;
                     float profile_progress = -1.0f;
+                    float profile_step_multiplier = 0.0f;
+                    float fixed_profile_end_time = -1.0f;
+                    int track_target = 1;
                     if (src->npc_type == NPC_TOK_XIL) {
                         travel_spot = PROJ_TOK_XIL_SPINE;
                         impact_spot = PROJ_TOK_XIL_IMPACT;
+                        profile_start_height = 296.0f;
+                        profile_end_height = 40.0f;
                         profile_start_time = 32.0f;
                         profile_angle = 16.0f;
-                        use_profile = 1;
+                        profile_progress = 0.0f;
+                        profile_step_multiplier = 5.0f;
                     } else if (src->npc_type == NPC_KET_ZEK) {
                         travel_spot = PROJ_KET_ZEK_FIRE;
                         impact_spot = PROJ_KET_ZEK_IMPACT;
+                        profile_start_height = 192.0f;
+                        profile_end_height = 40.0f;
                         profile_start_time = 28.0f;
                         profile_angle = 16.0f;
-                        use_profile = 1;
+                        profile_length_adjustment = 8.0f;
+                        profile_progress = 0.0f;
+                        profile_step_multiplier = 8.0f;
                     } else if (src->npc_type == NPC_TZTOK_JAD &&
                                ph->attack_style == ATTACK_MAGIC) {
                         launch_spot = PROJ_JAD_MAGIC_LAUNCH;
                         travel_spot = PROJ_JAD_MAGIC_TRAVEL;
                         impact_spot = PROJ_JAD_MAGIC_IMPACT;
-                        s3y = src_ground + 172.0f / 128.0f;
-                        dst_y = gy_p + 124.0f / 128.0f;
-                        profile_start_time = 86.0f;
+                        profile_start_height = 172.0f;
+                        profile_end_height = 124.0f;
+                        profile_start_time = 41.0f;
                         profile_angle = 16.0f;
                         profile_progress = 64.0f;
-                        use_profile = 1;
+                        profile_step_multiplier = 5.0f;
                     } else if (src->npc_type == NPC_TZTOK_JAD &&
                                ph->attack_style == ATTACK_RANGED) {
-                        launch_spot = PROJ_JAD_RANGE_LAUNCH;
-                        travel_spot = PROJ_JAD_RANGED_TRAVEL;
+                        /* RuneC models Jad ranged as a delayed impact on the
+                         * attacked tile, not as a homing travel projectile. */
                         impact_spot = PROJ_JAD_RANGED_IMPACT;
-                        s3y = src_ground + 163.0f / 128.0f;
-                        dst_y = gy_p + 146.0f / 128.0f;
-                        profile_start_time = 120.0f;
-                        profile_angle = 15.0f;
-                        profile_progress = 11.0f;
-                        use_profile = 1;
+                        profile_start_height = 768.0f;
+                        profile_end_height = 52.0f;
+                        profile_angle = 0.0f;
+                        profile_progress = 0.0f;
+                        fixed_profile_end_time = 60.0f;
+                        track_target = 0;
                     }
+                    if (profile_start_height >= 0.0f)
+                        s3y = src_ground + profile_start_height / 128.0f;
+                    if (profile_end_height >= 0.0f)
+                        dst_y = gy_p + profile_end_height / 128.0f;
+                    int projectile_distance = projectile_tile_distance(
+                        sx_tile, sy_tile,
+                        v.state.player.x, v.state.player.y);
+                    float profile_end_time = fixed_profile_end_time >= 0.0f
+                        ? fixed_profile_end_time
+                        : fc_projectile_profile_end_cycle(
+                            profile_start_time, profile_length_adjustment,
+                            profile_step_multiplier, projectile_distance);
                     VisualProjectile* vp =
                         spawn_projectile(&v, s3x, s3y, s3z, p3x, dst_y, p3z,
-                                         travel, pc, rad, travel_spot,
+                                         0.1f, pc, rad, travel_spot,
                                          launch_spot, impact_spot);
                     configure_projectile_tracking(
                         &v, vp,
                         FC_VISUAL_TARGET_NPC, ph->source_npc_idx,
                         FC_VISUAL_TARGET_PLAYER, 0,
-                        use_profile ? profile_start_time : 0.0f,
-                        profile_angle, profile_progress);
+                        profile_start_time, profile_end_time,
+                        profile_angle, profile_progress, track_target);
                 }
 
                 for (int ni = 0; ni < FC_MAX_NPCS; ni++) {
@@ -4959,9 +5001,10 @@ int main(int argc, char** argv) {
             for (int i = 0; i < MAX_PROJECTILES; i++) {
                 if (v.projectiles[i].active) {
                     if (update_visual_projectile(&v, &v.projectiles[i], dt)) {
-                        float effect_secs = (v.tps > 0.0f)
-                            ? (3.0f / (float)v.tps) : 1.8f;
-                        if (effect_secs < 0.1f) effect_secs = 0.1f;
+                        /* The client retains an impact for at most three game
+                         * ticks, but a shorter spotanim ends after one pass. */
+                        float effect_secs = projectile_effect_duration(
+                            &v, v.projectiles[i].impact_spot_id, 90.0f);
                         spawn_spot_effect(&v, v.projectiles[i].impact_spot_id,
                                           v.projectiles[i].x,
                                           v.projectiles[i].y,
@@ -5230,7 +5273,8 @@ skip_player_anim_update:
         draw_scene(&v);
         sync_fc_ui(&v);
         runec_ui_draw(&v.ui, GetScreenWidth(), GetScreenHeight());
-        draw_runec_debug_tabs(&v);
+        draw_runec_side_overrides(&v);
+        draw_runec_console(&v);
         draw_test_overlay(&v);
 
         EndDrawing();

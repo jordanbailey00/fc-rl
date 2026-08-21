@@ -289,6 +289,8 @@ void runec_ui_close_interface(RuneCUiState *ui, RuneCUiOpenMount mount,
                               RuneCUiTab tab);
 int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h);
 void runec_ui_draw(RuneCUiState *ui, int screen_w, int screen_h);
+Rectangle runec_ui_chat_panel_rect(const RuneCUiState *ui,
+                                   int screen_w, int screen_h);
 const char *runec_ui_tab_name(RuneCUiTab tab);
 int runec_ui_runtime_selftest(RuneCUiState *ui, char *error, size_t error_cap);
 

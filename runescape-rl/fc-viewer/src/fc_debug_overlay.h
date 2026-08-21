@@ -648,12 +648,14 @@ static void dbg_draw_obs(const FcState* state, int dbg_flags) {
 }
 
 /* ======================================================================== */
-/* Side panel debug tabs (drawn inside the side panel area)                 */
+/* Compact debug tabs (usable in any viewer panel)                          */
 /* ======================================================================== */
 
 /* Draw debug info as a tabbed panel section.
  * px = panel X, x = content X, by = Y start position, pw = panel width.
- * dbg_tab: 0=player, 1=obs, 2=mask, 3=reward.
+ * dbg_tab: 0=player, 1=obs, 2=mask, 3=reward, 4=log.
+ * draw_tabs controls whether this helper renders its own tab selector.
+ * content_height limits the log viewport; zero keeps the legacy 20 rows.
  * Returns end Y position. */
 static int dbg_draw_panel_tabs(const FcState* state,
                                 const FcRewardParams* reward_params,
@@ -661,27 +663,37 @@ static int dbg_draw_panel_tabs(const FcState* state,
                                 const FcRewardRuntime* reward_runtime,
                                 int reward_config_loaded,
                                 const char* reward_config_path,
-                                int px, int x, int by, int pw, int dbg_tab) {
+                                int px, int x, int by, int pw, int dbg_tab,
+                                int draw_tabs, int content_height) {
     char buf[256];
     int lh = 12;
 
-    /* Tab buttons */
-    DrawLine(px+4, by, px+pw-4, by, CLITERAL(Color){42,36,28,255}); by += 2;
-    static const char* dtab_labels[] = { "Player", "Obs", "Mask", "Reward", "Log" };
-    int num_dtabs = 5;
-    int dtab_w = (pw - 12) / num_dtabs;
-    int dtab_h = 16;
-    for (int t = 0; t < num_dtabs; t++) {
-        int tx = px + 4 + t * dtab_w;
-        int selected = (t == dbg_tab);
-        Color bg = selected ? CLITERAL(Color){82,73,61,255} : CLITERAL(Color){42,36,28,255};
-        DrawRectangle(tx, by, dtab_w, dtab_h, bg);
-        Color tc = selected ? DBG_COL_VALUE : DBG_COL_DIM;
-        int tw = MeasureText(dtab_labels[t], 8);
-        DrawText(dtab_labels[t], tx + (dtab_w - tw) / 2, by + 4, 8, tc);
-        if (selected) DrawLine(tx+2, by+dtab_h-1, tx+dtab_w-2, by+dtab_h-1, DBG_COL_VALUE);
+    if (draw_tabs) {
+        DrawLine(px+4, by, px+pw-4, by,
+                 CLITERAL(Color){42,36,28,255});
+        by += 2;
+        static const char* dtab_labels[] = {
+            "Player", "Obs", "Mask", "Reward", "Log"
+        };
+        int num_dtabs = 5;
+        int dtab_w = (pw - 12) / num_dtabs;
+        int dtab_h = 16;
+        for (int t = 0; t < num_dtabs; t++) {
+            int tx = px + 4 + t * dtab_w;
+            int selected = (t == dbg_tab);
+            Color bg = selected ? CLITERAL(Color){82,73,61,255}
+                                : CLITERAL(Color){42,36,28,255};
+            DrawRectangle(tx, by, dtab_w, dtab_h, bg);
+            Color tc = selected ? DBG_COL_VALUE : DBG_COL_DIM;
+            int tw = MeasureText(dtab_labels[t], 8);
+            DrawText(dtab_labels[t], tx + (dtab_w - tw) / 2,
+                     by + 4, 8, tc);
+            if (selected)
+                DrawLine(tx+2, by+dtab_h-1, tx+dtab_w-2,
+                         by+dtab_h-1, DBG_COL_VALUE);
+        }
+        by += dtab_h + 3;
     }
-    by += dtab_h + 3;
 
     /* Tab content */
     if (dbg_tab == 0) {
@@ -900,9 +912,11 @@ static int dbg_draw_panel_tabs(const FcState* state,
         }
     } else if (dbg_tab == 4) {
         /* Event log — scrollable with scrollbar, most recent at top */
-        int max_visible = 20;
-        int total = g_dbg_log.count;
         int entry_h = lh - 2;
+        int max_visible = content_height > 0
+            ? content_height / entry_h : 20;
+        if (max_visible < 1) max_visible = 1;
+        int total = g_dbg_log.count;
         int log_h = max_visible * entry_h;
         int scrollbar_w = 10;
         int content_w = pw - 16 - scrollbar_w;
@@ -924,7 +938,8 @@ static int dbg_draw_panel_tabs(const FcState* state,
             float wheel = GetMouseWheelMove();
             if (wheel != 0.0f) {
                 Vector2 mp = GetMousePosition();
-                if (mp.x >= px) {
+                if (mp.x >= px && mp.x < px + pw &&
+                    mp.y >= by && mp.y < by + log_h) {
                     g_dbg_log.scroll_offset -= (int)wheel * 3;
                     if (g_dbg_log.scroll_offset < 0) g_dbg_log.scroll_offset = 0;
                     if (g_dbg_log.scroll_offset > max_scroll) g_dbg_log.scroll_offset = max_scroll;

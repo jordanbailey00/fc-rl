@@ -880,7 +880,8 @@ static void ui_layout(int screen_w, int screen_h, RuneCUiLayout *out) {
     }
 }
 
-static void apply_decoded_mounts(RuneCUiState *ui, int screen_w, int screen_h,
+static void apply_decoded_mounts(const RuneCUiState *ui,
+                                 int screen_w, int screen_h,
                                  RuneCUiLayout *layout) {
     if (!ui->decoded_ui_enabled || !ui->decoded_ui_ready)
         return;
@@ -1394,9 +1395,6 @@ void runec_ui_init(RuneCUiState *ui) {
                     "ui_interfaces: data/ui/interfaces.bin unavailable; using manual UI\n");
         } else {
             runec_ui_open_top_interface(ui, "toplevel_osrs_stretch");
-            runec_ui_open_subinterface(ui, RUNEC_UI_MOUNT_CHAT,
-                                       RUNEC_UI_TAB_NONE,
-                                       RUNEC_UI_TOP_CHAT_CONTAINER, "chatbox");
             runec_ui_open_subinterface(ui, RUNEC_UI_MOUNT_MAP,
                                        RUNEC_UI_TAB_NONE,
                                        RUNEC_UI_TOP_MAP_CONTAINER, "orbs");
@@ -2013,7 +2011,7 @@ int runec_ui_runtime_selftest(RuneCUiState *ui, char *error, size_t error_cap) {
         return ui_selftest_fail(error, error_cap, "decoded UI is not ready");
 
     const char *required_groups[] = {
-        "toplevel_osrs_stretch", "chatbox", "orbs", "inventory",
+        "toplevel_osrs_stretch", "orbs", "inventory",
         "wornitems", "stats", "prayerbook", "magic_spellbook",
         "combat_interface", "equipment", "ge_pricechecker_side", "deathkeep",
     };
@@ -2027,9 +2025,6 @@ int runec_ui_runtime_selftest(RuneCUiState *ui, char *error, size_t error_cap) {
     if (!open_group_active(ui, RUNEC_UI_MOUNT_SCREEN, RUNEC_UI_TAB_NONE,
                            "toplevel_osrs_stretch"))
         return ui_selftest_fail(error, error_cap, "top-level interface not open");
-    if (!open_group_active(ui, RUNEC_UI_MOUNT_CHAT, RUNEC_UI_TAB_NONE,
-                           "chatbox"))
-        return ui_selftest_fail(error, error_cap, "chatbox interface not open");
     if (!open_group_active(ui, RUNEC_UI_MOUNT_MAP, RUNEC_UI_TAB_NONE,
                            "orbs"))
         return ui_selftest_fail(error, error_cap, "orbs interface not open");
@@ -2446,44 +2441,13 @@ int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h) {
             ui->tab_press_timer[i] = 0.0f;
     }
 
-    if (ui->chat_focused) {
-        int ch = GetCharPressed();
-        while (ch > 0) {
-            size_t len = strlen(ui->chat_input);
-            if (ch >= 32 && ch <= 126 && len + 1 < sizeof(ui->chat_input)) {
-                ui->chat_input[len] = (char)ch;
-                ui->chat_input[len + 1] = '\0';
-            }
-            ch = GetCharPressed();
-        }
-        if (IsKeyPressed(KEY_BACKSPACE)) {
-            size_t len = strlen(ui->chat_input);
-            if (len > 0)
-                ui->chat_input[len - 1] = '\0';
-        }
-        if (IsKeyPressed(KEY_ENTER)) {
-            if (ui->chat_input[0]) {
-                ui->last_intent.kind = RUNEC_UI_INTENT_CHAT_SEND;
-                copy_text(ui->last_intent.text, sizeof(ui->last_intent.text),
-                          ui->chat_input);
-                char line[96];
-                snprintf(line, sizeof(line), "You: %.88s", ui->chat_input);
-                ui_add_chat(ui, line);
-                ui->chat_input[0] = '\0';
-            }
-            ui->chat_focused = 0;
-        }
-        if (IsKeyPressed(KEY_ESCAPE))
-            ui->chat_focused = 0;
-    }
-    if (!ui->chat_focused && ui->selected_target.kind != RUNEC_UI_SELECTED_NONE
+    if (ui->selected_target.kind != RUNEC_UI_SELECTED_NONE
             && IsKeyPressed(KEY_ESCAPE)) {
         runec_ui_clear_selected_target(ui);
         ui->last_intent.kind = RUNEC_UI_INTENT_SELECTED_TARGET_CANCEL;
         return 1;
     }
-    if (!ui->chat_focused && IsKeyPressed(KEY_ESCAPE)
-            && close_modal_interfaces(ui)) {
+    if (IsKeyPressed(KEY_ESCAPE) && close_modal_interfaces(ui)) {
         return 1;
     }
 
@@ -2532,13 +2496,6 @@ int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h) {
                               &modal_hit)) {
             if (modal_hit.component_id != 0)
                 decoded_left_click(ui, &modal_hit, mouse);
-            return 1;
-        }
-
-        if (CheckCollisionPointRec(mouse, layout.chat_input)) {
-            ui->chat_focused = 1;
-            ui->last_intent.kind = RUNEC_UI_INTENT_CHAT_FOCUS;
-            ui->last_intent.position = mouse;
             return 1;
         }
 
@@ -2809,7 +2766,7 @@ int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h) {
     }
     if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT) && !ui->context_open)
         return 0;
-    return mouse_over_ui(&layout, mouse) || ui->chat_focused;
+    return mouse_over_ui(&layout, mouse);
 }
 
 static void draw_text_shadow(const RuneCUiState *ui, const char *text,
@@ -3001,49 +2958,17 @@ static void draw_minimap(const RuneCUiState *ui, const RuneCUiLayout *layout) {
         draw_centered_text(ui, "wiki", layout->wiki_button, 10, OSRS_ORANGE);
 }
 
-static void draw_chat(RuneCUiState *ui, const RuneCUiLayout *layout) {
-    int decoded_chat = 0;
-    const char *decoded_chat_env = getenv("RUNEC_UI_DECODED_CHAT");
-    int decoded_chat_enabled = decoded_chat_env && decoded_chat_env[0]
-        && strcmp(decoded_chat_env, "0") != 0;
-    if (decoded_chat_enabled && ui->decoded_ui_enabled && ui->decoded_ui_ready) {
-        const char *group =
-            open_group_for_mount(ui, RUNEC_UI_MOUNT_CHAT, RUNEC_UI_TAB_NONE);
-        RuneCUiComponentOverrides overrides = decoded_overrides(ui);
-        decoded_chat = runec_ui_interfaces_draw_group_ex(
-            &ui->interfaces, &ui->assets, group ? group : "chatbox",
-            layout->chat, &overrides);
-    }
-    if (!decoded_chat)
-        runec_ui_draw_asset(&ui->assets, "chatbox_bg", layout->chat, WHITE);
-    if (!decoded_chat && !runec_ui_asset_ready(&ui->assets, "chatbox_bg"))
-        DrawRectangleRec(layout->chat, (Color){0, 0, 0, 115});
-    DrawRectangleRec(layout->chat_messages, (Color){0, 0, 0, 84});
+static void draw_chat_panel_chrome(const RuneCUiState *ui,
+                                   const RuneCUiLayout *layout) {
+    runec_ui_draw_asset(&ui->assets, "chatbox_bg", layout->chat, WHITE);
+    if (!runec_ui_asset_ready(&ui->assets, "chatbox_bg"))
+        DrawRectangleRec(layout->chat, (Color){22, 19, 15, 235});
 
-    for (int i = ui->chat_line_count - 1; i >= 0; i--) {
-        int row = ui->chat_line_count - 1 - i;
-        draw_text_shadow(ui, ui->chat_lines[i], layout->chat_messages.x + 3,
-                         layout->chat_messages.y + row * 17.0f, 14, OSRS_ORANGE);
-    }
-
-    const char *prompt = ui->chat_focused ? ">" : "Click here to chat";
-    char input[160];
-    snprintf(input, sizeof(input), "%s %s", prompt, ui->chat_input);
-    draw_text_shadow(ui, input, layout->chat_input.x, layout->chat_input.y, 14, WHITE);
-
-    runec_ui_draw_asset(&ui->assets, "main_stones_bottom", layout->chat_controls, WHITE);
-    if (!decoded_chat && !runec_ui_asset_ready(&ui->assets, "main_stones_bottom"))
+    DrawRectangleRec(layout->chat_messages, (Color){0, 0, 0, 104});
+    runec_ui_draw_asset(&ui->assets, "main_stones_bottom",
+                        layout->chat_controls, WHITE);
+    if (!runec_ui_asset_ready(&ui->assets, "main_stones_bottom"))
         DrawRectangleRec(layout->chat_controls, (Color){74, 62, 48, 235});
-
-    const char *tabs[] = {"All", "Game", "Public", "Private", "Channel", "Clan", "Trade"};
-    for (int i = 0; i < 7; i++) {
-        Rectangle r = {layout->chat.x + 6 + i * 72.0f, layout->chat_controls.y + 1, 68, 21};
-        if (!decoded_chat)
-            runec_ui_draw_asset(&ui->assets, "chat_tab_button_0", r, WHITE);
-        if (!decoded_chat && !runec_ui_asset_ready(&ui->assets, "chat_tab_button_0"))
-            DrawRectangleRec(r, (Color){52, 44, 35, 230});
-        draw_centered_text(ui, tabs[i], r, 12, i == 0 ? OSRS_YELLOW : OSRS_ORANGE);
-    }
 }
 
 static Color item_color(uint32_t item_id) {
@@ -3622,10 +3547,19 @@ void runec_ui_draw(RuneCUiState *ui, int screen_w, int screen_h) {
     apply_decoded_mounts(ui, screen_w, screen_h, &layout);
     sync_decoded_component_overrides(ui);
 
+    draw_chat_panel_chrome(ui, &layout);
     draw_minimap(ui, &layout);
-    draw_chat(ui, &layout);
     draw_side(ui, &layout);
     draw_open_overlay_interfaces(ui, &layout, screen_w, screen_h);
     draw_selected_target(ui);
     draw_context(ui);
+}
+
+Rectangle runec_ui_chat_panel_rect(const RuneCUiState *ui,
+                                   int screen_w, int screen_h) {
+    RuneCUiLayout layout;
+    ui_layout(screen_w, screen_h, &layout);
+    if (ui)
+        apply_decoded_mounts(ui, screen_w, screen_h, &layout);
+    return layout.chat;
 }

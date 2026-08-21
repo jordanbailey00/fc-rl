@@ -29,15 +29,16 @@ FIGHT_CAVES_SPOTANIM_IDS = [
     15,   # rune arrow travel
     24,   # rune arrow launch
     27,   # standard crossbow bolt travel
+    157,  # Jad magic impact
     230,  # adamant dart travel
     236,  # adamant dart launch
     439,  # Jad magic launch
     440,  # Jad ranged launch
     443,  # Tok-Xil ranged travel
     444,  # Tok-Xil ranged impact
-    445,  # Ket-Zek/Jad magic travel
-    446,  # Ket-Zek/Jad magic impact
-    448,  # Jad ranged travel
+    445,  # Ket-Zek magic travel
+    446,  # Ket-Zek magic impact
+    448,  # Jad magic travel
     451,  # Jad ranged impact
     1116, # dragon arrow launch
     1120, # dragon arrow travel
