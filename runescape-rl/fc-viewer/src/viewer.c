@@ -57,6 +57,8 @@
 #define HALF_TPS        0.50f
 #define NORMAL_TPS      (5.0f / 3.0f)
 #define MAX_HITSPLATS   32
+#define OSRS_HITSPLAT_SECONDS  1.0f  /* b237 regular hitmark stickTime=50 */
+#define OSRS_HEALTHBAR_SECONDS 6.0f  /* b237 health_30 stickTime=300 */
 #define POLICY_REPLAY_BASE_TPS NORMAL_TPS
 
 /* Player animation sequence IDs (from OSRS cache/reference data). */
@@ -258,9 +260,12 @@ typedef enum {
 typedef struct {
     int active;
     float world_x, world_y, world_z;  /* 3D position (entity center) */
+    int actor_kind;        /* FcVisualTargetKind; keeps splat on moving actor */
+    int actor_slot;
+    int overlay_slot;      /* native four-splat screen-space layout */
     int damage;           /* damage in tenths (0 = miss) */
     int kind;             /* HitsplatKind */
-    int frames_left;      /* lifetime in render frames */
+    float seconds_left;
 } Hitsplat;
 
 /* Visual projectile — travels from source to destination over tick duration */
@@ -395,8 +400,11 @@ typedef struct {
     float npc_action_anim_timer[FC_MAX_NPCS];
     int npc_attack_visual_style[FC_MAX_NPCS];
     float npc_attack_visual_timer[FC_MAX_NPCS];
+    float npc_prayer_indicator_timer[FC_MAX_NPCS];
     /* Hitsplats */
     Hitsplat hitsplats[MAX_HITSPLATS];
+    float player_healthbar_timer;
+    float npc_healthbar_timer[FC_MAX_NPCS];
     /* Buffered key inputs (captured every frame, consumed on tick) */
     int pending_prayer, pending_eat, pending_drink;
     int pending_attack_npc;
@@ -414,6 +422,10 @@ typedef struct {
     VisualEffect effects[MAX_VISUAL_EFFECTS];
     /* Prayer overhead icon textures */
     Texture2D pray_melee_tex, pray_missiles_tex, pray_magic_tex;
+    /* Cache-authored OSRS actor overhead sprites. */
+    Texture2D hitsplat_zero_tex, hitsplat_damage_tex;
+    Texture2D hitsplat_heal_tex, hitsplat_prayer_drain_tex;
+    Texture2D healthbar_full_tex, healthbar_empty_tex;
     /* Side panel tabs (Phase 8h) */
     int active_tab;     /* 0=inventory, 1=combat, 2=prayer, 3=stats */
     int active_loadout; /* index into FC_LOADOUTS[] */
@@ -1250,6 +1262,12 @@ static void mark_npc_attack_visual(ViewerState* v, int npc_idx,
         return;
     v->npc_attack_visual_style[npc_idx] = attack_style;
     v->npc_attack_visual_timer[npc_idx] = 1.15f;
+    v->npc_prayer_indicator_timer[npc_idx] = 0.30f;
+}
+
+static void mark_npc_attack_indicator(ViewerState* v, int npc_idx) {
+    if (!v || npc_idx < 0 || npc_idx >= FC_MAX_NPCS) return;
+    v->npc_prayer_indicator_timer[npc_idx] = 0.30f;
 }
 
 
@@ -1761,6 +1779,8 @@ static void reset_ep(ViewerState* v) {
     v->attack_target = -1;
     memset(v->actions, 0, sizeof(v->actions));
     memset(v->hitsplats, 0, sizeof(v->hitsplats));
+    v->player_healthbar_timer = 0.0f;
+    memset(v->npc_healthbar_timer, 0, sizeof(v->npc_healthbar_timer));
     clear_visuals(v);
     reset_visual_actor_scene(v);
     v->pending_prayer = 0;
@@ -1799,6 +1819,7 @@ static void reset_ep(ViewerState* v) {
         v->npc_action_anim_timer[i] = 0.0f;
         v->npc_attack_visual_style[i] = ATTACK_NONE;
         v->npc_attack_visual_timer[i] = 0.0f;
+        v->npc_prayer_indicator_timer[i] = 0.0f;
     }
 }
 
@@ -1823,6 +1844,8 @@ static void viewer_jump_to_wave(ViewerState* v, int wave) {
     fc_fill_render_entities(&v->state, v->entities, &v->entity_count);
     fc_fill_render_events(&v->state, &v->render_events);
     memset(v->hitsplats, 0, sizeof(v->hitsplats));
+    v->player_healthbar_timer = 0.0f;
+    memset(v->npc_healthbar_timer, 0, sizeof(v->npc_healthbar_timer));
     clear_visuals(v);
     reset_visual_actor_scene(v);
     v->attack_target = -1;
@@ -1855,6 +1878,7 @@ static void viewer_jump_to_wave(ViewerState* v, int wave) {
         v->npc_action_anim_timer[i] = 0.0f;
         v->npc_attack_visual_style[i] = ATTACK_NONE;
         v->npc_attack_visual_timer[i] = 0.0f;
+        v->npc_prayer_indicator_timer[i] = 0.0f;
     }
 }
 
@@ -2094,25 +2118,66 @@ static int update_visual_projectile(ViewerState* v, VisualProjectile* vp,
     return 0;
 }
 
-static void spawn_status_splat(ViewerState* v, float wx, float wy, float wz,
+static void show_actor_healthbar(ViewerState* v, FcVisualTargetKind actor_kind,
+                                 int actor_slot) {
+    if (!v) return;
+    if (actor_kind == FC_VISUAL_TARGET_PLAYER) {
+        v->player_healthbar_timer = OSRS_HEALTHBAR_SECONDS;
+    } else if (actor_kind == FC_VISUAL_TARGET_NPC &&
+               actor_slot >= 0 && actor_slot < FC_MAX_NPCS) {
+        v->npc_healthbar_timer[actor_slot] = OSRS_HEALTHBAR_SECONDS;
+    }
+}
+
+static int next_hitsplat_overlay_slot(const ViewerState* v,
+                                      FcVisualTargetKind actor_kind,
+                                      int actor_slot) {
+    unsigned int used = 0;
+    if (!v) return 0;
+    for (int i = 0; i < MAX_HITSPLATS; i++) {
+        const Hitsplat* hit = &v->hitsplats[i];
+        if (hit->active && hit->actor_kind == actor_kind &&
+            hit->actor_slot == actor_slot &&
+            hit->overlay_slot >= 0 && hit->overlay_slot < 4) {
+            used |= 1u << hit->overlay_slot;
+        }
+    }
+    for (int slot = 0; slot < 4; slot++) {
+        if ((used & (1u << slot)) == 0) return slot;
+    }
+    return 0;
+}
+
+static void spawn_status_splat(ViewerState* v,
+                               FcVisualTargetKind actor_kind, int actor_slot,
+                               float wx, float wy, float wz,
                                int amount_tenths, int kind) {
     for (int i = 0; i < MAX_HITSPLATS; i++) {
         if (!v->hitsplats[i].active) {
+            int overlay_slot = next_hitsplat_overlay_slot(
+                v, actor_kind, actor_slot);
             v->hitsplats[i].active = 1;
             v->hitsplats[i].world_x = wx;
             v->hitsplats[i].world_y = wy;
             v->hitsplats[i].world_z = wz;
+            v->hitsplats[i].actor_kind = actor_kind;
+            v->hitsplats[i].actor_slot = actor_slot;
+            v->hitsplats[i].overlay_slot = overlay_slot;
             v->hitsplats[i].damage = amount_tenths;
             v->hitsplats[i].kind = kind;
-            v->hitsplats[i].frames_left = 60;  /* 1 second at 60fps */
+            v->hitsplats[i].seconds_left = OSRS_HITSPLAT_SECONDS;
+            if (kind != HITSPLAT_PRAYER_DRAIN)
+                show_actor_healthbar(v, actor_kind, actor_slot);
             return;
         }
     }
 }
 
-static void spawn_hitsplat(ViewerState* v, float wx, float wy, float wz,
-                           int damage_tenths) {
-    spawn_status_splat(v, wx, wy, wz, damage_tenths, HITSPLAT_DAMAGE);
+static void spawn_hitsplat(ViewerState* v,
+                           FcVisualTargetKind actor_kind, int actor_slot,
+                           float wx, float wy, float wz, int damage_tenths) {
+    spawn_status_splat(v, actor_kind, actor_slot, wx, wy, wz,
+                       damage_tenths, HITSPLAT_DAMAGE);
 }
 
 /* Terrain loader — the terrain mesh is the floor heightmap.
@@ -2578,6 +2643,184 @@ static Vector3 camera_follow_target(const ViewerState* v) {
     return (Vector3){cx, 0.5f, cy};
 }
 
+static void draw_npc_prayer_window_indicators(ViewerState* v) {
+    if (!v || !v->dbg_flags) return;
+
+    for (int i = 0; i < v->entity_count; i++) {
+        const FcRenderEntity* entity = &v->entities[i];
+        int npc_idx = entity->npc_slot;
+        if (entity->entity_type != ENTITY_NPC || entity->is_dead ||
+            npc_idx < 0 || npc_idx >= FC_MAX_NPCS ||
+            (v->npc_prayer_indicator_timer[npc_idx] <= 0.0f &&
+             !dbg_npc_prayer_window_open(&v->state, npc_idx))) {
+            continue;
+        }
+
+        EntityRenderPose pose = entity_render_pose(v, entity);
+        Vector3 anchor = {
+            pose.x,
+            ground_y_smooth(v, pose.x, pose.y) +
+                2.2f + (float)entity->size * 0.8f,
+            -pose.y
+        };
+        dbg_draw_prayer_window_indicator(anchor, v->camera);
+    }
+}
+
+static const FcRenderEntity* find_render_actor(const ViewerState* v,
+                                                int actor_kind,
+                                                int actor_slot) {
+    if (!v) return NULL;
+    for (int i = 0; i < v->entity_count; i++) {
+        const FcRenderEntity* entity = &v->entities[i];
+        if (actor_kind == FC_VISUAL_TARGET_PLAYER &&
+            entity->entity_type == ENTITY_PLAYER) {
+            return entity;
+        }
+        if (actor_kind == FC_VISUAL_TARGET_NPC &&
+            entity->entity_type == ENTITY_NPC &&
+            entity->npc_slot == actor_slot) {
+            return entity;
+        }
+    }
+    return NULL;
+}
+
+static float render_entity_model_top(ViewerState* v,
+                                     const FcRenderEntity* entity) {
+    Model* model = NULL;
+    if (!v || !entity) return 2.0f;
+    if (entity->entity_type == ENTITY_PLAYER) {
+        NpcModelEntry* entry = viewer_player_model_entry(v);
+        if (entry && entry->loaded) model = &entry->model;
+    } else {
+        uint32_t model_id = fc_npc_type_to_model_id(entity->npc_type);
+        NpcModelEntry* entry = v->npc_models
+            ? fc_npc_model_find(v->npc_models, model_id) : NULL;
+        if (entry && entry->loaded) model = &entry->model;
+    }
+    if (model) {
+        BoundingBox bounds = GetModelBoundingBox(*model);
+        if (bounds.max.y > 0.1f && bounds.max.y < 20.0f)
+            return bounds.max.y;
+    }
+    if (entity->entity_type == ENTITY_PLAYER) return 2.0f;
+    return 1.3f + (float)entity->size * 0.5f;
+}
+
+static Vector3 render_entity_overlay_anchor(ViewerState* v,
+                                             const FcRenderEntity* entity,
+                                             float height_fraction,
+                                             float extra_height) {
+    EntityRenderPose pose = entity_render_pose(v, entity);
+    float ground = ground_y_smooth(v, pose.x, pose.y);
+    float top = render_entity_model_top(v, entity);
+    return (Vector3){
+        pose.x,
+        ground + top * height_fraction + extra_height,
+        -pose.y
+    };
+}
+
+static void draw_osrs_healthbars(ViewerState* v) {
+    if (!v) return;
+    for (int i = 0; i < v->entity_count; i++) {
+        const FcRenderEntity* entity = &v->entities[i];
+        float timer = 0.0f;
+        if (entity->entity_type == ENTITY_PLAYER) {
+            timer = v->player_healthbar_timer;
+        } else if (entity->npc_slot >= 0 &&
+                   entity->npc_slot < FC_MAX_NPCS) {
+            timer = v->npc_healthbar_timer[entity->npc_slot];
+        }
+        if (timer <= 0.0f || entity->max_hp <= 0) continue;
+
+        Vector3 anchor = render_entity_overlay_anchor(v, entity, 1.0f, 0.12f);
+        Vector2 screen = GetWorldToScreen(anchor, v->camera);
+        if (screen.x < -40.0f || screen.x > (float)GetScreenWidth() + 40.0f ||
+            screen.y < -20.0f || screen.y > (float)GetScreenHeight() + 20.0f) {
+            continue;
+        }
+
+        int fill = entity->current_hp * 30 / entity->max_hp;
+        if (fill < 0) fill = 0;
+        if (fill > 30) fill = 30;
+        int x = (int)roundf(screen.x) - 15;
+        int y = (int)roundf(screen.y) - 3;
+
+        if (v->healthbar_empty_tex.id > 0 &&
+            v->healthbar_full_tex.id > 0) {
+            DrawTexture(v->healthbar_empty_tex, x, y, WHITE);
+            if (fill > 0) {
+                Rectangle src = {0.0f, 0.0f, (float)fill, 5.0f};
+                DrawTextureRec(v->healthbar_full_tex, src,
+                               (Vector2){(float)x, (float)y}, WHITE);
+            }
+        } else {
+            DrawRectangle(x, y, 30, 5, RED);
+            DrawRectangle(x, y, fill, 5, GREEN);
+        }
+    }
+}
+
+static Texture2D osrs_hitsplat_texture(const ViewerState* v,
+                                       const Hitsplat* hit) {
+    Texture2D empty = {0};
+    if (!v || !hit) return empty;
+    if (hit->kind == HITSPLAT_HEAL) return v->hitsplat_heal_tex;
+    if (hit->kind == HITSPLAT_PRAYER_DRAIN)
+        return v->hitsplat_prayer_drain_tex;
+    return hit->damage > 0 ? v->hitsplat_damage_tex : v->hitsplat_zero_tex;
+}
+
+static void draw_osrs_hitsplats(ViewerState* v) {
+    static const int slot_x[4] = {0, 0, -15, 15};
+    static const int slot_y[4] = {0, -20, -10, -10};
+    if (!v) return;
+
+    for (int i = 0; i < MAX_HITSPLATS; i++) {
+        const Hitsplat* hit = &v->hitsplats[i];
+        if (!hit->active) continue;
+
+        Vector3 world = {hit->world_x, hit->world_y, hit->world_z};
+        const FcRenderEntity* entity = find_render_actor(
+            v, hit->actor_kind, hit->actor_slot);
+        if (entity)
+            world = render_entity_overlay_anchor(v, entity, 0.5f, 0.0f);
+        Vector2 screen = GetWorldToScreen(world, v->camera);
+        if (screen.x < -50.0f || screen.x > (float)GetScreenWidth() + 50.0f ||
+            screen.y < -50.0f || screen.y > (float)GetScreenHeight() + 50.0f) {
+            continue;
+        }
+
+        int slot = hit->overlay_slot;
+        if (slot < 0 || slot >= 4) slot = 0;
+        int center_x = (int)roundf(screen.x) + slot_x[slot];
+        int center_y = (int)roundf(screen.y) + slot_y[slot];
+        Texture2D texture = osrs_hitsplat_texture(v, hit);
+        if (texture.id > 0)
+            DrawTexture(texture, center_x - 12, center_y - 12, WHITE);
+
+        int value = hit->kind == HITSPLAT_DAMAGE
+            ? hit->damage / 10
+            : (hit->damage + 9) / 10;
+        char text[16];
+        snprintf(text, sizeof(text), "%d", value);
+
+        /* Native clients use plain11 and draw the shadow one pixel down/right.
+         * RuneScape Small is the repo's point-filtered plain11-compatible font. */
+        const float font_size = 12.0f;
+        Font font = runec_ui_font_for_size(&v->ui.assets, font_size);
+        Vector2 measured = MeasureTextEx(font, text, font_size, 0.0f);
+        float text_x = floorf((float)center_x - 1.0f - measured.x * 0.5f);
+        float text_y = floorf((float)center_y - 6.0f);
+        DrawTextEx(font, text, (Vector2){text_x + 1.0f, text_y + 1.0f},
+                   font_size, 0.0f, BLACK);
+        DrawTextEx(font, text, (Vector2){text_x, text_y},
+                   font_size, 0.0f, WHITE);
+    }
+}
+
 /* ======================================================================== */
 /* Scene drawing                                                             */
 /* ======================================================================== */
@@ -2729,16 +2972,6 @@ static void draw_scene(ViewerState* v) {
                          (Vector3){1,0,0}, 90.0f, CLITERAL(Color){80, 180, 255, 255});
         }
 
-        /* HP bar — floating above entity */
-        if (e->max_hp > 0 && !e->is_dead) {
-            float hf = (float)e->current_hp/(float)e->max_hp;
-            float bar_h = (e->entity_type==ENTITY_PLAYER) ? 1.0f + (float)e->size*0.5f : 1.0f + (float)e->size*0.5f;
-            float by = gy + bar_h + 0.8f;
-            float bw = (float)e->size*0.8f;
-            if (bw < 0.6f) bw = 0.6f;
-            DrawCube((Vector3){ex,by,ey}, bw,0.08f,0.08f, COL_HP_RED);
-            DrawCube((Vector3){ex-bw*(1.0f-hf)*0.5f,by,ey}, bw*hf,0.08f,0.08f, COL_HP_GREEN);
-        }
     }
 
     /* Attack target highlight ring */
@@ -2861,66 +3094,16 @@ static void draw_scene(ViewerState* v) {
 
     EndMode3D();
 
+    /* Native client actor overheads are fixed-size screen-space sprites. */
+    draw_osrs_healthbars(v);
+
     /* Debug overlays — 2D screen-space (LOS, path, range — after EndMode3D) */
-    if (v->dbg_flags) debug_overlay_screen(&v->state, v->camera, v->dbg_flags);
-
-    /* Hitsplats — 2D screen-space damage/status numbers projected from 3D.
-     * Drawn AFTER EndMode3D so they render on top of everything.
-     * Red circle + white number for damage, blue circle + "0" for miss. */
-    for (int i = 0; i < MAX_HITSPLATS; i++) {
-        Hitsplat* h = &v->hitsplats[i];
-        if (!h->active) continue;
-
-        /* Float upward over lifetime */
-        float rise = (float)(60 - h->frames_left) * 0.02f;
-        float alpha = (float)h->frames_left / 60.0f;
-
-        /* Project 3D position to 2D screen coordinates */
-        Vector3 world_pos = {h->world_x, h->world_y + rise, h->world_z};
-        Vector2 screen = GetWorldToScreen(world_pos, v->camera);
-
-        /* Skip if off-screen */
-        if (screen.x < -50 || screen.x > WINDOW_W + 50 ||
-            screen.y < -50 || screen.y > WINDOW_H + 50) continue;
-
-        int value = h->kind == HITSPLAT_DAMAGE
-            ? h->damage / 10
-            : (h->damage + 9) / 10;
-        int sx = (int)screen.x;
-        int sy = (int)screen.y;
-
-        /* Draw OSRS-style splat: colored circle background + damage number */
-        Color bg_col, text_col;
-        if (h->kind == HITSPLAT_HEAL) {
-            bg_col = (Color){24, 130, 42, (unsigned char)(alpha * 230)};
-            text_col = (Color){255, 255, 255, (unsigned char)(alpha * 255)};
-        } else if (h->kind == HITSPLAT_PRAYER_DRAIN) {
-            bg_col = (Color){28, 104, 170, (unsigned char)(alpha * 230)};
-            text_col = (Color){255, 255, 255, (unsigned char)(alpha * 255)};
-        } else if (h->damage > 0) {
-            bg_col = (Color){187, 0, 0, (unsigned char)(alpha * 230)};      /* dark red */
-            text_col = (Color){255, 255, 255, (unsigned char)(alpha * 255)}; /* white */
-        } else {
-            bg_col = (Color){0, 100, 200, (unsigned char)(alpha * 230)};     /* blue */
-            text_col = (Color){255, 255, 255, (unsigned char)(alpha * 255)};
-        }
-
-        /* Circle background */
-        DrawCircle(sx, sy, 12, bg_col);
-        DrawCircleLines(sx, sy, 12, (Color){0, 0, 0, (unsigned char)(alpha * 200)});
-
-        /* Damage number centered in circle */
-        char dmg_str[16];
-        if (h->kind == HITSPLAT_HEAL) {
-            snprintf(dmg_str, sizeof(dmg_str), "+%d", value);
-        } else if (h->kind == HITSPLAT_PRAYER_DRAIN) {
-            snprintf(dmg_str, sizeof(dmg_str), "-%d", value);
-        } else {
-            snprintf(dmg_str, sizeof(dmg_str), "%d", value);
-        }
-        int tw = MeasureText(dmg_str, 14);
-        DrawText(dmg_str, sx - tw/2, sy - 7, 14, text_col);
+    if (v->dbg_flags) {
+        debug_overlay_screen(&v->state, v->camera, v->dbg_flags);
+        draw_npc_prayer_window_indicators(v);
     }
+
+    draw_osrs_hitsplats(v);
 
     /* Prayer overhead icon — 2D projected from player head position */
     int rendered_prayer = viewer_render_prayer(v);
@@ -4430,6 +4613,37 @@ int main(int argc, char** argv) {
         }
     }
 
+    /* Load the exact b237 cache sprites selected by the regular Fight Caves
+     * hitmark and default 30-segment headbar definitions. */
+    {
+        v.hitsplat_zero_tex = fc_load_texture_asset(
+            "data/sprites/ui/hitsplat_zero.png");
+        v.hitsplat_damage_tex = fc_load_texture_asset(
+            "data/sprites/ui/hitsplat_damage.png");
+        v.hitsplat_heal_tex = fc_load_texture_asset(
+            "data/sprites/ui/hitsplat_heal.png");
+        v.hitsplat_prayer_drain_tex = fc_load_texture_asset(
+            "data/sprites/ui/hitsplat_prayer_drain.png");
+        v.healthbar_full_tex = fc_load_texture_asset(
+            "data/sprites/ui/healthbar_full_30.png");
+        v.healthbar_empty_tex = fc_load_texture_asset(
+            "data/sprites/ui/healthbar_empty_30.png");
+        Texture2D* overhead_textures[] = {
+            &v.hitsplat_zero_tex, &v.hitsplat_damage_tex,
+            &v.hitsplat_heal_tex, &v.hitsplat_prayer_drain_tex,
+            &v.healthbar_full_tex, &v.healthbar_empty_tex,
+        };
+        int loaded = 0;
+        for (int i = 0; i < (int)(sizeof(overhead_textures) /
+                                  sizeof(overhead_textures[0])); i++) {
+            if (overhead_textures[i]->id > 0) {
+                SetTextureFilter(*overhead_textures[i], TEXTURE_FILTER_POINT);
+                loaded++;
+            }
+        }
+        fprintf(stderr, "Actor overhead sprites loaded: %d/6\n", loaded);
+    }
+
     /* Load tab/inventory sprites (Phase 8h) */
     {
         if (fc_asset_exists("sprites/prayer_potion.png")) {
@@ -4629,9 +4843,14 @@ int main(int argc, char** argv) {
                    sizeof(prev_player_pending));
             int prev_npc_hits[FC_MAX_NPCS];
             int prev_npc_hit_resolves[FC_MAX_NPCS];
+            int prev_npc_attack_timers[FC_MAX_NPCS];
+            int prev_npc_prayer_windows[FC_MAX_NPCS];
             for (int ni = 0; ni < FC_MAX_NPCS; ni++) {
                 prev_npc_hits[ni] = v.state.npcs[ni].num_pending_hits;
                 prev_npc_hit_resolves[ni] = 0;
+                prev_npc_attack_timers[ni] = v.state.npcs[ni].attack_timer;
+                prev_npc_prayer_windows[ni] =
+                    dbg_npc_prayer_window_open(&v.state, ni);
                 for (int hi = 0; hi < v.state.npcs[ni].num_pending_hits; hi++) {
                     const FcPendingHit* pending =
                         &v.state.npcs[ni].pending_hits[hi];
@@ -4668,6 +4887,7 @@ int main(int argc, char** argv) {
                 if (v.state.npcs[ni].active && !v.prev_npc_active[ni]) {
                     v.prev_npc_x[ni] = (float)v.state.npcs[ni].x;
                     v.prev_npc_y[ni] = (float)v.state.npcs[ni].y;
+                    v.npc_healthbar_timer[ni] = 0.0f;
                 }
             }
 
@@ -4693,11 +4913,13 @@ int main(int argc, char** argv) {
                  * when the player fires their own ranged attack, which would
                  * otherwise create false blue 0 splats on the player. */
                 if (v.state.player.hit_source_npc_type != NPC_NONE) {
-                    spawn_hitsplat(&v, p3x, gy_p + 2.5f, p3z,
+                    spawn_hitsplat(&v, FC_VISUAL_TARGET_PLAYER, 0,
+                                   p3x, gy_p + 2.5f, p3z,
                                    v.state.player.damage_taken_this_tick);
                 }
                 if (v.state.tz_kih_prayer_drain_this_tick > 0) {
-                    spawn_status_splat(&v, p3x + 0.3f, gy_p + 3.0f, p3z,
+                    spawn_status_splat(&v, FC_VISUAL_TARGET_PLAYER, 0,
+                                       p3x + 0.3f, gy_p + 3.0f, p3z,
                                        v.state.tz_kih_prayer_drain_this_tick,
                                        HITSPLAT_PRAYER_DRAIN);
                 }
@@ -4763,14 +4985,17 @@ int main(int argc, char** argv) {
                         float nx = (float)n->x + (float)n->size*0.5f;
                         float nz = -((float)n->y + (float)n->size*0.5f);
                         float nh = gy_n + 1.0f + (float)n->size*0.5f;
-                        spawn_hitsplat(&v, nx, nh, nz, n->damage_taken_this_tick);
+                        spawn_hitsplat(&v, FC_VISUAL_TARGET_NPC, i,
+                                       nx, nh, nz,
+                                       n->damage_taken_this_tick);
                     }
                     if (n->healing_received_this_tick > 0) {
                         float gy_n = ground_y(&v, n->x, n->y);
                         float nx = (float)n->x + (float)n->size*0.5f;
                         float nz = -((float)n->y + (float)n->size*0.5f);
                         float nh = gy_n + 1.4f + (float)n->size*0.5f;
-                        spawn_status_splat(&v, nx, nh, nz,
+                        spawn_status_splat(&v, FC_VISUAL_TARGET_NPC, i,
+                                           nx, nh, nz,
                                            n->healing_received_this_tick,
                                            HITSPLAT_HEAL);
                     }
@@ -4911,6 +5136,31 @@ int main(int argc, char** argv) {
                     }
                 }
 
+                /* Delay-one attacks can be queued and resolved entirely inside
+                 * fc_step(), leaving no pending-hit entry for the presentation
+                 * layer to diff. A cooldown reset is the remaining read-only
+                 * launch signal. Exclude MejKot heals, which share that timer. */
+                for (int ni = 0; ni < FC_MAX_NPCS; ni++) {
+                    FcNpc* n = &v.state.npcs[ni];
+                    if (!v.prev_npc_active[ni] || !n->active || n->is_dead ||
+                        prev_npc_attack_timers[ni] > 1 ||
+                        n->attack_timer != n->attack_speed ||
+                        (n->npc_type == NPC_YT_MEJKOT &&
+                         n->healing_given_this_tick > 0)) {
+                        continue;
+                    }
+                    mark_npc_attack_indicator(&v, ni);
+                }
+
+                /* Do not let the minimum launch pulse extend a delayed
+                 * indicator beyond the authoritative lock boundary. */
+                for (int ni = 0; ni < FC_MAX_NPCS; ni++) {
+                    if (prev_npc_prayer_windows[ni] &&
+                        !dbg_npc_prayer_window_open(&v.state, ni)) {
+                        v.npc_prayer_indicator_timer[ni] = 0.0f;
+                    }
+                }
+
             }
 
             /* Sync viewer attack_target with player's backend target */
@@ -4948,11 +5198,25 @@ int main(int argc, char** argv) {
             break;
         }
 
-        /* Update hitsplat lifetimes */
+        /* OSRS overhead lifetimes are measured in 20 ms client cycles. */
+        float overhead_dt = GetFrameTime();
         for (int i = 0; i < MAX_HITSPLATS; i++) {
             if (v.hitsplats[i].active) {
-                v.hitsplats[i].frames_left--;
-                if (v.hitsplats[i].frames_left <= 0) v.hitsplats[i].active = 0;
+                v.hitsplats[i].seconds_left -= overhead_dt;
+                if (v.hitsplats[i].seconds_left <= 0.0f)
+                    v.hitsplats[i].active = 0;
+            }
+        }
+        if (v.player_healthbar_timer > 0.0f) {
+            v.player_healthbar_timer -= overhead_dt;
+            if (v.player_healthbar_timer < 0.0f)
+                v.player_healthbar_timer = 0.0f;
+        }
+        for (int i = 0; i < FC_MAX_NPCS; i++) {
+            if (v.npc_healthbar_timer[i] > 0.0f) {
+                v.npc_healthbar_timer[i] -= overhead_dt;
+                if (v.npc_healthbar_timer[i] < 0.0f)
+                    v.npc_healthbar_timer[i] = 0.0f;
             }
         }
 
@@ -4997,6 +5261,13 @@ int main(int argc, char** argv) {
                 v.prayer_flick_visual_timer -= dt;
                 if (v.prayer_flick_visual_timer < 0.0f)
                     v.prayer_flick_visual_timer = 0.0f;
+            }
+            for (int i = 0; i < FC_MAX_NPCS; i++) {
+                if (v.npc_prayer_indicator_timer[i] > 0.0f) {
+                    v.npc_prayer_indicator_timer[i] -= dt;
+                    if (v.npc_prayer_indicator_timer[i] < 0.0f)
+                        v.npc_prayer_indicator_timer[i] = 0.0f;
+                }
             }
             objects_update_texture_anims(v.objects, dt);
             models_update_texture_anims(v.object_anim_models, dt);
@@ -5165,6 +5436,8 @@ skip_player_anim_update:
                     }
                     v.npc_attack_visual_style[ni] = ATTACK_NONE;
                     v.npc_attack_visual_timer[ni] = 0.0f;
+                    v.npc_prayer_indicator_timer[ni] = 0.0f;
+                    v.npc_healthbar_timer[ni] = 0.0f;
                     continue;
                 }
 
@@ -5288,6 +5561,13 @@ skip_player_anim_update:
     if (v.pray_melee_tex.id > 0) UnloadTexture(v.pray_melee_tex);
     if (v.pray_missiles_tex.id > 0) UnloadTexture(v.pray_missiles_tex);
     if (v.pray_magic_tex.id > 0) UnloadTexture(v.pray_magic_tex);
+    if (v.hitsplat_zero_tex.id > 0) UnloadTexture(v.hitsplat_zero_tex);
+    if (v.hitsplat_damage_tex.id > 0) UnloadTexture(v.hitsplat_damage_tex);
+    if (v.hitsplat_heal_tex.id > 0) UnloadTexture(v.hitsplat_heal_tex);
+    if (v.hitsplat_prayer_drain_tex.id > 0)
+        UnloadTexture(v.hitsplat_prayer_drain_tex);
+    if (v.healthbar_full_tex.id > 0) UnloadTexture(v.healthbar_full_tex);
+    if (v.healthbar_empty_tex.id > 0) UnloadTexture(v.healthbar_empty_tex);
     /* Phase 8h sprites */
     if (v.tex_ppot.id > 0) UnloadTexture(v.tex_ppot);
     if (v.tex_shark.id > 0) UnloadTexture(v.tex_shark);

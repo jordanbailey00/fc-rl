@@ -238,6 +238,17 @@ def build_sprite_map() -> dict[int, list[str]]:
         _add(sprites, sprite_id, f"prayeroff_{frame}")
     _add(sprites, 944, "prayeron_24")
     _add(sprites, 948, "prayeroff_24")
+
+    # Actor overheads used by the Fight Caves viewer. These IDs come from the
+    # b237 hitmark/headbar configs (regular damage resolves to hitmark 28,
+    # whose middle graphic is 1359; the default 30-segment headbar uses
+    # graphics 2176/2177).
+    _add(sprites, 1358, "hitsplat_zero")
+    _add(sprites, 1359, "hitsplat_damage")
+    _add(sprites, 1629, "hitsplat_heal")
+    _add(sprites, 4561, "hitsplat_prayer_drain")
+    _add(sprites, 2176, "healthbar_full_30")
+    _add(sprites, 2177, "healthbar_empty_30")
     add_graphic_symbol_aliases(sprites)
 
     return sprites

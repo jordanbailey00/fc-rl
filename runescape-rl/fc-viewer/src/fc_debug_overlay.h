@@ -353,6 +353,42 @@ static void debug_overlay_screen(const FcState* state, Camera3D cam, int dbg_fla
     if (dbg_flags & DBG_RANGE) dbg_draw_range_2d(state, cam);
 }
 
+/* Delayed attacks retain the launch marker while the player can still affect
+ * their authoritative prayer snapshot. Immediate-snapshot attacks use only the
+ * viewer's short launch pulse because they have no post-launch open interval. */
+static int dbg_npc_prayer_window_open(const FcState* state, int npc_idx) {
+    if (!state || npc_idx < 0 || npc_idx >= FC_MAX_NPCS) return 0;
+
+    const FcPlayer* player = &state->player;
+    for (int i = 0; i < player->num_pending_hits; i++) {
+        const FcPendingHit* hit = &player->pending_hits[i];
+        if (hit->active && hit->source_npc_idx == npc_idx &&
+            hit->prayer_snapshot < 0 && hit->prayer_lock_tick >= 0 &&
+            state->tick < hit->prayer_lock_tick) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void dbg_draw_prayer_window_indicator(Vector3 world_anchor,
+                                             Camera3D cam) {
+    Vector2 screen = GetWorldToScreen(world_anchor, cam);
+    /* Keep the marker visibly separate from the centered overhead HP bar. */
+    screen.x += 24.0f;
+    screen.y -= 12.0f;
+    int screen_width = GetScreenWidth();
+    int screen_height = GetScreenHeight();
+    if (screen.x < -20.0f || screen.x > (float)screen_width + 20.0f ||
+        screen.y < -20.0f || screen.y > (float)screen_height + 20.0f) {
+        return;
+    }
+
+    DrawCircleV(screen, 15.0f, CLITERAL(Color){70, 255, 100, 70});
+    DrawCircleV(screen, 9.0f, CLITERAL(Color){70, 255, 100, 250});
+    DrawCircleLines((int)screen.x, (int)screen.y, 10.0f, WHITE);
+}
+
 /* ======================================================================== */
 /* B. Entity state inspection (2D)                                          */
 /* ======================================================================== */
