@@ -38,6 +38,7 @@
 #include "fc_actor_visual.h"
 #include "fc_click_feedback.h"
 #include "fc_minimap.h"
+#include "fc_osrs_text.h"
 #include "fc_projectile_visual.h"
 #include "fc_debug_overlay.h"
 #include "ui.h"
@@ -236,7 +237,6 @@ static const uint16_t NPC_ANIM_DEATH[] = {
 #define COL_GRID        CLITERAL(Color){  30,  30,  30, 80  }
 #define COL_BLOCKED     CLITERAL(Color){ 180,  30,  30, 60  }
 #define COL_WALKABLE    CLITERAL(Color){  30, 120,  30, 30  }
-#define COL_TARGET      CLITERAL(Color){ 255, 255,   0, 120 }
 #define COL_HIT_RED     CLITERAL(Color){ 255,  50,  50, 255 }
 #define COL_HIT_BLUE    CLITERAL(Color){  50, 100, 255, 255 }
 
@@ -1355,8 +1355,8 @@ static void mark_prayer_flick_visual(ViewerState* v) {
 }
 
 static void text_s(const char* t, int x, int y, int sz, Color c) {
-    DrawText(t, x+1, y+1, sz, COL_TEXT_SHADOW);
-    DrawText(t, x, y, sz, c);
+    fc_osrs_draw_text(t, x+1, y+1, sz, COL_TEXT_SHADOW);
+    fc_osrs_draw_text(t, x, y, sz, c);
 }
 
 static const char* fc_terminal_name(int terminal) {
@@ -2521,18 +2521,18 @@ static void draw_test_overlay(ViewerState* v) {
 
     char buf[128];
     snprintf(buf, sizeof(buf), "TEST %d/%d: %s", v->test_id + 1, NUM_AGENT_TESTS, t->name);
-    DrawText(buf, bx + 8, by + 6, 16, COL_TEXT_YELLOW);
-    DrawText(t->desc, bx + 8, by + 26, 12, COL_TEXT_WHITE);
+    fc_osrs_draw_text(buf, bx + 8, by + 6, 16, COL_TEXT_YELLOW);
+    fc_osrs_draw_text(t->desc, bx + 8, by + 26, 12, COL_TEXT_WHITE);
 
     if (v->paused && v->test_tick >= t->duration) {
         snprintf(buf, sizeof(buf), "DONE — press T for next test   (tick %d/%d)",
                  v->test_tick, t->duration);
-        DrawText(buf, bx + 8, by + 42, 11, COL_TEXT_GREEN);
+        fc_osrs_draw_text(buf, bx + 8, by + 42, 11, COL_TEXT_GREEN);
     } else {
         snprintf(buf, sizeof(buf), "Running tick %d/%d   Player: (%d,%d)",
                  v->test_tick, t->duration,
                  v->state.player.x, v->state.player.y);
-        DrawText(buf, bx + 8, by + 42, 11, COL_TEXT_DIM);
+        fc_osrs_draw_text(buf, bx + 8, by + 42, 11, COL_TEXT_DIM);
     }
 }
 
@@ -2920,6 +2920,47 @@ static void draw_animated_objects(ViewerState* v) {
     rlEnableBackfaceCulling();
 }
 
+static void draw_actor_footprint(ViewerState* v,
+                                 const FcRenderEntity* entity) {
+    if (!v || !entity || entity->is_dead || entity->size <= 0) {
+        return;
+    }
+
+    const int is_player = entity->entity_type == ENTITY_PLAYER;
+    const Color fill = is_player
+        ? CLITERAL(Color){50, 220, 100, 72}
+        : CLITERAL(Color){50, 140, 255, 62};
+    const Color outline = is_player
+        ? CLITERAL(Color){80, 255, 130, 225}
+        : CLITERAL(Color){80, 180, 255, 210};
+    for (int offset_x = 0; offset_x < entity->size; offset_x++) {
+        for (int offset_y = 0; offset_y < entity->size; offset_y++) {
+            float tile_x = (float)(entity->x + offset_x) + 0.5f;
+            float tile_y = (float)(entity->y + offset_y) + 0.5f;
+            float height = ground_y_smooth(v, tile_x, tile_y) + 0.035f;
+            Vector3 center = {tile_x, height, -tile_y};
+            DrawCube(center, 0.94f, 0.02f, 0.94f, fill);
+        }
+    }
+
+    float min_x = (float)entity->x + 0.03f;
+    float max_x = (float)(entity->x + entity->size) - 0.03f;
+    float min_y = (float)entity->y + 0.03f;
+    float max_y = (float)(entity->y + entity->size) - 0.03f;
+    Vector3 northwest = {
+        min_x, ground_y_smooth(v, min_x, min_y) + 0.055f, -min_y};
+    Vector3 northeast = {
+        max_x, ground_y_smooth(v, max_x, min_y) + 0.055f, -min_y};
+    Vector3 southeast = {
+        max_x, ground_y_smooth(v, max_x, max_y) + 0.055f, -max_y};
+    Vector3 southwest = {
+        min_x, ground_y_smooth(v, min_x, max_y) + 0.055f, -max_y};
+    DrawLine3D(northwest, northeast, outline);
+    DrawLine3D(northeast, southeast, outline);
+    DrawLine3D(southeast, southwest, outline);
+    DrawLine3D(southwest, northwest, outline);
+}
+
 static void draw_scene(ViewerState* v) {
     if (v->camera_locked) {
         v->camera.target = camera_follow_target(v);
@@ -2966,7 +3007,6 @@ static void draw_scene(ViewerState* v) {
     draw_click_destination_3d(v);
 
     /* Entities */
-    int target_entity_idx = -1;  /* for highlight ring */
     for (int i = 0; i < v->entity_count; i++) {
         FcRenderEntity* e = &v->entities[i];
 
@@ -2978,6 +3018,8 @@ static void draw_scene(ViewerState* v) {
         float gy = ground_y_smooth(v, pose.x, pose.y);
 
         if (e->entity_type == ENTITY_PLAYER) {
+            draw_actor_footprint(v, e);
+
             /* Player model or fallback cylinder */
             NpcModelEntry* pm = viewer_player_model_entry(v);
             if (pm && pm->loaded) {
@@ -2994,6 +3036,8 @@ static void draw_scene(ViewerState* v) {
             /* Prayer icon above player — rendered as 2D text after EndMode3D */
             /* (handled below in the 2D overlay section) */
         } else {
+            draw_actor_footprint(v, e);
+
             /* NPC: try to render actual model, fallback to colored cube */
             uint32_t mid = fc_npc_type_to_model_id(e->npc_type);
             NpcModelEntry* nme = v->npc_models ? fc_npc_model_find(v->npc_models, mid) : NULL;
@@ -3022,29 +3066,7 @@ static void draw_scene(ViewerState* v) {
                 DrawCubeWires((Vector3){ex, gy + h*0.5f, ey}, s*2, h, s*2, WHITE);
             }
 
-            /* Track attack target for highlight */
-            if (!e->is_dead && e->npc_slot == v->attack_target)
-                target_entity_idx = i;
         }
-
-        /* Blue circle indicator under NPC for visibility */
-        if (e->entity_type == ENTITY_NPC && !e->is_dead) {
-            float cr = (float)e->size * 0.5f;
-            if (cr < 0.4f) cr = 0.4f;
-            DrawCircle3D((Vector3){ex, gy + 0.05f, ey}, cr,
-                         (Vector3){1,0,0}, 90.0f, CLITERAL(Color){80, 180, 255, 255});
-        }
-
-    }
-
-    /* Attack target highlight ring */
-    if (target_entity_idx >= 0) {
-        FcRenderEntity* e = &v->entities[target_entity_idx];
-        EntityRenderPose target_pose = entity_render_pose(v, e);
-        float ex = target_pose.x;
-        float ey = -target_pose.y;
-        float r = (float)e->size * 0.6f;
-        DrawCircle3D((Vector3){ex, 0.05f, ey}, r, (Vector3){1,0,0}, 90.0f, COL_TARGET);
     }
 
     /* Draw active visual projectiles — use cache-backed spotanim models when present. */
@@ -3205,8 +3227,8 @@ static void draw_scene(ViewerState* v) {
             else if (rendered_prayer == PRAYER_PROTECT_RANGE) icon_txt = "R";
             else icon_txt = "W";
             DrawCircle(px, py, 14, (Color){255,255,255,220});
-            int itw = MeasureText(icon_txt, 18);
-            DrawText(icon_txt, px - itw/2, py - 9, 18, (Color){0,0,0,255});
+            int itw = fc_osrs_measure_text(icon_txt, 18);
+            fc_osrs_draw_text(icon_txt, px - itw/2, py - 9, 18, (Color){0,0,0,255});
         }
     }
 }
@@ -3326,8 +3348,8 @@ static void draw_runec_console_button(Rectangle rect, const char* label,
     DrawRectangleRec(rect, background);
     DrawRectangleLinesEx(rect, 1, COL_PANEL_BORDER);
     int font_size = 8;
-    DrawText(label,
-             (int)(rect.x + (rect.width - MeasureText(label, font_size)) * 0.5f),
+    fc_osrs_draw_text(label,
+             (int)(rect.x + (rect.width - fc_osrs_measure_text(label, font_size)) * 0.5f),
              (int)(rect.y + (rect.height - font_size) * 0.5f),
              font_size, text);
 }
@@ -3336,9 +3358,9 @@ static void draw_runec_console_wave_grid(ViewerState* v, Rectangle body) {
     Vector2 mouse = GetMousePosition();
     DrawRectangleRec(body, CLITERAL(Color){18, 16, 13, 252});
     DrawRectangleLinesEx(body, 1, COL_PANEL_BORDER);
-    DrawText("Select Wave", (int)body.x + 4, (int)body.y + 3,
+    fc_osrs_draw_text("Select Wave", (int)body.x + 4, (int)body.y + 3,
              9, COL_TEXT_YELLOW);
-    DrawText("click current selection to close",
+    fc_osrs_draw_text("click current selection to close",
              (int)(body.x + body.width) - 155, (int)body.y + 4,
              7, COL_TEXT_DIM);
     for (int wave = 1; wave <= FC_NUM_WAVES; wave++) {
@@ -3352,8 +3374,8 @@ static void draw_runec_console_wave_grid(ViewerState* v, Rectangle body) {
         DrawRectangleLinesEx(cell, 1, COL_PANEL_BORDER);
         char label[8];
         snprintf(label, sizeof(label), "%d", wave);
-        DrawText(label,
-                 (int)(cell.x + (cell.width - MeasureText(label, 8)) * 0.5f),
+        fc_osrs_draw_text(label,
+                 (int)(cell.x + (cell.width - fc_osrs_measure_text(label, 8)) * 0.5f),
                  (int)cell.y + 3, 8,
                  current ? COL_TEXT_YELLOW : COL_TEXT_WHITE);
     }
@@ -3368,7 +3390,7 @@ static void draw_runec_console_controls(ViewerState* v, Rectangle body) {
     int x = (int)body.x + 4;
     char text[128];
 
-    DrawText("NPC Targets", x, (int)body.y + 3, 9, COL_TEXT_YELLOW);
+    fc_osrs_draw_text("NPC Targets", x, (int)body.y + 3, 9, COL_TEXT_YELLOW);
     int shown = 0;
     for (int ni = 0; ni < FC_MAX_NPCS && shown < RUNEC_CONSOLE_NPC_ROWS; ni++) {
         FcNpc* npc = &v->state.npcs[ni];
@@ -3387,7 +3409,7 @@ static void draw_runec_console_controls(ViewerState* v, Rectangle body) {
                  selected ? ">" : " ", name, ni,
                  fc_distance_to_npc(v->state.player.x,
                                     v->state.player.y, npc));
-        DrawText(text, (int)row.x + 2, (int)row.y + 3, 8,
+        fc_osrs_draw_text(text, (int)row.x + 2, (int)row.y + 3, 8,
                  selected ? COL_TEXT_YELLOW : COL_TEXT_WHITE);
 
         int bar_x = (int)row.x + 116;
@@ -3400,19 +3422,19 @@ static void draw_runec_console_controls(ViewerState* v, Rectangle body) {
         DrawRectangle(bar_x, (int)row.y + 3,
                       (int)((float)bar_w * hp), 7, COL_HP_GREEN);
         snprintf(text, sizeof(text), "%d", npc->current_hp / 10);
-        DrawText(text, bar_x + bar_w + 4, (int)row.y + 2,
+        fc_osrs_draw_text(text, bar_x + bar_w + 4, (int)row.y + 2,
                  8, COL_TEXT_DIM);
         shown++;
     }
     if (shown == 0)
-        DrawText("No NPCs alive", x + 2, (int)body.y + 20,
+        fc_osrs_draw_text("No NPCs alive", x + 2, (int)body.y + 20,
                  8, COL_TEXT_DIM);
 
     int right_x = (int)body.x + 286;
     DrawLine(right_x - 5, (int)body.y + 2,
              right_x - 5, (int)(body.y + body.height) - 2,
              COL_PANEL_BORDER);
-    DrawText("Viewer Controls", right_x, (int)body.y + 3,
+    fc_osrs_draw_text("Viewer Controls", right_x, (int)body.y + 3,
              9, COL_TEXT_YELLOW);
 
     char debug_label[24];
@@ -3431,7 +3453,7 @@ static void draw_runec_console_controls(ViewerState* v, Rectangle body) {
              v->state.current_wave);
     draw_runec_console_button(wave, text, 0);
 
-    DrawText(v->policy_pipe ? "Replay TPS" : "TPS Presets",
+    fc_osrs_draw_text(v->policy_pipe ? "Replay TPS" : "TPS Presets",
              right_x, (int)body.y + 62, 8, COL_TEXT_DIM);
     for (int i = 0; i < NUM_MANUAL_TPS_PRESETS; i++) {
         draw_runec_console_button(runec_console_tps_button_rect(body, i),
@@ -3522,9 +3544,9 @@ static void draw_runec_console(ViewerState* v) {
                      (int)(rect.x + rect.width) - 2,
                      (int)(rect.y + rect.height) - 2,
                      COL_TEXT_YELLOW);
-        DrawText(labels[tab],
+        fc_osrs_draw_text(labels[tab],
                  (int)(rect.x +
-                     (rect.width - MeasureText(labels[tab], 8)) * 0.5f),
+                     (rect.width - fc_osrs_measure_text(labels[tab], 8)) * 0.5f),
                  (int)rect.y + 7, 8,
                  selected ? COL_TEXT_YELLOW : COL_TEXT_WHITE);
     }
@@ -3821,6 +3843,13 @@ int main(int argc, char** argv) {
     ViewerState v; memset(&v, 0, sizeof(v));
     fc_init(&v.state);
     runec_ui_init(&v.ui);
+    if (!fc_osrs_text_init()) {
+        fprintf(stderr,
+                "error: required OSRS viewer fonts failed to load\n");
+        runec_ui_shutdown(&v.ui);
+        CloseWindow();
+        return 1;
+    }
     load_fc_ui_item_icons(&v);
     v.paused = 1; v.tps = NORMAL_TPS; v.auto_mode = 0;
     v.active_loadout = FC_ACTIVE_LOADOUT;
@@ -4940,6 +4969,7 @@ skip_player_anim_update:
     objects_free(v.objects);
     fc_minimap_scene_free(&v.minimap_scene);
     if (v.terrain && v.terrain->loaded) { UnloadModel(v.terrain->model); free(v.terrain->heightmap); free(v.terrain); }
+    fc_osrs_text_shutdown();
     runec_ui_shutdown(&v.ui);
     CloseWindow();
     return 0;

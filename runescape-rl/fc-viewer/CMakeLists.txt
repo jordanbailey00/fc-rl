@@ -6,6 +6,7 @@ set(FC_VIEWER_SOURCES
     src/fc_actor_visual.c
     src/fc_click_feedback.c
     src/fc_minimap.c
+    src/fc_osrs_text.c
     src/fc_projectile_visual.c
     src/fc_debug.c
     src/ui.c
@@ -105,5 +106,15 @@ add_executable(validate_assets
 )
 target_include_directories(validate_assets PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/fc-core/include
 )
 add_test(NAME validate_assets COMMAND validate_assets)
+
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(
+        NAME validate_osrs_text
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_osrs_text.py
+    )
+endif()

@@ -1,4 +1,5 @@
 #include "fc_assets.h"
+#include "fc_player_init.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -68,6 +69,31 @@ static int check_repo_file(const char* path) {
     return 1;
 }
 
+static int check_item_icon(unsigned int item_id) {
+    char path[96];
+    snprintf(path, sizeof(path), "data/sprites/items/item_%u.png", item_id);
+    return check_png_size(path, 36, 32);
+}
+
+static int check_viewer_item_icons(void) {
+    static const unsigned int supplies[] = {229, 385, 139, 141, 143, 2434};
+    int ok = 1;
+    for (int i = 0; i < (int)(sizeof(supplies) / sizeof(supplies[0])); i++)
+        ok = check_item_icon(supplies[i]) && ok;
+
+    for (int loadout = 0; loadout < FC_NUM_LOADOUTS; loadout++) {
+        const FcLoadout* definition = &FC_LOADOUTS[loadout];
+        for (int item = 0; item < definition->equipment_count; item++) {
+            const FcLoadoutEquipmentItem* equipment =
+                &definition->equipment[item];
+            unsigned int icon_id = equipment->icon_item_id
+                ? equipment->icon_item_id : equipment->item_id;
+            ok = check_item_icon(icon_id) && ok;
+        }
+    }
+    return ok;
+}
+
 int main(void) {
     const char* assets[] = {
         "fightcaves.terrain",
@@ -82,6 +108,9 @@ int main(void) {
         "sprites/protect_melee_on.png",
         "sprites/protect_missiles_on.png",
         "sprites/protect_magic_on.png",
+        "data/fonts/runescape.ttf",
+        "data/fonts/runescape_small.ttf",
+        "data/fonts/p11_full.png",
         "data/sprites/ui/hitsplat_zero.png",
         "data/sprites/ui/hitsplat_damage.png",
         "data/sprites/ui/hitsplat_heal.png",
@@ -113,6 +142,8 @@ int main(void) {
     ok = check_png_size("data/sprites/ui/healthbar_full_30.png", 30, 5) && ok;
     ok = check_png_size("data/sprites/ui/healthbar_empty_30.png", 30, 5) && ok;
     ok = check_png_size("fightcaves.minimap.png", 512, 512) && ok;
+    ok = check_png_size("data/fonts/p11_full.png", 320, 320) && ok;
+    ok = check_viewer_item_icons() && ok;
     for (int i = 0; i < 8; i++) {
         char path[64];
         snprintf(path, sizeof(path), "data/sprites/ui/cross_%d.png", i);

@@ -3500,7 +3500,9 @@ static void draw_selected_target(const RuneCUiState *ui) {
     char text[96];
     snprintf(text, sizeof(text), "%s %s ->", ui->selected_target.verb,
              ui->selected_target.label);
-    int width = MeasureText(text, 12) + 10;
+    Font font = runec_ui_font_for_size(&ui->assets, 12.0f);
+    int width = (int)ceilf(MeasureTextEx(
+        font, text, 12.0f, 0.0f).x) + 10;
     Rectangle box = {mouse.x + 12, mouse.y + 12, (float)width, 20};
     DrawRectangleRec(box, (Color){28, 23, 17, 230});
     DrawRectangleLinesEx(box, 1, (Color){170, 137, 72, 255});

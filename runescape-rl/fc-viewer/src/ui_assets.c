@@ -520,7 +520,11 @@ void runec_ui_draw_asset(const RuneCUiAssets *assets, const char *name,
 }
 
 Font runec_ui_font(const RuneCUiAssets *assets) {
-    return assets->font_loaded ? assets->font : GetFontDefault();
+    if (assets->font_loaded)
+        return assets->font;
+    if (assets->small_font_loaded)
+        return assets->small_font;
+    return (Font){0};
 }
 
 Font runec_ui_font_for_size(const RuneCUiAssets *assets, float size) {
@@ -536,6 +540,8 @@ void runec_ui_draw_text_shadow(const RuneCUiAssets *assets, const char *text,
     if (size < 12.0f)
         size = 12.0f;
     Font font = runec_ui_font_for_size(assets, size);
+    if (font.texture.id == 0)
+        return;
     x = (float)((int)(x + 0.5f));
     y = (float)((int)(y + 0.5f));
     DrawTextEx(font, text, (Vector2){x + 1.0f, y + 1.0f}, size, 0.0f, BLACK);

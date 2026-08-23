@@ -24,6 +24,7 @@
 #include "fc_reward.h"
 #include "fc_combat.h"
 #include "fc_npc.h"
+#include "fc_osrs_text.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -397,7 +398,7 @@ static void dbg_draw_entity_info(const FcState* state, Camera3D camera) {
     char buf[256];
     int panel_x = 10;
     int panel_y = 160;
-    int pw = 280, lh = 13;
+    int pw = 280, lh = 14;
 
     const FcPlayer* p = &state->player;
 
@@ -406,46 +407,46 @@ static void dbg_draw_entity_info(const FcState* state, Camera3D camera) {
     DrawRectangle(panel_x, panel_y, pw, ph, DBG_COL_PANEL);
     int y = panel_y + 4;
 
-    DrawText("PLAYER STATE", panel_x + 4, y, 11, DBG_COL_VALUE); y += lh + 2;
+    fc_osrs_draw_text("PLAYER STATE", panel_x + 4, y, 11, DBG_COL_VALUE); y += lh + 2;
     snprintf(buf, sizeof(buf), "Pos: (%d, %d)  Facing: %.0f", p->x, p->y, p->facing_angle);
-    DrawText(buf, panel_x + 4, y, 10, DBG_COL_LABEL); y += lh;
+    fc_osrs_draw_text(buf, panel_x + 4, y, 10, DBG_COL_LABEL); y += lh;
     snprintf(buf, sizeof(buf), "HP: %d/%d  Prayer: %d/%d",
              p->current_hp/10, p->max_hp/10, p->current_prayer/10, p->max_prayer/10);
-    DrawText(buf, panel_x + 4, y, 10, DBG_COL_LABEL); y += lh;
+    fc_osrs_draw_text(buf, panel_x + 4, y, 10, DBG_COL_LABEL); y += lh;
     snprintf(buf, sizeof(buf), "Timers: atk=%d food=%d pot=%d combo=%d",
              p->attack_timer, p->food_timer, p->potion_timer, p->combo_timer);
-    DrawText(buf, panel_x + 4, y, 10, DBG_COL_LABEL); y += lh;
+    fc_osrs_draw_text(buf, panel_x + 4, y, 10, DBG_COL_LABEL); y += lh;
 
     static const char* pray_str[] = { "OFF", "Melee", "Range", "Magic" };
     snprintf(buf, sizeof(buf), "Prayer: %s  Drain ctr: %d  Bonus: +%d",
              pray_str[p->prayer], p->prayer_drain_counter, p->prayer_bonus);
-    DrawText(buf, panel_x + 4, y, 10, DBG_COL_LABEL); y += lh;
+    fc_osrs_draw_text(buf, panel_x + 4, y, 10, DBG_COL_LABEL); y += lh;
 
     snprintf(buf, sizeof(buf), "Sharks: %d  Doses: %d  Ammo: %d",
              p->sharks_remaining, p->prayer_doses_remaining, p->ammo_count);
-    DrawText(buf, panel_x + 4, y, 10, DBG_COL_LABEL); y += lh;
+    fc_osrs_draw_text(buf, panel_x + 4, y, 10, DBG_COL_LABEL); y += lh;
 
     snprintf(buf, sizeof(buf), "Target: %d  Approach: %d  Route: %d/%d",
              p->attack_target_idx, p->approach_target, p->route_idx, p->route_len);
-    DrawText(buf, panel_x + 4, y, 10, DBG_COL_LABEL); y += lh;
+    fc_osrs_draw_text(buf, panel_x + 4, y, 10, DBG_COL_LABEL); y += lh;
 
     snprintf(buf, sizeof(buf), "Pending hits: %d  Running: %d",
              p->num_pending_hits, p->is_running);
-    DrawText(buf, panel_x + 4, y, 10, DBG_COL_LABEL); y += lh;
+    fc_osrs_draw_text(buf, panel_x + 4, y, 10, DBG_COL_LABEL); y += lh;
 
     snprintf(buf, sizeof(buf), "This tick: dmg_taken=%d hit_landed=%d food=%d pot=%d pray=%d",
              p->damage_taken_this_tick, p->hit_landed_this_tick,
              p->food_eaten_this_tick, p->potion_used_this_tick, p->prayer_changed_this_tick);
-    DrawText(buf, panel_x + 4, y, 10, DBG_COL_DIM); y += lh;
+    fc_osrs_draw_text(buf, panel_x + 4, y, 10, DBG_COL_DIM); y += lh;
 
     snprintf(buf, sizeof(buf), "Totals: dmg_taken=%d food=%d pots=%d switches=%d",
              p->total_damage_taken,
              p->total_food_eaten, p->total_potions_used, state->ep_prayer_switches);
-    DrawText(buf, panel_x + 4, y, 10, DBG_COL_DIM); y += lh;
+    fc_osrs_draw_text(buf, panel_x + 4, y, 10, DBG_COL_DIM); y += lh;
     snprintf(buf, sizeof(buf), "MaxWaveTicks:%d(w%d) Wave63:%d Jad:%d",
              state->ep_max_wave_ticks, state->ep_max_wave_ticks_wave,
              state->ep_reached_wave_63, state->ep_jad_killed);
-    DrawText(buf, panel_x + 4, y, 10, DBG_COL_DIM); y += lh;
+    fc_osrs_draw_text(buf, panel_x + 4, y, 10, DBG_COL_DIM); y += lh;
 
     /* NPC info panels (compact, for each active NPC) */
     y += 6;
@@ -466,26 +467,26 @@ static void dbg_draw_entity_info(const FcState* state, Camera3D camera) {
         Color hdr_col = n->is_dead ? DBG_COL_BAD : DBG_COL_VALUE;
         snprintf(buf, sizeof(buf), "NPC[%d] %s (lv%d) %s  spawn:%d",
                  i, name, n->npc_type, n->is_dead ? "DEAD" : "", n->spawn_index);
-        DrawText(buf, panel_x + 4, ny, 10, hdr_col); ny += lh;
+        fc_osrs_draw_text(buf, panel_x + 4, ny, 10, hdr_col); ny += lh;
 
         snprintf(buf, sizeof(buf), "Pos:(%d,%d) sz=%d  HP:%d/%d  Style:%s",
                  n->x, n->y, n->size, n->current_hp/10, n->max_hp/10,
                  style_str[n->attack_style]);
-        DrawText(buf, panel_x + 4, ny, 10, DBG_COL_LABEL); ny += lh;
+        fc_osrs_draw_text(buf, panel_x + 4, ny, 10, DBG_COL_LABEL); ny += lh;
 
         snprintf(buf, sizeof(buf), "AtkTmr:%d/%d  Range:%d  MaxHit:%d",
                  n->attack_timer, n->attack_speed, n->attack_range,
                  n->max_hit_tenths/10);
-        DrawText(buf, panel_x + 4, ny, 10, DBG_COL_LABEL); ny += lh;
+        fc_osrs_draw_text(buf, panel_x + 4, ny, 10, DBG_COL_LABEL); ny += lh;
 
         if (n->npc_type == NPC_YT_HURKOT) {
             snprintf(buf, sizeof(buf), "Healer: targets_player=%d heal_target=%d",
                      n->healer_distracted, n->heal_target_idx);
-            DrawText(buf, panel_x + 4, ny, 10, DBG_COL_LABEL);
+            fc_osrs_draw_text(buf, panel_x + 4, ny, 10, DBG_COL_LABEL);
         } else {
             snprintf(buf, sizeof(buf), "Pending hits:%d  death_timer:%d",
                      n->num_pending_hits, n->death_timer);
-            DrawText(buf, panel_x + 4, ny, 10, DBG_COL_DIM);
+            fc_osrs_draw_text(buf, panel_x + 4, ny, 10, DBG_COL_DIM);
         }
 
         npc_panel_y += nph + 2;
@@ -504,58 +505,58 @@ static void dbg_draw_obs(const FcState* state, int dbg_flags) {
 
     int rx = 300;
     int ry = 160;
-    int lh = 12;
+    int lh = 14;
     char buf[128];
 
     if (dbg_flags & DBG_OBS) {
         int pw = 320, ph = lh * 16 + 10;
         DrawRectangle(rx, ry, pw, ph, DBG_COL_PANEL);
         int y = ry + 4;
-        DrawText("OBSERVATION (policy + live state)", rx + 4, y, 11, DBG_COL_VALUE); y += lh + 2;
+        fc_osrs_draw_text("OBSERVATION (policy + live state)", rx + 4, y, 11, DBG_COL_VALUE); y += lh + 2;
 
         snprintf(buf, sizeof(buf), "HP:%.2f Pray:%.2f X:%.2f Y:%.2f",
                  obs[0], obs[1], obs[2], obs[3]);
-        DrawText(buf, rx + 4, y, 9, DBG_COL_LABEL); y += lh;
+        fc_osrs_draw_text(buf, rx + 4, y, 9, DBG_COL_LABEL); y += lh;
         snprintf(buf, sizeof(buf), "AtkTmr:%.2f Sharks:%.2f Doses:%.2f",
                  obs[FC_OBS_PLAYER_ATK_TIMER],
                  obs[FC_OBS_PLAYER_SHARKS],
                  obs[FC_OBS_PLAYER_DOSES]);
-        DrawText(buf, rx + 4, y, 9, DBG_COL_LABEL); y += lh;
+        fc_osrs_draw_text(buf, rx + 4, y, 9, DBG_COL_LABEL); y += lh;
         snprintf(buf, sizeof(buf), "PrayMel:%.0f PrayRng:%.0f PrayMag:%.0f",
                  obs[FC_OBS_PLAYER_PRAY_MEL],
                  obs[FC_OBS_PLAYER_PRAY_RNG],
                  obs[FC_OBS_PLAYER_PRAY_MAG]);
-        DrawText(buf, rx + 4, y, 9, DBG_COL_LABEL); y += lh;
+        fc_osrs_draw_text(buf, rx + 4, y, 9, DBG_COL_LABEL); y += lh;
         snprintf(buf, sizeof(buf), "FoodT:%d PotT:%d ComboT:%d",
                  p->food_timer, p->potion_timer, p->combo_timer);
-        DrawText(buf, rx + 4, y, 9, DBG_COL_DIM); y += lh;
+        fc_osrs_draw_text(buf, rx + 4, y, 9, DBG_COL_DIM); y += lh;
         snprintf(buf, sizeof(buf), "Run:%d Energy:%d Ammo:%d",
                  p->is_running, p->run_energy, p->ammo_count);
-        DrawText(buf, rx + 4, y, 9, DBG_COL_DIM); y += lh;
+        fc_osrs_draw_text(buf, rx + 4, y, 9, DBG_COL_DIM); y += lh;
         snprintf(buf, sizeof(buf), "Def:%d Rng:%d TotT:%d Sw:%d",
                  p->defence_level, p->ranged_level,
                  p->total_damage_taken, state->ep_prayer_switches);
-        DrawText(buf, rx + 4, y, 9, DBG_COL_DIM); y += lh;
+        fc_osrs_draw_text(buf, rx + 4, y, 9, DBG_COL_DIM); y += lh;
         snprintf(buf, sizeof(buf), "In1: M%.2f R%.2f G%.2f",
                  obs[FC_OBS_PLAYER_IN_MEL_1T],
                  obs[FC_OBS_PLAYER_IN_RNG_1T],
                  obs[FC_OBS_PLAYER_IN_MAG_1T]);
-        DrawText(buf, rx + 4, y, 9, DBG_COL_LABEL); y += lh;
+        fc_osrs_draw_text(buf, rx + 4, y, 9, DBG_COL_LABEL); y += lh;
         snprintf(buf, sizeof(buf), "In2: M%.2f R%.2f G%.2f  Tgt:%.2f",
                  obs[FC_OBS_PLAYER_IN_MEL_2T],
                  obs[FC_OBS_PLAYER_IN_RNG_2T],
                  obs[FC_OBS_PLAYER_IN_MAG_2T],
                  obs[FC_OBS_PLAYER_TARGET]);
-        DrawText(buf, rx + 4, y, 9, DBG_COL_LABEL); y += lh;
+        fc_osrs_draw_text(buf, rx + 4, y, 9, DBG_COL_LABEL); y += lh;
         snprintf(buf, sizeof(buf), "PrayDDL: M%.2f R%.2f G%.2f",
                  obs[FC_OBS_PLAYER_PRAY_DDL_MEL],
                  obs[FC_OBS_PLAYER_PRAY_DDL_RNG],
                  obs[FC_OBS_PLAYER_PRAY_DDL_MAG]);
-        DrawText(buf, rx + 4, y, 9, DBG_COL_LABEL); y += lh;
+        fc_osrs_draw_text(buf, rx + 4, y, 9, DBG_COL_LABEL); y += lh;
 
         /* NPC slots summary */
         y += 4;
-        DrawText("NPC slots:", rx + 4, y, 9, DBG_COL_DIM); y += lh;
+        fc_osrs_draw_text("NPC slots:", rx + 4, y, 9, DBG_COL_DIM); y += lh;
         for (int s = 0; s < FC_OBS_NPC_SLOTS; s++) {
             int base = FC_OBS_NPC_START + s * FC_OBS_NPC_STRIDE;
             if (obs[base + FC_NPC_VALID] < 0.5f) continue;
@@ -574,7 +575,7 @@ static void dbg_draw_obs(const FcState* state, int dbg_flags) {
                      obs[base + FC_NPC_PENDING_TICKS],
                      obs[base + FC_NPC_PENDING_PRAYER_WINDOW],
                      obs[base + FC_NPC_PENDING_PRAYER_DEADLINE]);
-            DrawText(buf, rx + 4, y, 8, DBG_COL_LABEL); y += lh - 1;
+            fc_osrs_draw_text(buf, rx + 4, y, 8, DBG_COL_LABEL); y += lh - 1;
         }
 
         /* Meta */
@@ -585,26 +586,26 @@ static void dbg_draw_obs(const FcState* state, int dbg_flags) {
                  obs[mbase + FC_OBS_META_ROTATION],
                  obs[mbase + FC_OBS_META_REMAINING],
                  obs[mbase + FC_OBS_META_PRAY_DRAIN]);
-        DrawText(buf, rx + 4, y, 9, DBG_COL_LABEL);
+        fc_osrs_draw_text(buf, rx + 4, y, 9, DBG_COL_LABEL);
         y += lh;
         snprintf(buf, sizeof(buf), "In3: M%.2f R%.2f G%.2f",
                  obs[mbase + FC_OBS_META_IN_MEL_3T],
                  obs[mbase + FC_OBS_META_IN_RNG_3T],
                  obs[mbase + FC_OBS_META_IN_MAG_3T]);
-        DrawText(buf, rx + 4, y, 9, DBG_COL_LABEL);
+        fc_osrs_draw_text(buf, rx + 4, y, 9, DBG_COL_LABEL);
         y += lh;
         snprintf(buf, sizeof(buf), "DmgTaken:%.2f WaveClr:%.0f Kills:%d",
                  obs[mbase + FC_OBS_META_DMG_T_TICK],
                  obs[mbase + FC_OBS_META_WAVE_CLR],
                  state->npcs_killed_this_tick);
-        DrawText(buf, rx + 4, y, 9, DBG_COL_LABEL);
+        fc_osrs_draw_text(buf, rx + 4, y, 9, DBG_COL_LABEL);
         y += lh;
         snprintf(buf, sizeof(buf), "Prog C%.2f W%.2f Rem%.2f NoP%.2f",
                  obs[mbase + FC_OBS_META_CAVE_PROG],
                  obs[mbase + FC_OBS_META_WAVE_PROG],
                  obs[mbase + FC_OBS_META_WORK_REM],
                  obs[mbase + FC_OBS_META_NO_PROG]);
-        DrawText(buf, rx + 4, y, 9, DBG_COL_LABEL);
+        fc_osrs_draw_text(buf, rx + 4, y, 9, DBG_COL_LABEL);
 
         ry += ph + 4;
     }
@@ -616,7 +617,7 @@ static void dbg_draw_obs(const FcState* state, int dbg_flags) {
         int pw = 260, ph = lh * 10 + 10;
         DrawRectangle(rx, ry, pw, ph, DBG_COL_PANEL);
         int y = ry + 4;
-        DrawText("ACTION MASK", rx + 4, y, 11, DBG_COL_VALUE); y += lh + 2;
+        fc_osrs_draw_text("ACTION MASK", rx + 4, y, 11, DBG_COL_VALUE); y += lh + 2;
 
         /* Move mask */
         snprintf(buf, sizeof(buf), "MOVE: ");
@@ -625,7 +626,7 @@ static void dbg_draw_obs(const FcState* state, int dbg_flags) {
             buf[len++] = mask[FC_MASK_MOVE_START + m] > 0.5f ? '1' : '0';
         }
         buf[len] = '\0';
-        DrawText(buf, rx + 4, y, 8, DBG_COL_LABEL); y += lh;
+        fc_osrs_draw_text(buf, rx + 4, y, 8, DBG_COL_LABEL); y += lh;
 
         /* Attack mask */
         snprintf(buf, sizeof(buf), "ATK:  ");
@@ -634,7 +635,7 @@ static void dbg_draw_obs(const FcState* state, int dbg_flags) {
             buf[len++] = mask[FC_MASK_ATTACK_START + m] > 0.5f ? '1' : '0';
         }
         buf[len] = '\0';
-        DrawText(buf, rx + 4, y, 8, DBG_COL_LABEL); y += lh;
+        fc_osrs_draw_text(buf, rx + 4, y, 8, DBG_COL_LABEL); y += lh;
 
         /* Prayer mask */
         snprintf(buf, sizeof(buf), "PRAY: ");
@@ -643,7 +644,7 @@ static void dbg_draw_obs(const FcState* state, int dbg_flags) {
             buf[len++] = mask[FC_MASK_PRAYER_START + m] > 0.5f ? '1' : '0';
         }
         buf[len] = '\0';
-        DrawText(buf, rx + 4, y, 8, DBG_COL_LABEL); y += lh;
+        fc_osrs_draw_text(buf, rx + 4, y, 8, DBG_COL_LABEL); y += lh;
 
         /* Eat/Drink mask */
         snprintf(buf, sizeof(buf), "EAT:%c%c%c DRINK:%c%c",
@@ -652,7 +653,7 @@ static void dbg_draw_obs(const FcState* state, int dbg_flags) {
                  mask[FC_MASK_EAT_START+2]>0.5f?'1':'0',
                  mask[FC_MASK_DRINK_START+0]>0.5f?'1':'0',
                  mask[FC_MASK_DRINK_START+1]>0.5f?'1':'0');
-        DrawText(buf, rx + 4, y, 8, DBG_COL_LABEL); y += lh;
+        fc_osrs_draw_text(buf, rx + 4, y, 8, DBG_COL_LABEL); y += lh;
 
         /* Target X/Y mask summary (just count valid) */
         int valid_x = 0, valid_y = 0;
@@ -662,7 +663,7 @@ static void dbg_draw_obs(const FcState* state, int dbg_flags) {
             if (mask[FC_MASK_TARGET_Y_START + m] > 0.5f) valid_y++;
         snprintf(buf, sizeof(buf), "TARGET_X: %d/65 valid  TARGET_Y: %d/65 valid",
                  valid_x, valid_y);
-        DrawText(buf, rx + 4, y, 8, DBG_COL_LABEL);
+        fc_osrs_draw_text(buf, rx + 4, y, 8, DBG_COL_LABEL);
 
         ry += ph + 4;
     }
@@ -672,13 +673,13 @@ static void dbg_draw_obs(const FcState* state, int dbg_flags) {
         int pw = 260, ph = lh * 10 + 10;
         DrawRectangle(rx, ry, pw, ph, DBG_COL_PANEL);
         int y = ry + 4;
-        DrawText("REWARD FEATURES", rx + 4, y, 11, DBG_COL_VALUE); y += lh + 2;
+        fc_osrs_draw_text("REWARD FEATURES", rx + 4, y, 11, DBG_COL_VALUE); y += lh + 2;
 
         for (int r = 0; r < FC_REWARD_FEATURES; r++) {
             Color c = dbg_reward_color(rwd[r]);
             snprintf(buf, sizeof(buf), "%-12s %.4f",
                      dbg_reward_feature_name(r), rwd[r]);
-            DrawText(buf, rx + 4, y, 8, c); y += lh - 2;
+            fc_osrs_draw_text(buf, rx + 4, y, 8, c); y += lh - 2;
         }
     }
 }
@@ -702,7 +703,7 @@ static int dbg_draw_panel_tabs(const FcState* state,
                                 int px, int x, int by, int pw, int dbg_tab,
                                 int draw_tabs, int content_height) {
     char buf[256];
-    int lh = 12;
+    int lh = 14;
 
     if (draw_tabs) {
         DrawLine(px+4, by, px+pw-4, by,
@@ -721,8 +722,8 @@ static int dbg_draw_panel_tabs(const FcState* state,
                                 : CLITERAL(Color){42,36,28,255};
             DrawRectangle(tx, by, dtab_w, dtab_h, bg);
             Color tc = selected ? DBG_COL_VALUE : DBG_COL_DIM;
-            int tw = MeasureText(dtab_labels[t], 8);
-            DrawText(dtab_labels[t], tx + (dtab_w - tw) / 2,
+            int tw = fc_osrs_measure_text(dtab_labels[t], 8);
+            fc_osrs_draw_text(dtab_labels[t], tx + (dtab_w - tw) / 2,
                      by + 4, 8, tc);
             if (selected)
                 DrawLine(tx+2, by+dtab_h-1, tx+dtab_w-2,
@@ -738,25 +739,25 @@ static int dbg_draw_panel_tabs(const FcState* state,
         static const char* pray_str[] = { "OFF", "Melee", "Range", "Magic" };
 
         snprintf(buf, sizeof(buf), "Pos:(%d,%d) Face:%.0f", p->x, p->y, p->facing_angle);
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;
         snprintf(buf, sizeof(buf), "HP:%d/%d Pray:%d/%d",
                  p->current_hp/10, p->max_hp/10, p->current_prayer/10, p->max_prayer/10);
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;
         snprintf(buf, sizeof(buf), "Tmr atk:%d fd:%d pot:%d",
                  p->attack_timer, p->food_timer, p->potion_timer);
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;
         snprintf(buf, sizeof(buf), "Prayer:%s Drain:%d Bonus:+%d",
                  pray_str[p->prayer], p->prayer_drain_counter, p->prayer_bonus);
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;
         snprintf(buf, sizeof(buf), "Shark:%d Dose:%d Ammo:%d",
                  p->sharks_remaining, p->prayer_doses_remaining, p->ammo_count);
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;
         snprintf(buf, sizeof(buf), "Tgt:%d Appr:%d Route:%d/%d",
                  p->attack_target_idx, p->approach_target, p->route_idx, p->route_len);
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;
         snprintf(buf, sizeof(buf), "Hits:%d Run:%d Regen:%d",
                  p->num_pending_hits, p->is_running, p->hp_regen_counter);
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;
 
         /* Active NPCs compact list */
         by += 2;
@@ -768,7 +769,7 @@ static int dbg_draw_panel_tabs(const FcState* state,
             snprintf(buf, sizeof(buf), "[%d]%s hp:%d atk:%d/%d",
                      i, nm, n->current_hp/10, n->attack_timer, n->attack_speed);
             Color c = n->is_dead ? DBG_COL_BAD : DBG_COL_DIM;
-            DrawText(buf, x, by, 7, c); by += lh - 2;
+            fc_osrs_draw_text(buf, x, by, 7, c); by += lh - 2;
         }
 
     } else if (dbg_tab == 1) {
@@ -780,57 +781,57 @@ static int dbg_draw_panel_tabs(const FcState* state,
         snprintf(buf, sizeof(buf), "HP:%.2f Pray:%.2f X:%.2f Y:%.2f",
                  obs[FC_OBS_PLAYER_HP], obs[FC_OBS_PLAYER_PRAYER],
                  obs[FC_OBS_PLAYER_X], obs[FC_OBS_PLAYER_Y]);
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;
         snprintf(buf, sizeof(buf), "Atk:%.2f Sharks:%.2f Dose:%.2f",
                  obs[FC_OBS_PLAYER_ATK_TIMER],
                  obs[FC_OBS_PLAYER_SHARKS],
                  obs[FC_OBS_PLAYER_DOSES]);
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;
         snprintf(buf, sizeof(buf), "Pray M%.0f R%.0f G%.0f T%.2f",
                  obs[FC_OBS_PLAYER_PRAY_MEL],
                  obs[FC_OBS_PLAYER_PRAY_RNG],
                  obs[FC_OBS_PLAYER_PRAY_MAG],
                  obs[FC_OBS_PLAYER_TARGET]);
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;
         snprintf(buf, sizeof(buf), "PrayDDL M%.2f R%.2f G%.2f",
                  obs[FC_OBS_PLAYER_PRAY_DDL_MEL],
                  obs[FC_OBS_PLAYER_PRAY_DDL_RNG],
                  obs[FC_OBS_PLAYER_PRAY_DDL_MAG]);
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;
         snprintf(buf, sizeof(buf), "In1 M%.2f R%.2f G%.2f",
                  obs[FC_OBS_PLAYER_IN_MEL_1T],
                  obs[FC_OBS_PLAYER_IN_RNG_1T],
                  obs[FC_OBS_PLAYER_IN_MAG_1T]);
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;
         snprintf(buf, sizeof(buf), "In2 M%.2f R%.2f G%.2f",
                  obs[FC_OBS_PLAYER_IN_MEL_2T],
                  obs[FC_OBS_PLAYER_IN_RNG_2T],
                  obs[FC_OBS_PLAYER_IN_MAG_2T]);
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;
         snprintf(buf, sizeof(buf), "Meta W%.2f Rot%.2f Rem%.2f",
                  obs[mbase + FC_OBS_META_WAVE],
                  obs[mbase + FC_OBS_META_ROTATION],
                  obs[mbase + FC_OBS_META_REMAINING]);
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;
         snprintf(buf, sizeof(buf), "Drain:%.2f Dmg:%.2f Clear:%.0f",
                  obs[mbase + FC_OBS_META_PRAY_DRAIN],
                  obs[mbase + FC_OBS_META_DMG_T_TICK],
                  obs[mbase + FC_OBS_META_WAVE_CLR]);
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;
         snprintf(buf, sizeof(buf), "In3 M%.2f R%.2f G%.2f",
                  obs[mbase + FC_OBS_META_IN_MEL_3T],
                  obs[mbase + FC_OBS_META_IN_RNG_3T],
                  obs[mbase + FC_OBS_META_IN_MAG_3T]);
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;
         snprintf(buf, sizeof(buf), "Prog C%.2f W%.2f Rem%.2f NoP%.2f",
                  obs[mbase + FC_OBS_META_CAVE_PROG],
                  obs[mbase + FC_OBS_META_WAVE_PROG],
                  obs[mbase + FC_OBS_META_WORK_REM],
                  obs[mbase + FC_OBS_META_NO_PROG]);
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;
 
         by += 2;
-        DrawText("NPC slots:", x, by, 7, DBG_COL_DIM); by += lh - 1;
+        fc_osrs_draw_text("NPC slots:", x, by, 7, DBG_COL_DIM); by += lh - 1;
         for (int s = 0; s < FC_OBS_NPC_SLOTS; s++) {
             int base = FC_OBS_NPC_START + s * FC_OBS_NPC_STRIDE;
             if (obs[base + FC_NPC_VALID] < 0.5f) continue;
@@ -847,7 +848,7 @@ static int dbg_draw_panel_tabs(const FcState* state,
                      obs[base + FC_NPC_PENDING_STYLE],
                      obs[base + FC_NPC_PENDING_PRAYER_WINDOW],
                      obs[base + FC_NPC_PENDING_PRAYER_DEADLINE]);
-            DrawText(buf, x, by, 7, DBG_COL_LABEL); by += lh - 2;
+            fc_osrs_draw_text(buf, x, by, 7, DBG_COL_LABEL); by += lh - 2;
         }
 
     } else if (dbg_tab == 2) {
@@ -855,27 +856,27 @@ static int dbg_draw_panel_tabs(const FcState* state,
         float mask[FC_ACTION_MASK_SIZE];
         fc_write_mask(state, mask);
 
-        DrawText("MOVE:", x, by, 8, DBG_COL_DIM);
+        fc_osrs_draw_text("MOVE:", x, by, 8, DBG_COL_DIM);
         snprintf(buf, sizeof(buf), " ");
         int len = 1;
         for (int m = 0; m < FC_MOVE_DIM && len < 120; m++)
             buf[len++] = mask[FC_MASK_MOVE_START + m] > 0.5f ? '1' : '0';
         buf[len] = '\0';
-        DrawText(buf, x + 30, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x + 30, by, 8, DBG_COL_LABEL); by += lh;
 
-        DrawText("ATK:", x, by, 8, DBG_COL_DIM);
+        fc_osrs_draw_text("ATK:", x, by, 8, DBG_COL_DIM);
         len = 1; buf[0] = ' ';
         for (int m = 0; m < FC_ATTACK_DIM && len < 120; m++)
             buf[len++] = mask[FC_MASK_ATTACK_START + m] > 0.5f ? '1' : '0';
         buf[len] = '\0';
-        DrawText(buf, x + 30, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x + 30, by, 8, DBG_COL_LABEL); by += lh;
 
-        DrawText("PRAY:", x, by, 8, DBG_COL_DIM);
+        fc_osrs_draw_text("PRAY:", x, by, 8, DBG_COL_DIM);
         len = 1; buf[0] = ' ';
         for (int m = 0; m < FC_PRAYER_DIM && len < 120; m++)
             buf[len++] = mask[FC_MASK_PRAYER_START + m] > 0.5f ? '1' : '0';
         buf[len] = '\0';
-        DrawText(buf, x + 30, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x + 30, by, 8, DBG_COL_LABEL); by += lh;
 
         snprintf(buf, sizeof(buf), "EAT:%c%c%c  DRINK:%c%c",
                  mask[FC_MASK_EAT_START+0]>0.5f?'1':'0',
@@ -883,7 +884,7 @@ static int dbg_draw_panel_tabs(const FcState* state,
                  mask[FC_MASK_EAT_START+2]>0.5f?'1':'0',
                  mask[FC_MASK_DRINK_START+0]>0.5f?'1':'0',
                  mask[FC_MASK_DRINK_START+1]>0.5f?'1':'0');
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;
 
         int vx = 0, vy = 0;
         for (int m = 0; m < FC_MOVE_TARGET_X_DIM; m++)
@@ -891,26 +892,26 @@ static int dbg_draw_panel_tabs(const FcState* state,
         for (int m = 0; m < FC_MOVE_TARGET_Y_DIM; m++)
             if (mask[FC_MASK_TARGET_Y_START + m] > 0.5f) vy++;
         snprintf(buf, sizeof(buf), "TGT_X:%d/65 TGT_Y:%d/65", vx, vy);
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += lh;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;
 
     } else if (dbg_tab == 3) {
         const FcRewardBreakdown* b = reward_breakdown;
-        int sh = 8;
+        int sh = 14;
         const char* cfg_name = dbg_basename(reward_config_path);
 
-        DrawText("Training reward parity", x, by, 8, DBG_COL_VALUE); by += sh + 2;
+        fc_osrs_draw_text("Training reward parity", x, by, 8, DBG_COL_VALUE); by += sh + 2;
         snprintf(buf, sizeof(buf), "cfg:%s%s",
                  cfg_name,
                  reward_config_loaded ? "" : " (defaults)");
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += sh;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += sh;
         snprintf(buf, sizeof(buf), "total:%+.4f noatk_t:%d",
                  b->total,
                  reward_runtime->ticks_since_attack);
-        DrawText(buf, x, by, 8, dbg_reward_color(b->total)); by += sh;
+        fc_osrs_draw_text(buf, x, by, 8, dbg_reward_color(b->total)); by += sh;
         snprintf(buf, sizeof(buf), "threat any:%d melee:%d",
                  b->threat_ctx.any_threat,
                  b->threat_ctx.melee_pressure_npcs);
-        DrawText(buf, x, by, 8, DBG_COL_LABEL); by += sh + 2;
+        fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += sh + 2;
 
         {
             struct {
@@ -942,7 +943,7 @@ static int dbg_draw_panel_tabs(const FcState* state,
             for (int i = 0; i < term_count; i++) {
                 snprintf(buf, sizeof(buf), "%-12s %+.4f",
                          terms[i].name, terms[i].value);
-                DrawText(buf, x, by, 7, dbg_reward_color(terms[i].value));
+                fc_osrs_draw_text(buf, x, by, 7, dbg_reward_color(terms[i].value));
                 by += sh;
             }
         }
@@ -958,7 +959,7 @@ static int dbg_draw_panel_tabs(const FcState* state,
         int content_w = pw - 16 - scrollbar_w;
 
         if (total == 0) {
-            DrawText("No events yet", x, by, 8, DBG_COL_DIM);
+            fc_osrs_draw_text("No events yet", x, by, 8, DBG_COL_DIM);
             by += lh;
         } else {
             int max_scroll = total - max_visible;
@@ -1014,7 +1015,7 @@ static int dbg_draw_panel_tabs(const FcState* state,
                 int idx = (g_dbg_log.head - 1 - i + DBG_LOG_MAX_ENTRIES * 2) % DBG_LOG_MAX_ENTRIES;
                 snprintf(buf, sizeof(buf), "t%d %s", g_dbg_log.tick[idx], g_dbg_log.entries[idx]);
                 /* Truncate to fit content width */
-                DrawText(buf, x, by, 7, g_dbg_log.color[idx]);
+                fc_osrs_draw_text(buf, x, by, 7, g_dbg_log.color[idx]);
                 by += entry_h;
                 drawn++;
             }
