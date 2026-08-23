@@ -22,19 +22,16 @@ Estimated reduction: approximately 600 LOC.
 - Keep the required no-op `c_render()`, but remove `fc_render.h`, the
   nonfunctional `--render` path, and the training target's Raylib dependency.
 
-### 2. Remove the viewer's unreachable old side panel
+### 2. Remove the viewer's unreachable old side panel — completed
 
-Estimated reduction: approximately 750-800 LOC.
+Completed reduction: 836 net LOC, plus five obsolete sprite assets.
 
-- `draw_panel()` in `runescape-rl/fc-viewer/src/viewer.c` is never called.
-- Its inventory, combat, prayer, NPC-bar, tab-click, loadout-dropdown, header,
-  and debug rendering paths remain in the file.
-- The live UI path is `runec_ui_draw()` plus `draw_runec_debug_tabs()`.
-- Related obsolete fields and textures can also be removed: `active_tab`,
-  `tab_area_y`, the old tab icons, `tex_ppot`, `tex_shark`, and the old panel
-  click handler.
-- Do not remove `draw_runec_legacy_prayer_tab()`: despite its name, the active
-  RuneC prayer tab currently calls it.
+- Removed the unreachable renderer, click handler, controls, state, textures,
+  asset-generation paths, and asset validation requirements.
+- Removed the stale fixed-width click exclusion so uncaptured clicks anywhere
+  in the resizable window can reach the world.
+- Preserved the active RuneC UI and prayer interface; the latter is now named
+  `draw_runec_prayer_tab()` to reflect that it is live code.
 
 ### 3. Remove two dead viewer debugging systems
 
