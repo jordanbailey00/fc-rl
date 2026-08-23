@@ -5,6 +5,7 @@ set(FC_VIEWER_SOURCES
     src/viewer.c
     src/fc_actor_visual.c
     src/fc_click_feedback.c
+    src/fc_minimap.c
     src/fc_projectile_visual.c
     src/fc_debug.c
     src/ui.c
@@ -74,6 +75,20 @@ target_include_directories(test_click_feedback PRIVATE
 )
 target_link_libraries(test_click_feedback PRIVATE fc_core m)
 add_test(NAME test_click_feedback COMMAND test_click_feedback)
+
+if(EXISTS "${RAYLIB_ROOT}/include/raylib.h")
+    add_executable(test_minimap
+        tests/test_minimap.c
+        src/fc_minimap.c
+    )
+    target_include_directories(test_minimap PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${PROJECT_SOURCE_DIR}/fc-core/include
+        ${RAYLIB_ROOT}/include
+    )
+    target_link_libraries(test_minimap PRIVATE m)
+    add_test(NAME test_minimap COMMAND test_minimap)
+endif()
 
 add_executable(test_projectile_visual
     tests/test_projectile_visual.c

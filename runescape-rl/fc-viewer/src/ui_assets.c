@@ -87,7 +87,6 @@ static const RuneCUiAssetSpec g_ui_asset_specs[] = {
     UI_ASSET("orb_xp_0"),
     UI_ASSET("ring_30"),
     UI_ASSET("worldmap_icon_0"),
-    UI_ASSET("wiki_icon_0"),
     UI_ASSET("chat_tab_button_0"),
     UI_ASSET("wornicons_0"),
     UI_ASSET("wornicons_1"),

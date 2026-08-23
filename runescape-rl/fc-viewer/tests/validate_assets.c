@@ -73,6 +73,7 @@ int main(void) {
         "fightcaves.terrain",
         "fightcaves.objects",
         "fightcaves.atlas",
+        "fightcaves.minimap.png",
         "fc_npcs.models",
         "fc_player.models",
         "fc_projectiles.models",
@@ -111,6 +112,7 @@ int main(void) {
     ok = check_png_size("data/sprites/ui/hitsplat_prayer_drain.png", 25, 25) && ok;
     ok = check_png_size("data/sprites/ui/healthbar_full_30.png", 30, 5) && ok;
     ok = check_png_size("data/sprites/ui/healthbar_empty_30.png", 30, 5) && ok;
+    ok = check_png_size("fightcaves.minimap.png", 512, 512) && ok;
     for (int i = 0; i < 8; i++) {
         char path[64];
         snprintf(path, sizeof(path), "data/sprites/ui/cross_%d.png", i);

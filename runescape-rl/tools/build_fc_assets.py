@@ -9,6 +9,7 @@ import hashlib
 import json
 import re
 import shutil
+import struct
 import sys
 from pathlib import Path
 
@@ -675,6 +676,7 @@ def main(argv: list[str]) -> int:
     core_assets_dir.mkdir(parents=True, exist_ok=True)
 
     from export_objects import export_modern_objects
+    from export_minimap import export_minimap
     from export_terrain import export_modern_terrain
 
     export_modern_terrain(
@@ -690,6 +692,14 @@ def main(argv: list[str]) -> int:
         output=assets_dir / "fightcaves.objects",
         scene_plane=0,
         rsmod_visual_levels=True,
+    )
+    region_x, region_y = FIGHT_CAVES_REGIONS[0]
+    export_minimap(
+        cache_dir,
+        region_x,
+        region_y,
+        assets_dir / "fightcaves.minimap.png",
+        target_plane=0,
     )
     export_fc_npc_models(cache_dir, assets_dir / "fc_npcs.models")
     export_fc_player_model(cache_dir, assets_dir / "fc_player.models")

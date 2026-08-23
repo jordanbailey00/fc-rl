@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "fc_minimap.h"
 #include "ui_reference.h"
 
 #include <ctype.h>
@@ -55,7 +56,6 @@ typedef struct RuneCUiLayout {
     Rectangle compass;
     Rectangle xp_orb;
     Rectangle worldmap_button;
-    Rectangle wiki_button;
     Rectangle hp_orb;
     Rectangle prayer_orb;
     Rectangle run_orb;
@@ -856,9 +856,6 @@ static void ui_layout(int screen_w, int screen_h, RuneCUiLayout *out) {
     out->worldmap_button = (Rectangle){out->map.x + RUNEC_OSRS_ORBS_X + RUNEC_OSRS_WORLDMAP_X,
                                        out->map.y + RUNEC_OSRS_ORBS_Y + RUNEC_OSRS_WORLDMAP_Y,
                                        30, 30};
-    out->wiki_button = (Rectangle){out->map.x + RUNEC_OSRS_ORBS_X + RUNEC_OSRS_WIKI_X,
-                                   out->map.y + RUNEC_OSRS_ORBS_Y + RUNEC_OSRS_WIKI_Y,
-                                   40, 34};
 
     out->side = (Rectangle){(float)screen_w - RUNEC_OSRS_SIDE_MENU_W,
                             (float)screen_h - RUNEC_OSRS_SIDE_MENU_H,
@@ -922,9 +919,6 @@ static void apply_decoded_mounts(const RuneCUiState *ui,
         layout->worldmap_button =
             (Rectangle){rect.x + RUNEC_OSRS_ORBS_X + RUNEC_OSRS_WORLDMAP_X,
                         rect.y + RUNEC_OSRS_ORBS_Y + RUNEC_OSRS_WORLDMAP_Y, 30, 30};
-        layout->wiki_button =
-            (Rectangle){rect.x + RUNEC_OSRS_ORBS_X + RUNEC_OSRS_WIKI_X,
-                        rect.y + RUNEC_OSRS_ORBS_Y + RUNEC_OSRS_WIKI_Y, 40, 34};
     }
     if (runec_ui_interfaces_component_rect(&ui->interfaces, top_group,
             "side_menu", screen, &rect)) {
@@ -1485,6 +1479,11 @@ void runec_ui_update_minimap(RuneCUiState *ui, const Color *pixels,
     if (!ui->minimap_texture_ready || !pixels || width != 152 || height != 152)
         return;
     UpdateTexture(ui->minimap_texture, pixels);
+}
+
+void runec_ui_set_minimap_rotation(RuneCUiState *ui, float radians) {
+    if (!ui) return;
+    ui->minimap_rotation = radians;
 }
 
 void runec_ui_set_item_icon(RuneCUiState *ui, uint32_t icon_item_id, Texture2D texture) {
@@ -2539,7 +2538,15 @@ int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h) {
             return 1;
         }
 
-        if (CheckCollisionPointRec(mouse, layout.minimap)) {
+        Vector2 minimap_center = {
+            layout.minimap.x + layout.minimap.width * 0.5f,
+            layout.minimap.y + layout.minimap.height * 0.5f,
+        };
+        float minimap_dx = mouse.x - minimap_center.x;
+        float minimap_dy = mouse.y - minimap_center.y;
+        if (CheckCollisionPointRec(mouse, layout.minimap) &&
+            minimap_dx * minimap_dx + minimap_dy * minimap_dy <=
+                75.0f * 75.0f) {
             ui->last_intent.kind = RUNEC_UI_INTENT_MINIMAP_CLICK;
             ui->last_intent.primary = (int)(mouse.x - layout.minimap.x);
             ui->last_intent.secondary = (int)(mouse.y - layout.minimap.y);
@@ -2900,8 +2907,10 @@ static void draw_minimap(const RuneCUiState *ui, const RuneCUiLayout *layout) {
 
     for (int i = 0; i < ui->minimap_dot_count; i++) {
         const RuneCUiMinimapDot *dot = &ui->minimap_dots[i];
-        float px = center.x + dot->dx * 4.0f;
-        float py = center.y - dot->dy * 4.0f;
+        float px = center.x +
+            dot->dx * FC_MINIMAP_DISPLAY_PIXELS_PER_TILE;
+        float py = center.y -
+            dot->dy * FC_MINIMAP_DISPLAY_PIXELS_PER_TILE;
         float dx = px - center.x;
         float dy = py - center.y;
         if (dx * dx + dy * dy > 68.0f * 68.0f)
@@ -2927,8 +2936,23 @@ static void draw_minimap(const RuneCUiState *ui, const RuneCUiLayout *layout) {
         DrawCircleLines((int)center.x, (int)center.y, 70.0f, (Color){180, 166, 104, 255});
     }
 
-    runec_ui_draw_asset(&ui->assets, "compass", layout->compass, WHITE);
-    if (!runec_ui_asset_ready(&ui->assets, "compass")) {
+    const Texture2D *compass = runec_ui_asset(&ui->assets, "compass");
+    if (compass) {
+        Rectangle source = {0, 0, (float)compass->width,
+                            (float)compass->height};
+        Rectangle destination = {
+            layout->compass.x + layout->compass.width * 0.5f,
+            layout->compass.y + layout->compass.height * 0.5f,
+            layout->compass.width,
+            layout->compass.height,
+        };
+        Vector2 origin = {layout->compass.width * 0.5f,
+                          layout->compass.height * 0.5f};
+        DrawTexturePro(*compass, source, destination, origin,
+                       ui->minimap_rotation *
+                           (180.0f / 3.14159265358979323846f),
+                       WHITE);
+    } else {
         runec_ui_draw_asset(&ui->assets, "resize_compass_mask", layout->compass, WHITE);
         draw_text_shadow(ui, "N", layout->compass.x + 16, layout->compass.y + 12, 14, OSRS_ORANGE);
     }
@@ -2953,9 +2977,6 @@ static void draw_minimap(const RuneCUiState *ui, const RuneCUiLayout *layout) {
     draw_asset_centered(ui, "worldmap_icon_0", layout->worldmap_button, 22, 22, WHITE);
     if (!runec_ui_asset_ready(&ui->assets, "worldmap_icon_0"))
         draw_centered_text(ui, "?", layout->worldmap_button, 14, OSRS_YELLOW);
-    runec_ui_draw_asset(&ui->assets, "wiki_icon_0", layout->wiki_button, WHITE);
-    if (!runec_ui_asset_ready(&ui->assets, "wiki_icon_0"))
-        draw_centered_text(ui, "wiki", layout->wiki_button, 10, OSRS_ORANGE);
 }
 
 static void draw_chat_panel_chrome(const RuneCUiState *ui,

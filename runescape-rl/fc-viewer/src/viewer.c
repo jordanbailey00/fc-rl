@@ -37,6 +37,7 @@
 #include "fc_asset_raylib.h"
 #include "fc_actor_visual.h"
 #include "fc_click_feedback.h"
+#include "fc_minimap.h"
 #include "fc_projectile_visual.h"
 #include "fc_debug_overlay.h"
 #include "ui.h"
@@ -361,6 +362,7 @@ typedef struct {
     int attack_target;   /* NPC slot index for attack (-1 = none) */
     /* Terrain + Objects + NPC models */
     TerrainMesh* terrain;
+    FcMinimapScene minimap_scene;
     ObjectMesh* objects;
     ObjectAnimSet* object_anims;
     NpcModelSet* object_anim_models;
@@ -659,58 +661,51 @@ static void sync_fc_ui_status(ViewerState* v) {
     v->ui.skill_total = total;
 }
 
-static Color minimap_color_for_tile(ViewerState* v, int x, int y) {
-    if (!v || x < 0 || x >= FC_ARENA_WIDTH || y < 0 || y >= FC_ARENA_HEIGHT)
-        return BLANK;
-    if (!v->state.walkable[x][y])
-        return (Color){42, 34, 26, 255};
-    if (v->terrain && v->terrain->loaded)
-        return (Color){82, 70, 52, 255};
-    return (Color){64, 88, 48, 255};
-}
-
 static void sync_fc_ui_minimap(ViewerState* v) {
     if (!v) return;
     FcPlayer* p = &v->state.player;
-    Color pixels[152 * 152];
-    const float scale = 4.0f;
-    for (int y = 0; y < 152; y++) {
-        for (int x = 0; x < 152; x++) {
-            float sx = (float)x - 76.0f;
-            float sy = (float)y - 76.0f;
-            if (sx * sx + sy * sy > 75.0f * 75.0f) {
-                pixels[x + y * 152] = BLANK;
-                continue;
-            }
-            int tx = (int)roundf((float)p->x + sx / scale);
-            int ty = (int)roundf((float)p->y - sy / scale);
-            pixels[x + y * 152] = minimap_color_for_tile(v, tx, ty);
-        }
-    }
-    runec_ui_update_minimap(&v->ui, pixels, 152, 152);
+    FcVisualPose player_pose = fc_visual_scene_player_pose(&v->visual_scene);
+    float player_x = v->visual_scene.player.active
+        ? player_pose.x : (float)p->x + 0.5f;
+    float player_y = v->visual_scene.player.active
+        ? player_pose.y : (float)p->y + 0.5f;
+    Color pixels[FC_MINIMAP_DISPLAY_SIZE * FC_MINIMAP_DISPLAY_SIZE];
+    fc_minimap_render(&v->minimap_scene, player_x, player_y, v->cam_yaw,
+                      pixels);
+    runec_ui_update_minimap(&v->ui, pixels, FC_MINIMAP_DISPLAY_SIZE,
+                            FC_MINIMAP_DISPLAY_SIZE);
+    runec_ui_set_minimap_rotation(&v->ui, v->cam_yaw);
 
     runec_ui_clear_minimap(&v->ui);
     runec_ui_add_minimap_dot(&v->ui, 0.0f, 0.0f, RUNEC_UI_MINIMAP_DOT_PLAYER);
     if (v->click_feedback.destination_active) {
         int tx = v->click_feedback.destination_x;
         int ty = v->click_feedback.destination_y;
-        runec_ui_add_minimap_dot(&v->ui, (float)tx - (float)p->x,
-                                 (float)ty - (float)p->y,
+        Vector2 offset = fc_minimap_rotate_offset(
+            (float)tx + 0.5f - player_x,
+            (float)ty + 0.5f - player_y, v->cam_yaw);
+        runec_ui_add_minimap_dot(&v->ui, offset.x, offset.y,
                                  RUNEC_UI_MINIMAP_DOT_DESTINATION);
     } else if (p->route_idx < p->route_len && p->route_len > 0) {
         int tx = p->route_x[p->route_len - 1];
         int ty = p->route_y[p->route_len - 1];
-        runec_ui_add_minimap_dot(&v->ui, (float)tx - (float)p->x,
-                                 (float)ty - (float)p->y,
+        Vector2 offset = fc_minimap_rotate_offset(
+            (float)tx + 0.5f - player_x,
+            (float)ty + 0.5f - player_y, v->cam_yaw);
+        runec_ui_add_minimap_dot(&v->ui, offset.x, offset.y,
                                  RUNEC_UI_MINIMAP_DOT_DESTINATION);
     }
     for (int i = 0; i < FC_MAX_NPCS; i++) {
         FcNpc* n = &v->state.npcs[i];
         if (!n->active || n->is_dead) continue;
-        float nx = (float)n->x + (float)n->size * 0.5f;
-        float ny = (float)n->y + (float)n->size * 0.5f;
-        runec_ui_add_minimap_dot(&v->ui, nx - (float)p->x,
-                                 ny - (float)p->y,
+        FcVisualPose npc_pose = fc_visual_scene_npc_pose(&v->visual_scene, i);
+        float npc_x = v->visual_scene.npcs[i].active
+            ? npc_pose.x : (float)n->x + (float)n->size * 0.5f;
+        float npc_y = v->visual_scene.npcs[i].active
+            ? npc_pose.y : (float)n->y + (float)n->size * 0.5f;
+        Vector2 offset = fc_minimap_rotate_offset(
+            npc_x - player_x, npc_y - player_y, v->cam_yaw);
+        runec_ui_add_minimap_dot(&v->ui, offset.x, offset.y,
                                  RUNEC_UI_MINIMAP_DOT_NPC);
     }
 }
@@ -779,11 +774,21 @@ static void handle_runec_ui_intent(ViewerState* v) {
             fc_request_set_running(&v->state, !p->is_running);
             break;
         case RUNEC_UI_INTENT_MINIMAP_CLICK: {
-            int dx = (intent->primary - 72) / 4;
-            int dy = (75 - intent->secondary) / 4;
+            FcVisualPose player_pose =
+                fc_visual_scene_player_pose(&v->visual_scene);
+            float player_x = v->visual_scene.player.active
+                ? player_pose.x : (float)p->x + 0.5f;
+            float player_y = v->visual_scene.player.active
+                ? player_pose.y : (float)p->y + 0.5f;
+            int tile_x = -1;
+            int tile_y = -1;
             Vector2 mouse = GetMousePosition();
-            queue_player_tile_request(v, p->x + dx, p->y + dy,
-                                      mouse.x, mouse.y);
+            if (fc_minimap_click_to_tile(
+                    (float)intent->primary, (float)intent->secondary,
+                    player_x, player_y, v->cam_yaw, &tile_x, &tile_y)) {
+                queue_player_tile_request(v, tile_x, tile_y,
+                                          mouse.x, mouse.y);
+            }
             break;
         }
         default:
@@ -3827,6 +3832,27 @@ int main(int argc, char** argv) {
     v.camera.target = (Vector3){FC_ARENA_WIDTH * 0.5f, 0.5f, -(FC_ARENA_HEIGHT * 0.5f)};
 
     v.terrain = load_terrain(&v);
+    /* OSRS rasterizes the current 104x104 scene from cache terrain and
+     * locations into a 512x512 minimap. This asset contains the Fight Caves
+     * mapsquare centered in that same scene format; runtime only crops and
+     * rotates it around the player. */
+    Image minimap_image = fc_load_image_asset("fightcaves.minimap.png");
+    if (minimap_image.data) {
+        Color* minimap_pixels = LoadImageColors(minimap_image);
+        if (!minimap_pixels || !fc_minimap_scene_load_pixels(
+                &v.minimap_scene, minimap_pixels,
+                minimap_image.width, minimap_image.height)) {
+            fprintf(stderr, "warning: Fight Caves minimap failed to load\n");
+        } else {
+            fprintf(stderr,
+                    "minimap: loaded cache scene raster %dx%d\n",
+                    minimap_image.width, minimap_image.height);
+        }
+        UnloadImageColors(minimap_pixels);
+        UnloadImage(minimap_image);
+    } else {
+        fprintf(stderr, "warning: missing fightcaves.minimap.png\n");
+    }
     v.objects = load_objects_with_terrain(v.terrain);
     if (fc_asset_exists("fightcaves.oanim"))
         v.object_anims = object_anims_load("fightcaves.oanim");
@@ -4912,6 +4938,7 @@ skip_player_anim_update:
     if (v.object_anim_models) fc_npc_models_unload(v.object_anim_models);
     if (v.object_anims) object_anims_free(v.object_anims);
     objects_free(v.objects);
+    fc_minimap_scene_free(&v.minimap_scene);
     if (v.terrain && v.terrain->loaded) { UnloadModel(v.terrain->model); free(v.terrain->heightmap); free(v.terrain); }
     runec_ui_shutdown(&v.ui);
     CloseWindow();

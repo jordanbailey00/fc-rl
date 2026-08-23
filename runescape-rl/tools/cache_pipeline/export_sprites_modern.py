@@ -199,7 +199,6 @@ def build_sprite_map() -> dict[int, list[str]]:
     _add(sprites, 1196, "orb_xp_0")
     _add(sprites, 1438, "ring_30")
     _add(sprites, 1439, "worldmap_icon_0")
-    _add(sprites, 2420, "wiki_icon_0")
     _add(sprites, 189, "189", "stats_total_left")
     _add(sprites, 190, "190", "stats_total_right")
     _add(sprites, 191, "191", "stats_total_middle")
