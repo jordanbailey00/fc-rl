@@ -4,6 +4,7 @@
 set(FC_VIEWER_SOURCES
     src/viewer.c
     src/fc_actor_visual.c
+    src/fc_click_feedback.c
     src/fc_projectile_visual.c
     src/fc_debug.c
     src/ui.c
@@ -62,6 +63,17 @@ target_include_directories(test_actor_visual PRIVATE
 )
 target_link_libraries(test_actor_visual PRIVATE m)
 add_test(NAME test_actor_visual COMMAND test_actor_visual)
+
+add_executable(test_click_feedback
+    tests/test_click_feedback.c
+    src/fc_click_feedback.c
+)
+target_include_directories(test_click_feedback PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/fc-core/include
+)
+target_link_libraries(test_click_feedback PRIVATE fc_core m)
+add_test(NAME test_click_feedback COMMAND test_click_feedback)
 
 add_executable(test_projectile_visual
     tests/test_projectile_visual.c

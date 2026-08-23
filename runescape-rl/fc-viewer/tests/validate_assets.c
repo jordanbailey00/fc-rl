@@ -92,6 +92,14 @@ int main(void) {
         "data/sprites/ui/hitsplat_prayer_drain.png",
         "data/sprites/ui/healthbar_full_30.png",
         "data/sprites/ui/healthbar_empty_30.png",
+        "data/sprites/ui/cross_0.png",
+        "data/sprites/ui/cross_1.png",
+        "data/sprites/ui/cross_2.png",
+        "data/sprites/ui/cross_3.png",
+        "data/sprites/ui/cross_4.png",
+        "data/sprites/ui/cross_5.png",
+        "data/sprites/ui/cross_6.png",
+        "data/sprites/ui/cross_7.png",
         NULL
     };
     int ok = 1;
@@ -108,6 +116,11 @@ int main(void) {
     ok = check_png_size("data/sprites/ui/hitsplat_prayer_drain.png", 25, 25) && ok;
     ok = check_png_size("data/sprites/ui/healthbar_full_30.png", 30, 5) && ok;
     ok = check_png_size("data/sprites/ui/healthbar_empty_30.png", 30, 5) && ok;
+    for (int i = 0; i < 8; i++) {
+        char path[64];
+        snprintf(path, sizeof(path), "data/sprites/ui/cross_%d.png", i);
+        ok = check_png_size(path, 16, 16) && ok;
+    }
 
     ok = check_repo_file("fc-core/assets/fightcaves.collision") && ok;
     ok = check_repo_file("fc-core/assets/fightcaves.movement") && ok;

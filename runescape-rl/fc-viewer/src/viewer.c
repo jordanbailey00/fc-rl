@@ -36,6 +36,7 @@
 #include "fc_spotanims.h"
 #include "fc_asset_raylib.h"
 #include "fc_actor_visual.h"
+#include "fc_click_feedback.h"
 #include "fc_projectile_visual.h"
 #include "fc_debug_overlay.h"
 #include "ui.h"
@@ -409,6 +410,7 @@ typedef struct {
     int pending_prayer, pending_eat, pending_drink;
     int pending_attack_npc;
     int pending_tile_x, pending_tile_y;
+    FcClickFeedback click_feedback;
     /* Clickable NPC health bars in side panel (filled during draw, checked on click) */
     int panel_npc_slot[8];   /* NPC array index for each panel row */
     int panel_npc_y[8];      /* screen Y of each panel row */
@@ -426,6 +428,7 @@ typedef struct {
     Texture2D hitsplat_zero_tex, hitsplat_damage_tex;
     Texture2D hitsplat_heal_tex, hitsplat_prayer_drain_tex;
     Texture2D healthbar_full_tex, healthbar_empty_tex;
+    Texture2D click_cross_tex[FC_CLICK_CROSS_FRAME_COUNT * 2];
     /* Side panel tabs (Phase 8h) */
     int active_tab;     /* 0=inventory, 1=combat, 2=prayer, 3=stats */
     int active_loadout; /* index into FC_LOADOUTS[] */
@@ -704,7 +707,13 @@ static void sync_fc_ui_minimap(ViewerState* v) {
 
     runec_ui_clear_minimap(&v->ui);
     runec_ui_add_minimap_dot(&v->ui, 0.0f, 0.0f, RUNEC_UI_MINIMAP_DOT_PLAYER);
-    if (p->route_idx < p->route_len && p->route_len > 0) {
+    if (v->click_feedback.destination_active) {
+        int tx = v->click_feedback.destination_x;
+        int ty = v->click_feedback.destination_y;
+        runec_ui_add_minimap_dot(&v->ui, (float)tx - (float)p->x,
+                                 (float)ty - (float)p->y,
+                                 RUNEC_UI_MINIMAP_DOT_DESTINATION);
+    } else if (p->route_idx < p->route_len && p->route_len > 0) {
         int tx = p->route_x[p->route_len - 1];
         int ty = p->route_y[p->route_len - 1];
         runec_ui_add_minimap_dot(&v->ui, (float)tx - (float)p->x,
@@ -728,19 +737,25 @@ static void sync_fc_ui(ViewerState* v) {
     sync_fc_ui_minimap(v);
 }
 
-static void queue_player_tile_request(ViewerState* v, int tx, int ty) {
+static void queue_player_tile_request(ViewerState* v, int tx, int ty,
+                                      float screen_x, float screen_y) {
     if (!v || tx < 0 || tx >= FC_ARENA_WIDTH || ty < 0 || ty >= FC_ARENA_HEIGHT)
         return;
     v->pending_tile_x = tx;
     v->pending_tile_y = ty;
     v->pending_attack_npc = -1;
+    fc_click_feedback_select_move(&v->click_feedback, &v->state, tx, ty,
+                                  screen_x, screen_y);
 }
 
-static void queue_player_attack_request(ViewerState* v, int npc_idx) {
+static void queue_player_attack_request(ViewerState* v, int npc_idx,
+                                        float screen_x, float screen_y) {
     if (!v || npc_idx < 0 || npc_idx >= FC_MAX_NPCS) return;
     v->pending_attack_npc = npc_idx;
     v->pending_tile_x = -1;
     v->pending_tile_y = -1;
+    fc_click_feedback_select_interaction(&v->click_feedback,
+                                         screen_x, screen_y);
 }
 
 static void handle_runec_ui_intent(ViewerState* v) {
@@ -782,7 +797,9 @@ static void handle_runec_ui_intent(ViewerState* v) {
         case RUNEC_UI_INTENT_MINIMAP_CLICK: {
             int dx = (intent->primary - 72) / 4;
             int dy = (75 - intent->secondary) / 4;
-            queue_player_tile_request(v, p->x + dx, p->y + dy);
+            Vector2 mouse = GetMousePosition();
+            queue_player_tile_request(v, p->x + dx, p->y + dy,
+                                      mouse.x, mouse.y);
             break;
         }
         default:
@@ -1789,6 +1806,7 @@ static void reset_ep(ViewerState* v) {
     v->pending_attack_npc = -1;
     v->pending_tile_x = -1;
     v->pending_tile_y = -1;
+    fc_click_feedback_reset(&v->click_feedback);
     dbg_log_clear();
     /* Initialize prev positions */
     v->player_pose_anim_seq =
@@ -1849,6 +1867,7 @@ static void viewer_jump_to_wave(ViewerState* v, int wave) {
     clear_visuals(v);
     reset_visual_actor_scene(v);
     v->attack_target = -1;
+    fc_click_feedback_reset(&v->click_feedback);
     dbg_log_clear();
     v->player_pose_anim_seq =
         player_visual_profile(v->active_loadout)->idle_anim;
@@ -2273,7 +2292,7 @@ static int find_clicked_npc_idx(ViewerState* v, int tile_x, int tile_y) {
 }
 
 /* Called EVERY FRAME to capture clicks (which only fire once at 60fps).
- * Sets routes and targets on the player struct directly. */
+ * Buffers authoritative actions and starts presentation-only feedback. */
 static void process_human_clicks(ViewerState* v, int ui_capture) {
     FcPlayer* p = &v->state.player;
 
@@ -2288,14 +2307,14 @@ static void process_human_clicks(ViewerState* v, int ui_capture) {
             if (rc) {
                 int npc_idx = find_clicked_npc_idx(v, tx, ty);
                 if (npc_idx >= 0) {
-                    queue_player_attack_request(v, npc_idx);
+                    queue_player_attack_request(v, npc_idx, mpos.x, mpos.y);
                     fprintf(stderr, " → ATTACK npc_idx=%d\n", npc_idx);
                 } else {
                     int walkable = (tx >= 0 && tx < FC_ARENA_WIDTH &&
                                     ty >= 0 && ty < FC_ARENA_HEIGHT) ?
                                    v->state.walkable[tx][ty] : 0;
                     fprintf(stderr, " walkable=%d", walkable);
-                    queue_player_tile_request(v, tx, ty);
+                    queue_player_tile_request(v, tx, ty, mpos.x, mpos.y);
                     fprintf(stderr, " → MOVE%s\n", walkable ? "" : "-NEAR");
                 }
             } else {
@@ -2307,7 +2326,7 @@ static void process_human_clicks(ViewerState* v, int ui_capture) {
                 for (int pi = 0; pi < v->panel_npc_count; pi++) {
                     if (mpos.y >= v->panel_npc_y[pi] && mpos.y < v->panel_npc_y[pi] + 12) {
                         int ni = v->panel_npc_slot[pi];
-                        queue_player_attack_request(v, ni);
+                        queue_player_attack_request(v, ni, mpos.x, mpos.y);
                         fprintf(stderr, "PANEL CLICK → ATTACK npc_idx=%d\n", ni);
                         break;
                     }
@@ -2632,6 +2651,73 @@ static EntityRenderPose entity_render_pose(const ViewerState* v,
     return pose;
 }
 
+static Vector2 click_route_point_to_screen(ViewerState* v,
+                                           float tile_x, float tile_y) {
+    Vector3 world = {
+        tile_x,
+        ground_y_smooth(v, tile_x, tile_y) + 0.08f,
+        -tile_y,
+    };
+    return GetWorldToScreen(world, v->camera);
+}
+
+static void draw_click_destination_3d(ViewerState* v) {
+    if (!v || !v->click_feedback.destination_active) return;
+    int tx = v->click_feedback.destination_x;
+    int ty = v->click_feedback.destination_y;
+    if (tx < 0 || tx >= FC_ARENA_WIDTH ||
+        ty < 0 || ty >= FC_ARENA_HEIGHT) {
+        return;
+    }
+
+    float y = ground_y(v, tx, ty) + 0.025f;
+    Vector3 center = {(float)tx + 0.5f, y, -((float)ty + 0.5f)};
+    Color fill = {255, 215, 0, 70};
+    Color edge = {255, 235, 70, 230};
+    DrawCube(center, 0.92f, 0.025f, 0.92f, fill);
+    DrawCubeWires(center, 0.92f, 0.025f, 0.92f, edge);
+}
+
+static void draw_click_route_2d(ViewerState* v) {
+    if (!v) return;
+    const int* route_x = NULL;
+    const int* route_y = NULL;
+    int start = 0;
+    int len = 0;
+    if (!fc_click_feedback_route(&v->click_feedback, &v->state,
+                                 &route_x, &route_y, &start, &len)) {
+        return;
+    }
+
+    FcVisualPose player = fc_visual_scene_player_pose(&v->visual_scene);
+    Vector2 previous = click_route_point_to_screen(v, player.x, player.y);
+    Color line = {255, 220, 30, 210};
+    Color point = {255, 245, 120, 240};
+    for (int i = start; i < len; i++) {
+        Vector2 next = click_route_point_to_screen(
+            v, (float)route_x[i] + 0.5f, (float)route_y[i] + 0.5f);
+        DrawLineEx(previous, next, 2.0f, line);
+        DrawCircleV(next, 2.5f, point);
+        previous = next;
+    }
+}
+
+static void draw_click_cross(ViewerState* v) {
+    if (!v) return;
+    int frame = fc_click_feedback_cross_frame(&v->click_feedback);
+    if (frame < 0) return;
+    int base = v->click_feedback.cross_kind == FC_CLICK_CROSS_INTERACTION
+        ? FC_CLICK_CROSS_FRAME_COUNT : 0;
+    Texture2D texture = v->click_cross_tex[base + frame];
+    if (texture.id <= 0) return;
+    DrawTexture(texture,
+                (int)roundf(v->click_feedback.cross_screen_x) -
+                    texture.width / 2,
+                (int)roundf(v->click_feedback.cross_screen_y) -
+                    texture.height / 2,
+                WHITE);
+}
+
 static Vector3 camera_follow_target(const ViewerState* v) {
     float cx = FC_ARENA_WIDTH * 0.5f;
     float cy = -(FC_ARENA_HEIGHT * 0.5f);
@@ -2902,6 +2988,10 @@ static void draw_scene(ViewerState* v) {
         }
     }
 
+    /* Movement feedback is immediate, even though the selected action remains
+     * buffered until the next authoritative simulation tick. */
+    draw_click_destination_3d(v);
+
     /* Entities */
     int target_entity_idx = -1;  /* for highlight ring */
     for (int i = 0; i < v->entity_count; i++) {
@@ -3099,9 +3189,14 @@ static void draw_scene(ViewerState* v) {
 
     /* Debug overlays — 2D screen-space (LOS, path, range — after EndMode3D) */
     if (v->dbg_flags) {
-        debug_overlay_screen(&v->state, v->camera, v->dbg_flags);
+        int debug_flags = v->dbg_flags;
+        if (v->click_feedback.destination_active)
+            debug_flags &= ~DBG_PATH;
+        debug_overlay_screen(&v->state, v->camera, debug_flags);
         draw_npc_prayer_window_indicators(v);
     }
+
+    draw_click_route_2d(v);
 
     draw_osrs_hitsplats(v);
 
@@ -3546,7 +3641,7 @@ static int process_runec_console_input(ViewerState* v) {
             if (!npc->active || npc->is_dead) continue;
             if (CheckCollisionPointRec(
                     mouse, runec_console_target_row_rect(body, shown))) {
-                queue_player_attack_request(v, ni);
+                queue_player_attack_request(v, ni, mouse.x, mouse.y);
                 fprintf(stderr, "CONSOLE CLICK -> ATTACK npc_idx=%d\n", ni);
                 return 1;
             }
@@ -4644,6 +4739,23 @@ int main(int argc, char** argv) {
         fprintf(stderr, "Actor overhead sprites loaded: %d/6\n", loaded);
     }
 
+    /* Native b237 click crosses: frames 0-3 are movement (yellow), frames
+     * 4-7 are interaction (red). RuneC advances one frame every 100 ms. */
+    {
+        int loaded = 0;
+        for (int i = 0; i < FC_CLICK_CROSS_FRAME_COUNT * 2; i++) {
+            char path[64];
+            snprintf(path, sizeof(path),
+                     "data/sprites/ui/cross_%d.png", i);
+            v.click_cross_tex[i] = fc_load_texture_asset(path);
+            if (v.click_cross_tex[i].id > 0) {
+                SetTextureFilter(v.click_cross_tex[i], TEXTURE_FILTER_POINT);
+                loaded++;
+            }
+        }
+        fprintf(stderr, "Click cross sprites loaded: %d/8\n", loaded);
+    }
+
     /* Load tab/inventory sprites (Phase 8h) */
     {
         if (fc_asset_exists("sprites/prayer_potion.png")) {
@@ -4813,6 +4925,7 @@ int main(int argc, char** argv) {
         }
 
         if (tick && v.state.terminal == TERMINAL_NONE) {
+            int used_human_actions = 0;
             /* Build action array for this tick */
             if (v.policy_pipe) {
                 if (!read_policy_actions(&v)) {
@@ -4827,6 +4940,7 @@ int main(int argc, char** argv) {
                 if (GetRandomValue(0,2) == 0) v.actions[0] = 0;
             } else {
                 build_human_actions(&v);
+                used_human_actions = 1;
             }
 
             /* Save previous NPC positions by stable array index. */
@@ -4863,6 +4977,10 @@ int main(int argc, char** argv) {
 
             /* Step simulation */
             fc_step(&v.state, v.actions);
+            if (used_human_actions && v.actions[5] > 0 && v.actions[6] > 0)
+                fc_click_feedback_accept_move_tick(&v.click_feedback,
+                                                   &v.state);
+            fc_click_feedback_sync(&v.click_feedback, &v.state);
 
             /* Playable-viewer test aid only. The simulator has already
              * resolved the hit; keep the local session alive at one HP. */
@@ -5200,6 +5318,7 @@ int main(int argc, char** argv) {
 
         /* OSRS overhead lifetimes are measured in 20 ms client cycles. */
         float overhead_dt = GetFrameTime();
+        fc_click_feedback_update(&v.click_feedback, overhead_dt);
         for (int i = 0; i < MAX_HITSPLATS; i++) {
             if (v.hitsplats[i].active) {
                 v.hitsplats[i].seconds_left -= overhead_dt;
@@ -5554,6 +5673,7 @@ skip_player_anim_update:
         draw_runec_side_overrides(&v);
         draw_runec_console(&v);
         draw_test_overlay(&v);
+        draw_click_cross(&v);
 
         EndDrawing();
     }
@@ -5568,6 +5688,10 @@ skip_player_anim_update:
         UnloadTexture(v.hitsplat_prayer_drain_tex);
     if (v.healthbar_full_tex.id > 0) UnloadTexture(v.healthbar_full_tex);
     if (v.healthbar_empty_tex.id > 0) UnloadTexture(v.healthbar_empty_tex);
+    for (int i = 0; i < FC_CLICK_CROSS_FRAME_COUNT * 2; i++) {
+        if (v.click_cross_tex[i].id > 0)
+            UnloadTexture(v.click_cross_tex[i]);
+    }
     /* Phase 8h sprites */
     if (v.tex_ppot.id > 0) UnloadTexture(v.tex_ppot);
     if (v.tex_shark.id > 0) UnloadTexture(v.tex_shark);
