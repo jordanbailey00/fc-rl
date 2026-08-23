@@ -20,7 +20,7 @@ static void tick_scene(FcVisualScene* scene, int ticks) {
 static void test_walk_uses_client_local_steps(void) {
     FcVisualScene scene;
     fc_visual_scene_init(&scene);
-    fc_visual_scene_reset_player(&scene, 10, 10, 1, 0.0f);
+    fc_visual_scene_reset_player(&scene, 10, 10, 1, 90.0f);
     fc_visual_actor_enqueue_tile(&scene.player, 11, 10, 0);
 
     tick_scene(&scene, 1);
@@ -36,7 +36,7 @@ static void test_walk_uses_client_local_steps(void) {
 static void test_run_preserves_two_waypoint_route(void) {
     FcVisualScene scene;
     fc_visual_scene_init(&scene);
-    fc_visual_scene_reset_player(&scene, 10, 10, 1, 0.0f);
+    fc_visual_scene_reset_player(&scene, 10, 10, 1, 90.0f);
     fc_visual_actor_enqueue_tile(&scene.player, 11, 10, 1);
     fc_visual_actor_enqueue_tile(&scene.player, 12, 10, 1);
     tick_scene(&scene, 32);
@@ -94,11 +94,40 @@ static void test_fast_target_facing_movement_keeps_directional_pose(void) {
           "fast forward movement should use the run pose");
 }
 
+static void test_native_turn_speed_snap_and_queue_bound(void) {
+    FcVisualScene scene;
+    fc_visual_scene_init(&scene);
+    fc_visual_scene_reset_player(&scene, 10, 10, 1, 0.0f);
+    fc_visual_actor_enqueue_tile(&scene.player, 11, 10, 0);
+    tick_scene(&scene, 1);
+    CHECK(fabsf(scene.player.local_x - (10.5f * 128.0f + 2.0f)) < 0.01f,
+          "untargeted movement should use half speed while yaw is turning");
+
+    fc_visual_scene_init(&scene);
+    fc_visual_scene_reset_player(&scene, 10, 10, 1, 0.0f);
+    fc_visual_actor_enqueue_tile(&scene.player, 13, 10, 0);
+    tick_scene(&scene, 1);
+    CHECK(fabsf(scene.player.local_x - 13.5f * 128.0f) < 0.01f,
+          "visual movement more than two tiles behind should resynchronize");
+    CHECK(scene.player.path_count == 1,
+          "native resynchronization should retain the reached queue point until the next tick");
+
+    fc_visual_scene_init(&scene);
+    fc_visual_scene_reset_player(&scene, 10, 10, 1, 0.0f);
+    for (int tile = 11; tile <= 22; tile++)
+        fc_visual_actor_enqueue_tile(&scene.player, tile, 10, 0);
+    CHECK(scene.player.path_count == FC_VISUAL_ACTIVE_PATH_MAX,
+          "visual route should cap at nine active waypoints");
+    CHECK(scene.player.path_x[0] == 14 && scene.player.path_x[8] == 22,
+          "a full visual route should retain the newest nine waypoints");
+}
+
 int main(void) {
     test_walk_uses_client_local_steps();
     test_run_preserves_two_waypoint_route();
     test_live_target_turning_and_directional_pose();
     test_fast_target_facing_movement_keeps_directional_pose();
+    test_native_turn_speed_snap_and_queue_bound();
     if (failures) {
         fprintf(stderr, "%d actor visual test(s) failed\n", failures);
         return 1;

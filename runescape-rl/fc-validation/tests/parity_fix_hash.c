@@ -95,6 +95,9 @@ static uint32_t reference_player(uint32_t hash, const FcPlayer* player) {
     HASH_F32(player->facing_angle);
     HASH_I32(player->attack_target_idx);
     HASH_I32(player->approach_target);
+    HASH_I32(player->approach_target_x);
+    HASH_I32(player->approach_target_y);
+    HASH_I32(player->approach_target_size);
     for (int i = 0; i < FC_MAX_PENDING_HITS; ++i) {
         hash = reference_pending_hit(hash, &player->pending_hits[i]);
     }
@@ -151,7 +154,7 @@ static uint32_t reference_npc(uint32_t hash, const FcNpc* npc) {
     return hash;
 }
 
-static uint32_t reference_state_hash_v2(const FcState* state) {
+static uint32_t reference_state_hash_v3(const FcState* state) {
     uint32_t hash = FNV_OFFSET;
     hash = reference_player(hash, &state->player);
     for (int i = 0; i < FC_MAX_NPCS; ++i) {
@@ -184,15 +187,6 @@ static uint32_t reference_state_hash_v2(const FcState* state) {
         }
     }
 
-    HASH_I32(state->movement_start_occupied_valid);
-    HASH_I32(state->movement_start_player_x);
-    HASH_I32(state->movement_start_player_y);
-    for (int i = 0; i < FC_MAX_NPCS; ++i) {
-        HASH_I32(state->movement_start_npc_x[i]);
-        HASH_I32(state->movement_start_npc_y[i]);
-        HASH_I32(state->movement_start_npc_size[i]);
-        HASH_I32(state->movement_start_npc_active[i]);
-    }
     HASH_I32(state->jad_healers_spawned);
     HASH_I32(state->jad_healer_spawn_generations);
 
@@ -325,8 +319,6 @@ static void make_golden_state(FcState* state) {
     state->rng_state = UINT32_C(0x89abcdef);
     state->rng_seed = UINT32_C(0x12345678);
     state->walkable[2][3] = 1;
-    state->movement_start_npc_x[4] = 31;
-    state->movement_start_npc_active[4] = 1;
     state->correct_jad_prayer = 1;
     state->progress_cave_progress = 0.75f;
     state->ep_prayer_switches = 11;
@@ -335,19 +327,19 @@ static void make_golden_state(FcState* state) {
 }
 
 static int test_version(void) {
-    if (FC_STATE_HASH_VERSION != 2u) {
-        fprintf(stderr, "FAIL DET-001: FC_STATE_HASH_VERSION=%u, expected 2\n",
+    if (FC_STATE_HASH_VERSION != 3u) {
+        fprintf(stderr, "FAIL DET-001: FC_STATE_HASH_VERSION=%u, expected 3\n",
                 (unsigned)FC_STATE_HASH_VERSION);
         return 1;
     }
-    printf("PASS DET-001: canonical state-hash version is 2\n");
+    printf("PASS DET-001: canonical state-hash version is 3\n");
     return 0;
 }
 
 #define MUTATE(label, expression) do {                                      \
     FcState changed = base;                                                 \
     expression;                                                             \
-    uint32_t expected = reference_state_hash_v2(&changed);                  \
+    uint32_t expected = reference_state_hash_v3(&changed);                  \
     uint32_t actual = fc_state_hash(&changed);                              \
     if (expected == reference_base) {                                       \
         fprintf(stderr, "FAIL DET-001 oracle: %s did not change reference hash\n", label); \
@@ -364,10 +356,11 @@ static int test_field_coverage(void) {
     int failures = 0;
     fc_init(&base);
     fc_reset(&base, UINT32_C(0x31415926));
-    uint32_t reference_base = reference_state_hash_v2(&base);
+    uint32_t reference_base = reference_state_hash_v3(&base);
     uint32_t production_base = fc_state_hash(&base);
 
     MUTATE("player.position", changed.player.x ^= 1);
+    MUTATE("player.approach_destination", changed.player.approach_target_x ^= 1);
     MUTATE("player.vitals", changed.player.current_hp ^= 1);
     MUTATE("player.live_prayer", changed.player.prayer ^= 1);
     MUTATE("player.tick_start_prayer", changed.player.prayer_at_tick_start ^= 1);
@@ -435,7 +428,6 @@ static int test_field_coverage(void) {
     MUTATE("arena_walkability", changed.walkable[0][0] ^= UINT8_C(1));
     MUTATE("arena_movement_flags", changed.movement_flags[0][0] ^= UINT8_C(1));
     MUTATE("arena_los_flags", changed.los_flags[0][0] ^= UINT8_C(1));
-    MUTATE("movement_reservations", changed.movement_start_npc_x[0] ^= 1);
     MUTATE("jad_healer_state", changed.jad_healer_spawn_generations ^= 1);
     MUTATE("reward_damage_event", changed.damage_dealt_this_tick ^= 1);
     MUTATE("reward_prayer_event", changed.correct_danger_prayer ^= 1);
@@ -467,26 +459,26 @@ static int test_field_coverage(void) {
 #undef MUTATE
 
 static int test_golden(void) {
-    const uint32_t expected_v2 = UINT32_C(0x73d93548);
+    const uint32_t expected_v3 = UINT32_C(0xe8a1aa06);
     FcState state;
     make_golden_state(&state);
-    uint32_t oracle = reference_state_hash_v2(&state);
+    uint32_t oracle = reference_state_hash_v3(&state);
     uint32_t actual = fc_state_hash(&state);
 
-    if (oracle != expected_v2) {
+    if (oracle != expected_v3) {
         fprintf(stderr,
                 "FAIL DET-001 oracle golden: got 0x%08" PRIx32 ", expected 0x%08" PRIx32 "\n",
-                oracle, expected_v2);
+                oracle, expected_v3);
         return 1;
     }
-    if (actual != expected_v2) {
+    if (actual != expected_v3) {
         fprintf(stderr,
                 "FAIL DET-001 canonical golden: got 0x%08" PRIx32 ", expected 0x%08" PRIx32 "\n",
-                actual, expected_v2);
+                actual, expected_v3);
         return 1;
     }
-    printf("PASS DET-001: version-2 synthetic-state golden is 0x%08" PRIx32 "\n",
-           expected_v2);
+    printf("PASS DET-001: version-3 synthetic-state golden is 0x%08" PRIx32 "\n",
+           expected_v3);
     return 0;
 }
 

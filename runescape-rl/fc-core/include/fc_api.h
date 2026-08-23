@@ -31,6 +31,10 @@ void fc_reset(FcState* state, uint32_t seed);
  * After step, per-tick event flags and terminal status are set. */
 void fc_step(FcState* state, const int actions[FC_NUM_ACTION_HEADS]);
 
+/* Canonical client preference request used by playable frontends. Gameplay
+ * movement still occurs only through fc_step(). */
+void fc_request_set_running(FcState* state, int enabled);
+
 /* Internal tick loop (called by fc_step). Exposed for testing. */
 void fc_tick(FcState* state, const int actions[FC_NUM_ACTION_HEADS]);
 
@@ -101,7 +105,7 @@ int fc_terminal_code(const FcState* state);
 
 /* Version 2 adds directional movement and projectile collision maps to the
  * complete core-owned fixed-width FcState serialization. */
-#define FC_STATE_HASH_VERSION 2u
+#define FC_STATE_HASH_VERSION 3u
 
 /*
  * Compute a deterministic hash of the game state.

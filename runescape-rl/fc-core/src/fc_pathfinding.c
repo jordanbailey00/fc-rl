@@ -1,5 +1,6 @@
 #include "fc_pathfinding.h"
 #include <stddef.h>
+#include <string.h>
 
 /*
  * fc_pathfinding.c — Grid movement, footprint checks, and LOS for Fight Caves.
@@ -101,66 +102,147 @@ int fc_footprint_available_for_entity(const FcState* state,
     return fc_footprint_available_dynamic(x, y, size, state->walkable, occupied);
 }
 
-static int fc_footprint_cardinal_step_walkable(
+/* Low-byte equivalents of the composite clipping masks used by the native
+ * client route finder. A non-walkable or occupied tile is the local equivalent
+ * of its whole-tile LOC blocker. */
+#define FC_BLOCK_WEST FC_MOVE_WALL_EAST
+#define FC_BLOCK_EAST FC_MOVE_WALL_WEST
+#define FC_BLOCK_SOUTH FC_MOVE_WALL_NORTH
+#define FC_BLOCK_NORTH FC_MOVE_WALL_SOUTH
+#define FC_BLOCK_SOUTH_WEST \
+    (FC_MOVE_WALL_NORTH | FC_MOVE_WALL_NORTH_EAST | FC_MOVE_WALL_EAST)
+#define FC_BLOCK_SOUTH_EAST \
+    (FC_MOVE_WALL_NORTH_WEST | FC_MOVE_WALL_NORTH | FC_MOVE_WALL_WEST)
+#define FC_BLOCK_NORTH_WEST \
+    (FC_MOVE_WALL_EAST | FC_MOVE_WALL_SOUTH_EAST | FC_MOVE_WALL_SOUTH)
+#define FC_BLOCK_NORTH_EAST \
+    (FC_MOVE_WALL_SOUTH | FC_MOVE_WALL_SOUTH_WEST | FC_MOVE_WALL_WEST)
+#define FC_BLOCK_NORTH_AND_SOUTH_EAST \
+    (FC_MOVE_WALL_NORTH | FC_MOVE_WALL_NORTH_EAST | FC_MOVE_WALL_EAST | \
+     FC_MOVE_WALL_SOUTH_EAST | FC_MOVE_WALL_SOUTH)
+#define FC_BLOCK_NORTH_AND_SOUTH_WEST \
+    (FC_MOVE_WALL_NORTH_WEST | FC_MOVE_WALL_NORTH | FC_MOVE_WALL_SOUTH | \
+     FC_MOVE_WALL_SOUTH_WEST | FC_MOVE_WALL_WEST)
+#define FC_BLOCK_NORTH_EAST_AND_WEST \
+    (FC_MOVE_WALL_NORTH_WEST | FC_MOVE_WALL_NORTH | \
+     FC_MOVE_WALL_NORTH_EAST | FC_MOVE_WALL_EAST | FC_MOVE_WALL_WEST)
+#define FC_BLOCK_SOUTH_EAST_AND_WEST \
+    (FC_MOVE_WALL_EAST | FC_MOVE_WALL_SOUTH_EAST | FC_MOVE_WALL_SOUTH | \
+     FC_MOVE_WALL_SOUTH_WEST | FC_MOVE_WALL_WEST)
+
+static int fc_step_tile_blocked(
+    int x, int y, uint8_t mask,
+    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
+    if (x < 0 || x >= FC_ARENA_WIDTH || y < 0 || y >= FC_ARENA_HEIGHT)
+        return 1;
+    return !walkable[x][y] || (movement_flags[x][y] & mask) != 0 ||
+           (occupied && occupied[x][y]);
+}
+
+static int fc_footprint_step_valid(
     int x, int y, int dx, int dy, int size,
     const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
-    if (size <= 0 || (dx == 0) == (dy == 0) ||
-        dx < -1 || dx > 1 || dy < -1 || dy > 1) {
-        return 0;
-    }
-    if (!fc_footprint_walkable(x + dx, y + dy, size, walkable)) return 0;
+    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
+    if (size <= 0 || dx < -1 || dx > 1 || dy < -1 || dy > 1 ||
+        (dx == 0 && dy == 0)) return 0;
 
-    if (dx != 0) {
-        int edge_x = dx > 0 ? x + size : x - 1;
-        uint8_t wall = dx > 0 ? FC_MOVE_WALL_WEST : FC_MOVE_WALL_EAST;
-        for (int oy = 0; oy < size; oy++) {
-            if (movement_flags[edge_x][y + oy] & wall) return 0;
-        }
-    } else {
-        int edge_y = dy > 0 ? y + size : y - 1;
-        uint8_t wall = dy > 0 ? FC_MOVE_WALL_SOUTH : FC_MOVE_WALL_NORTH;
-        for (int ox = 0; ox < size; ox++) {
-            if (movement_flags[x + ox][edge_y] & wall) return 0;
-        }
+#define BLOCKED(tx, ty, mask) \
+    fc_step_tile_blocked((tx), (ty), (uint8_t)(mask), walkable, \
+                         movement_flags, occupied)
+
+    if (dx == 0 && dy == -1) {
+        if (size == 1) return !BLOCKED(x, y - 1, FC_BLOCK_SOUTH);
+        if (BLOCKED(x, y - 1, FC_BLOCK_SOUTH_WEST) ||
+            BLOCKED(x + size - 1, y - 1, FC_BLOCK_SOUTH_EAST)) return 0;
+        for (int i = 1; i < size - 1; i++)
+            if (BLOCKED(x + i, y - 1, FC_BLOCK_NORTH_EAST_AND_WEST)) return 0;
+        return 1;
     }
-    return 1;
+    if (dx == 0 && dy == 1) {
+        if (size == 1) return !BLOCKED(x, y + 1, FC_BLOCK_NORTH);
+        if (BLOCKED(x, y + size, FC_BLOCK_NORTH_WEST) ||
+            BLOCKED(x + size - 1, y + size, FC_BLOCK_NORTH_EAST)) return 0;
+        for (int i = 1; i < size - 1; i++)
+            if (BLOCKED(x + i, y + size, FC_BLOCK_SOUTH_EAST_AND_WEST)) return 0;
+        return 1;
+    }
+    if (dx == -1 && dy == 0) {
+        if (size == 1) return !BLOCKED(x - 1, y, FC_BLOCK_WEST);
+        if (BLOCKED(x - 1, y, FC_BLOCK_SOUTH_WEST) ||
+            BLOCKED(x - 1, y + size - 1, FC_BLOCK_NORTH_WEST)) return 0;
+        for (int i = 1; i < size - 1; i++)
+            if (BLOCKED(x - 1, y + i, FC_BLOCK_NORTH_AND_SOUTH_EAST)) return 0;
+        return 1;
+    }
+    if (dx == 1 && dy == 0) {
+        if (size == 1) return !BLOCKED(x + 1, y, FC_BLOCK_EAST);
+        if (BLOCKED(x + size, y, FC_BLOCK_SOUTH_EAST) ||
+            BLOCKED(x + size, y + size - 1, FC_BLOCK_NORTH_EAST)) return 0;
+        for (int i = 1; i < size - 1; i++)
+            if (BLOCKED(x + size, y + i, FC_BLOCK_NORTH_AND_SOUTH_WEST)) return 0;
+        return 1;
+    }
+    if (dx == -1 && dy == -1) {
+        if (size == 1)
+            return !BLOCKED(x - 1, y - 1, FC_BLOCK_SOUTH_WEST) &&
+                   !BLOCKED(x - 1, y, FC_BLOCK_WEST) &&
+                   !BLOCKED(x, y - 1, FC_BLOCK_SOUTH);
+        if (BLOCKED(x - 1, y - 1, FC_BLOCK_SOUTH_WEST)) return 0;
+        for (int i = 1; i < size; i++) {
+            if (BLOCKED(x - 1, y + i - 1, FC_BLOCK_NORTH_AND_SOUTH_EAST) ||
+                BLOCKED(x + i - 1, y - 1, FC_BLOCK_NORTH_EAST_AND_WEST)) return 0;
+        }
+        return 1;
+    }
+    if (dx == -1 && dy == 1) {
+        if (size == 1)
+            return !BLOCKED(x - 1, y + 1, FC_BLOCK_NORTH_WEST) &&
+                   !BLOCKED(x - 1, y, FC_BLOCK_WEST) &&
+                   !BLOCKED(x, y + 1, FC_BLOCK_NORTH);
+        if (BLOCKED(x - 1, y + size, FC_BLOCK_NORTH_WEST)) return 0;
+        for (int i = 1; i < size; i++) {
+            if (BLOCKED(x - 1, y + i, FC_BLOCK_NORTH_AND_SOUTH_EAST) ||
+                BLOCKED(x + i - 1, y + size, FC_BLOCK_SOUTH_EAST_AND_WEST)) return 0;
+        }
+        return 1;
+    }
+    if (dx == 1 && dy == -1) {
+        if (size == 1)
+            return !BLOCKED(x + 1, y - 1, FC_BLOCK_SOUTH_EAST) &&
+                   !BLOCKED(x + 1, y, FC_BLOCK_EAST) &&
+                   !BLOCKED(x, y - 1, FC_BLOCK_SOUTH);
+        if (BLOCKED(x + size, y - 1, FC_BLOCK_SOUTH_EAST)) return 0;
+        for (int i = 1; i < size; i++) {
+            if (BLOCKED(x + size, y + i - 1, FC_BLOCK_NORTH_AND_SOUTH_WEST) ||
+                BLOCKED(x + i, y - 1, FC_BLOCK_NORTH_EAST_AND_WEST)) return 0;
+        }
+        return 1;
+    }
+    if (dx == 1 && dy == 1) {
+        if (size == 1)
+            return !BLOCKED(x + 1, y + 1, FC_BLOCK_NORTH_EAST) &&
+                   !BLOCKED(x + 1, y, FC_BLOCK_EAST) &&
+                   !BLOCKED(x, y + 1, FC_BLOCK_NORTH);
+        if (BLOCKED(x + size, y + size, FC_BLOCK_NORTH_EAST)) return 0;
+        for (int i = 1; i < size; i++) {
+            if (BLOCKED(x + i, y + size, FC_BLOCK_SOUTH_EAST_AND_WEST) ||
+                BLOCKED(x + size, y + i, FC_BLOCK_NORTH_AND_SOUTH_WEST)) return 0;
+        }
+        return 1;
+    }
+#undef BLOCKED
+    return 0;
 }
 
 int fc_footprint_step_walkable(
     int x, int y, int dx, int dy, int size,
     const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
     const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
-    if (dx < -1 || dx > 1 || dy < -1 || dy > 1 ||
-        (dx == 0 && dy == 0) || size <= 0) {
-        return 0;
-    }
-    if (dx != 0 && dy != 0) {
-        /* Both cardinal side sweeps must be legal, as must both leading edges
-         * of the final footprint. The leading corner also carries a dedicated
-         * diagonal wall bit in the OSRS collision format. */
-        if (!fc_footprint_cardinal_step_walkable(
-                x, y, dx, 0, size, walkable, movement_flags) ||
-            !fc_footprint_cardinal_step_walkable(
-                x, y, 0, dy, size, walkable, movement_flags) ||
-            !fc_footprint_cardinal_step_walkable(
-                x, y + dy, dx, 0, size, walkable, movement_flags) ||
-            !fc_footprint_cardinal_step_walkable(
-                x + dx, y, 0, dy, size, walkable, movement_flags)) {
-            return 0;
-        }
-
-        int corner_x = dx > 0 ? x + size : x - 1;
-        int corner_y = dy > 0 ? y + size : y - 1;
-        uint8_t diagonal_wall;
-        if (dx > 0 && dy > 0) diagonal_wall = FC_MOVE_WALL_SOUTH_WEST;
-        else if (dx < 0 && dy > 0) diagonal_wall = FC_MOVE_WALL_SOUTH_EAST;
-        else if (dx > 0) diagonal_wall = FC_MOVE_WALL_NORTH_WEST;
-        else diagonal_wall = FC_MOVE_WALL_NORTH_EAST;
-        return (movement_flags[corner_x][corner_y] & diagonal_wall) == 0;
-    }
-    return fc_footprint_cardinal_step_walkable(
-        x, y, dx, dy, size, walkable, movement_flags);
+    return fc_footprint_step_valid(x, y, dx, dy, size, walkable,
+                                   movement_flags, NULL);
 }
 
 int fc_footprint_step_available_dynamic(
@@ -168,16 +250,8 @@ int fc_footprint_step_available_dynamic(
     const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
     const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
     const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
-    if (!fc_footprint_step_walkable(
-            x, y, dx, dy, size, walkable, movement_flags)) {
-        return 0;
-    }
-    if (dx != 0 && dy != 0) {
-        return fc_footprint_available_dynamic(x + dx, y + dy, size, walkable, occupied) &&
-               fc_footprint_available_dynamic(x + dx, y, size, walkable, occupied) &&
-               fc_footprint_available_dynamic(x, y + dy, size, walkable, occupied);
-    }
-    return fc_footprint_available_dynamic(x + dx, y + dy, size, walkable, occupied);
+    return fc_footprint_step_valid(x, y, dx, dy, size, walkable,
+                                   movement_flags, occupied);
 }
 
 /* ======================================================================== */
@@ -347,6 +421,20 @@ int fc_npc_step_toward(int* x, int* y, int target_x, int target_y,
 /* Line of sight — directional projectile collision                         */
 /* ======================================================================== */
 
+int fc_distance_between_areas(int src_x, int src_y, int src_size,
+                              int dst_x, int dst_y, int dst_size) {
+    if (src_size <= 0 || dst_size <= 0) return 0;
+    int src_max_x = src_x + src_size - 1;
+    int src_max_y = src_y + src_size - 1;
+    int dst_max_x = dst_x + dst_size - 1;
+    int dst_max_y = dst_y + dst_size - 1;
+    int dx = src_max_x < dst_x ? dst_x - src_max_x :
+             dst_max_x < src_x ? src_x - dst_max_x : 0;
+    int dy = src_max_y < dst_y ? dst_y - src_max_y :
+             dst_max_y < src_y ? src_y - dst_max_y : 0;
+    return dx > dy ? dx : dy;
+}
+
 int fc_has_line_of_sight(int x0, int y0, int x1, int y1,
                          const uint8_t los_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
     if (x0 < 0 || y0 < 0 || x0 >= FC_ARENA_WIDTH || y0 >= FC_ARENA_HEIGHT ||
@@ -354,6 +442,7 @@ int fc_has_line_of_sight(int x0, int y0, int x1, int y1,
         return 0;
     }
     if (x0 == x1 && y0 == y1) return 1;
+    if (los_flags[x0][y0] & FC_LOS_FULL) return 0;
 
     int dx = x1 - x0;
     int dy = y1 - y0;
@@ -374,10 +463,14 @@ int fc_has_line_of_sight(int x0, int y0, int x1, int y1,
         while (x != x1) {
             x += direction;
             int y = y_big >> 16;
-            if (los_flags[x][y] & x_flags) return 0;
+            uint8_t step_x_flags = x_flags;
+            if (x == x1 && y == y1) step_x_flags &= (uint8_t)~FC_LOS_FULL;
+            if (los_flags[x][y] & step_x_flags) return 0;
             y_big += slope;
             int next_y = y_big >> 16;
-            if (next_y != y && (los_flags[x][next_y] & y_flags)) return 0;
+            uint8_t step_y_flags = y_flags;
+            if (x == x1 && next_y == y1) step_y_flags &= (uint8_t)~FC_LOS_FULL;
+            if (next_y != y && (los_flags[x][next_y] & step_y_flags)) return 0;
         }
     } else {
         int y = y0;
@@ -389,19 +482,24 @@ int fc_has_line_of_sight(int x0, int y0, int x1, int y1,
         while (y != y1) {
             y += direction;
             int x = x_big >> 16;
-            if (los_flags[x][y] & y_flags) return 0;
+            uint8_t step_y_flags = y_flags;
+            if (x == x1 && y == y1) step_y_flags &= (uint8_t)~FC_LOS_FULL;
+            if (los_flags[x][y] & step_y_flags) return 0;
             x_big += slope;
             int next_x = x_big >> 16;
-            if (next_x != x && (los_flags[next_x][y] & x_flags)) return 0;
+            uint8_t step_x_flags = x_flags;
+            if (next_x == x1 && y == y1) step_x_flags &= (uint8_t)~FC_LOS_FULL;
+            if (next_x != x && (los_flags[next_x][y] & step_x_flags)) return 0;
         }
     }
 
     return 1;
 }
 
-static int fc_los_edge_tile(int offset_x, int offset_y, int size) {
-    return offset_x == 0 || offset_y == 0 ||
-           offset_x == size - 1 || offset_y == size - 1;
+static int fc_closest_area_coordinate(int anchor, int other, int size) {
+    if (anchor >= other) return anchor;
+    if (anchor + size - 1 <= other) return anchor + size - 1;
+    return other;
 }
 
 int fc_has_los_between_areas(
@@ -416,153 +514,94 @@ int fc_has_los_between_areas(
         return 0;
     }
 
-    for (int sx = 0; sx < src_size; sx++) {
-        for (int sy = 0; sy < src_size; sy++) {
-            if (!fc_los_edge_tile(sx, sy, src_size)) continue;
-            for (int dx = 0; dx < dst_size; dx++) {
-                for (int dy = 0; dy < dst_size; dy++) {
-                    if (!fc_los_edge_tile(dx, dy, dst_size)) continue;
-                    if (fc_has_line_of_sight(
-                            src_x + sx, src_y + sy,
-                            dst_x + dx, dst_y + dy, los_flags)) {
-                        return 1;
-                    }
-                }
-            }
-        }
-    }
-    return 0;
+    int ray_src_x = fc_closest_area_coordinate(src_x, dst_x, src_size);
+    int ray_src_y = fc_closest_area_coordinate(src_y, dst_y, src_size);
+    int ray_dst_x = fc_closest_area_coordinate(dst_x, src_x, dst_size);
+    int ray_dst_y = fc_closest_area_coordinate(dst_y, src_y, dst_size);
+    return fc_has_line_of_sight(ray_src_x, ray_src_y,
+                                ray_dst_x, ray_dst_y, los_flags);
 }
 
 int fc_npc_can_melee_player(int player_x, int player_y,
                             int npc_x, int npc_y, int npc_size,
                             const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
                             const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
-    for (int dx = 0; dx < npc_size; dx++) {
-        for (int dy = 0; dy < npc_size; dy++) {
-            int tile_x = npc_x + dx;
-            int tile_y = npc_y + dy;
-            int step_x = tile_x - player_x;
-            int step_y = tile_y - player_y;
-            int abs_x = (step_x < 0) ? -step_x : step_x;
-            int abs_y = (step_y < 0) ? -step_y : step_y;
+    if (npc_size <= 0) return 0;
+    int npc_max_x = npc_x + npc_size - 1;
+    int npc_max_y = npc_y + npc_size - 1;
 
-            if (abs_x > 1 || abs_y > 1) continue;
-            if (abs_x == 0 && abs_y == 0) continue;
+    /* Rectangular-exclusive reach: shared cardinal edges are valid; diagonal
+     * corner contact and overlapping footprints are not. */
+    (void)walkable;
+    uint8_t source_wall;
+    if (player_x == npc_x - 1 && player_y >= npc_y && player_y <= npc_max_y)
+        source_wall = FC_MOVE_WALL_EAST;
+    else if (player_x == npc_max_x + 1 &&
+             player_y >= npc_y && player_y <= npc_max_y)
+        source_wall = FC_MOVE_WALL_WEST;
+    else if (player_y == npc_y - 1 &&
+             player_x >= npc_x && player_x <= npc_max_x)
+        source_wall = FC_MOVE_WALL_NORTH;
+    else if (player_y == npc_max_y + 1 &&
+             player_x >= npc_x && player_x <= npc_max_x)
+        source_wall = FC_MOVE_WALL_SOUTH;
+    else
+        return 0;
 
-            /* Melee contact uses the same boundary and corner rules as a
-             * size-1 movement step into the contacted footprint tile. */
-            if (!fc_footprint_step_walkable(
-                    player_x, player_y, step_x, step_y, 1,
-                    walkable, movement_flags)) {
-                continue;
-            }
-
-            return 1;
-        }
-    }
-
-    return 0;
+    return player_x >= 0 && player_x < FC_ARENA_WIDTH &&
+           player_y >= 0 && player_y < FC_ARENA_HEIGHT &&
+           (movement_flags[player_x][player_y] & source_wall) == 0;
 }
 
 /* ======================================================================== */
 /* BFS pathfinding                                                           */
 /* ======================================================================== */
 
-/*
- * Generate a movement route from (sx,sy) to (dx,dy).
- *
- * Uses greedy walk first (OSRS-style direct movement toward target).
- * If greedy gets stuck on an obstacle, falls back to BFS to find a path around it.
- */
-static int greedy_walk(int sx, int sy, int dx, int dy,
-                       const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-                       const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-                       int out_x[], int out_y[], int max_steps) {
-    int cx = sx, cy = sy;
-    int steps = 0;
+static const int FC_ROUTE_DIRECTIONS[8][2] = {
+    {-1, 0}, {1, 0}, {0, -1}, {0, 1},
+    {-1, -1}, {1, -1}, {-1, 1}, {1, 1},
+};
 
-    while ((cx != dx || cy != dy) && steps < max_steps) {
-        int sdx = 0, sdy = 0;
-        if (dx > cx) sdx = 1; else if (dx < cx) sdx = -1;
-        if (dy > cy) sdy = 1; else if (dy < cy) sdy = -1;
-
-        int moved = 0;
-        /* Try diagonal */
-        if (sdx != 0 && sdy != 0 &&
-            fc_footprint_step_walkable(
-                cx, cy, sdx, sdy, 1, walkable, movement_flags)) {
-            cx += sdx; cy += sdy; moved = 1;
-        }
-        /* Try primary axis first (larger distance), then secondary */
-        else {
-            int adx = (dx > cx) ? dx - cx : cx - dx;
-            int ady = (dy > cy) ? dy - cy : cy - dy;
-            if (adx >= ady && sdx != 0 && fc_footprint_step_walkable(
-                    cx, cy, sdx, 0, 1, walkable, movement_flags)) {
-                cx += sdx; moved = 1;
-            } else if (sdy != 0 && fc_footprint_step_walkable(
-                           cx, cy, 0, sdy, 1, walkable, movement_flags)) {
-                cy += sdy; moved = 1;
-            } else if (sdx != 0 && fc_footprint_step_walkable(
-                           cx, cy, sdx, 0, 1, walkable, movement_flags)) {
-                cx += sdx; moved = 1;
-            }
-        }
-
-        if (!moved) break;  /* stuck — let BFS take over */
-        out_x[steps] = cx;
-        out_y[steps] = cy;
-        steps++;
-    }
-    return steps;
+static int fc_area_distance(int x, int y, int dst_x, int dst_y, int dst_size) {
+    return fc_distance_between_areas(x, y, 1, dst_x, dst_y, dst_size);
 }
 
-static int bfs_walk(int sx, int sy, int dx, int dy,
-                    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-                    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-                    int out_x[], int out_y[], int max_steps) {
-    int8_t pdx[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
-    int8_t pdy[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
-    uint8_t vis[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
-    int qx[FC_ARENA_WIDTH * FC_ARENA_HEIGHT];
-    int qy[FC_ARENA_WIDTH * FC_ARENA_HEIGHT];
-    int qh = 0, qt = 0;
-    static const int DD[8][2] = {{0,1},{1,1},{1,0},{1,-1},{0,-1},{-1,-1},{-1,0},{-1,1}};
+typedef enum {
+    FC_ROUTE_EXACT,
+    FC_ROUTE_ATTACK,
+} FcRouteGoalKind;
 
-    for (int x = 0; x < FC_ARENA_WIDTH; x++)
-        for (int y = 0; y < FC_ARENA_HEIGHT; y++) vis[x][y] = 0;
+static int fc_route_goal_reached(
+    FcRouteGoalKind kind, int x, int y,
+    int dst_x, int dst_y, int dst_size, int attack_range,
+    const uint8_t los_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
+    if (kind == FC_ROUTE_EXACT) return x == dst_x && y == dst_y;
+    int distance = fc_area_distance(x, y, dst_x, dst_y, dst_size);
+    return distance > 0 && distance <= attack_range &&
+           fc_has_los_between_areas(x, y, 1, dst_x, dst_y, dst_size,
+                                    los_flags);
+}
 
-    vis[sx][sy] = 1;
-    qx[qt] = sx; qy[qt] = sy; qt++;
-    int found = 0;
-    while (qh < qt) {
-        int cx = qx[qh], cy = qy[qh]; qh++;
-        for (int d = 0; d < 8; d++) {
-            int nx = cx + DD[d][0], ny = cy + DD[d][1];
-            if (nx < 0 || nx >= FC_ARENA_WIDTH || ny < 0 || ny >= FC_ARENA_HEIGHT) continue;
-            if (vis[nx][ny] || !fc_footprint_step_walkable(
-                    cx, cy, DD[d][0], DD[d][1], 1,
-                    walkable, movement_flags)) continue;
-            vis[nx][ny] = 1;
-            pdx[nx][ny] = (int8_t)(-DD[d][0]);
-            pdy[nx][ny] = (int8_t)(-DD[d][1]);
-            qx[qt] = nx; qy[qt] = ny; qt++;
-            if (nx == dx && ny == dy) { found = 1; break; }
-        }
-        if (found) break;
-    }
-    if (!found) return 0;
-
-    int px[FC_ARENA_WIDTH * FC_ARENA_HEIGHT], py[FC_ARENA_WIDTH * FC_ARENA_HEIGHT];
+static int fc_reconstruct_route(
+    int sx, int sy, int end_x, int end_y,
+    const int8_t pdx[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const int8_t pdy[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    int out_x[], int out_y[], int max_steps) {
+    int px[FC_ARENA_WIDTH * FC_ARENA_HEIGHT];
+    int py[FC_ARENA_WIDTH * FC_ARENA_HEIGHT];
     int plen = 0;
-    int bx = dx, by = dy;
-    while (bx != sx || by != sy) {
-        px[plen] = bx; py[plen] = by; plen++;
-        int td = pdx[bx][by], te = pdy[bx][by];
-        bx += td; by += te;
+    int x = end_x;
+    int y = end_y;
+    while ((x != sx || y != sy) && plen < FC_ARENA_WIDTH * FC_ARENA_HEIGHT) {
+        px[plen] = x;
+        py[plen] = y;
+        plen++;
+        int back_x = pdx[x][y];
+        int back_y = pdy[x][y];
+        x += back_x;
+        y += back_y;
     }
-    int steps = (plen < max_steps) ? plen : max_steps;
+    int steps = plen < max_steps ? plen : max_steps;
     for (int i = 0; i < steps; i++) {
         out_x[i] = px[plen - 1 - i];
         out_y[i] = py[plen - 1 - i];
@@ -570,53 +609,78 @@ static int bfs_walk(int sx, int sy, int dx, int dy,
     return steps;
 }
 
-static int greedy_walk_sized_dynamic(
-    int sx, int sy, int dx, int dy, int size,
+static int fc_bfs_route(
+    int sx, int sy, int dst_x, int dst_y, int dst_size,
+    int move_near, FcRouteGoalKind goal_kind, int attack_range,
     const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
     const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-    const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t los_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
     int out_x[], int out_y[], int max_steps) {
-    int cx = sx, cy = sy;
-    int steps = 0;
+    int8_t pdx[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+    int8_t pdy[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+    uint8_t vis[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+    uint16_t distance[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+    int qx[FC_ARENA_WIDTH * FC_ARENA_HEIGHT];
+    int qy[FC_ARENA_WIDTH * FC_ARENA_HEIGHT];
+    int qh = 0, qt = 0;
 
-    while ((cx != dx || cy != dy) && steps < max_steps) {
-        int sdx = 0, sdy = 0;
-        if (dx > cx) sdx = 1; else if (dx < cx) sdx = -1;
-        if (dy > cy) sdy = 1; else if (dy < cy) sdy = -1;
+    if (sx < 0 || sx >= FC_ARENA_WIDTH || sy < 0 || sy >= FC_ARENA_HEIGHT ||
+        dst_size <= 0 || max_steps <= 0) return 0;
+    memset(vis, 0, sizeof(vis));
+    memset(distance, 0, sizeof(distance));
 
-        int moved = 0;
-        if (sdx != 0 && sdy != 0 &&
-            fc_footprint_step_available_dynamic(cx, cy, sdx, sdy, size,
-                                                walkable, movement_flags,
-                                                occupied)) {
-            cx += sdx; cy += sdy; moved = 1;
-        } else {
-            int adx = (dx > cx) ? dx - cx : cx - dx;
-            int ady = (dy > cy) ? dy - cy : cy - dy;
-            if (adx >= ady && sdx != 0 &&
-                fc_footprint_step_available_dynamic(
-                    cx, cy, sdx, 0, size,
-                    walkable, movement_flags, occupied)) {
-                cx += sdx; moved = 1;
-            } else if (sdy != 0 &&
-                       fc_footprint_step_available_dynamic(
-                           cx, cy, 0, sdy, size,
-                           walkable, movement_flags, occupied)) {
-                cy += sdy; moved = 1;
-            } else if (sdx != 0 &&
-                       fc_footprint_step_available_dynamic(
-                           cx, cy, sdx, 0, size,
-                           walkable, movement_flags, occupied)) {
-                cx += sdx; moved = 1;
+    vis[sx][sy] = 1;
+    qx[qt] = sx; qy[qt] = sy; qt++;
+    int found_x = -1;
+    int found_y = -1;
+    while (qh < qt) {
+        int cx = qx[qh], cy = qy[qh]; qh++;
+        if (fc_route_goal_reached(goal_kind, cx, cy, dst_x, dst_y, dst_size,
+                                  attack_range, los_flags)) {
+            found_x = cx;
+            found_y = cy;
+            break;
+        }
+        for (int d = 0; d < 8; d++) {
+            int step_x = FC_ROUTE_DIRECTIONS[d][0];
+            int step_y = FC_ROUTE_DIRECTIONS[d][1];
+            int nx = cx + step_x, ny = cy + step_y;
+            if (nx < 0 || nx >= FC_ARENA_WIDTH || ny < 0 || ny >= FC_ARENA_HEIGHT) continue;
+            if (vis[nx][ny] || !fc_footprint_step_walkable(
+                    cx, cy, step_x, step_y, 1,
+                    walkable, movement_flags)) continue;
+            vis[nx][ny] = 1;
+            pdx[nx][ny] = (int8_t)-step_x;
+            pdy[nx][ny] = (int8_t)-step_y;
+            distance[nx][ny] = (uint16_t)(distance[cx][cy] + 1u);
+            qx[qt] = nx; qy[qt] = ny; qt++;
+        }
+    }
+
+    if (found_x < 0 && move_near && goal_kind == FC_ROUTE_EXACT) {
+        int best_cost = 1000;
+        int best_distance = 100;
+        for (int x = dst_x - 10; x <= dst_x + 10; x++) {
+            for (int y = dst_y - 10; y <= dst_y + 10; y++) {
+                if (x < 0 || x >= FC_ARENA_WIDTH || y < 0 || y >= FC_ARENA_HEIGHT ||
+                    !vis[x][y] || distance[x][y] >= 100) continue;
+                int off_x = x - dst_x;
+                int off_y = y - dst_y;
+                int cost = off_x * off_x + off_y * off_y;
+                if (cost < best_cost ||
+                    (cost == best_cost && distance[x][y] < best_distance)) {
+                    best_cost = cost;
+                    best_distance = distance[x][y];
+                    found_x = x;
+                    found_y = y;
+                }
             }
         }
-
-        if (!moved) break;
-        out_x[steps] = cx;
-        out_y[steps] = cy;
-        steps++;
     }
-    return steps;
+
+    if (found_x < 0 || (found_x == sx && found_y == sy)) return 0;
+    return fc_reconstruct_route(sx, sy, found_x, found_y, pdx, pdy,
+                                out_x, out_y, max_steps);
 }
 
 static int bfs_walk_sized_dynamic(
@@ -631,7 +695,6 @@ static int bfs_walk_sized_dynamic(
     int qx[FC_ARENA_WIDTH * FC_ARENA_HEIGHT];
     int qy[FC_ARENA_WIDTH * FC_ARENA_HEIGHT];
     int qh = 0, qt = 0;
-    static const int DD[8][2] = {{0,1},{1,1},{1,0},{1,-1},{0,-1},{-1,-1},{-1,0},{-1,1}};
 
     for (int x = 0; x < FC_ARENA_WIDTH; x++)
         for (int y = 0; y < FC_ARENA_HEIGHT; y++) vis[x][y] = 0;
@@ -642,8 +705,8 @@ static int bfs_walk_sized_dynamic(
     while (qh < qt) {
         int cx = qx[qh], cy = qy[qh]; qh++;
         for (int d = 0; d < 8; d++) {
-            int ddx = DD[d][0];
-            int ddy = DD[d][1];
+            int ddx = FC_ROUTE_DIRECTIONS[d][0];
+            int ddy = FC_ROUTE_DIRECTIONS[d][1];
             int nx = cx + ddx;
             int ny = cy + ddy;
             if (nx < 0 || nx >= FC_ARENA_WIDTH || ny < 0 || ny >= FC_ARENA_HEIGHT) continue;
@@ -683,20 +746,31 @@ int fc_pathfind_bfs(int sx, int sy, int dx, int dy,
                     const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
                     const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
                     int out_x[], int out_y[], int max_steps) {
-    if (sx == dx && sy == dy) return 0;
-    if (!fc_tile_walkable(dx, dy, walkable)) return 0;
+    return fc_bfs_route(sx, sy, dx, dy, 1, 0, FC_ROUTE_EXACT, 0,
+                        walkable, movement_flags, NULL,
+                        out_x, out_y, max_steps);
+}
 
-    /* Try greedy first — gives natural OSRS movement feel */
-    int steps = greedy_walk(sx, sy, dx, dy, walkable, movement_flags,
-                            out_x, out_y, max_steps);
+int fc_pathfind_bfs_move_near(
+    int sx, int sy, int dx, int dy,
+    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    int out_x[], int out_y[], int max_steps) {
+    return fc_bfs_route(sx, sy, dx, dy, 1, 1, FC_ROUTE_EXACT, 0,
+                        walkable, movement_flags, NULL,
+                        out_x, out_y, max_steps);
+}
 
-    /* Check if greedy reached the destination */
-    if (steps > 0 && out_x[steps-1] == dx && out_y[steps-1] == dy)
-        return steps;
-
-    /* Greedy got stuck — fall back to BFS for full pathfinding around obstacles */
-    return bfs_walk(sx, sy, dx, dy, walkable, movement_flags,
-                    out_x, out_y, max_steps);
+int fc_pathfind_attack_position(
+    int sx, int sy, int target_x, int target_y, int target_size,
+    int attack_range,
+    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t los_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    int out_x[], int out_y[], int max_steps) {
+    return fc_bfs_route(sx, sy, target_x, target_y, target_size, 0,
+                        FC_ROUTE_ATTACK, attack_range, walkable,
+                        movement_flags, los_flags, out_x, out_y, max_steps);
 }
 
 int fc_pathfind_bfs_sized_dynamic(
@@ -707,12 +781,6 @@ int fc_pathfind_bfs_sized_dynamic(
     int out_x[], int out_y[], int max_steps) {
     if (sx == dx && sy == dy) return 0;
     if (!fc_footprint_available_dynamic(dx, dy, size, walkable, occupied)) return 0;
-
-    int steps = greedy_walk_sized_dynamic(sx, sy, dx, dy, size,
-                                          walkable, movement_flags, occupied,
-                                          out_x, out_y, max_steps);
-    if (steps > 0 && out_x[steps-1] == dx && out_y[steps-1] == dy)
-        return steps;
 
     return bfs_walk_sized_dynamic(sx, sy, dx, dy, size, walkable,
                                   movement_flags, occupied,

@@ -377,6 +377,9 @@ void fc_resolve_player_pending_hits(FcState* state) {
                 if (attacker->active && !attacker->is_dead) {
                     p->attack_target_idx = h->source_npc_idx;
                     p->approach_target = 0;  /* don't chase, attack from here */
+                    p->approach_target_x = -1;
+                    p->approach_target_y = -1;
+                    p->approach_target_size = 0;
                 }
             }
 

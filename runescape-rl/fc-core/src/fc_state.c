@@ -219,6 +219,9 @@ static void init_player(FcPlayer* p) {
     p->route_idx = 0;
     p->attack_target_idx = -1;
     p->approach_target = 0;
+    p->approach_target_x = -1;
+    p->approach_target_y = -1;
+    p->approach_target_size = 0;
 }
 
 /* ======================================================================== */
@@ -323,6 +326,11 @@ void fc_reset(FcState* state, uint32_t seed) {
 void fc_step(FcState* state, const int actions[FC_NUM_ACTION_HEADS]) {
     if (state->terminal != TERMINAL_NONE) return;  /* episode over */
     fc_tick(state, actions);
+}
+
+void fc_request_set_running(FcState* state, int enabled) {
+    if (!state || state->terminal != TERMINAL_NONE) return;
+    state->player.is_running = enabled ? 1 : 0;
 }
 
 void fc_destroy(FcState* state) {

@@ -247,20 +247,6 @@ static void build_npc_movement_occupancy(
     int npc_idx,
     uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
     fc_build_occupancy(state, occupied, npc_idx, 0);
-    if (state->movement_start_occupied_valid) {
-        fc_mark_footprint_occupied(occupied,
-                                   state->movement_start_player_x,
-                                   state->movement_start_player_y,
-                                   1);
-        for (int i = 0; i < FC_MAX_NPCS; i++) {
-            if (i == npc_idx || !state->movement_start_npc_active[i]) continue;
-            fc_mark_footprint_occupied(
-                occupied,
-                state->movement_start_npc_x[i],
-                state->movement_start_npc_y[i],
-                state->movement_start_npc_size[i]);
-        }
-    }
 }
 
 static int npc_dynamic_step_toward(FcState* state, int npc_idx,
@@ -366,8 +352,9 @@ int fc_npc_position_can_attack_player(const FcState* state, const FcNpc* npc,
         return 1;
     }
 
-    if (candidate.attack_style != ATTACK_MELEE &&
-        fc_distance_to_npc(p->x, p->y, &candidate) <= candidate.attack_range) {
+    int distance = fc_distance_to_npc(p->x, p->y, &candidate);
+    if (candidate.attack_style != ATTACK_MELEE && distance > 0 &&
+        distance <= candidate.attack_range) {
         return fc_has_los_between_areas(
             candidate.x, candidate.y, candidate.size,
             p->x, p->y, 1, state->los_flags);
@@ -468,7 +455,7 @@ static void jad_attack(FcState* state, FcNpc* npc, int npc_idx) {
     int in_range = 0;
 
     int can_use_distance_styles =
-        dist <= npc->attack_range &&
+        dist > 0 && dist <= npc->attack_range &&
         fc_has_los_between_areas(
             npc->x, npc->y, npc->size,
             p->x, p->y, 1, state->los_flags);
@@ -588,6 +575,7 @@ static int yt_mejkot_try_heal(FcState* state, FcNpc* npc) {
     target->current_hp += npc->heal_amount;
     if (target->current_hp > target->max_hp) target->current_hp = target->max_hp;
     record_npc_heal(state, npc, target, target->current_hp - before);
+    npc->heal_target_idx = (int)(target - state->npcs);
     npc->attack_timer = npc->attack_speed;
     return 1;
 }
@@ -678,7 +666,7 @@ static void npc_generic_attack(FcState* state, FcNpc* npc, int npc_idx) {
     int in_range = 0;
     int primary_in_range =
         npc->attack_style != ATTACK_MELEE &&
-        dist <= npc->attack_range &&
+        dist > 0 && dist <= npc->attack_range &&
         fc_has_los_between_areas(
             npc->x, npc->y, npc->size,
             p->x, p->y, 1, state->los_flags);
@@ -735,6 +723,8 @@ static int npc_has_attack_position(FcState* state, FcNpc* npc) {
 void fc_npc_tick(FcState* state, int npc_idx) {
     FcNpc* npc = &state->npcs[npc_idx];
     if (!npc->active || npc->is_dead) return;
+
+    if (npc->npc_type != NPC_YT_HURKOT) npc->heal_target_idx = -1;
 
     /* Decrement attack timer */
     if (npc->attack_timer > 0) npc->attack_timer--;

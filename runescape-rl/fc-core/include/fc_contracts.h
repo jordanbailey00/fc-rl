@@ -308,8 +308,8 @@ static const int FC_MOVE_DY[17] = {
  * The route is consumed one step per tick (or two if running). While a route
  * is active, directional actions (head 0) are ignored.
  *
- * If the target is unwalkable or unreachable, BFS returns 0 steps and
- * nothing happens (no-op).
+ * If the exact target is unwalkable or unreachable, native move-near chooses
+ * the best reachable endpoint within ten tiles. If none exists, it is a no-op.
  */
 #define FC_MOVE_TARGET_X_DIM    65  /* 0=no-op, 1-64=tile x 0-63 */
 #define FC_MOVE_TARGET_X_NONE    0

@@ -83,16 +83,16 @@ void fc_visual_actor_enqueue_tile(FcVisualActor* actor, int tile_x, int tile_y,
         }
     }
 
-    if (actor->path_count >= FC_VISUAL_PATH_CAPACITY) {
-        /* A presentation queue should never alter gameplay. If rendering falls
-         * too far behind, discard only the oldest visual waypoint. */
+    if (actor->path_count >= FC_VISUAL_ACTIVE_PATH_MAX) {
+        /* Native actor queues store ten entries but keep at most nine active
+         * route points. A new server step drops the oldest visual waypoint. */
         memmove(actor->path_x, actor->path_x + 1,
-                (FC_VISUAL_PATH_CAPACITY - 1) * sizeof(actor->path_x[0]));
+                (FC_VISUAL_ACTIVE_PATH_MAX - 1) * sizeof(actor->path_x[0]));
         memmove(actor->path_y, actor->path_y + 1,
-                (FC_VISUAL_PATH_CAPACITY - 1) * sizeof(actor->path_y[0]));
+                (FC_VISUAL_ACTIVE_PATH_MAX - 1) * sizeof(actor->path_y[0]));
         memmove(actor->path_running, actor->path_running + 1,
-                (FC_VISUAL_PATH_CAPACITY - 1) * sizeof(actor->path_running[0]));
-        actor->path_count = FC_VISUAL_PATH_CAPACITY - 1;
+                (FC_VISUAL_ACTIVE_PATH_MAX - 1) * sizeof(actor->path_running[0]));
+        actor->path_count = FC_VISUAL_ACTIVE_PATH_MAX - 1;
     }
 
     int next = actor->path_count++;
@@ -203,9 +203,24 @@ static void update_actor_movement(FcVisualActor* actor) {
                   (float)actor->size * (FC_VISUAL_LOCAL_UNITS * 0.5f);
     float dst_y = (float)actor->path_y[0] * FC_VISUAL_LOCAL_UNITS +
                   (float)actor->size * (FC_VISUAL_LOCAL_UNITS * 0.5f);
+
+    /* The native client snaps to a queued waypoint when local prediction is
+     * more than two tiles out of sync, rather than gliding across the gap. */
+    if (fabsf(actor->local_x - dst_x) > 256.0f ||
+        fabsf(actor->local_y - dst_y) > 256.0f) {
+        actor->local_x = dst_x;
+        actor->local_y = dst_y;
+        actor->previous_local_x = dst_x;
+        actor->previous_local_y = dst_y;
+        return;
+    }
+
     float movement_yaw = face_angle(actor->local_x, actor->local_y, dst_x, dst_y);
     int running = actor->path_running[0] != 0;
     float speed = FC_VISUAL_WALK_UNITS_PER_TICK;
+    if (actor->target_kind == FC_VISUAL_TARGET_NONE &&
+        fabsf(normalize_degrees(movement_yaw - actor->yaw_degrees)) > 0.01f)
+        speed = 2.0f;
     if (actor->path_count > 2) speed = 6.0f;
     if (actor->path_count > 3) speed = 8.0f;
     if (running) speed *= 2.0f;

@@ -16,6 +16,7 @@ runescape-rl/build/
 *.md
 !README.md
 !refactor.md
+!osrs_parity.md
 !sweep_top8.md
 !**/README.md
 

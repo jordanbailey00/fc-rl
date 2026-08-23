@@ -101,7 +101,7 @@ def live_no_supplies_simplified_config() -> int:
             "w_damage_taken": -0.25,
             "w_cave_complete": 1.0,
             "w_player_death": -1.0,
-            "w_correct_danger_prayer": 0.005,
+            "w_correct_danger_prayer": 0.0,
             "w_prayer_lost": -0.02,
             "w_invalid_action": -0.1,
             "w_tick_penalty": -0.0001,
@@ -177,7 +177,7 @@ def live_no_supplies_simplified_config() -> int:
             print(f"  {failure}")
         return 1
 
-    print("PASS: live config matches the 1nvvx5qu v4.5 baseline")
+    print("PASS: live config matches the txqsiahp no-prayer-reward baseline")
     return 0
 
 

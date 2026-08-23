@@ -104,6 +104,9 @@ static uint32_t fc_hash_player(uint32_t hash, const FcPlayer* player) {
     FC_HASH_F32(player->facing_angle);
     FC_HASH_I32(player->attack_target_idx);
     FC_HASH_I32(player->approach_target);
+    FC_HASH_I32(player->approach_target_x);
+    FC_HASH_I32(player->approach_target_y);
+    FC_HASH_I32(player->approach_target_size);
     for (int i = 0; i < FC_MAX_PENDING_HITS; ++i) {
         hash = fc_hash_pending_hit(hash, &player->pending_hits[i]);
     }
@@ -194,15 +197,6 @@ uint32_t fc_state_hash(const FcState* state) {
         }
     }
 
-    FC_HASH_I32(state->movement_start_occupied_valid);
-    FC_HASH_I32(state->movement_start_player_x);
-    FC_HASH_I32(state->movement_start_player_y);
-    for (int i = 0; i < FC_MAX_NPCS; ++i) {
-        FC_HASH_I32(state->movement_start_npc_x[i]);
-        FC_HASH_I32(state->movement_start_npc_y[i]);
-        FC_HASH_I32(state->movement_start_npc_size[i]);
-        FC_HASH_I32(state->movement_start_npc_active[i]);
-    }
     FC_HASH_I32(state->jad_healers_spawned);
     FC_HASH_I32(state->jad_healer_spawn_generations);
 

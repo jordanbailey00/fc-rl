@@ -1633,7 +1633,7 @@ static int test_diagonal_corner_clipping(void) {
     make_open_manual_state(&state, 10, 10);
     int nx = 10;
     int ny = 10;
-    state.walkable[11][10] = 0;
+    state.walkable[12][11] = 0;
     if (!fc_npc_step_toward_sized(
             &nx, &ny, 12, 12, 2,
             state.walkable, state.movement_flags)) {
@@ -1772,23 +1772,19 @@ static int test_directional_movement_route_regression(void) {
         return fail(msg);
     }
 
-    int includes_wall_only_tile = 0;
-    int reached_x44 = 0;
     for (int i = 0; i < steps; i++) {
-        if (route_x[i] == 44) reached_x44 = 1;
-        if (reached_x44 && route_x[i] < 44) {
+        int from_x = i == 0 ? 32 : route_x[i - 1];
+        int from_y = i == 0 ? 32 : route_y[i - 1];
+        if (!fc_footprint_step_walkable(
+                from_x, from_y, route_x[i] - from_x, route_y[i] - from_y,
+                1, state.walkable, state.movement_flags)) {
             fc_destroy(&state);
-            return fail("route bent left after reaching the destination column");
+            return fail("native BFS route contains an illegal directional step");
         }
-        if (route_x[i] == 44 && route_y[i] == 16) includes_wall_only_tile = 1;
-    }
-    if (!includes_wall_only_tile) {
-        fc_destroy(&state);
-        return fail("route still detoured around the standable wall-only tile");
     }
 
     fc_destroy(&state);
-    return pass("Fight Caves route uses standable wall-only tiles without crossing their walls");
+    return pass("Fight Caves native BFS route is shortest and directionally legal");
 }
 
 static int test_npc_moves_when_attack_blocked(void) {
@@ -1814,7 +1810,6 @@ static int test_npc_moves_when_attack_blocked(void) {
     fc_destroy(&state);
 
     make_open_manual_state(&state, 10, 10);
-    state.walkable[11][10] = 0;
     fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 11, 11, 0);
     state.npcs_remaining = 1;
 
@@ -1822,7 +1817,7 @@ static int test_npc_moves_when_attack_blocked(void) {
     if (state.npcs[0].x != 10 || state.npcs[0].y != 11) {
         char msg[160];
         snprintf(msg, sizeof(msg),
-                 "melee NPC with blocked diagonal contact did not step to cardinal contact; got (%d,%d)",
+                 "melee NPC at diagonal-only contact did not step to cardinal contact; got (%d,%d)",
                  state.npcs[0].x, state.npcs[0].y);
         fc_destroy(&state);
         return fail(msg);
@@ -2673,7 +2668,7 @@ static int test_player_combat_approach_ignores_npc_occupancy(void) {
     fc_step(&state, actions);
 
     if (state.attack_attempt_this_tick ||
-        state.player.x != 11 || state.player.y != 11 ||
+        state.player.x != 11 || state.player.y != 10 ||
         state.player.attack_target_idx != 1 ||
         state.player.approach_target != 1 ||
         state.player.route_idx != 1 ||
@@ -3278,7 +3273,8 @@ static int test_mechanics_observation_events(void) {
     int target_base = FC_OBS_NPC_START + target_slot * FC_OBS_NPC_STRIDE;
     expected_received = (float)state.npcs[0].heal_amount /
                         (float)state.npcs[1].max_hp;
-    if (obs[source_base + FC_NPC_HEAL_GIVEN] != 1.0f ||
+    if (state.npcs[0].heal_target_idx != 1 ||
+        obs[source_base + FC_NPC_HEAL_GIVEN] != 1.0f ||
         obs[source_base + FC_NPC_HEALED_SELF] != 0.0f ||
         fabsf(obs[target_base + FC_NPC_HEAL_RECEIVED] - expected_received) > eps ||
         obs[target_base + FC_NPC_HEALED_BY_MEJKOT] != 1.0f ||
@@ -3307,7 +3303,8 @@ static int test_mechanics_observation_events(void) {
     target_base = FC_OBS_NPC_START + target_slot * FC_OBS_NPC_STRIDE;
     expected_received = (float)state.npcs[1].heal_amount /
                         (float)state.npcs[0].max_hp;
-    if (obs[source_base + FC_NPC_HEAL_GIVEN] != 1.0f ||
+    if (state.npcs[1].heal_target_idx != 0 ||
+        obs[source_base + FC_NPC_HEAL_GIVEN] != 1.0f ||
         obs[source_base + FC_NPC_TARGETS_PLAYER] != 0.0f ||
         fabsf(obs[source_base + FC_NPC_HEAL_COOLDOWN] - 1.0f) > eps ||
         fabsf(obs[target_base + FC_NPC_HEAL_RECEIVED] - expected_received) > eps ||
@@ -3334,6 +3331,179 @@ static int test_mechanics_observation_events(void) {
 
     fc_destroy(&state);
     return pass("Prayer loss, healing source/target, aggro, and cooldown observations are explicit");
+}
+
+static int test_osrs_rectangular_exclusive_melee(void) {
+    FcState state;
+    make_open_manual_state(&state, 10, 10);
+
+    if (fc_npc_can_melee_player(10, 10, 11, 11, 1,
+                                state.walkable, state.movement_flags)) {
+        fc_destroy(&state);
+        return fail("diagonal corner contact counted as OSRS melee reach");
+    }
+    if (!fc_npc_can_melee_player(10, 10, 11, 10, 1,
+                                 state.walkable, state.movement_flags)) {
+        fc_destroy(&state);
+        return fail("open cardinal edge did not count as OSRS melee reach");
+    }
+    if (fc_npc_can_melee_player(10, 10, 8, 8, 5,
+                                state.walkable, state.movement_flags)) {
+        fc_destroy(&state);
+        return fail("player underneath a large footprint counted as melee reach");
+    }
+    state.movement_flags[10][10] = FC_MOVE_WALL_EAST;
+    if (fc_npc_can_melee_player(10, 10, 11, 10, 1,
+                                state.walkable, state.movement_flags)) {
+        fc_destroy(&state);
+        return fail("cardinal melee reach crossed a directional wall");
+    }
+    fc_destroy(&state);
+    return pass("melee reach is cardinal, rectangular-exclusive, and wall-aware");
+}
+
+static int test_osrs_closest_point_area_los(void) {
+    FcState state;
+    make_open_manual_state(&state, 15, 11);
+
+    /* The canonical source point of the 3x3 actor is (12,11). A different
+     * perimeter point remains clear, proving that any-perimeter LOS would be
+     * more permissive than the reference closest-point ray. */
+    state.los_flags[12][11] = FC_LOS_FULL;
+    if (fc_has_los_between_areas(10, 10, 3, 15, 11, 1,
+                                 state.los_flags)) {
+        fc_destroy(&state);
+        return fail("area LOS ignored the blocked canonical source point");
+    }
+    if (!fc_has_line_of_sight(12, 10, 15, 11, state.los_flags)) {
+        fc_destroy(&state);
+        return fail("LOS fixture did not retain its alternate clear perimeter ray");
+    }
+    fc_destroy(&state);
+    return pass("large-area LOS uses one canonical closest-point ray");
+}
+
+static int test_osrs_sequential_vacated_tile_occupancy(void) {
+    FcState state;
+    make_open_manual_state(&state, 15, 10);
+    fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 12, 10, 0);
+    fc_npc_spawn(&state.npcs[1], NPC_TZ_KIH, 11, 10, 1);
+    state.npcs_remaining = 2;
+    state.npcs[0].attack_timer = 999;
+    state.npcs[1].attack_timer = 999;
+
+    fc_npc_tick(&state, 0);
+    fc_npc_tick(&state, 1);
+    if (state.npcs[0].x != 13 || state.npcs[0].y != 10 ||
+        state.npcs[1].x != 12 || state.npcs[1].y != 10) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "sequential followers ended at leader=(%d,%d) follower=(%d,%d)",
+                 state.npcs[0].x, state.npcs[0].y,
+                 state.npcs[1].x, state.npcs[1].y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    fc_destroy(&state);
+    return pass("later NPCs can occupy tiles vacated earlier in the tick");
+}
+
+static int test_osrs_large_actor_leading_edge_transition(void) {
+    FcState state;
+    fc_init(&state);
+    fc_reset(&state, 123);
+    if (!fc_footprint_step_walkable(13, 9, 1, 1, 5,
+                                    state.walkable, state.movement_flags)) {
+        fc_destroy(&state);
+        return fail("reference-legal Jad transition (13,9)->(14,10) was rejected");
+    }
+    fc_destroy(&state);
+    return pass("large actors use native leading-edge collision masks");
+}
+
+static int test_osrs_moving_target_route_recalculation(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+    make_open_manual_state(&state, 10, 10);
+    configure_guardrail_player(&state, 3);
+    state.player.is_running = 0;
+    fc_npc_spawn(&state.npcs[0], NPC_TOK_XIL, 20, 10, 0);
+    state.npcs[0].movement_speed = 0;
+    state.npcs[0].attack_timer = 999;
+    state.npcs_remaining = 1;
+
+    actions[1] = 1;
+    fc_step(&state, actions);
+    state.npcs[0].x = 20;
+    state.npcs[0].y = 20;
+    memset(actions, 0, sizeof(actions));
+    fc_step(&state, actions);
+
+    if (state.player.route_idx >= state.player.route_len) {
+        fc_destroy(&state);
+        return fail("moving target did not produce a replacement approach route");
+    }
+    int end = state.player.route_len - 1;
+    int end_x = state.player.route_x[end];
+    int end_y = state.player.route_y[end];
+    int distance = fc_distance_between_areas(
+        end_x, end_y, 1, state.npcs[0].x, state.npcs[0].y,
+        state.npcs[0].size);
+    if (distance <= 0 || distance > state.player.weapon_range ||
+        !fc_has_los_between_areas(
+            end_x, end_y, 1, state.npcs[0].x, state.npcs[0].y,
+            state.npcs[0].size, state.los_flags)) {
+        fc_destroy(&state);
+        return fail("replacement route does not end at the moved target's live reach strategy");
+    }
+    fc_destroy(&state);
+    return pass("combat approach recalculates against the live target rectangle");
+}
+
+static int test_osrs_move_near_blocked_click(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+    make_open_manual_state(&state, 10, 10);
+    state.walkable[15][10] = 0;
+    state.player.is_running = 0;
+    actions[5] = 16;
+    actions[6] = 11;
+    fc_step(&state, actions);
+    int steps = state.player.route_len;
+    int end_x = steps > 0 ? state.player.route_x[steps - 1] : -1;
+    int end_y = steps > 0 ? state.player.route_y[steps - 1] : -1;
+    if (steps <= 0 || state.player.route_idx != 1 ||
+        (end_x == 15 && end_y == 10) ||
+        fc_distance_between_areas(end_x, end_y, 1, 15, 10, 1) != 1) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "move-near route steps=%d end=(%d,%d)",
+                 steps, end_x, end_y);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    fc_destroy(&state);
+    return pass("blocked tile clicks select the nearest reachable endpoint");
+}
+
+static int test_osrs_bfs_expansion_order(void) {
+    FcState state;
+    int route_x[FC_MAX_ROUTE];
+    int route_y[FC_MAX_ROUTE];
+    make_open_manual_state(&state, 10, 10);
+    state.walkable[11][10] = 0;
+    int steps = fc_pathfind_bfs(10, 10, 12, 10,
+                                state.walkable, state.movement_flags,
+                                route_x, route_y, FC_MAX_ROUTE);
+    if (steps != 4 || route_x[0] != 10 || route_y[0] != 9) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "native BFS shape steps=%d first=(%d,%d)",
+                 steps, steps > 0 ? route_x[0] : -1,
+                 steps > 0 ? route_y[0] : -1);
+        fc_destroy(&state);
+        return fail(msg);
+    }
+    fc_destroy(&state);
+    return pass("BFS uses the native west/east/south/north expansion order");
 }
 
 int main(int argc, char** argv) {
@@ -3405,6 +3575,13 @@ int main(int argc, char** argv) {
     if (strcmp(argv[1], "step4_ranged_npc_chases_player_bounds_not_los_tile") == 0) return test_step4_ranged_npc_chases_player_bounds_not_los_tile();
     if (strcmp(argv[1], "step4_large_npc_chase_checks_full_footprint") == 0) return test_step4_large_npc_chase_checks_full_footprint();
     if (strcmp(argv[1], "step4_npc_stays_when_current_position_can_attack") == 0) return test_step4_npc_stays_when_current_position_can_attack();
+    if (strcmp(argv[1], "osrs_rectangular_exclusive_melee") == 0) return test_osrs_rectangular_exclusive_melee();
+    if (strcmp(argv[1], "osrs_closest_point_area_los") == 0) return test_osrs_closest_point_area_los();
+    if (strcmp(argv[1], "osrs_sequential_vacated_tile_occupancy") == 0) return test_osrs_sequential_vacated_tile_occupancy();
+    if (strcmp(argv[1], "osrs_large_actor_leading_edge_transition") == 0) return test_osrs_large_actor_leading_edge_transition();
+    if (strcmp(argv[1], "osrs_moving_target_route_recalculation") == 0) return test_osrs_moving_target_route_recalculation();
+    if (strcmp(argv[1], "osrs_move_near_blocked_click") == 0) return test_osrs_move_near_blocked_click();
+    if (strcmp(argv[1], "osrs_bfs_expansion_order") == 0) return test_osrs_bfs_expansion_order();
 
     fprintf(stderr, "unknown guardrail: %s\n", argv[1]);
     return 2;

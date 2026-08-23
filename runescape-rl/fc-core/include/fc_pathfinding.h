@@ -16,8 +16,8 @@ int fc_tile_walkable(int x, int y,
 int fc_footprint_walkable(int x, int y, int size,
                           const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 
-/* Check whether one sized movement step is legal on static terrain. Diagonal
- * movement checks the final footprint and both cardinal side footprints. */
+/* Check one sized step using the native client/RSMod leading-edge collision
+ * masks, including the distinct size-1, size-2, and large-actor rules. */
 int fc_footprint_step_walkable(
     int x, int y, int dx, int dy, int size,
     const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
@@ -50,8 +50,8 @@ int fc_footprint_available_dynamic(
     const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
     const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 
-/* Check whether one sized movement step is available. Diagonal movement checks
- * the final footprint and both cardinal side footprints. */
+/* Dynamic equivalent of the native sized-step rule. Occupied tiles behave as
+ * whole-tile blockers on the exact leading-edge cells checked by that rule. */
 int fc_footprint_step_available_dynamic(
     int x, int y, int dx, int dy, int size,
     const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
@@ -118,21 +118,23 @@ int fc_npc_step_toward(int* x, int* y, int target_x, int target_y,
 /* Line of sight                                                             */
 /* ======================================================================== */
 
-/* Directional projectile LOS check between two tiles. Source and destination
- * order is significant because directional collision is not assumed symmetric. */
+/* Chebyshev distance between the nearest tiles of two rectangular areas. */
+int fc_distance_between_areas(int src_x, int src_y, int src_size,
+                              int dst_x, int dst_y, int dst_size);
+
+/* Native fixed-point directional projectile LOS check between two tiles. */
 int fc_has_line_of_sight(int x0, int y0, int x1, int y1,
                          const uint8_t los_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 
-/* Footprint-aware directional LOS. Returns true when any valid pair of edge
- * tiles in the source and destination areas has projectile LOS. */
+/* Footprint-aware LOS using the closest coordinate from each rectangle, as in
+ * the native line validator. */
 int fc_has_los_between_areas(
     int src_x, int src_y, int src_size,
     int dst_x, int dst_y, int dst_size,
     const uint8_t los_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 
-/* Returns 1 if the player is in actual melee contact with any tile of the NPC
- * footprint. Diagonal contact is only valid when the corner is open, matching
- * the same corner-cut rules used by movement/pathing. */
+/* Rectangular-exclusive melee reach: only an open shared cardinal edge is
+ * valid. Diagonal contact and overlapping footprints are rejected. */
 int fc_npc_can_melee_player(int player_x, int player_y,
                             int npc_x, int npc_y, int npc_size,
                             const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
@@ -150,6 +152,25 @@ int fc_pathfind_bfs(int sx, int sy, int dx, int dy,
                     const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
                     const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
                     int out_x[], int out_y[], int max_steps);
+
+/* Native move-near fallback for human click-to-move. If the exact destination
+ * is unreachable, chooses the reachable tile within ten tiles with the lowest
+ * squared destination distance, breaking ties by route length. */
+int fc_pathfind_bfs_move_near(
+    int sx, int sy, int dx, int dy,
+    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    int out_x[], int out_y[], int max_steps);
+
+/* Route to the first shortest-path tile outside a target rectangle that has
+ * both the requested attack range and authoritative projectile LOS. */
+int fc_pathfind_attack_position(
+    int sx, int sy, int target_x, int target_y, int target_size,
+    int attack_range,
+    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t los_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    int out_x[], int out_y[], int max_steps);
 
 /* Dynamic-aware sized route finder. Every candidate route step must satisfy
  * static terrain, dynamic occupancy, full-footprint availability, and diagonal

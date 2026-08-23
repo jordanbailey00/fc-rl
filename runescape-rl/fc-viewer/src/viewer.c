@@ -399,6 +399,8 @@ typedef struct {
     Hitsplat hitsplats[MAX_HITSPLATS];
     /* Buffered key inputs (captured every frame, consumed on tick) */
     int pending_prayer, pending_eat, pending_drink;
+    int pending_attack_npc;
+    int pending_tile_x, pending_tile_y;
     /* Clickable NPC health bars in side panel (filled during draw, checked on click) */
     int panel_npc_slot[8];   /* NPC array index for each panel row */
     int panel_npc_y[8];      /* screen Y of each panel row */
@@ -714,18 +716,19 @@ static void sync_fc_ui(ViewerState* v) {
     sync_fc_ui_minimap(v);
 }
 
-static void route_player_to_tile(ViewerState* v, int tx, int ty) {
+static void queue_player_tile_request(ViewerState* v, int tx, int ty) {
     if (!v || tx < 0 || tx >= FC_ARENA_WIDTH || ty < 0 || ty >= FC_ARENA_HEIGHT)
         return;
-    FcPlayer* p = &v->state.player;
-    if (!v->state.walkable[tx][ty]) return;
-    int steps = fc_pathfind_bfs(p->x, p->y, tx, ty,
-                                v->state.walkable, v->state.movement_flags,
-                                p->route_x, p->route_y, FC_MAX_ROUTE);
-    p->route_len = steps;
-    p->route_idx = 0;
-    p->attack_target_idx = -1;
-    p->approach_target = 0;
+    v->pending_tile_x = tx;
+    v->pending_tile_y = ty;
+    v->pending_attack_npc = -1;
+}
+
+static void queue_player_attack_request(ViewerState* v, int npc_idx) {
+    if (!v || npc_idx < 0 || npc_idx >= FC_MAX_NPCS) return;
+    v->pending_attack_npc = npc_idx;
+    v->pending_tile_x = -1;
+    v->pending_tile_y = -1;
 }
 
 static void handle_runec_ui_intent(ViewerState* v) {
@@ -762,12 +765,12 @@ static void handle_runec_ui_intent(ViewerState* v) {
             if (v->combat_style > 2) v->combat_style = 2;
             break;
         case RUNEC_UI_INTENT_RUN_TOGGLE:
-            p->is_running = !p->is_running;
+            fc_request_set_running(&v->state, !p->is_running);
             break;
         case RUNEC_UI_INTENT_MINIMAP_CLICK: {
             int dx = (intent->primary - 72) / 4;
             int dy = (75 - intent->secondary) / 4;
-            route_player_to_tile(v, p->x + dx, p->y + dy);
+            queue_player_tile_request(v, p->x + dx, p->y + dy);
             break;
         }
         default:
@@ -1155,7 +1158,16 @@ static void update_visual_actor_targets(ViewerState* v) {
     for (int i = 0; i < FC_MAX_NPCS; i++) {
         FcVisualActor* actor = &v->visual_scene.npcs[i];
         if (actor->active && v->state.npcs[i].active) {
-            fc_visual_actor_set_target(actor, FC_VISUAL_TARGET_PLAYER, 0);
+            int heal_target = v->state.npcs[i].heal_target_idx;
+            if (heal_target >= 0 && heal_target < FC_MAX_NPCS &&
+                heal_target != i && v->visual_scene.npcs[heal_target].active) {
+                fc_visual_actor_set_target(actor, FC_VISUAL_TARGET_NPC,
+                                           heal_target);
+            } else if (heal_target == i) {
+                fc_visual_actor_set_target(actor, FC_VISUAL_TARGET_NONE, -1);
+            } else {
+                fc_visual_actor_set_target(actor, FC_VISUAL_TARGET_PLAYER, 0);
+            }
         } else {
             fc_visual_actor_set_target(actor, FC_VISUAL_TARGET_NONE, -1);
         }
@@ -1754,6 +1766,9 @@ static void reset_ep(ViewerState* v) {
     v->pending_prayer = 0;
     v->pending_eat = 0;
     v->pending_drink = 0;
+    v->pending_attack_npc = -1;
+    v->pending_tile_x = -1;
+    v->pending_tile_y = -1;
     dbg_log_clear();
     /* Initialize prev positions */
     v->player_pose_anim_seq =
@@ -1920,9 +1935,7 @@ static int visual_actor_world_point(ViewerState* v,
     }
     *x = pose.x;
     *z = -pose.y;
-    *y = ground_y_smooth(v,
-                         pose.x - (float)size * 0.5f,
-                         pose.y - (float)size * 0.5f) + height;
+    *y = ground_y_smooth(v, pose.x, pose.y) + height;
     return 1;
 }
 
@@ -2210,30 +2223,15 @@ static void process_human_clicks(ViewerState* v, int ui_capture) {
             if (rc) {
                 int npc_idx = find_clicked_npc_idx(v, tx, ty);
                 if (npc_idx >= 0) {
-                    /* Click on/near NPC → set as attack target + approach */
-                    p->attack_target_idx = npc_idx;
-                    p->approach_target = 1;
-                    p->route_len = 0;
-                    p->route_idx = 0;
+                    queue_player_attack_request(v, npc_idx);
                     fprintf(stderr, " → ATTACK npc_idx=%d\n", npc_idx);
                 } else {
                     int walkable = (tx >= 0 && tx < FC_ARENA_WIDTH &&
                                     ty >= 0 && ty < FC_ARENA_HEIGHT) ?
                                    v->state.walkable[tx][ty] : 0;
                     fprintf(stderr, " walkable=%d", walkable);
-                    if (walkable) {
-                        int steps = fc_pathfind_bfs(
-                            p->x, p->y, tx, ty,
-                            v->state.walkable, v->state.movement_flags,
-                            p->route_x, p->route_y, FC_MAX_ROUTE);
-                        p->route_len = steps;
-                        p->route_idx = 0;
-                        p->attack_target_idx = -1;
-                        p->approach_target = 0;
-                        fprintf(stderr, " → ROUTE %d steps\n", steps);
-                    } else {
-                        fprintf(stderr, " → BLOCKED\n");
-                    }
+                    queue_player_tile_request(v, tx, ty);
+                    fprintf(stderr, " → MOVE%s\n", walkable ? "" : "-NEAR");
                 }
             } else {
                 fprintf(stderr, " → MISS (raycast failed)\n");
@@ -2244,10 +2242,7 @@ static void process_human_clicks(ViewerState* v, int ui_capture) {
                 for (int pi = 0; pi < v->panel_npc_count; pi++) {
                     if (mpos.y >= v->panel_npc_y[pi] && mpos.y < v->panel_npc_y[pi] + 12) {
                         int ni = v->panel_npc_slot[pi];
-                        p->attack_target_idx = ni;
-                        p->approach_target = 1;
-                        p->route_len = 0;
-                        p->route_idx = 0;
+                        queue_player_attack_request(v, ni);
                         fprintf(stderr, "PANEL CLICK → ATTACK npc_idx=%d\n", ni);
                         break;
                     }
@@ -2325,7 +2320,8 @@ static void process_human_keys(ViewerState* v) {
     if (IsKeyPressed(KEY_THREE)) v->pending_prayer = (p->prayer == PRAYER_PROTECT_MAGIC) ? FC_PRAYER_OFF : FC_PRAYER_MAGIC;
     if (IsKeyPressed(KEY_F))     v->pending_eat = FC_EAT_SHARK;
     if (IsKeyPressed(KEY_P))     v->pending_drink = FC_DRINK_PRAYER_POT;
-    if (IsKeyPressed(KEY_X))     p->is_running = !p->is_running;
+    if (IsKeyPressed(KEY_X))
+        fc_request_set_running(&v->state, !p->is_running);
 
     /* T: agent action test mode — start or advance to next test */
     if (IsKeyPressed(KEY_T)) {
@@ -2386,10 +2382,22 @@ static void process_human_keys(ViewerState* v) {
 /* Called on TICK frames: build action array from buffered inputs. */
 static void build_human_actions(ViewerState* v) {
     memset(v->actions, 0, sizeof(v->actions));
-    /* Movement comes from route deque in fc_tick.c, not action head */
     v->actions[0] = FC_MOVE_IDLE;
-    /* Attack comes from attack_target_idx in fc_tick.c, not action head */
     v->actions[1] = FC_ATTACK_NONE;
+    if (v->pending_attack_npc >= 0) {
+        int visible[FC_VISIBLE_NPCS];
+        int count = fc_visible_npc_indices(&v->state, visible);
+        for (int slot = 0; slot < count; slot++) {
+            if (visible[slot] == v->pending_attack_npc) {
+                v->actions[1] = slot + 1;
+                break;
+            }
+        }
+    }
+    if (v->pending_tile_x >= 0 && v->pending_tile_y >= 0) {
+        v->actions[5] = v->pending_tile_x + 1;
+        v->actions[6] = v->pending_tile_y + 1;
+    }
     /* Buffered prayer/eat/drink */
     v->actions[2] = v->pending_prayer;
     v->actions[3] = v->pending_eat;
@@ -2398,6 +2406,9 @@ static void build_human_actions(ViewerState* v) {
     v->pending_prayer = 0;
     v->pending_eat = 0;
     v->pending_drink = 0;
+    v->pending_attack_npc = -1;
+    v->pending_tile_x = -1;
+    v->pending_tile_y = -1;
 }
 
 /* ======================================================================== */
@@ -2658,9 +2669,7 @@ static void draw_scene(ViewerState* v) {
         float ey = -pose.y;
 
         /* Sample terrain continuously along the interpolated movement path. */
-        float gy = ground_y_smooth(v,
-                                   pose.x - (float)e->size * 0.5f,
-                                   pose.y - (float)e->size * 0.5f);
+        float gy = ground_y_smooth(v, pose.x, pose.y);
 
         if (e->entity_type == ENTITY_PLAYER) {
             /* Player model or fallback cylinder */
@@ -2917,7 +2926,7 @@ static void draw_scene(ViewerState* v) {
     int rendered_prayer = viewer_render_prayer(v);
     if (v->entity_count > 0 && rendered_prayer != PRAYER_NONE) {
         EntityRenderPose pose = entity_render_pose(v, &v->entities[0]);
-        float p_gy = ground_y_smooth(v, pose.x - 0.5f, pose.y - 0.5f);
+        float p_gy = ground_y_smooth(v, pose.x, pose.y);
         Vector3 head_pos = {pose.x, p_gy + 3.0f, -pose.y};
         Vector2 scr = GetWorldToScreen(head_pos, v->camera);
         int px = (int)scr.x, py = (int)scr.y;
@@ -3354,11 +3363,7 @@ static int process_runec_console_input(ViewerState* v) {
             if (!npc->active || npc->is_dead) continue;
             if (CheckCollisionPointRec(
                     mouse, runec_console_target_row_rect(body, shown))) {
-                FcPlayer* player = &v->state.player;
-                player->attack_target_idx = ni;
-                player->approach_target = 1;
-                player->route_len = 0;
-                player->route_idx = 0;
+                queue_player_attack_request(v, ni);
                 fprintf(stderr, "CONSOLE CLICK -> ATTACK npc_idx=%d\n", ni);
                 return 1;
             }
@@ -4905,6 +4910,7 @@ int main(int argc, char** argv) {
                         mark_npc_attack_visual(&v, ni, ATTACK_MELEE);
                     }
                 }
+
             }
 
             /* Sync viewer attack_target with player's backend target */
@@ -4913,7 +4919,6 @@ int main(int argc, char** argv) {
             if (v.state.player.attack_target_idx >= 0) {
                 FcNpc* tn = &v.state.npcs[v.state.player.attack_target_idx];
                 if (!tn->active || tn->is_dead) {
-                    v.state.player.attack_target_idx = -1;
                     v.attack_target = -1;
                 }
             }

@@ -43,12 +43,12 @@ RUNNABLE_EXPERIMENT_REWARD_VERSIONS = {
 }
 
 # These hashes normalize the three semantic version lines and map manifest
-# schema 2 back to its prior schema-1 value. They prove that the planned
-# contract-identifier migration does not silently tune rewards, trainer
-# settings, or experiment provenance in the same workstream.
+# schema 2 back to its prior schema-1 value. The canonical hash records the
+# approved txqsiahp zero-danger-prayer-reward baseline; experiment hashes retain
+# their immutable historical values.
 EXPECTED_NONVERSION_HASHES = {
     "config/fight_caves.ini":
-        "44905862b9790a7cf02d861066bd1bafa468f0c3fa62f16a7b42aa2637ca2ed2",
+        "0ba01e306218d36b5ffdb3eeb8eb5afe8686ee5bb3cfb31bbab0065866dc16c8",
     "config/experiments/fight_caves_il0xq0uf_hp_regen_60s_1p5b.ini":
         "72cb5ce5ab31bd438fcfae8ccd93928c98c1065a5f18024723746d7615849213",
     "config/experiments/fight_caves_mmyxbyn4_hp_regen_60s_1p5b.ini":

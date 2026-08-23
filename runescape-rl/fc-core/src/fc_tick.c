@@ -101,26 +101,6 @@ static void record_player_move_waypoint(FcState* state) {
 }
 
 /* ======================================================================== */
-/* Movement start reservations                                               */
-/* ======================================================================== */
-
-static void build_movement_start_reservations(FcState* state) {
-    state->movement_start_player_x = state->player.x;
-    state->movement_start_player_y = state->player.y;
-
-    for (int i = 0; i < FC_MAX_NPCS; i++) {
-        FcNpc* npc = &state->npcs[i];
-        int active = npc->active && !npc->is_dead;
-        state->movement_start_npc_active[i] = active;
-        state->movement_start_npc_x[i] = npc->x;
-        state->movement_start_npc_y[i] = npc->y;
-        state->movement_start_npc_size[i] = npc->size;
-    }
-
-    state->movement_start_occupied_valid = 1;
-}
-
-/* ======================================================================== */
 /* Resolve NPC visible-slot index to NPC array index                         */
 /* ======================================================================== */
 
@@ -274,6 +254,9 @@ static void process_player_actions(FcState* state,
         p->route_len = 0;
         p->route_idx = 0;
         p->approach_target = 0;
+        p->approach_target_x = -1;
+        p->approach_target_y = -1;
+        p->approach_target_size = 0;
         if (!explicit_attack) {
             p->attack_target_idx = -1;
         }
@@ -287,6 +270,11 @@ static void process_player_actions(FcState* state,
         if (requested_attack_idx >= 0 &&
             state->npcs[requested_attack_idx].active &&
             !state->npcs[requested_attack_idx].is_dead) {
+            if (p->attack_target_idx != requested_attack_idx) {
+                p->approach_target_x = -1;
+                p->approach_target_y = -1;
+                p->approach_target_size = 0;
+            }
             p->attack_target_idx = requested_attack_idx;
             p->approach_target = explicit_move ? 0 : 1;
         }
@@ -300,13 +288,16 @@ static void process_player_actions(FcState* state,
         if (!target->active || target->is_dead) {
             p->attack_target_idx = -1;  /* target died, clear */
             p->approach_target = 0;
+            p->approach_target_x = -1;
+            p->approach_target_y = -1;
+            p->approach_target_size = 0;
         } else {
             int dist = fc_distance_to_npc(p->x, p->y, target);
             int weapon_range = p->weapon_range;
             int has_los = fc_has_los_between_areas(
                 p->x, p->y, 1,
                 target->x, target->y, target->size, state->los_flags);
-            int target_can_fire = (dist <= weapon_range && has_los);
+            int target_can_fire = (dist > 0 && dist <= weapon_range && has_los);
             int target_ready = (p->attack_timer <= 0);
 
             if (target->npc_type > NPC_NONE && target->npc_type < NPC_TYPE_COUNT) {
@@ -323,45 +314,38 @@ static void process_player_actions(FcState* state,
                 state->ep_target_out_of_range_or_los_ticks++;
             }
 
-            if ((dist > weapon_range || !has_los) &&
-                p->approach_target && p->route_idx >= p->route_len &&
+            int route_endpoint_can_fire = 0;
+            int target_moved =
+                p->approach_target_x != target->x ||
+                p->approach_target_y != target->y ||
+                p->approach_target_size != target->size;
+            if (p->route_idx < p->route_len) {
+                int endpoint = p->route_len - 1;
+                int rx = p->route_x[endpoint];
+                int ry = p->route_y[endpoint];
+                int route_dist = fc_distance_between_areas(
+                    rx, ry, 1, target->x, target->y, target->size);
+                route_endpoint_can_fire = route_dist > 0 &&
+                    route_dist <= weapon_range &&
+                    fc_has_los_between_areas(
+                        rx, ry, 1, target->x, target->y, target->size,
+                        state->los_flags);
+            }
+
+            if (!target_can_fire && p->approach_target &&
+                (target_moved || p->route_idx >= p->route_len ||
+                 !route_endpoint_can_fire) &&
                 !explicit_directional_move && !explicit_tile_move) {
-                /* Walk toward the NPC center. The greedy pathfinder will head
-                 * straight toward the target. The route consumer in the movement
-                 * section will stop once we're in range with LOS (checked next tick). */
-                int npc_cx = target->x + target->size / 2;
-                int npc_cy = target->y + target->size / 2;
-                int static_route_x[FC_MAX_ROUTE];
-                int static_route_y[FC_MAX_ROUTE];
-                int static_route_len = fc_pathfind_bfs(p->x, p->y, npc_cx, npc_cy,
-                                                       state->walkable,
-                                                       state->movement_flags,
-                                                       static_route_x, static_route_y,
-                                                       FC_MAX_ROUTE);
-                p->route_len = 0;
-                /* Trim the route to the first tile that can actually fire. */
-                for (int ri = 0; ri < static_route_len; ri++) {
-                    int rx = static_route_x[ri], ry = static_route_y[ri];
-                    /* Chebyshev distance to nearest NPC footprint tile */
-                    int nx = (rx < target->x) ? target->x : (rx > target->x + target->size - 1) ? target->x + target->size - 1 : rx;
-                    int ny = (ry < target->y) ? target->y : (ry > target->y + target->size - 1) ? target->y + target->size - 1 : ry;
-                    int rdx = (rx > nx) ? rx - nx : nx - rx;
-                    int rdy = (ry > ny) ? ry - ny : ny - ry;
-                    int rdist = (rdx > rdy) ? rdx : rdy;
-                    if (rdist <= weapon_range &&
-                        fc_has_los_between_areas(
-                            rx, ry, 1,
-                            target->x, target->y, target->size,
-                            state->los_flags)) {
-                        p->route_len = ri + 1;
-                        for (int rj = 0; rj < p->route_len; rj++) {
-                            p->route_x[rj] = static_route_x[rj];
-                            p->route_y[rj] = static_route_y[rj];
-                        }
-                        break;
-                    }
-                }
+                /* Rebuild against the target's current rectangle whenever the
+                 * queued endpoint is no longer a valid firing tile. */
+                p->route_len = fc_pathfind_attack_position(
+                    p->x, p->y, target->x, target->y, target->size,
+                    weapon_range, state->walkable, state->movement_flags,
+                    state->los_flags, p->route_x, p->route_y, FC_MAX_ROUTE);
                 p->route_idx = 0;
+                p->approach_target_x = target->x;
+                p->approach_target_y = target->y;
+                p->approach_target_size = target->size;
             }
 
             /* Face the attack target */
@@ -447,9 +431,9 @@ static void process_player_actions(FcState* state,
         act_target_x > 0 && act_target_y > 0) {
         int tx = act_target_x - 1;  /* 1-64 → 0-63 */
         int ty = act_target_y - 1;
-        if (tx >= 0 && tx < FC_ARENA_WIDTH && ty >= 0 && ty < FC_ARENA_HEIGHT &&
-            state->walkable[tx][ty]) {
-            int steps = fc_pathfind_bfs(
+        if (tx >= 0 && tx < FC_ARENA_WIDTH &&
+            ty >= 0 && ty < FC_ARENA_HEIGHT) {
+            int steps = fc_pathfind_bfs_move_near(
                 p->x, p->y, tx, ty,
                 state->walkable, state->movement_flags,
                 p->route_x, p->route_y, FC_MAX_ROUTE);
@@ -458,6 +442,9 @@ static void process_player_actions(FcState* state,
             /* Clear attack target — walking to tile cancels combat approach */
             p->attack_target_idx = -1;
             p->approach_target = 0;
+            p->approach_target_x = -1;
+            p->approach_target_y = -1;
+            p->approach_target_size = 0;
         }
     }
 
@@ -742,8 +729,6 @@ void fc_tick(FcState* state, const int actions[FC_NUM_ACTION_HEADS]) {
 
     /* 1. Clear per-tick flags */
     clear_per_tick_flags(state);
-    build_movement_start_reservations(state);
-
     /* 2. Process player actions */
     process_player_actions(state, actions, &prayer_transition);
 

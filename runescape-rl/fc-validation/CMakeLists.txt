@@ -306,6 +306,19 @@ add_test(NAME directional_movement_route_regression
 set_tests_properties(directional_movement_route_regression PROPERTIES
     LABELS "guardrail;movement;collision;osrs")
 
+foreach(osrs_case IN ITEMS
+        osrs_rectangular_exclusive_melee
+        osrs_closest_point_area_los
+        osrs_sequential_vacated_tile_occupancy
+        osrs_large_actor_leading_edge_transition
+        osrs_moving_target_route_recalculation
+        osrs_move_near_blocked_click
+        osrs_bfs_expansion_order)
+    add_test(NAME ${osrs_case} COMMAND phase2_guardrails_core ${osrs_case})
+    set_tests_properties(${osrs_case} PROPERTIES
+        LABELS "guardrail;movement;collision;combat;osrs_parity")
+endforeach()
+
 add_test(NAME phase2_npc_moves_when_attack_blocked
     COMMAND phase2_guardrails_core npc_moves_when_attack_blocked)
 set_tests_properties(phase2_npc_moves_when_attack_blocked PROPERTIES
