@@ -7,7 +7,7 @@
  *   - FightCaves struct with PufferLib-required fields
  *   - c_reset: init game state, compute initial obs
  *   - c_step: read actions, step game, compute reward+obs, handle terminal
- *   - c_render: launch Raylib viewer (eval mode only)
+ *   - c_render: required no-op; evaluation uses the external viewer
  *   - c_close: cleanup
  *
  * Single-agent environment (num_agents=1 always for Fight Caves).
@@ -39,12 +39,6 @@
 #include "fc_tick.c"
 #include "fc_state.c"
 #include "fc_hash.c"
-
-/* Raylib rendering for eval mode (Phase 11).
- * Only compiled when FC_RENDER is defined (build.sh --render). */
-#ifdef FC_RENDER
-#include "fc_render.h"
-#endif
 
 /* ======================================================================== */
 /* PufferLib Log struct (required fields)                                    */

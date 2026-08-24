@@ -8,19 +8,24 @@ change is implemented.
 
 ## Highest-confidence cleanup
 
-### 1. Remove the unused training renderer
+### 1. Remove the unused training renderer — completed
 
-Estimated reduction: approximately 600 LOC.
+Completed reduction: 611 net LOC.
 
-- `runescape-rl/fc-training/fc_render.h` implements a complete second renderer.
-- Its `fcr_render_frame()` entry point has no callers.
-- Puffer's required `c_render()` in
-  `runescape-rl/fc-training/fight_caves.h` is intentionally a no-op because
-  evaluation uses the external viewer.
-- `runescape-rl/fc-training/build.sh` still supports `--render`, downloads
-  Raylib, and links Raylib even for headless training.
-- Keep the required no-op `c_render()`, but remove `fc_render.h`, the
-  nonfunctional `--render` path, and the training target's Raylib dependency.
+- Removed the 570-line `runescape-rl/fc-training/fc_render.h`; its
+  `fcr_render_frame()` entry point had no callers.
+- Removed the nonfunctional `--render` build mode and every training-side
+  Raylib include, download, compile definition, and link dependency.
+- Removed the same unnecessary Raylib dependency from the training-health
+  probe build.
+- Preserved Puffer's required no-op `c_render()` and `c_close()` hooks. The
+  external `fc-viewer` and its intentional Raylib dependency are unchanged.
+- Verified standalone, optimized standalone, CPU/Puffer, and CUDA/Puffer
+  builds; all 169 tests pass.
+- The post-refactor 100M regression run `lfdszoiz` exactly matched all 124
+  recorded environment metrics and all learning/loss values from pre-refactor
+  baseline `m916qfsv`. Only wall-clock, throughput, and utilization telemetry
+  differed; see `baseline.md`.
 
 ### 2. Remove the viewer's unreachable old side panel — completed
 

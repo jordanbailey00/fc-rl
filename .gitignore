@@ -15,6 +15,7 @@ runescape-rl/build/
 # Documentation — only README files are eligible for tracking
 *.md
 !README.md
+!baseline.md
 !refactor.md
 !osrs_parity.md
 !sweep_top8.md

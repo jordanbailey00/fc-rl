@@ -27,6 +27,8 @@ EXPECTED_CANONICAL_REWARD_VERSION = (
 )
 
 RUNNABLE_EXPERIMENT_REWARD_VERSIONS = {
+    "fight_caves_txqsiahp_refactor_baseline_100m.ini":
+        EXPECTED_CANONICAL_REWARD_VERSION,
     "fight_caves_il0xq0uf_hp_regen_60s_1p5b.ini":
         EXPECTED_CANONICAL_REWARD_VERSION,
     "fight_caves_mmyxbyn4_hp_regen_60s_1p5b.ini":

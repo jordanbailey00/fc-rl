@@ -8,10 +8,9 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 SOURCE="$SCRIPT_DIR/parity_training_health_probe.cu"
 BUILD_DIR="$REPO_DIR/build/parity-training-health"
 STATIC_LIB="$PUFFER_DIR/build/libstatic_fight_caves.a"
-RAYLIB_A="$PUFFER_DIR/raylib-5.5_linux_amd64/lib/libraylib.a"
 CUDA_ARCH_SH="$REPO_DIR/fc-training/cuda_arch.sh"
 
-if [ ! -f "$STATIC_LIB" ] || [ ! -f "$RAYLIB_A" ]; then
+if [ ! -f "$STATIC_LIB" ]; then
     echo "Error: build the canonical Fight Caves CUDA backend first" >&2
     exit 1
 fi
@@ -73,14 +72,14 @@ done
 INCLUDES=(
     -I"$PUFFER_DIR" -I"$PUFFER_DIR/src"
     -I"$PYTHON_INCLUDE" -I"$PYBIND_INCLUDE" -I"$NUMPY_INCLUDE"
-    -I"$CUDA_ROOT/include" -I"$PUFFER_DIR/raylib-5.5_linux_amd64/include"
+    -I"$CUDA_ROOT/include"
 )
 if [ -n "$CUDNN_INCLUDE" ]; then INCLUDES+=(-I"$CUDNN_INCLUDE"); fi
 
 "$NVCC_BIN" -c -arch="$ARCH" -Xcompiler -fPIC \
     -Xcompiler=-D_GLIBCXX_USE_CXX11_ABI=1 \
     -Xcompiler=-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION \
-    -Xcompiler=-DPLATFORM_DESKTOP -Xcompiler=-fopenmp \
+    -Xcompiler=-fopenmp \
     -std=c++17 "${INCLUDES[@]}" \
     -DOBS_TENSOR_T=FloatTensor -DENV_NAME=fight_caves \
     -O2 --threads 0 "$SOURCE" -o "$OBJECT"
@@ -88,7 +87,7 @@ if [ -n "$CUDNN_INCLUDE" ]; then INCLUDES+=(-I"$CUDNN_INCLUDE"); fi
 LINK_ARGS=(-L"$CUDA_ROOT/lib64")
 if [ -n "$CUDNN_LIB" ]; then LINK_ARGS+=(-L"$CUDNN_LIB"); fi
 "${CXX:-g++}" -shared -fPIC -fopenmp \
-    "$OBJECT" "$STATIC_LIB" "$RAYLIB_A" \
+    "$OBJECT" "$STATIC_LIB" \
     "${LINK_ARGS[@]}" -lcudart -lnccl "$NVML_LINK" \
     -lcublas -lcusolver -lcurand "$CUDNN_LINK" -lgomp -O2 \
     -Bsymbolic-functions -o "$OUTPUT"
