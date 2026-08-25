@@ -832,6 +832,62 @@ static void anim_apply_frame_interleaved(
     }
 }
 
+/* Apply the current pose/action pair to one model state. The action owns the
+ * full model unless its sequence supplies an OSRS interleave table, in which
+ * case the pose supplies the interleaved transform slots. If the action frame
+ * cannot be applied, fall back to the pose exactly as a single-track actor
+ * would. Mesh upload remains the caller's responsibility because player
+ * models are unique while same-type NPCs share one render mesh. */
+static int anim_mix_pose_action(
+    AnimCache* cache,
+    AnimModelState* state,
+    const int16_t* base_verts,
+    AnimSequence* pose,
+    int pose_frame_index,
+    AnimSequence* action,
+    int action_frame_index
+) {
+    if (!cache || !state || !base_verts) return 0;
+
+    if (action && action_frame_index >= 0 &&
+        action_frame_index < action->frame_count) {
+        AnimFrameData* action_frame =
+            &action->frames[action_frame_index].frame;
+        AnimFrameBase* action_base =
+            anim_get_framebase(cache, action_frame->framebase_id);
+        if (action_base && pose && pose_frame_index >= 0 &&
+            pose_frame_index < pose->frame_count &&
+            action->interleave_count > 0 && action->interleave_order) {
+            AnimFrameData* pose_frame =
+                &pose->frames[pose_frame_index].frame;
+            AnimFrameBase* pose_base =
+                anim_get_framebase(cache, pose_frame->framebase_id);
+            if (pose_base) {
+                anim_apply_frame_interleaved(
+                    state, base_verts,
+                    pose_frame, pose_base, action_frame, action_base,
+                    action->interleave_order, action->interleave_count);
+                return 1;
+            }
+        } else if (action_base) {
+            anim_apply_frame(state, base_verts, action_frame, action_base);
+            return 1;
+        }
+    }
+
+    if (pose && pose_frame_index >= 0 &&
+        pose_frame_index < pose->frame_count) {
+        AnimFrameData* pose_frame = &pose->frames[pose_frame_index].frame;
+        AnimFrameBase* pose_base =
+            anim_get_framebase(cache, pose_frame->framebase_id);
+        if (pose_base) {
+            anim_apply_frame(state, base_verts, pose_frame, pose_base);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* ======================================================================== */
 /* mesh re-expansion (apply animated base verts → expanded rendering verts)   */
 /* ======================================================================== */

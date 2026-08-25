@@ -2236,6 +2236,37 @@ static int defer_hitsplat_to_projectile(
     return 1;
 }
 
+/* Core damage is authoritative when the hit resolves, while a ranged or
+ * magic projectile can still have a short amount of client-side travel left.
+ * Reconstruct the actor's pre-impact HP until those retained splats land so
+ * the health bar, hitsplat, and death animation change together. */
+static int deferred_projectile_damage_for_actor(
+    const ViewerState* v, FcVisualTargetKind actor_kind, int actor_slot) {
+    if (!v) return 0;
+
+    int damage = 0;
+    for (int i = 0; i < MAX_PROJECTILES; i++) {
+        const VisualProjectile* projectile = &v->projectiles[i];
+        if (!projectile->active || !projectile->has_deferred_hitsplat ||
+            projectile->hitsplat_actor_kind != actor_kind ||
+            projectile->hitsplat_actor_slot != actor_slot) {
+            continue;
+        }
+        damage += projectile->hitsplat_damage;
+    }
+    return damage;
+}
+
+static int npc_death_waiting_for_projectile(const ViewerState* v,
+                                             int npc_slot) {
+    if (!v || npc_slot < 0 || npc_slot >= FC_MAX_NPCS ||
+        !v->state.npcs[npc_slot].is_dead) {
+        return 0;
+    }
+    return deferred_projectile_damage_for_actor(
+               v, FC_VISUAL_TARGET_NPC, npc_slot) > 0;
+}
+
 /* Terrain loader — the terrain mesh is the floor heightmap.
  * The red/black lava pattern comes from the objects mesh (fightcaves.objects),
  * not the terrain. The terrain is just the ground surface.
@@ -2850,7 +2881,14 @@ static void draw_osrs_healthbars(ViewerState* v) {
             continue;
         }
 
-        int fill = entity->current_hp * 30 / entity->max_hp;
+        FcVisualTargetKind actor_kind = entity->entity_type == ENTITY_PLAYER
+            ? FC_VISUAL_TARGET_PLAYER : FC_VISUAL_TARGET_NPC;
+        int actor_slot = entity->entity_type == ENTITY_PLAYER
+            ? 0 : entity->npc_slot;
+        int visible_hp = entity->current_hp +
+            deferred_projectile_damage_for_actor(v, actor_kind, actor_slot);
+        if (visible_hp > entity->max_hp) visible_hp = entity->max_hp;
+        int fill = visible_hp * 30 / entity->max_hp;
         if (fill < 0) fill = 0;
         if (fill > 30) fill = 30;
         int x = (int)roundf(screen.x) - 15;
@@ -2971,7 +3009,12 @@ static void draw_animated_objects(ViewerState* v) {
 
 static void draw_actor_footprint(ViewerState* v,
                                  const FcRenderEntity* entity) {
-    if (!v || !entity || entity->is_dead || entity->size <= 0) {
+    if (!v || !entity || entity->size <= 0) {
+        return;
+    }
+    if (entity->is_dead &&
+        (entity->entity_type != ENTITY_NPC ||
+         !npc_death_waiting_for_projectile(v, entity->npc_slot))) {
         return;
     }
 
@@ -3110,7 +3153,11 @@ static void draw_scene(ViewerState* v) {
                 float s = (float)e->size * 0.45f;
                 float h = 1.0f + (float)e->size * 0.5f;
                 Color col = (e->npc_type > 0 && e->npc_type < 9) ? NPC_COLORS[e->npc_type] : GRAY;
-                if (e->died_this_tick) { h *= 0.3f; col.a = 100; }
+                if (e->died_this_tick &&
+                    !npc_death_waiting_for_projectile(v, e->npc_slot)) {
+                    h *= 0.3f;
+                    col.a = 100;
+                }
                 DrawCube((Vector3){ex, gy + h*0.5f, ey}, s*2, h, s*2, col);
                 DrawCubeWires((Vector3){ex, gy + h*0.5f, ey}, s*2, h, s*2, WHITE);
             }
@@ -4612,8 +4659,9 @@ int main(int argc, char** argv) {
                     &v, player_visual_action_sequence(&v)));
             for (int i = 0; i < FC_MAX_NPCS; i++) {
                 uint16_t action_seq = 0;
-                if (v.state.npcs[i].is_dead ||
-                    v.state.npcs[i].died_this_tick) {
+                if ((v.state.npcs[i].is_dead ||
+                     v.state.npcs[i].died_this_tick) &&
+                    !npc_death_waiting_for_projectile(&v, i)) {
                     int type = v.state.npcs[i].npc_type;
                     if (type > 0 && type < 9) action_seq = NPC_ANIM_DEATH[type];
                 } else if (v.npc_attack_visual_timer[i] > 0.0f) {
@@ -4777,43 +4825,11 @@ int main(int argc, char** argv) {
             v.player_anim_frame = action
                 ? v.player_action_anim_frame : v.player_pose_anim_frame;
 
-            int applied = 0;
-            if (action) {
-                AnimFrameData* action_fd =
-                    &action->frames[v.player_action_anim_frame].frame;
-                AnimFrameBase* action_fb =
-                    anim_get_framebase(v.anim_cache, action_fd->framebase_id);
-                if (action_fb && pose &&
-                    action->interleave_count > 0 && action->interleave_order) {
-                    AnimFrameData* pose_fd =
-                        &pose->frames[v.player_pose_anim_frame].frame;
-                    AnimFrameBase* pose_fb =
-                        anim_get_framebase(v.anim_cache, pose_fd->framebase_id);
-                    if (pose_fb) {
-                        anim_apply_frame_interleaved(
-                            v.player_anim_state, pm->base_verts,
-                            pose_fd, pose_fb, action_fd, action_fb,
-                            action->interleave_order,
-                            action->interleave_count);
-                        upload_anim_state_to_entry(pm, v.player_anim_state);
-                        applied = 1;
-                    }
-                } else if (action_fb) {
-                    apply_anim_frame_to_entry(pm, v.player_anim_state,
-                                              action_fd, action_fb);
-                    applied = 1;
-                }
-            }
-
-            if (!applied && pose) {
-                AnimFrameData* pose_fd =
-                    &pose->frames[v.player_pose_anim_frame].frame;
-                AnimFrameBase* pose_fb =
-                    anim_get_framebase(v.anim_cache, pose_fd->framebase_id);
-                if (pose_fb) {
-                    apply_anim_frame_to_entry(pm, v.player_anim_state,
-                                              pose_fd, pose_fb);
-                }
+            if (anim_mix_pose_action(
+                    v.anim_cache, v.player_anim_state, pm->base_verts,
+                    pose, v.player_pose_anim_frame,
+                    action, v.player_action_anim_frame)) {
+                upload_anim_state_to_entry(pm, v.player_anim_state);
             }
         }
 skip_player_anim_update:
@@ -4868,7 +4884,8 @@ skip_player_anim_update:
                     pose_seq = NPC_ANIM_WALK[n->npc_type];
 
                 uint16_t action_seq = 0;
-                if (n->is_dead || n->died_this_tick) {
+                if ((n->is_dead || n->died_this_tick) &&
+                    !npc_death_waiting_for_projectile(&v, ni)) {
                     action_seq = (n->npc_type > 0 && n->npc_type < 9)
                         ? NPC_ANIM_DEATH[n->npc_type] : 0;
                 } else if (v.npc_attack_visual_timer[ni] > 0.0f) {
@@ -4893,41 +4910,10 @@ skip_player_anim_update:
                     v.npc_action_anim_timer[ni] = 0.0f;
                 }
 
-                int applied = 0;
-                if (action) {
-                    AnimFrameData* action_fd =
-                        &action->frames[v.npc_action_anim_frame[ni]].frame;
-                    AnimFrameBase* action_fb = anim_get_framebase(
-                        v.anim_cache, action_fd->framebase_id);
-                    if (action_fb && pose && action->interleave_count > 0 &&
-                        action->interleave_order) {
-                        AnimFrameData* pose_fd =
-                            &pose->frames[v.npc_anim_frame[ni]].frame;
-                        AnimFrameBase* pose_fb = anim_get_framebase(
-                            v.anim_cache, pose_fd->framebase_id);
-                        if (pose_fb) {
-                            anim_apply_frame_interleaved(
-                                v.npc_anim_states[ni], nme->base_verts,
-                                pose_fd, pose_fb, action_fd, action_fb,
-                                action->interleave_order,
-                                action->interleave_count);
-                            applied = 1;
-                        }
-                    } else if (action_fb) {
-                        anim_apply_frame(v.npc_anim_states[ni], nme->base_verts,
-                                         action_fd, action_fb);
-                        applied = 1;
-                    }
-                }
-                if (!applied && pose) {
-                    AnimFrameData* pose_fd =
-                        &pose->frames[v.npc_anim_frame[ni]].frame;
-                    AnimFrameBase* pose_fb = anim_get_framebase(
-                        v.anim_cache, pose_fd->framebase_id);
-                    if (pose_fb)
-                        anim_apply_frame(v.npc_anim_states[ni], nme->base_verts,
-                                         pose_fd, pose_fb);
-                }
+                anim_mix_pose_action(
+                    v.anim_cache, v.npc_anim_states[ni], nme->base_verts,
+                    pose, v.npc_anim_frame[ni],
+                    action, v.npc_action_anim_frame[ni]);
 
                 if (v.npc_attack_visual_timer[ni] > 0.0f) {
                     v.npc_attack_visual_timer[ni] -= anim_dt;

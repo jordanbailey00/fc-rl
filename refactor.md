@@ -160,12 +160,25 @@ Completed on 2026-08-24.
   blocked zero-damage resolutions, same-tick melee launches and impacts, Jad's
   delayed Prayer lock, and next-tick event clearing. All 162 tests pass.
 
-### Animation mixing
+### Animation mixing — completed
 
-Player and NPC pose/action/interleave application contain very similar blocks
-near the end of `runescape-rl/fc-viewer/src/viewer.c`. A shared animation-track
-mixer would remove duplication and make future animation fixes apply
-consistently.
+Implemented on 2026-08-24. Production reduction: 7 net LOC; 72 lines of
+duplicated orchestration were removed from `viewer.c`.
+
+- Added one `anim_mix_pose_action()` runtime path for pose-only, full-action,
+  and OSRS interleaved pose/action composition.
+- Player and NPC sequence selection, track timing, one-shot behavior,
+  locomotion phase preservation, movement locks, and animation state ownership
+  remain separate because those behaviors legitimately differ.
+- Mesh upload remains caller-owned: the player uploads its unique mesh after
+  mixing, while same-type NPCs retain their required per-actor upload at draw
+  time.
+- Added a focused synthetic test covering pose-only application, full-action
+  override, interleaved slot ownership, and missing-action fallback.
+- The complete automated suite passes all 163 tests. Manual viewer validation
+  confirmed player/NPC animation mixing and the viewer now releases lethal
+  projectile damage, hitsplats, health-bar changes, and NPC death animation
+  together at visual impact without altering authoritative combat timing.
 
 ### Episode metrics
 

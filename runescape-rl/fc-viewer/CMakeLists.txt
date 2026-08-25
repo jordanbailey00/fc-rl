@@ -104,6 +104,16 @@ target_include_directories(test_projectile_visual PRIVATE
 target_link_libraries(test_projectile_visual PRIVATE m)
 add_test(NAME test_projectile_visual COMMAND test_projectile_visual)
 
+add_executable(test_anim_mixer
+    tests/test_anim_mixer.c
+    src/fc_assets.c
+)
+target_include_directories(test_anim_mixer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(test_anim_mixer PRIVATE m)
+add_test(NAME test_anim_mixer COMMAND test_anim_mixer)
+
 add_executable(validate_assets
     tests/validate_assets.c
     src/fc_assets.c
