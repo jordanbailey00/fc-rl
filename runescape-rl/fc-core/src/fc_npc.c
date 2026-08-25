@@ -339,25 +339,23 @@ int fc_npc_position_can_attack_player(const FcState* state, const FcNpc* npc,
 
     const FcNpcStats* stats = fc_npc_get_stats(npc->npc_type);
     const FcPlayer* p = &state->player;
-    FcNpc candidate = *npc;
-    candidate.x = candidate_x;
-    candidate.y = candidate_y;
 
     int can_melee = fc_npc_can_melee_player(p->x, p->y,
-                                            candidate.x, candidate.y,
-                                            candidate.size, state->walkable,
+                                            candidate_x, candidate_y,
+                                            npc->size, state->walkable,
                                             state->movement_flags);
     if (can_melee &&
         (stats->melee_max_hit_tenths > 0 ||
-         candidate.attack_style == ATTACK_MELEE)) {
+         npc->attack_style == ATTACK_MELEE)) {
         return 1;
     }
 
-    int distance = fc_distance_to_npc(p->x, p->y, &candidate);
-    if (candidate.attack_style != ATTACK_MELEE && distance > 0 &&
-        distance <= candidate.attack_range) {
+    int distance = fc_distance_between_areas(
+        p->x, p->y, 1, candidate_x, candidate_y, npc->size);
+    if (npc->attack_style != ATTACK_MELEE && distance > 0 &&
+        distance <= npc->attack_range) {
         return fc_has_los_between_areas(
-            candidate.x, candidate.y, candidate.size,
+            candidate_x, candidate_y, npc->size,
             p->x, p->y, 1, state->los_flags);
     }
 
@@ -539,9 +537,7 @@ static void record_npc_heal(FcState* state, FcNpc* source, FcNpc* target,
 }
 
 static int npc_anchor_distance(const FcNpc* a, const FcNpc* b) {
-    int dx = a->x > b->x ? a->x - b->x : b->x - a->x;
-    int dy = a->y > b->y ? a->y - b->y : b->y - a->y;
-    return dx > dy ? dx : dy;
+    return fc_distance_between_areas(a->x, a->y, 1, b->x, b->y, 1);
 }
 
 static FcNpc* yt_mejkot_heal_target(FcState* state, FcNpc* npc) {

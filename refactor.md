@@ -269,19 +269,22 @@ Implemented.
 
 ### Centralize core distance primitives
 
-Estimated reduction: approximately 15-30 LOC.
+Implemented using the existing `fc_distance_between_areas()` primitive.
 
-- The attack-approach route trimming in `fc_tick.c` manually reimplements
-  `fc_distance_to_npc()` for every route tile.
-- `fc_npc_position_can_attack_player()` copies an entire `FcNpc` only to
-  substitute candidate coordinates before asking for the same footprint
-  distance.
-- `npc_anchor_distance()` separately implements point-to-point Chebyshev
-  distance for healer behavior.
-- Introduce small, unit-explicit primitives such as
-  `fc_chebyshev_distance()` and `fc_distance_to_footprint()`, then keep
-  `fc_distance_to_npc()` as a thin convenience wrapper. This removes the
-  handwritten variants without coupling callers to `FcNpc` layout.
+- Attack-route endpoint checks already used the canonical rectangle distance,
+  so no change was needed there and no new distance API was introduced.
+- `fc_distance_to_npc()` is now a thin player-to-footprint wrapper around the
+  same rectangle primitive.
+- Candidate NPC attack-position checks calculate directly from the candidate
+  coordinates instead of copying an entire `FcNpc` merely to change `x/y`.
+- Healer anchor distance retains its intentional top-left-anchor semantics but
+  delegates the arithmetic to the canonical primitive using two 1x1 areas.
+- Production code decreased by 8 LOC with no new tests or public API.
+- Seven focused footprint/healer tests and the full 165-test suite pass; the
+  628-line deterministic trace is exactly unchanged.
+- The 100M W&B regression `ef65qg3w` exactly matches baseline `m916qfsv` and
+  preceding run `y4vimecf` on all 124 `env/*` values and every
+  non-performance summary value.
 
 ### Consolidate repeated action and healing mutations
 

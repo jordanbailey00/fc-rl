@@ -450,6 +450,31 @@ retaining separate style, range, delay, drain, and prayer-lock policies.
 Production code decreased by 9 LOC. Throughput was 960,078 SPS and training
 uptime was 102.956156 seconds, within ordinary machine-load variation.
 
+## Comparison 12: centralized distance primitives
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`ef65qg3w`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/ef65qg3w) (`rural-cloud-1237`) |
+| Tag | `v4.5_refactor_distance_primitives_100m` |
+| Git commit at run start | `ea5cfe9e0` plus the documented uncommitted distance refactor |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `dc1b01a9c97dd8beaa925773e8ae8843224dee5810e8885e935dd4c9dfb4208c` |
+| Backend binary SHA-256 | `6f421d8c5b9c45a7dde96acb6e625d034234e3b3b8db3b583d2b5c56c440e613` |
+| Backend source SHA-256 | `99b571fa28d0088a861da32ed5839a0d0c129e3060e7059a9474c6d51f842028` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260825T173638Z-train-1195567.json` |
+
+Result: behavioral parity is exact against baseline `m916qfsv` and preceding
+comparison `y4vimecf`. All 124 `env/*` metrics, agent steps, epoch, and
+policy/value/entropy/KL/loss values are byte-for-byte equal. Against the
+baseline, 136 of 150 summary values match exactly; the 14 differences are only
+timestamps, wall-clock performance, throughput, and utilization telemetry.
+
+Player-to-NPC, candidate-position, and healer-anchor distance calculations now
+reuse the existing rectangle-distance primitive. Production code decreased by
+8 LOC. Throughput was 941,835 SPS and training uptime was 104.997709 seconds,
+within ordinary machine-load variation.
+
 ## Reproduction command
 
 ```bash

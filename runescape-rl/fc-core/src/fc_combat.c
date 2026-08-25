@@ -1,5 +1,6 @@
 #include "fc_api.h"
 #include "fc_npc.h"
+#include "fc_pathfinding.h"
 #include "fc_prayer.h"
 #include <limits.h>
 #include <stddef.h>
@@ -225,13 +226,8 @@ int fc_prayer_blocks_style(int prayer, int attack_style) {
 /* ======================================================================== */
 
 int fc_distance_to_npc(int px, int py, const FcNpc* npc) {
-    /* Find closest tile of the NPC footprint */
-    int nx = npc->x, ny = npc->y, sz = npc->size;
-    int cx = (px < nx) ? nx : (px > nx + sz - 1) ? nx + sz - 1 : px;
-    int cy = (py < ny) ? ny : (py > ny + sz - 1) ? ny + sz - 1 : py;
-    int dx = (px > cx) ? px - cx : cx - px;
-    int dy = (py > cy) ? py - cy : cy - py;
-    return (dx > dy) ? dx : dy;
+    return fc_distance_between_areas(px, py, 1,
+                                     npc->x, npc->y, npc->size);
 }
 
 /* ======================================================================== */
