@@ -764,16 +764,6 @@ void fc_action_invalid_classes(const FcState* state,
     out_classes[FC_INVALID_ACTION_PRAYER] = !prayer_action_valid(actions[2]);
 }
 
-int fc_action_attempt_is_invalid(const FcState* state, const int actions[FC_NUM_ACTION_HEADS]) {
-    int invalid_classes[FC_INVALID_ACTION_CLASS_COUNT];
-
-    fc_action_invalid_classes(state, actions, invalid_classes);
-    for (int i = 0; i < FC_INVALID_ACTION_CLASS_COUNT; i++) {
-        if (invalid_classes[i]) return 1;
-    }
-    return 0;
-}
-
 void fc_write_mask(const FcState* state, float* out) {
     /* Set all to valid, then mask invalid */
     for (int i = 0; i < FC_ACTION_MASK_SIZE; i++) {
@@ -815,10 +805,6 @@ void fc_write_mask(const FcState* state, float* out) {
 
 int fc_is_terminal(const FcState* state) {
     return state->terminal != TERMINAL_NONE;
-}
-
-int fc_terminal_code(const FcState* state) {
-    return state->terminal;
 }
 
 /* ======================================================================== */

@@ -91,25 +91,31 @@ Completed on 2026-08-24. Net reduction: 58 LOC.
 - The 100M regression run `dgykda7r` exactly matched the baseline on all 124
   environment metrics and all recorded learning metrics.
 
-### 6. Remove obsolete core APIs
+### 6. Remove obsolete core APIs — completed
 
-Estimated reduction: roughly 100 LOC directly, or potentially 250 LOC when
-including test-only infrastructure.
+Completed on 2026-08-24. Net reduction: 297 LOC.
 
-Confirmed zero production callers:
-
-- `fc_npc_melee_max_hit`
-- `fc_melee_hit_delay`
-- `fc_magic_hit_delay`
-- `fc_move_toward_dynamic`
-- `fc_npc_step_toward`
-- `fc_action_attempt_is_invalid`
-- `fc_terminal_code`
-
-Additionally, `fc_npc_step_toward_sized` and
-`fc_pathfind_bfs_sized_dynamic` are only exercised by tests. Live NPC movement
-uses `fc_npc_step_toward_sized_dynamic`. Retain the test-only APIs only if they
-represent deliberately planned public functionality.
+- Removed seven public helpers with zero callers:
+  `fc_npc_melee_max_hit`, `fc_melee_hit_delay`, `fc_magic_hit_delay`,
+  `fc_move_toward_dynamic`, `fc_npc_step_toward`,
+  `fc_action_attempt_is_invalid`, and `fc_terminal_code`.
+- Removed the test-only `fc_npc_step_toward_sized` and
+  `fc_pathfind_bfs_sized_dynamic` APIs. The latter's private BFS implementation
+  and two tests existed solely to preserve functionality that was never
+  integrated into gameplay.
+- Retargeted the useful static wall and corner-clipping checks onto the live
+  `fc_npc_step_toward_sized_dynamic` implementation with an empty occupancy
+  map.
+- Preserved all live combat, hit-delay, action-validation, terminal, movement,
+  footprint, route, and collision implementations. No viewer or gameplay call
+  site changed.
+- Removed seven stale tests: the two dynamic-BFS cases, the orphan action-trace
+  provenance case, two historical config-preservation cases, the completed
+  sweep-specific case, and the obsolete hash-ownership source guardrail.
+- Verified a full rebuild and all 162 remaining tests. The suite has seven fewer
+  tests after the approved stale and historical-guardrail cleanup.
+- The 100M regression run `4qmy1v9y` exactly matched the baseline on all 124
+  environment metrics and all recorded learning metrics.
 
 ### 7. Store reward configuration once in training
 

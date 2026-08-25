@@ -36,10 +36,6 @@ int fc_npc_attack_roll(int att_level, int att_bonus) {
     return (att_level + 9) * (att_bonus + 64);
 }
 
-int fc_npc_melee_max_hit(int str_level, int str_bonus) {
-    return ((str_level + 8) * (str_bonus + 64) + 320) / 640;
-}
-
 /* ======================================================================== */
 /* Player defence roll                                                       */
 /* ======================================================================== */
@@ -256,20 +252,10 @@ int fc_distance_to_npc(int px, int py, const FcNpc* npc) {
  * Melee: delay 1 (resolves same tick in our system — queued then resolved in same tick loop)
  */
 
-int fc_melee_hit_delay(void) {
-    return 1;
-}
-
 /* Player ranged projectile timing */
 int fc_ranged_hit_delay(int distance) {
     /* Keep the existing lightweight projectile timing for player ranged attacks. */
     int travel = 5 * distance;  /* default multiplier for player ranged */
-    return travel / 30 + 1;
-}
-
-/* Generic magic delay (unused now — prefer fc_npc_hit_delay) */
-int fc_magic_hit_delay(int distance) {
-    int travel = 8 + 8 * distance;
     return travel / 30 + 1;
 }
 

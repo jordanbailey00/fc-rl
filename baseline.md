@@ -230,6 +230,34 @@ binary hashes changed as expected. The model contract and training
 configuration remained identical. Throughput was 958,764 SPS and training
 uptime was 102.297909 seconds, effectively unchanged from Comparison 2.
 
+## Comparison 4: obsolete core APIs removed
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`4qmy1v9y`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/4qmy1v9y) (`feasible-snowball-1229`) |
+| Tag | `v4.5_refactor_obsolete_core_apis_100m` |
+| Git commit at run start | `b5758392addf8310b2246b91adc0e721f76afe82` plus the documented uncommitted API cleanup |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `dc1b01a9c97dd8beaa925773e8ae8843224dee5810e8885e935dd4c9dfb4208c` |
+| Backend binary SHA-256 | `425f43fd131406f40ae46b4392345ccf48cbae60bfbee16af54cfb9c1406cafe` |
+| Backend source SHA-256 | `2c989a1bdca7b870a11f5694ae3fa53e3fa6c66526011c62a591ce3a4ef5576d` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260825T002638Z-train-1020502.json` |
+
+Result: behavioral parity is exact against the original baseline `m916qfsv`
+and all prior comparison runs. All 124 `env/*` metrics are byte-for-byte equal,
+as are agent steps, epoch, and every recorded policy/value/entropy/KL/loss
+value. Against the original baseline, 135 of 150 summary values are exact
+matches; the 15 differences are only timestamps, wall-clock performance,
+throughput, and CPU/GPU memory/utilization telemetry.
+
+This core refactor caused the training backend to rebuild, so its source and
+binary hashes changed as expected. The model contract and training
+configuration remained identical. Throughput was 965,306 SPS and training
+uptime was 104.000881 seconds. The complete regression suite passes all 167
+remaining tests; the count decreased from 169 only because two tests existed
+solely for the removed, never-integrated dynamic-BFS API.
+
 ## Reproduction command
 
 ```bash

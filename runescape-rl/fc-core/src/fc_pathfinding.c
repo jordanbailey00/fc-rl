@@ -307,75 +307,9 @@ int fc_move_toward(int* x, int* y, int dx, int dy, int max_steps,
                                  movement_flags, NULL, NULL, 0);
 }
 
-int fc_move_toward_dynamic(
-    int* x, int* y, int dx, int dy, int max_steps,
-    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-    const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
-    int tx = *x + dx;
-    int ty = *y + dy;
-    int steps = 0;
-
-    for (int step = 0; step < max_steps; step++) {
-        if (*x == tx && *y == ty) break;
-
-        int sx = 0, sy = 0;
-        if (tx > *x) sx = 1; else if (tx < *x) sx = -1;
-        if (ty > *y) sy = 1; else if (ty < *y) sy = -1;
-
-        if (sx != 0 && sy != 0 &&
-            fc_footprint_step_available_dynamic(
-                *x, *y, sx, sy, 1,
-                walkable, movement_flags, occupied)) {
-            *x += sx; *y += sy; steps++;
-        } else if (sx != 0 &&
-                   fc_footprint_step_available_dynamic(
-                       *x, *y, sx, 0, 1,
-                       walkable, movement_flags, occupied)) {
-            *x += sx; steps++;
-        } else if (sy != 0 &&
-                   fc_footprint_step_available_dynamic(
-                       *x, *y, 0, sy, 1,
-                       walkable, movement_flags, occupied)) {
-            *y += sy; steps++;
-        } else {
-            break;
-        }
-    }
-    return steps;
-}
-
 /* ======================================================================== */
 /* Size-aware NPC movement                                                   */
 /* ======================================================================== */
-
-int fc_npc_step_toward_sized(int* x, int* y, int target_x, int target_y,
-                             int size,
-                             const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-                             const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
-    int dx = 0, dy = 0;
-    if (target_x > *x) dx = 1; else if (target_x < *x) dx = -1;
-    if (target_y > *y) dy = 1; else if (target_y < *y) dy = -1;
-
-    if (dx == 0 && dy == 0) return 0;
-
-    /* Try diagonal, then x-only, then y-only.
-     * Each candidate must have the full footprint walkable. */
-    if (dx != 0 && dy != 0 &&
-        fc_footprint_step_walkable(
-            *x, *y, dx, dy, size, walkable, movement_flags)) {
-        *x += dx; *y += dy; return 1;
-    }
-    if (dx != 0 && fc_footprint_step_walkable(
-            *x, *y, dx, 0, size, walkable, movement_flags)) {
-        *x += dx; return 1;
-    }
-    if (dy != 0 && fc_footprint_step_walkable(
-            *x, *y, 0, dy, size, walkable, movement_flags)) {
-        *y += dy; return 1;
-    }
-    return 0;
-}
 
 int fc_npc_step_toward_sized_dynamic(
     int* x, int* y, int target_x, int target_y, int size,
@@ -407,14 +341,6 @@ int fc_npc_step_toward_sized_dynamic(
         *y += dy; return 1;
     }
     return 0;
-}
-
-/* Legacy size-1 wrapper */
-int fc_npc_step_toward(int* x, int* y, int target_x, int target_y,
-                       const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-                       const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
-    return fc_npc_step_toward_sized(
-        x, y, target_x, target_y, 1, walkable, movement_flags);
 }
 
 /* ======================================================================== */
@@ -683,65 +609,6 @@ static int fc_bfs_route(
                                 out_x, out_y, max_steps);
 }
 
-static int bfs_walk_sized_dynamic(
-    int sx, int sy, int dx, int dy, int size,
-    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-    const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-    int out_x[], int out_y[], int max_steps) {
-    int8_t pdx[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
-    int8_t pdy[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
-    uint8_t vis[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
-    int qx[FC_ARENA_WIDTH * FC_ARENA_HEIGHT];
-    int qy[FC_ARENA_WIDTH * FC_ARENA_HEIGHT];
-    int qh = 0, qt = 0;
-
-    for (int x = 0; x < FC_ARENA_WIDTH; x++)
-        for (int y = 0; y < FC_ARENA_HEIGHT; y++) vis[x][y] = 0;
-
-    vis[sx][sy] = 1;
-    qx[qt] = sx; qy[qt] = sy; qt++;
-    int found = 0;
-    while (qh < qt) {
-        int cx = qx[qh], cy = qy[qh]; qh++;
-        for (int d = 0; d < 8; d++) {
-            int ddx = FC_ROUTE_DIRECTIONS[d][0];
-            int ddy = FC_ROUTE_DIRECTIONS[d][1];
-            int nx = cx + ddx;
-            int ny = cy + ddy;
-            if (nx < 0 || nx >= FC_ARENA_WIDTH || ny < 0 || ny >= FC_ARENA_HEIGHT) continue;
-            if (vis[nx][ny]) continue;
-            if (!fc_footprint_step_available_dynamic(cx, cy, ddx, ddy, size,
-                                                     walkable, movement_flags,
-                                                     occupied)) {
-                continue;
-            }
-            vis[nx][ny] = 1;
-            pdx[nx][ny] = (int8_t)(-ddx);
-            pdy[nx][ny] = (int8_t)(-ddy);
-            qx[qt] = nx; qy[qt] = ny; qt++;
-            if (nx == dx && ny == dy) { found = 1; break; }
-        }
-        if (found) break;
-    }
-    if (!found) return 0;
-
-    int px[FC_ARENA_WIDTH * FC_ARENA_HEIGHT], py[FC_ARENA_WIDTH * FC_ARENA_HEIGHT];
-    int plen = 0;
-    int bx = dx, by = dy;
-    while (bx != sx || by != sy) {
-        px[plen] = bx; py[plen] = by; plen++;
-        int td = pdx[bx][by], te = pdy[bx][by];
-        bx += td; by += te;
-    }
-    int steps = (plen < max_steps) ? plen : max_steps;
-    for (int i = 0; i < steps; i++) {
-        out_x[i] = px[plen - 1 - i];
-        out_y[i] = py[plen - 1 - i];
-    }
-    return steps;
-}
-
 int fc_pathfind_bfs(int sx, int sy, int dx, int dy,
                     const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
                     const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
@@ -771,18 +638,4 @@ int fc_pathfind_attack_position(
     return fc_bfs_route(sx, sy, target_x, target_y, target_size, 0,
                         FC_ROUTE_ATTACK, attack_range, walkable,
                         movement_flags, los_flags, out_x, out_y, max_steps);
-}
-
-int fc_pathfind_bfs_sized_dynamic(
-    int sx, int sy, int dx, int dy, int size,
-    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-    const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-    int out_x[], int out_y[], int max_steps) {
-    if (sx == dx && sy == dy) return 0;
-    if (!fc_footprint_available_dynamic(dx, dy, size, walkable, occupied)) return 0;
-
-    return bfs_walk_sized_dynamic(sx, sy, dx, dy, size, walkable,
-                                  movement_flags, occupied,
-                                  out_x, out_y, max_steps);
 }

@@ -806,104 +806,13 @@ def test_checkpoint_consumer_order(_fixture_so: Path) -> int:
     return fail("checkpoint consumer ordering", failures)
 
 
-def trace_command(trace_path: Path, preflight_path: Path) -> list[str]:
-    return [
-        sys.executable,
-        str(PREFLIGHT),
-        "validate-trace",
-        "--trace-path",
-        str(trace_path),
-        "--preflight-path",
-        str(preflight_path),
-    ]
-
-
-def test_trace_provenance(fixture_so: Path) -> int:
-    failures: list[str] = []
-    with tempfile.TemporaryDirectory(prefix="fc-trace-contract-") as tmp:
-        tmpdir = Path(tmp)
-        config = tmpdir / "fight_caves.ini"
-        config.write_bytes(CANONICAL_CONFIG.read_bytes())
-        preflight = preflight_payload(config, fixture_so)
-        preflight_path = tmpdir / "preflight.json"
-        preflight_path.write_text(json.dumps(preflight) + "\n", encoding="utf-8")
-        trace = {
-            "trace_schema_version": 1,
-            "artifact_type": "fight_caves_action_trace",
-            "seed": 73,
-            "active_loadout": ACTIVE_LOADOUT,
-            "contract_identity": contract_identity(EXPECTED_CONTRACT),
-            "contract": dict(EXPECTED_CONTRACT),
-            "backend_sha256": preflight["backend"]["sha256"],
-            "config_sha256": preflight["config"]["source_sha256"],
-            "ticks": [
-                {"tick": tick, "actions": [0, 0, tick, 0, 0, 0, 0], "state_hash": tick + 1}
-                for tick in range(5)
-            ],
-        }
-        valid = tmpdir / "valid-trace.json"
-        valid.write_text(json.dumps(trace) + "\n", encoding="utf-8")
-        proc = run(trace_command(valid, preflight_path))
-        if proc.returncode != 0:
-            failures.append(
-                "same-contract trace using only prayer actions 0-4 was rejected: "
-                f"{(proc.stderr or proc.stdout).strip()}"
-            )
-
-        mutations: dict[str, object] = {
-            "active_loadout": "FC_LOADOUT_BOWFA_CRYSTAL",
-            "contract_identity": "0" * 64,
-            "backend_sha256": "1" * 64,
-            "config_sha256": "2" * 64,
-        }
-        for field, value in mutations.items():
-            changed = dict(trace)
-            changed[field] = value
-            path = tmpdir / f"bad-{field}.json"
-            path.write_text(json.dumps(changed) + "\n", encoding="utf-8")
-            if run(trace_command(path, preflight_path)).returncode == 0:
-                failures.append(f"trace validator accepted mismatched {field}")
-
-        old_timing = dict(trace)
-        old_contract = dict(EXPECTED_CONTRACT)
-        old_contract["prayer_timing_version"] = "fight_caves_prayer_timing_pre_parity"
-        old_timing["contract"] = old_contract
-        old_timing["contract_identity"] = contract_identity(old_contract)
-        old_path = tmpdir / "old-timing.json"
-        old_path.write_text(json.dumps(old_timing) + "\n", encoding="utf-8")
-        diagnostic_proc = run(trace_command(old_path, preflight_path))
-        diagnostic = f"{diagnostic_proc.stdout}\n{diagnostic_proc.stderr}"
-        if diagnostic_proc.returncode == 0:
-            failures.append("old Prayer-timing trace was accepted as a parity golden")
-        elif "prayer_timing_version" not in diagnostic:
-            failures.append("old timing rejection did not identify prayer_timing_version")
-
-        for field in (
-            "seed",
-            "ticks",
-            "active_loadout",
-            "contract",
-            "contract_identity",
-            "backend_sha256",
-            "config_sha256",
-        ):
-            incomplete = dict(trace)
-            del incomplete[field]
-            path = tmpdir / f"missing-{field}.json"
-            path.write_text(json.dumps(incomplete) + "\n", encoding="utf-8")
-            if run(trace_command(path, preflight_path)).returncode == 0:
-                failures.append(f"trace validator accepted missing {field}")
-
-    return fail("replay provenance and timing rejection", failures)
-
-
 def main(argv: list[str]) -> int:
     if len(argv) != 3:
         print(
             f"usage: {argv[0]} "
             "<evaluator_explicit_random|evaluator_hard_failures|"
             "latest_checkpoint_filter|manifest_warm_modes|"
-            "checkpoint_consumer_order|trace_provenance> <fixture-so>",
+            "checkpoint_consumer_order> <fixture-so>",
             file=sys.stderr,
         )
         return 2
@@ -917,7 +826,6 @@ def main(argv: list[str]) -> int:
         "latest_checkpoint_filter": test_latest_checkpoint_filter,
         "manifest_warm_modes": test_manifest_warm_modes,
         "checkpoint_consumer_order": test_checkpoint_consumer_order,
-        "trace_provenance": test_trace_provenance,
     }
     case = cases.get(argv[1])
     if case is None:

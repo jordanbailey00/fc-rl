@@ -77,10 +77,6 @@ int fc_visible_npc_indices(const FcState* state, int out_indices[FC_VISIBLE_NPCS
  * 1.0 = valid action, 0.0 = invalid. */
 void fc_write_mask(const FcState* state, float* out);
 
-/* Returns 1 if any Puffer-facing masked action head (move/attack/prayer)
- * contains an invalid attempted action for the current state. */
-int fc_action_attempt_is_invalid(const FcState* state, const int actions[FC_NUM_ACTION_HEADS]);
-
 /* Fill out_classes with 0/1 invalid-action diagnostics for Puffer-facing heads
  * 0-2 only: move, attack, prayer. Core consumable/path-target heads stay
  * excluded because the no-supplies policy does not emit them. */
@@ -95,9 +91,6 @@ void fc_write_reward_features(const FcState* state, float* out);
 
 /* Returns 1 if the episode has terminated (player death, cave complete, tick cap). */
 int fc_is_terminal(const FcState* state);
-
-/* Returns the terminal code (FcTerminalCode). 0 if not terminal. */
-int fc_terminal_code(const FcState* state);
 
 /* ======================================================================== */
 /* Determinism                                                               */

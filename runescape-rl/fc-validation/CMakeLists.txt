@@ -409,16 +409,6 @@ add_test(NAME step2_dynamic_diagonal_blocks_occupied_corner
 set_tests_properties(step2_dynamic_diagonal_blocks_occupied_corner PROPERTIES
     LABELS "step2;guardrail;movement;collision")
 
-add_test(NAME step2_dynamic_bfs_avoids_occupied_steps
-    COMMAND phase2_guardrails_core step2_dynamic_bfs_avoids_occupied_steps)
-set_tests_properties(step2_dynamic_bfs_avoids_occupied_steps PROPERTIES
-    LABELS "step2;guardrail;movement;collision")
-
-add_test(NAME step2_dynamic_sized_bfs_checks_full_footprint
-    COMMAND phase2_guardrails_core step2_dynamic_sized_bfs_checks_full_footprint)
-set_tests_properties(step2_dynamic_sized_bfs_checks_full_footprint PROPERTIES
-    LABELS "step2;guardrail;movement;collision")
-
 add_test(NAME step2_start_reservation_blocks_swap_tile
     COMMAND phase2_guardrails_core step2_start_reservation_blocks_swap_tile)
 set_tests_properties(step2_start_reservation_blocks_swap_tile PROPERTIES
@@ -756,26 +746,12 @@ if(Python3_Interpreter_FOUND)
     set_tests_properties(parity_config_001_active_versions PROPERTIES
         LABELS "parity_fix;config;contract")
 
-    add_test(NAME parity_config_002_runnable_experiment_versions
-        COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_config.py
-                runnable_experiment_versions)
-    set_tests_properties(parity_config_002_runnable_experiment_versions PROPERTIES
-        LABELS "parity_fix;config;contract")
-
     add_test(NAME parity_config_003_runtime_mirror_versions
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_config.py
                 runtime_mirror_versions)
     set_tests_properties(parity_config_003_runtime_mirror_versions PROPERTIES
         LABELS "parity_fix;config;contract")
-
-    add_test(NAME parity_config_004_nonversion_values_preserved
-        COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_config.py
-                nonversion_values_preserved)
-    set_tests_properties(parity_config_004_nonversion_values_preserved PROPERTIES
-        LABELS "parity_fix;config;contract;preservation")
 
     add_test(NAME parity_contract_004_compiled_preflight
         COMMAND ${Python3_EXECUTABLE}
@@ -816,21 +792,6 @@ if(Python3_Interpreter_FOUND)
                 $<TARGET_FILE:parity_contract_fixture>)
     set_tests_properties(parity_contract_004_active_configs PROPERTIES
         LABELS "parity_fix;contract;preflight;config")
-
-    add_test(NAME parity_contract_004_sweep_launch_preflight
-        COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_preflight.py
-                sweep_launch_preflight
-                $<TARGET_FILE:parity_contract_fixture>)
-    set_tests_properties(parity_contract_004_sweep_launch_preflight PROPERTIES
-        LABELS "parity_fix;contract;preflight;config;sweep")
-
-    add_test(NAME parity_det_001_core_hash_ownership
-        COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_hash_contract.py
-                ownership)
-    set_tests_properties(parity_det_001_core_hash_ownership PROPERTIES
-        LABELS "parity_fix;determinism;contract")
 
     # Config workstream 8 checkpoint/replay isolation. Explicit random mode
     # and stale-literal scanning already describe preservation behavior; the
@@ -883,13 +844,6 @@ if(Python3_Interpreter_FOUND)
     set_tests_properties(parity_contract_004_checkpoint_consumer_order PROPERTIES
         LABELS "parity_fix;contract;checkpoint;evaluator")
 
-    add_test(NAME parity_det_002_trace_provenance
-        COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_checkpoint.py
-                trace_provenance
-                $<TARGET_FILE:parity_contract_fixture>)
-    set_tests_properties(parity_det_002_trace_provenance PROPERTIES
-        LABELS "parity_fix;contract;determinism;replay")
 else()
     message(STATUS "Python3 not found — skipping phase2 static validation guardrails")
 endif()

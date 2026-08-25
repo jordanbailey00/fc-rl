@@ -8,7 +8,6 @@ float fc_hit_chance(int att_roll, int def_roll);
 
 /* NPC combat */
 int fc_npc_attack_roll(int att_level, int att_bonus);
-int fc_npc_melee_max_hit(int str_level, int str_bonus);
 
 /* Player combat */
 int fc_player_def_roll(const FcPlayer* p, FcAttackType attack_type);
@@ -32,9 +31,7 @@ int fc_prayer_blocks_style(int prayer, int attack_style);
 int fc_distance_to_npc(int px, int py, const FcNpc* npc);
 
 /* Hit delay */
-int fc_melee_hit_delay(void);
 int fc_ranged_hit_delay(int distance);  /* player ranged projectile */
-int fc_magic_hit_delay(int distance);   /* generic magic fallback */
 int fc_npc_hit_delay(int npc_type, int attack_style, int distance);  /* per-NPC exact timing */
 
 /* NPC defence roll (for player accuracy against NPC) */
