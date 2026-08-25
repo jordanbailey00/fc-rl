@@ -112,6 +112,17 @@ target_include_directories(required_arena_assets PRIVATE
 )
 target_link_libraries(required_arena_assets PRIVATE fc_core m)
 
+add_executable(episode_summary
+    tests/episode_summary.c
+)
+target_include_directories(episode_summary PRIVATE
+    ${PROJECT_SOURCE_DIR}/fc-core/include
+)
+target_link_libraries(episode_summary PRIVATE fc_core m)
+add_test(NAME shared_episode_summary COMMAND episode_summary)
+set_tests_properties(shared_episode_summary PROPERTIES
+    LABELS "metrics;unit;preservation")
+
 # Test-only compiled backend used to corrupt each CONTRACT-004 field without
 # rebuilding the production CUDA extension for every negative preflight case.
 add_library(parity_contract_fixture SHARED

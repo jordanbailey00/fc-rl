@@ -1633,32 +1633,10 @@ static void format_speed_label(const ViewerState* v, char* buf, size_t buf_size)
     }
 }
 
-static const char* policy_metric_npc_name(int npc_type) {
-    switch (npc_type) {
-        case NPC_TZ_KIH:    return "tz_kih";
-        case NPC_TZ_KEK:    return "tz_kek";
-        case NPC_TZ_KEK_SM: return "tz_kek_sm";
-        case NPC_TOK_XIL:   return "tok_xil";
-        case NPC_YT_MEJKOT: return "yt_mejkot";
-        case NPC_KET_ZEK:   return "ket_zek";
-        case NPC_TZTOK_JAD: return "tztok_jad";
-        case NPC_YT_HURKOT: return "yt_hurkot";
-        default:            return "unknown";
-    }
-}
-
 static void print_policy_episode_summary(const ViewerState* v) {
     const FcState* s = &v->state;
-    const FcPlayer* p = &s->player;
-    int episode_length = s->tick;
-    float prayer_uptime_melee = (episode_length > 0)
-        ? (float)s->ep_ticks_pray_melee / (float)episode_length : 0.0f;
-    float prayer_uptime_range = (episode_length > 0)
-        ? (float)s->ep_ticks_pray_range / (float)episode_length : 0.0f;
-    float prayer_uptime_magic = (episode_length > 0)
-        ? (float)s->ep_ticks_pray_magic / (float)episode_length : 0.0f;
-    float attack_when_ready_rate = (s->ep_attack_ready_ticks > 0)
-        ? (float)s->ep_attack_attempt_ticks / (float)s->ep_attack_ready_ticks : 0.0f;
+    FcEpisodeSummary summary;
+    fc_episode_summary_build(s, s->tick, &summary);
 
     fprintf(stderr,
         "[policy-pipe] episode_summary "
@@ -1698,52 +1676,52 @@ static void print_policy_episode_summary(const ViewerState* v) {
         v->policy_episode_count + 1,
         v->seed,
         fc_terminal_name(s->terminal),
-        episode_length,
-        s->current_wave,
-        s->total_npcs_killed,
-        prayer_uptime_melee,
-        prayer_uptime_range,
-        prayer_uptime_magic,
-        s->ep_correct_blocks,
-        s->ep_wrong_prayer_hits,
-        s->ep_no_prayer_hits,
-        s->ep_prayer_switches,
-        s->ep_damage_blocked,
-        p->total_damage_taken,
-        attack_when_ready_rate,
-        s->ep_tokxil_melee_ticks,
-        s->ep_ketzek_melee_ticks,
-        s->ep_max_wave_ticks,
-        s->ep_max_wave_ticks_wave,
-        s->ep_reached_wave_63,
-        s->ep_jad_killed,
-        s->ep_target_held_ticks,
-        s->ep_no_target_ticks,
-        s->ep_target_in_range_los_ticks,
-        s->ep_target_out_of_range_or_los_ticks,
-        s->ep_attack_cooldown_wait_ticks,
-        s->ep_ready_but_no_attack_ticks,
-        s->ep_action_move_idle_ticks,
-        s->ep_action_move_walk_ticks,
-        s->ep_action_move_run_ticks,
-        s->ep_action_attack_none_ticks,
-        s->ep_action_attack_target_ticks,
-        s->ep_action_prayer_noop_ticks,
-        s->ep_action_prayer_cmd_ticks);
+        summary.episode_length,
+        summary.wave_reached,
+        summary.npcs_slayed,
+        summary.prayer_uptime_melee,
+        summary.prayer_uptime_range,
+        summary.prayer_uptime_magic,
+        summary.correct_prayer,
+        summary.wrong_prayer_hits,
+        summary.no_prayer_hits,
+        summary.prayer_switches,
+        summary.damage_blocked,
+        summary.damage_taken,
+        summary.attack_when_ready_rate,
+        summary.tokxil_melee_ticks,
+        summary.ketzek_melee_ticks,
+        summary.max_wave_ticks,
+        summary.max_wave_ticks_wave,
+        summary.reached_wave_63,
+        summary.jad_killed,
+        summary.target_held_ticks,
+        summary.no_target_ticks,
+        summary.target_in_range_los_ticks,
+        summary.target_out_of_range_or_los_ticks,
+        summary.attack_cooldown_wait_ticks,
+        summary.ready_but_no_attack_ticks,
+        summary.action_move_idle_ticks,
+        summary.action_move_walk_ticks,
+        summary.action_move_run_ticks,
+        summary.action_attack_none_ticks,
+        summary.action_attack_target_ticks,
+        summary.action_prayer_noop_ticks,
+        summary.action_prayer_cmd_ticks);
 
     for (int i = 1; i < NPC_TYPE_COUNT; i++) {
-        const char* npc = policy_metric_npc_name(i);
+        const char* npc = fc_episode_npc_metric_name(i);
         fprintf(stderr,
             ",\"env/dmg_to_%s\":%d"
             ",\"env/resolved_hits_to_%s\":%d"
             ",\"env/damaging_hits_to_%s\":%d"
             ",\"env/attack_cycles_to_%s\":%d"
             ",\"env/target_ticks_%s\":%d",
-            npc, s->ep_damage_to_npc_type[i],
-            npc, s->ep_resolved_hits_to_npc_type[i],
-            npc, s->ep_damaging_hits_to_npc_type[i],
-            npc, s->ep_attack_cycles_to_npc_type[i],
-            npc, s->ep_target_ticks_by_npc_type[i]);
+            npc, summary.damage_to_npc_type[i],
+            npc, summary.resolved_hits_to_npc_type[i],
+            npc, summary.damaging_hits_to_npc_type[i],
+            npc, summary.attack_cycles_to_npc_type[i],
+            npc, summary.target_ticks_by_npc_type[i]);
     }
 
     fprintf(stderr, ",\"env/n\":1.0}\n");

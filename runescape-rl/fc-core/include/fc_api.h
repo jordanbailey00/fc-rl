@@ -3,6 +3,7 @@
 
 #include "fc_types.h"
 #include "fc_contracts.h"
+#include "fc_episode_summary.h"
 
 /*
  * fc_api.h — Public API for the Fight Caves simulation.

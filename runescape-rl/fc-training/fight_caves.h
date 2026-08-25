@@ -39,6 +39,7 @@
 #include "fc_tick.c"
 #include "fc_state.c"
 #include "fc_hash.c"
+#include "fc_episode_summary.c"
 
 /* ======================================================================== */
 /* PufferLib Log struct (required fields)                                    */
@@ -119,6 +120,66 @@ typedef struct {
     float rwd_fires[FC_CH_COUNT];
     float n;  /* must be last */
 } Log;
+
+static void fc_puffer_accumulate_episode_summary(
+    Log* log, const FcEpisodeSummary* summary) {
+    log->episode_length += (float)summary->episode_length;
+    log->wave_reached += (float)summary->wave_reached;
+    log->npcs_slayed += (float)summary->npcs_slayed;
+    log->prayer_uptime_melee += summary->prayer_uptime_melee;
+    log->prayer_uptime_range += summary->prayer_uptime_range;
+    log->prayer_uptime_magic += summary->prayer_uptime_magic;
+    log->correct_prayer += (float)summary->correct_prayer;
+    log->wrong_prayer_hits += (float)summary->wrong_prayer_hits;
+    log->no_prayer_hits += (float)summary->no_prayer_hits;
+    log->prayer_switches += (float)summary->prayer_switches;
+    log->damage_blocked += (float)summary->damage_blocked;
+    log->dmg_taken_avg += (float)summary->damage_taken;
+    log->attack_when_ready_rate += summary->attack_when_ready_rate;
+    log->invalid_move += (float)summary->invalid_move;
+    log->invalid_attack += (float)summary->invalid_attack;
+    log->invalid_prayer += (float)summary->invalid_prayer;
+    log->tokxil_melee_ticks += (float)summary->tokxil_melee_ticks;
+    log->ketzek_melee_ticks += (float)summary->ketzek_melee_ticks;
+    log->max_wave_ticks += (float)summary->max_wave_ticks;
+    log->max_wave_ticks_wave += (float)summary->max_wave_ticks_wave;
+    log->reached_wave_63 += (float)summary->reached_wave_63;
+    log->jad_kill_rate += (float)summary->jad_killed;
+    log->player_death_rate += (float)summary->player_died;
+    for (int i = 0; i < NPC_TYPE_COUNT; i++) {
+        log->dmg_to_npc_type[i] +=
+            (float)summary->damage_to_npc_type[i];
+        log->resolved_hits_to_npc_type[i] +=
+            (float)summary->resolved_hits_to_npc_type[i];
+        log->damaging_hits_to_npc_type[i] +=
+            (float)summary->damaging_hits_to_npc_type[i];
+        log->attack_cycles_to_npc_type[i] +=
+            (float)summary->attack_cycles_to_npc_type[i];
+        log->target_ticks_by_npc_type[i] +=
+            (float)summary->target_ticks_by_npc_type[i];
+    }
+    log->target_held_ticks += (float)summary->target_held_ticks;
+    log->no_target_ticks += (float)summary->no_target_ticks;
+    log->target_in_range_los_ticks +=
+        (float)summary->target_in_range_los_ticks;
+    log->target_out_of_range_or_los_ticks +=
+        (float)summary->target_out_of_range_or_los_ticks;
+    log->attack_cooldown_wait_ticks +=
+        (float)summary->attack_cooldown_wait_ticks;
+    log->ready_but_no_attack_ticks +=
+        (float)summary->ready_but_no_attack_ticks;
+    log->action_move_idle_ticks += (float)summary->action_move_idle_ticks;
+    log->action_move_walk_ticks += (float)summary->action_move_walk_ticks;
+    log->action_move_run_ticks += (float)summary->action_move_run_ticks;
+    log->action_attack_none_ticks +=
+        (float)summary->action_attack_none_ticks;
+    log->action_attack_target_ticks +=
+        (float)summary->action_attack_target_ticks;
+    log->action_prayer_noop_ticks +=
+        (float)summary->action_prayer_noop_ticks;
+    log->action_prayer_cmd_ticks +=
+        (float)summary->action_prayer_cmd_ticks;
+}
 
 /* ======================================================================== */
 /* PufferLib Environment struct                                              */
@@ -399,75 +460,10 @@ void c_step(FightCaves* env) {
 
     /* Check terminal */
     if (fc_is_terminal(&env->state)) {
+        FcEpisodeSummary summary;
+        fc_episode_summary_build(&env->state, env->ep_length, &summary);
         env->terminals[0] = 1.0f;
-        env->log.episode_length += (float)env->ep_length;
-        env->log.wave_reached += (float)env->state.current_wave;
-        env->log.npcs_slayed += (float)env->state.total_npcs_killed;
-        env->log.prayer_uptime_melee += (env->ep_length > 0)
-            ? (float)env->state.ep_ticks_pray_melee / (float)env->ep_length : 0.0f;
-        env->log.prayer_uptime_range += (env->ep_length > 0)
-            ? (float)env->state.ep_ticks_pray_range / (float)env->ep_length : 0.0f;
-        env->log.prayer_uptime_magic += (env->ep_length > 0)
-            ? (float)env->state.ep_ticks_pray_magic / (float)env->ep_length : 0.0f;
-        env->log.correct_prayer += (float)env->state.ep_correct_blocks;
-        env->log.wrong_prayer_hits += (float)env->state.ep_wrong_prayer_hits;
-        env->log.no_prayer_hits += (float)env->state.ep_no_prayer_hits;
-        env->log.prayer_switches += (float)env->state.ep_prayer_switches;
-        env->log.damage_blocked += (float)env->state.ep_damage_blocked;
-        env->log.dmg_taken_avg += (float)env->state.player.total_damage_taken;
-        env->log.attack_when_ready_rate += (env->state.ep_attack_ready_ticks > 0)
-            ? (float)env->state.ep_attack_attempt_ticks / (float)env->state.ep_attack_ready_ticks
-            : 0.0f;
-        env->log.invalid_move +=
-            (float)env->state.ep_invalid_action_classes[FC_INVALID_ACTION_MOVE];
-        env->log.invalid_attack +=
-            (float)env->state.ep_invalid_action_classes[FC_INVALID_ACTION_ATTACK];
-        env->log.invalid_prayer +=
-            (float)env->state.ep_invalid_action_classes[FC_INVALID_ACTION_PRAYER];
-        env->log.tokxil_melee_ticks += (float)env->state.ep_tokxil_melee_ticks;
-        env->log.ketzek_melee_ticks += (float)env->state.ep_ketzek_melee_ticks;
-        env->log.max_wave_ticks += (float)env->state.ep_max_wave_ticks;
-        env->log.max_wave_ticks_wave += (float)env->state.ep_max_wave_ticks_wave;
-        env->log.reached_wave_63 += (float)env->state.ep_reached_wave_63;
-        env->log.jad_kill_rate += (float)env->state.ep_jad_killed;
-        env->log.player_death_rate +=
-            (env->state.terminal == TERMINAL_PLAYER_DEATH) ? 1.0f : 0.0f;
-        for (int i = 0; i < NPC_TYPE_COUNT; i++) {
-            env->log.dmg_to_npc_type[i] +=
-                (float)env->state.ep_damage_to_npc_type[i];
-            env->log.resolved_hits_to_npc_type[i] +=
-                (float)env->state.ep_resolved_hits_to_npc_type[i];
-            env->log.damaging_hits_to_npc_type[i] +=
-                (float)env->state.ep_damaging_hits_to_npc_type[i];
-            env->log.attack_cycles_to_npc_type[i] +=
-                (float)env->state.ep_attack_cycles_to_npc_type[i];
-            env->log.target_ticks_by_npc_type[i] +=
-                (float)env->state.ep_target_ticks_by_npc_type[i];
-        }
-        env->log.target_held_ticks += (float)env->state.ep_target_held_ticks;
-        env->log.no_target_ticks += (float)env->state.ep_no_target_ticks;
-        env->log.target_in_range_los_ticks +=
-            (float)env->state.ep_target_in_range_los_ticks;
-        env->log.target_out_of_range_or_los_ticks +=
-            (float)env->state.ep_target_out_of_range_or_los_ticks;
-        env->log.attack_cooldown_wait_ticks +=
-            (float)env->state.ep_attack_cooldown_wait_ticks;
-        env->log.ready_but_no_attack_ticks +=
-            (float)env->state.ep_ready_but_no_attack_ticks;
-        env->log.action_move_idle_ticks +=
-            (float)env->state.ep_action_move_idle_ticks;
-        env->log.action_move_walk_ticks +=
-            (float)env->state.ep_action_move_walk_ticks;
-        env->log.action_move_run_ticks +=
-            (float)env->state.ep_action_move_run_ticks;
-        env->log.action_attack_none_ticks +=
-            (float)env->state.ep_action_attack_none_ticks;
-        env->log.action_attack_target_ticks +=
-            (float)env->state.ep_action_attack_target_ticks;
-        env->log.action_prayer_noop_ticks +=
-            (float)env->state.ep_action_prayer_noop_ticks;
-        env->log.action_prayer_cmd_ticks +=
-            (float)env->state.ep_action_prayer_cmd_ticks;
+        fc_puffer_accumulate_episode_summary(&env->log, &summary);
         env->log.no_progress_ticks += env->ep_no_progress_ticks;
         env->log.no_progress_idle_move_ticks += env->ep_no_progress_idle_move_ticks;
         env->log.no_progress_move_cmd_ticks += env->ep_no_progress_move_cmd_ticks;

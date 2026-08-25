@@ -8,6 +8,7 @@ set(FC_CORE_SOURCES
     src/fc_npc.c
     src/fc_wave.c
     src/fc_hash.c
+    src/fc_episode_summary.c
 )
 
 add_library(fc_core STATIC ${FC_CORE_SOURCES})

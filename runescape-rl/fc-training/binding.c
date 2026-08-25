@@ -192,17 +192,6 @@ void my_log(Log* log, Dict* out) {
     dict_set(out, "positive_clip_count", log->positive_clip_count);
     dict_set(out, "negative_clip_count", log->negative_clip_count);
 
-    static const char* npc_names[NPC_TYPE_COUNT] = {
-        "none",
-        "tz_kih",
-        "tz_kek",
-        "tz_kek_sm",
-        "tok_xil",
-        "yt_mejkot",
-        "ket_zek",
-        "tztok_jad",
-        "yt_hurkot",
-    };
     static char npc_dmg_keys[NPC_TYPE_COUNT][48];
     static char npc_resolved_hit_keys[NPC_TYPE_COUNT][48];
     static char npc_damaging_hit_keys[NPC_TYPE_COUNT][48];
@@ -211,15 +200,16 @@ void my_log(Log* log, Dict* out) {
     static int npc_keys_built = 0;
     if (!npc_keys_built) {
         for (int i = 1; i < NPC_TYPE_COUNT; i++) {
-            snprintf(npc_dmg_keys[i], 48, "dmg_to_%s", npc_names[i]);
+            const char* npc_name = fc_episode_npc_metric_name(i);
+            snprintf(npc_dmg_keys[i], 48, "dmg_to_%s", npc_name);
             snprintf(npc_resolved_hit_keys[i], 48,
-                     "resolved_hits_to_%s", npc_names[i]);
+                     "resolved_hits_to_%s", npc_name);
             snprintf(npc_damaging_hit_keys[i], 48,
-                     "damaging_hits_to_%s", npc_names[i]);
+                     "damaging_hits_to_%s", npc_name);
             snprintf(npc_attack_cycle_keys[i], 48,
-                     "attack_cycles_to_%s", npc_names[i]);
+                     "attack_cycles_to_%s", npc_name);
             snprintf(npc_target_tick_keys[i], 48,
-                     "target_ticks_%s", npc_names[i]);
+                     "target_ticks_%s", npc_name);
         }
         npc_keys_built = 1;
     }

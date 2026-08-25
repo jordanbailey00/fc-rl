@@ -180,11 +180,23 @@ duplicated orchestration were removed from `viewer.c`.
   projectile damage, hitsplats, health-bar changes, and NPC death animation
   together at visual impact without altering authoritative combat timing.
 
-### Episode metrics
+### Episode metrics — completed
 
-Training's terminal logging and the viewer's policy-episode JSON independently
-derive and name many of the same metrics. A shared read-only
-`FcEpisodeSummary` would prevent evaluator/training metric drift.
+Implemented on 2026-08-24.
+
+- Added a read-only `FcEpisodeSummary` core API that derives the shared scalar,
+  per-NPC, action, targeting, Prayer, damage, wave, and terminal metrics once.
+- Training aggregates that summary into Puffer's `Log`; adapter-owned reward
+  and no-progress diagnostics remain in the training adapter.
+- Policy replay serializes the same summary, and training/evaluation share one
+  stable NPC metric-name mapping.
+- The summary accepts the consumer's episode length so adapter step counts and
+  standalone tools retain their existing semantics.
+- A focused test pins every summary field, zero-denominator behavior, stable
+  metric names, and read-only state access. The complete suite passes all 164
+  tests.
+- The 100M W&B regression `r9fnqnxh` exactly matches baseline `m916qfsv` on all
+  124 `env/*` values and all policy/value/entropy/KL/loss values.
 
 ### Training build structure
 
