@@ -29,14 +29,26 @@
  * All three arena maps are required; running without one would change the
  * simulation's movement or line-of-sight rules.
  */
-/* Cached collision data — loaded once, shared by all envs.
- * Avoids per-reset file I/O which is not thread-safe under OpenMP. */
-static uint8_t g_collision_cache[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
-static int g_collision_loaded = 0;
-static uint8_t g_movement_cache[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
-static int g_movement_loaded = 0;
-static uint8_t g_los_cache[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
-static int g_los_loaded = 0;
+/* Cached arena data — loaded once and shared by all envs to avoid per-reset
+ * file I/O. Each map retains separate storage and initialization state. */
+typedef struct {
+    uint8_t cells[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
+    int loaded;
+} FcArenaMapCache;
+
+static FcArenaMapCache g_collision_cache;
+static FcArenaMapCache g_movement_cache;
+static FcArenaMapCache g_los_cache;
+
+static const char* const g_arena_asset_path_formats[] = {
+    "assets/%s",
+    "runescape-rl/fc-core/assets/%s",
+    "fc-core/assets/%s",
+    "../fc-core/assets/%s",
+    "../runescape-rl/fc-core/assets/%s",
+    "../../fc-core/assets/%s",
+    NULL
+};
 
 static void fail_required_arena_asset(const char* filename,
                                       const char* override_name) {
@@ -51,122 +63,52 @@ static void fail_required_arena_asset(const char* filename,
     exit(EXIT_FAILURE);
 }
 
-static void load_collision_once(void) {
-    if (g_collision_loaded) return;
+static void load_required_arena_map(FcArenaMapCache* cache,
+                                    const char* filename,
+                                    const char* override_name) {
+    FILE* file = NULL;
+    const char* override_path;
+    char path[256];
+    uint8_t bytes[FC_ARENA_WIDTH * FC_ARENA_HEIGHT];
+    size_t count;
 
-    static const char* collision_paths[] = {
-        "assets/fightcaves.collision",
-        "runescape-rl/fc-core/assets/fightcaves.collision",
-        "fc-core/assets/fightcaves.collision",
-        "../fc-core/assets/fightcaves.collision",
-        "../runescape-rl/fc-core/assets/fightcaves.collision",
-        "../../fc-core/assets/fightcaves.collision",
-        NULL
-    };
-    FILE* f = NULL;
-    const char* env_path = getenv("FC_COLLISION_PATH");
-    if (env_path) f = fopen(env_path, "rb");
-    for (int p = 0; !f && collision_paths[p]; p++) {
-        f = fopen(collision_paths[p], "rb");
-    }
-    if (f) {
-        uint8_t buf[FC_ARENA_WIDTH * FC_ARENA_HEIGHT];
-        size_t n = fread(buf, 1, sizeof(buf), f);
-        fclose(f);
-        if (n == sizeof(buf)) {
-            /* Binary is row-major [y][x], our array is [x][y] — transpose */
-            for (int y = 0; y < FC_ARENA_HEIGHT; y++) {
-                for (int x = 0; x < FC_ARENA_WIDTH; x++) {
-                    g_collision_cache[x][y] = buf[y * FC_ARENA_WIDTH + x];
-                }
-            }
-            g_collision_loaded = 1;
-            return;
+    if (cache->loaded) return;
+    override_path = getenv(override_name);
+    if (override_path) file = fopen(override_path, "rb");
+    for (int i = 0; !file && g_arena_asset_path_formats[i]; i++) {
+        int length = snprintf(path, sizeof(path),
+                              g_arena_asset_path_formats[i], filename);
+        if (length > 0 && (size_t)length < sizeof(path)) {
+            file = fopen(path, "rb");
         }
     }
+    if (!file) fail_required_arena_asset(filename, override_name);
 
-    fail_required_arena_asset("fightcaves.collision", "FC_COLLISION_PATH");
-}
-
-static void load_movement_once(void) {
-    if (g_movement_loaded) return;
-
-    static const char* movement_paths[] = {
-        "assets/fightcaves.movement",
-        "runescape-rl/fc-core/assets/fightcaves.movement",
-        "fc-core/assets/fightcaves.movement",
-        "../fc-core/assets/fightcaves.movement",
-        "../runescape-rl/fc-core/assets/fightcaves.movement",
-        "../../fc-core/assets/fightcaves.movement",
-        NULL
-    };
-    FILE* f = NULL;
-    const char* env_path = getenv("FC_MOVEMENT_PATH");
-    if (env_path) f = fopen(env_path, "rb");
-    for (int p = 0; !f && movement_paths[p]; p++) {
-        f = fopen(movement_paths[p], "rb");
+    count = fread(bytes, 1, sizeof(bytes), file);
+    fclose(file);
+    if (count != sizeof(bytes)) {
+        fail_required_arena_asset(filename, override_name);
     }
-    if (f) {
-        uint8_t buf[FC_ARENA_WIDTH * FC_ARENA_HEIGHT];
-        size_t n = fread(buf, 1, sizeof(buf), f);
-        fclose(f);
-        if (n == sizeof(buf)) {
-            for (int y = 0; y < FC_ARENA_HEIGHT; y++) {
-                for (int x = 0; x < FC_ARENA_WIDTH; x++) {
-                    g_movement_cache[x][y] = buf[y * FC_ARENA_WIDTH + x];
-                }
-            }
-            g_movement_loaded = 1;
-            return;
+
+    /* Binary files are row-major [y][x]; FcState maps are [x][y]. */
+    for (int y = 0; y < FC_ARENA_HEIGHT; y++) {
+        for (int x = 0; x < FC_ARENA_WIDTH; x++) {
+            cache->cells[x][y] = bytes[y * FC_ARENA_WIDTH + x];
         }
     }
-
-    fail_required_arena_asset("fightcaves.movement", "FC_MOVEMENT_PATH");
-}
-
-static void load_los_once(void) {
-    if (g_los_loaded) return;
-
-    static const char* los_paths[] = {
-        "assets/fightcaves.los",
-        "runescape-rl/fc-core/assets/fightcaves.los",
-        "fc-core/assets/fightcaves.los",
-        "../fc-core/assets/fightcaves.los",
-        "../runescape-rl/fc-core/assets/fightcaves.los",
-        "../../fc-core/assets/fightcaves.los",
-        NULL
-    };
-    FILE* f = NULL;
-    const char* env_path = getenv("FC_LOS_PATH");
-    if (env_path) f = fopen(env_path, "rb");
-    for (int p = 0; !f && los_paths[p]; p++) {
-        f = fopen(los_paths[p], "rb");
-    }
-    if (f) {
-        uint8_t buf[FC_ARENA_WIDTH * FC_ARENA_HEIGHT];
-        size_t n = fread(buf, 1, sizeof(buf), f);
-        fclose(f);
-        if (n == sizeof(buf)) {
-            for (int y = 0; y < FC_ARENA_HEIGHT; y++) {
-                for (int x = 0; x < FC_ARENA_WIDTH; x++) {
-                    g_los_cache[x][y] = buf[y * FC_ARENA_WIDTH + x];
-                }
-            }
-            g_los_loaded = 1;
-            return;
-        }
-    }
-
-    fail_required_arena_asset("fightcaves.los", "FC_LOS_PATH");
+    cache->loaded = 1;
 }
 
 static void setup_arena(FcState* state) {
-    load_collision_once();
-    load_movement_once();
-    load_los_once();
-    memcpy(state->walkable, g_collision_cache, sizeof(state->walkable));
-    memcpy(state->movement_flags, g_movement_cache, sizeof(state->movement_flags));
-    memcpy(state->los_flags, g_los_cache, sizeof(state->los_flags));
+    load_required_arena_map(&g_collision_cache, "fightcaves.collision",
+                            "FC_COLLISION_PATH");
+    load_required_arena_map(&g_movement_cache, "fightcaves.movement",
+                            "FC_MOVEMENT_PATH");
+    load_required_arena_map(&g_los_cache, "fightcaves.los", "FC_LOS_PATH");
+    memcpy(state->walkable, g_collision_cache.cells, sizeof(state->walkable));
+    memcpy(state->movement_flags, g_movement_cache.cells,
+           sizeof(state->movement_flags));
+    memcpy(state->los_flags, g_los_cache.cells, sizeof(state->los_flags));
 }
 
 /* Player initialization — the loadout table is the combat-state authority. */

@@ -4637,11 +4637,16 @@ int main(int argc, char** argv) {
                         v.npc_prayer_indicator_timer[i] = 0.0f;
                 }
             }
-            objects_update_texture_anims(v.objects, dt);
-            models_update_texture_anims(v.object_anim_models, dt);
-            models_update_texture_anims(v.projectile_models, visual_dt);
-            models_update_texture_anims(v.npc_models, visual_dt);
-            models_update_texture_anims(v.player_model, visual_dt);
+            if (v.objects)
+                fc_animated_atlas_update(&v.objects->atlas, dt);
+            if (v.object_anim_models)
+                fc_animated_atlas_update(&v.object_anim_models->atlas, dt);
+            if (v.projectile_models)
+                fc_animated_atlas_update(&v.projectile_models->atlas, visual_dt);
+            if (v.npc_models)
+                fc_animated_atlas_update(&v.npc_models->atlas, visual_dt);
+            if (v.player_model)
+                fc_animated_atlas_update(&v.player_model->atlas, visual_dt);
             for (int i = 0; i < MAX_PROJECTILES; i++) {
                 if (v.projectiles[i].active) {
                     if (update_visual_projectile(&v, &v.projectiles[i], dt)) {

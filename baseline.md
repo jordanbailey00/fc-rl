@@ -176,6 +176,60 @@ and training uptime was 98.871387 seconds before and 103.138911 seconds after.
 Those timing differences are normal run-to-run machine-load noise and are not
 evidence of behavioral drift.
 
+## Comparison 2: asset and animated-atlas loaders consolidated
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`7vgbe9bb`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/7vgbe9bb) (`desert-fog-1227`) |
+| Tag | `v4.5_refactor_asset_atlas_loaders_100m` |
+| Git commit at run start | `0be25564a941e63d4c3a92bf14ed7a8b3b329f0a` plus the documented uncommitted viewer-only refactor |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `dc1b01a9c97dd8beaa925773e8ae8843224dee5810e8885e935dd4c9dfb4208c` |
+| Backend binary SHA-256 | `e1de1e38783ec9c3f85462ccb728745de5c0af38f87ba3d7777646aa8e620430` |
+| Backend source SHA-256 | `3df0c77ba08d94be6fd8fd534e605aafe19efea7836e144cc5b93a536271cd08` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260824T235422Z-train-995703.json` |
+
+Result: behavioral parity is exact against both the original baseline
+`m916qfsv` and the post-renderer-removal run `lfdszoiz`. Each W&B summary has
+the same 150 keys. All 124 `env/*` metrics are byte-for-byte equal, as are
+agent steps, epoch, and every recorded policy/value/entropy/KL/loss value. In
+each comparison, 136 of 150 summary values are exact matches. The 14 differences
+are limited to timestamps, wall-clock performance, throughput, and CPU/GPU
+memory/utilization telemetry.
+
+The backend binary, source hash, model contract, and training configuration are
+identical to Comparison 1 because this refactor changes only viewer resource
+loading. Throughput was 956,177 SPS and training uptime was 102.337610 seconds.
+That is 0.61% lower SPS and 0.78% faster uptime than Comparison 1; the small
+timing variation is normal machine-load noise.
+
+## Comparison 3: arena map loaders consolidated
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`dgykda7r`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/dgykda7r) (`pleasant-energy-1228`) |
+| Tag | `v4.5_refactor_arena_map_loaders_100m` |
+| Git commit at run start | `0be25564a941e63d4c3a92bf14ed7a8b3b329f0a` plus the documented uncommitted refactors |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `dc1b01a9c97dd8beaa925773e8ae8843224dee5810e8885e935dd4c9dfb4208c` |
+| Backend binary SHA-256 | `0587a3fe57b2dc6b3fc24ca479bc36092ce28389ead0fe76164b3a98e0340578` |
+| Backend source SHA-256 | `281f1012c04ccf38ae3ca0ca76edbc040265e36779d23fa77eba3cfdff335a86` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260825T000959Z-train-1008510.json` |
+
+Result: behavioral parity is exact against the original baseline `m916qfsv`
+and both prior comparison runs. All 124 `env/*` metrics are byte-for-byte
+equal, as are agent steps, epoch, and every recorded
+policy/value/entropy/KL/loss value. Against the original baseline, 136 of 150
+summary values are exact matches; the 14 differences are only timestamps,
+wall-clock performance, throughput, and CPU/GPU memory/utilization telemetry.
+
+This core refactor caused the training backend to rebuild, so its source and
+binary hashes changed as expected. The model contract and training
+configuration remained identical. Throughput was 958,764 SPS and training
+uptime was 102.297909 seconds, effectively unchanged from Comparison 2.
+
 ## Reproduction command
 
 ```bash

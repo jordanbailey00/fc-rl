@@ -51,31 +51,45 @@ Estimated reduction: approximately 475 LOC.
 - Update or remove the static validation assertions that preserve the unused
   action-trace subsystem.
 
-### 4. Consolidate duplicated asset and atlas loaders
+### 4. Consolidate duplicated asset and atlas loaders — completed
 
-Estimated reduction: approximately 200-300 LOC.
+Completed on 2026-08-24. Net reduction: 219 LOC.
 
-- `runescape-rl/fc-viewer/src/asset_raylib.h` and `fc_asset_raylib.h`
-  implement nearly identical texture, image, and font loaders. Both image
-  loaders and one font loader are unused.
-- Animated atlas loading and updating are separately implemented in
-  `runescape-rl/fc-viewer/src/fc_models.h` and `fc_objects_loader.h`.
-- One `FcAnimatedAtlas` component should own atlas loading, `.tanim` parsing,
-  updating, and destruction for both consumers.
-- `runescape-rl/fc-viewer/src/fc_assets.h` should become a normal `.c`/`.h`
-  module. It currently creates separate static asset-root state in every
-  translation unit and contains unused root setters.
+- Replaced `asset_raylib.h` and the implementation in `fc_asset_raylib.h`
+  with one normal `fc_asset_raylib.c`/`.h` module for texture, image, and font
+  decoding.
+- Added one `FcAnimatedAtlas` component that owns atlas loading, `.tanim`
+  parsing, pixel updates, and destruction for both model and object consumers.
+- Converted `fc_assets.h` from a header implementation into a normal
+  `fc_assets.c`/`.h` module, giving the viewer one asset/repository resolver
+  state instead of one private copy per translation unit.
+- Removed the unused asset/repository root setter APIs.
+- Preserved distinct model parsing, object parsing, and material assignment;
+  only the byte-for-byte duplicated resource mechanics were consolidated.
+- Verified a real viewer startup, all required asset resolution from an
+  unrelated working directory, warning-clean compilation of the new modules,
+  and the complete 169-test suite.
+- The 100M regression run `7vgbe9bb` exactly matched the baseline on all 124
+  environment metrics and all recorded learning metrics.
 
-### 5. Consolidate the three core arena-data loaders
+### 5. Consolidate the three core arena-data loaders — completed
 
-Estimated reduction: approximately 60-80 LOC.
+Completed on 2026-08-24. Net reduction: 58 LOC.
 
-- `load_collision_once()`, `load_movement_once()`, and `load_los_once()` in
-  `runescape-rl/fc-core/src/fc_state.c` are essentially the same function with
-  different filenames, environment variables, caches, and loaded flags.
-- A parameterized `load_required_arena_map()` should retain the fail-closed
-  behavior while removing three synchronized path lists and three copies of
-  the read, size-validation, and transpose logic.
+- Replaced `load_collision_once()`, `load_movement_once()`, and
+  `load_los_once()` with one private `load_required_arena_map()` implementation.
+- Kept collision, movement, and LOS in three distinct cache instances with
+  their original filenames and environment overrides.
+- Replaced three synchronized path lists with one shared path-format table.
+- Preserved override precedence, fallback search order, exact read size,
+  `[y][x]` to `[x][y]` transposition, one-time caching, initialization order,
+  and fail-closed diagnostics.
+- No public API, state, hash, observation, action, reward, or configuration
+  contract changed.
+- Verified the missing-asset guardrail for each file, state-hash golden,
+  linked and Puffer replay parity, all 80 guardrails, and all 169 tests.
+- The 100M regression run `dgykda7r` exactly matched the baseline on all 124
+  environment metrics and all recorded learning metrics.
 
 ### 6. Remove obsolete core APIs
 

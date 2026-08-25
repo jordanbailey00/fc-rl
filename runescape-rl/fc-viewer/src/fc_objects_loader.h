@@ -14,6 +14,7 @@
 #ifndef OSRS_PVP_OBJECTS_H
 #define OSRS_PVP_OBJECTS_H
 
+#include "fc_animated_atlas.h"
 #include "raylib.h"
 #include "rlgl.h"
 #include "fc_assets.h"
@@ -26,32 +27,14 @@
 
 #define OBJS_MAGIC 0x4F424A53  /* "OBJS" v1 */
 #define OBJ2_MAGIC 0x4F424A32  /* "OBJ2" v2 with texcoords */
-#define ATLS_MAGIC 0x41544C53  /* "ATLS" texture atlas */
-#define TANM_MAGIC 0x4D4E4154  /* "TANM" atlas texture animation */
-#define TANM_VERSION 1
 #define OANM_MAGIC 0x4D4E414F  /* "OANM" animated object placements */
 #define OANM_VERSION 1
 #define OANM_FLAG_DYNAMIC_BASE 1u
 #define OANM_FLAG_DYNAMIC_REPLACEMENT 2u
 
 typedef struct {
-    uint32_t texture_id;
-    uint16_t x, y, w, h;
-    uint8_t direction;
-    uint8_t speed;
-    uint16_t pad;
-} ObjectTextureAnimRow;
-
-typedef struct {
     Model model;
-    Texture2D atlas_texture;  /* loaded from .atlas file (0 if none) */
-    unsigned char* atlas_base_pixels;
-    unsigned char* atlas_pixels;
-    ObjectTextureAnimRow* texture_anims;
-    int atlas_width;
-    int atlas_height;
-    int texture_anim_count;
-    float texture_anim_ticks;
+    FcAnimatedAtlas atlas;
     int placement_count;
     int total_vertex_count;
     int min_world_x;
@@ -81,184 +64,6 @@ typedef struct {
     int count;
     int loaded;
 } ObjectAnimSet;
-
-/**
- * Load texture atlas from .atlas binary file.
- * Format: uint32 magic, uint32 width, uint32 height, uint8 pixels[w*h*4] (RGBA).
- */
-static Texture2D objects_load_atlas(const char* atlas_path,
-                                    unsigned char** out_base_pixels,
-                                    unsigned char** out_work_pixels,
-                                    int* out_width,
-                                    int* out_height) {
-    Texture2D tex = { 0 };
-    FILE* f = fc_asset_fopen(atlas_path, "rb");
-    if (!f) {
-        fprintf(stderr, "objects_load_atlas: could not open %s\n", atlas_path);
-        return tex;
-    }
-
-    uint32_t magic, width, height;
-    if (!fc_read_exact(f, &magic, sizeof(magic), 1, atlas_path, "atlas magic")) {
-        fc_asset_close(f);
-        return tex;
-    }
-    if (magic != ATLS_MAGIC) {
-        fprintf(stderr, "objects_load_atlas: bad magic %08x (expected ATLS)\n", magic);
-        fc_asset_close(f);
-        return tex;
-    }
-    if (!fc_read_exact(f, &width, sizeof(width), 1, atlas_path, "atlas width") ||
-        !fc_read_exact(f, &height, sizeof(height), 1, atlas_path, "atlas height")) {
-        fc_asset_close(f);
-        return tex;
-    }
-
-    size_t pixel_size = (size_t)width * height * 4;
-    unsigned char* pixels = (unsigned char*)malloc(pixel_size);
-    if (!pixels ||
-        !fc_read_exact(f, pixels, 1, pixel_size, atlas_path, "atlas pixels")) {
-        free(pixels);
-        fc_asset_close(f);
-        return tex;
-    }
-    fc_asset_close(f);
-
-    /* create raylib Image from raw RGBA, then upload as texture */
-    Image img = {
-        .data = pixels,
-        .width = (int)width,
-        .height = (int)height,
-        .mipmaps = 1,
-        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
-    };
-    tex = LoadTextureFromImage(img);
-    SetTextureFilter(tex, TEXTURE_FILTER_POINT);
-    if (tex.id > 0 && out_base_pixels && out_work_pixels) {
-        unsigned char* base = (unsigned char*)malloc(pixel_size);
-        unsigned char* work = (unsigned char*)malloc(pixel_size);
-        if (base && work) {
-            memcpy(base, pixels, pixel_size);
-            memcpy(work, pixels, pixel_size);
-            *out_base_pixels = base;
-            *out_work_pixels = work;
-            if (out_width) *out_width = (int)width;
-            if (out_height) *out_height = (int)height;
-        } else {
-            free(base);
-            free(work);
-        }
-    }
-    free(pixels);
-
-    fprintf(stderr, "objects_load_atlas: loaded %ux%u atlas texture\n", width, height);
-    return tex;
-}
-
-static void objects_load_texture_anims(ObjectMesh* om, const char* atlas_path) {
-    if (!om || !atlas_path) return;
-
-    char tanm_path[1024];
-    strncpy(tanm_path, atlas_path, sizeof(tanm_path) - 1);
-    tanm_path[sizeof(tanm_path) - 1] = '\0';
-    char* dot = strrchr(tanm_path, '.');
-    if (dot) {
-        strcpy(dot, ".tanim");
-    } else {
-        strncat(tanm_path, ".tanim", sizeof(tanm_path) - strlen(tanm_path) - 1);
-    }
-
-    if (!fc_asset_exists(tanm_path)) return;
-
-    FILE* f = fc_asset_fopen(tanm_path, "rb");
-    if (!f) return;
-
-    uint32_t magic = 0, version = 0, count = 0;
-    if (!fc_read_exact(f, &magic, sizeof(magic), 1, tanm_path, "tanim magic") ||
-        !fc_read_exact(f, &version, sizeof(version), 1, tanm_path, "tanim version") ||
-        !fc_read_exact(f, &count, sizeof(count), 1, tanm_path, "tanim count") ||
-        magic != TANM_MAGIC || version != TANM_VERSION) {
-        fc_asset_close(f);
-        return;
-    }
-
-    om->texture_anims = (ObjectTextureAnimRow*)calloc(count, sizeof(*om->texture_anims));
-    if (count > 0 && !om->texture_anims) {
-        fc_asset_close(f);
-        return;
-    }
-    om->texture_anim_count = (int)count;
-    for (uint32_t i = 0; i < count; i++) {
-        if (!fc_read_exact(f, &om->texture_anims[i],
-                           sizeof(om->texture_anims[i]), 1,
-                           tanm_path, "tanim row")) {
-            free(om->texture_anims);
-            om->texture_anims = NULL;
-            om->texture_anim_count = 0;
-            fc_asset_close(f);
-            return;
-        }
-    }
-    fc_asset_close(f);
-    fprintf(stderr, "objects atlas anim: %d animated cells loaded from %s\n",
-            om->texture_anim_count, tanm_path);
-}
-
-static void objects_update_texture_anims(ObjectMesh* om, float dt) {
-    if (!om || !om->atlas_pixels || !om->atlas_base_pixels ||
-        om->atlas_texture.id <= 0 || om->texture_anim_count <= 0)
-        return;
-
-    om->texture_anim_ticks += dt * 50.0f;
-    size_t total = (size_t)om->atlas_width * om->atlas_height * 4;
-    memcpy(om->atlas_pixels, om->atlas_base_pixels, total);
-
-    for (int r = 0; r < om->texture_anim_count; r++) {
-        ObjectTextureAnimRow* row = &om->texture_anims[r];
-        if (row->w == 0 || row->h == 0 ||
-            row->x + row->w > om->atlas_width ||
-            row->y + row->h > om->atlas_height ||
-            row->speed == 0)
-            continue;
-
-        int shift = (int)(om->texture_anim_ticks * (float)row->speed);
-        if (row->direction == 1 || row->direction == 3) {
-            int pad = row->pad;
-            if (pad * 2 >= row->h) pad = 0;
-            int center_h = row->h - pad * 2;
-            if (center_h <= 0) center_h = row->h;
-            shift %= center_h;
-            if (row->direction == 1) shift = -shift;
-            for (int y = 0; y < row->h; y++) {
-                int sy = (y - pad + shift) % center_h;
-                if (sy < 0) sy += center_h;
-                sy += pad;
-                for (int x = 0; x < row->w; x++) {
-                    size_t di = ((size_t)(row->y + y) * om->atlas_width +
-                                 (row->x + x)) * 4;
-                    size_t si = ((size_t)(row->y + sy) * om->atlas_width +
-                                 (row->x + x)) * 4;
-                    memcpy(&om->atlas_pixels[di], &om->atlas_base_pixels[si], 4);
-                }
-            }
-        } else if (row->direction == 2 || row->direction == 4) {
-            shift %= row->w;
-            if (row->direction == 2) shift = -shift;
-            for (int y = 0; y < row->h; y++) {
-                for (int x = 0; x < row->w; x++) {
-                    int sx = (x + shift) % row->w;
-                    if (sx < 0) sx += row->w;
-                    size_t di = ((size_t)(row->y + y) * om->atlas_width +
-                                 (row->x + x)) * 4;
-                    size_t si = ((size_t)(row->y + y) * om->atlas_width +
-                                 (row->x + sx)) * 4;
-                    memcpy(&om->atlas_pixels[di], &om->atlas_base_pixels[si], 4);
-                }
-            }
-        }
-    }
-    UpdateTexture(om->atlas_texture, om->atlas_pixels);
-}
 
 static ObjectMesh* objects_load(const char* path) {
     FILE* f = fc_asset_fopen(path, "rb");
@@ -389,15 +194,10 @@ static ObjectMesh* objects_load(const char* path) {
             strncat(atlas_path, ".atlas", sizeof(atlas_path) - strlen(atlas_path) - 1);
         }
 
-        om->atlas_texture = objects_load_atlas(atlas_path,
-                                               &om->atlas_base_pixels,
-                                               &om->atlas_pixels,
-                                               &om->atlas_width,
-                                               &om->atlas_height);
-        if (om->atlas_texture.id > 0) {
+        if (fc_animated_atlas_load(&om->atlas, atlas_path)) {
             /* assign atlas as diffuse map for the model's material */
-            om->model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = om->atlas_texture;
-            objects_load_texture_anims(om, atlas_path);
+            om->model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture =
+                om->atlas.texture;
         }
     }
 
@@ -491,15 +291,8 @@ static void objects_offset(ObjectMesh* om, int wx, int wy) {
 
 static void objects_free(ObjectMesh* om) {
     if (!om) return;
-    if (om->loaded) {
-        if (om->atlas_texture.id > 0) {
-            UnloadTexture(om->atlas_texture);
-        }
-        UnloadModel(om->model);
-    }
-    free(om->atlas_base_pixels);
-    free(om->atlas_pixels);
-    free(om->texture_anims);
+    fc_animated_atlas_unload(&om->atlas);
+    if (om->loaded) UnloadModel(om->model);
     free(om);
 }
 

@@ -1,5 +1,6 @@
 #include "ui_assets.h"
-#include "asset_raylib.h"
+#include "fc_asset_raylib.h"
+#include "fc_assets.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -408,7 +409,7 @@ void runec_ui_assets_load(RuneCUiAssets *assets) {
         snprintf(path, sizeof(path), "data/sprites/ui/%s", g_ui_asset_specs[i].file);
         if (g_ui_asset_specs[i].required)
             assets->required_count++;
-        if (!rc_asset_exists(path)) {
+        if (!fc_asset_exists(path)) {
             assets->missing_count++;
             if (g_ui_asset_specs[i].required) {
                 assets->missing_required_count++;
@@ -419,7 +420,7 @@ void runec_ui_assets_load(RuneCUiAssets *assets) {
             }
             continue;
         }
-        Texture2D tex = runec_load_texture_asset(path);
+        Texture2D tex = fc_load_texture_asset(path);
         if (tex.id == 0) {
             assets->missing_count++;
             if (g_ui_asset_specs[i].required) {
@@ -446,9 +447,9 @@ void runec_ui_assets_load(RuneCUiAssets *assets) {
     };
     for (int i = 0; i < (int)(sizeof(font_paths) / sizeof(font_paths[0])); i++) {
         const char *font_path = font_paths[i];
-        if (!rc_asset_exists(font_path))
+        if (!fc_asset_exists(font_path))
             continue;
-        assets->font = runec_load_font_asset(font_path, 14);
+        assets->font = fc_load_font_asset(font_path, 14);
         if (assets->font.texture.id != 0) {
             SetTextureFilter(assets->font.texture, TEXTURE_FILTER_POINT);
             assets->font_loaded = 1;
@@ -461,9 +462,9 @@ void runec_ui_assets_load(RuneCUiAssets *assets) {
     };
     for (int i = 0; i < (int)(sizeof(small_font_paths) / sizeof(small_font_paths[0])); i++) {
         const char *font_path = small_font_paths[i];
-        if (!rc_asset_exists(font_path))
+        if (!fc_asset_exists(font_path))
             continue;
-        assets->small_font = runec_load_font_asset(font_path, 12);
+        assets->small_font = fc_load_font_asset(font_path, 12);
         if (assets->small_font.texture.id != 0) {
             SetTextureFilter(assets->small_font.texture, TEXTURE_FILTER_POINT);
             assets->small_font_loaded = 1;

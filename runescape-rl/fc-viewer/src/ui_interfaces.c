@@ -1,7 +1,7 @@
 #include "ui_interfaces.h"
 
 #include "fc_assets.h"
-#include "asset_raylib.h"
+#include "fc_asset_raylib.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -84,27 +84,27 @@ static char *read_string(RuneCUiReader *r) {
 }
 
 static unsigned char *read_file_bytes(const char *path, size_t *out_size) {
-    FILE *fp = rc_asset_fopen(path, "rb");
+    FILE *fp = fc_asset_fopen(path, "rb");
     if (!fp)
         return NULL;
     fseek(fp, 0, SEEK_END);
     long size = ftell(fp);
     fseek(fp, 0, SEEK_SET);
     if (size <= 0) {
-        rc_asset_close(fp);
+        fc_asset_close(fp);
         return NULL;
     }
     unsigned char *data = (unsigned char *)malloc((size_t)size);
     if (!data) {
-        rc_asset_close(fp);
+        fc_asset_close(fp);
         return NULL;
     }
     if (fread(data, 1, (size_t)size, fp) != (size_t)size) {
         free(data);
-        rc_asset_close(fp);
+        fc_asset_close(fp);
         return NULL;
     }
-    rc_asset_close(fp);
+    fc_asset_close(fp);
     *out_size = (size_t)size;
     return data;
 }
@@ -594,11 +594,11 @@ static Texture2D *load_cached_texture(RuneCUiInterfaceStore *store, int key,
         return NULL;
 
     slot->sprite_id = key;
-    if (!rc_asset_exists(path)) {
+    if (!fc_asset_exists(path)) {
         slot->missing = 1;
         return NULL;
     }
-    slot->texture = runec_load_texture_asset(path);
+    slot->texture = fc_load_texture_asset(path);
     if (slot->texture.id == 0) {
         slot->missing = 1;
         return NULL;
@@ -612,7 +612,7 @@ static Texture2D *load_sprite_texture(RuneCUiInterfaceStore *store, int sprite_i
         return NULL;
     char path[128];
     snprintf(path, sizeof(path), "data/sprites/ui/%d.png", sprite_id);
-    if (!rc_asset_exists(path))
+    if (!fc_asset_exists(path))
         snprintf(path, sizeof(path), "data/sprites/ui/%d_0.png", sprite_id);
     return load_cached_texture(store, sprite_id, path);
 }

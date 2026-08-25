@@ -4,6 +4,7 @@
 #ifndef FC_MODELS_H
 #define FC_MODELS_H
 
+#include "fc_animated_atlas.h"
 #include "fc_assets.h"
 #include "fc_io.h"
 #include "raylib.h"
@@ -15,23 +16,8 @@
 
 #define MDL2_MAGIC 0x4D444C32
 #define MDL3_MAGIC 0x4D444C33
-#define ATLS_MAGIC 0x41544C53
-#ifndef TANM_MAGIC
-#define TANM_MAGIC 0x4D4E4154
-#endif /* FC_MODELS_H */
-#ifndef TANM_VERSION
-#define TANM_VERSION 1
-#endif
 #define MUV1_MAGIC 0x3156554D
 #define MODEL_ID_INDEX_MAX 20000
-
-typedef struct {
-    uint32_t texture_id;
-    uint16_t x, y, w, h;
-    uint8_t direction;
-    uint8_t speed;
-    uint16_t pad;
-} ModelTextureAnimRow;
 
 typedef struct {
     uint8_t textured;
@@ -57,14 +43,7 @@ typedef struct {
 typedef struct {
     ModelEntry *entries;
     int *index_by_id;
-    Texture2D atlas_texture;
-    unsigned char *atlas_base_pixels;
-    unsigned char *atlas_pixels;
-    ModelTextureAnimRow *texture_anims;
-    int atlas_width;
-    int atlas_height;
-    int texture_anim_count;
-    float texture_anim_ticks;
+    FcAnimatedAtlas atlas;
     int count;
     int index_limit;
     int has_textures;
@@ -72,111 +51,6 @@ typedef struct {
 } ModelSet;
 
 static void models_free(ModelSet *set);
-
-static void models_load_texture_anims(ModelSet *set, const char *atlas_path) {
-    if (!set || !atlas_path) return;
-
-    char tanm_path[1024];
-    strncpy(tanm_path, atlas_path, sizeof(tanm_path) - 1);
-    tanm_path[sizeof(tanm_path) - 1] = '\0';
-    char *dot = strrchr(tanm_path, '.');
-    if (dot) strcpy(dot, ".tanim");
-
-    if (!fc_asset_exists(tanm_path)) return;
-
-    FILE *f = fc_asset_fopen(tanm_path, "rb");
-    if (!f) return;
-
-    uint32_t magic, version, count;
-    if (!fc_read_exact(f, &magic, sizeof(magic), 1, tanm_path, "tanim magic")
-            || !fc_read_exact(f, &version, sizeof(version), 1, tanm_path,
-                              "tanim version")
-            || !fc_read_exact(f, &count, sizeof(count), 1, tanm_path,
-                              "tanim count")
-            || magic != TANM_MAGIC || version != TANM_VERSION) {
-        fc_asset_close(f);
-        return;
-    }
-
-    set->texture_anims = calloc(count, sizeof(*set->texture_anims));
-    if (count > 0 && !set->texture_anims) {
-        fc_asset_close(f);
-        return;
-    }
-    set->texture_anim_count = (int)count;
-    for (uint32_t i = 0; i < count; i++) {
-        if (!fc_read_exact(f, &set->texture_anims[i],
-                           sizeof(set->texture_anims[i]), 1, tanm_path,
-                           "tanim row")) {
-            free(set->texture_anims);
-            set->texture_anims = NULL;
-            set->texture_anim_count = 0;
-            fc_asset_close(f);
-            return;
-        }
-    }
-    fc_asset_close(f);
-    fprintf(stderr, "models atlas anim: %d animated cells loaded from %s\n",
-            set->texture_anim_count, tanm_path);
-}
-
-static void models_update_texture_anims(ModelSet *set, float dt) {
-    if (!set || !set->atlas_pixels || !set->atlas_base_pixels
-            || set->atlas_texture.id <= 0 || set->texture_anim_count <= 0)
-        return;
-
-    set->texture_anim_ticks += dt * 50.0f;
-    size_t total = (size_t)set->atlas_width * set->atlas_height * 4;
-    memcpy(set->atlas_pixels, set->atlas_base_pixels, total);
-
-    for (int r = 0; r < set->texture_anim_count; r++) {
-        ModelTextureAnimRow *row = &set->texture_anims[r];
-        if (row->w == 0 || row->h == 0
-                || row->x + row->w > set->atlas_width
-                || row->y + row->h > set->atlas_height
-                || row->speed == 0)
-            continue;
-
-        int shift = (int)(set->texture_anim_ticks * (float)row->speed);
-        if (row->direction == 1 || row->direction == 3) {
-            int pad = row->pad;
-            if (pad * 2 >= row->h) pad = 0;
-            int center_h = row->h - pad * 2;
-            if (center_h <= 0) center_h = row->h;
-            shift %= center_h;
-            if (row->direction == 1) shift = -shift;
-            for (int y = 0; y < row->h; y++) {
-                int sy = (y - pad + shift) % center_h;
-                if (sy < 0) sy += center_h;
-                sy += pad;
-                for (int x = 0; x < row->w; x++) {
-                    size_t di = ((size_t)(row->y + y) * set->atlas_width
-                               + (row->x + x)) * 4;
-                    size_t si = ((size_t)(row->y + sy) * set->atlas_width
-                               + (row->x + x)) * 4;
-                    memcpy(&set->atlas_pixels[di],
-                           &set->atlas_base_pixels[si], 4);
-                }
-            }
-        } else if (row->direction == 2 || row->direction == 4) {
-            shift %= row->w;
-            if (row->direction == 2) shift = -shift;
-            for (int y = 0; y < row->h; y++) {
-                for (int x = 0; x < row->w; x++) {
-                    int sx = (x + shift) % row->w;
-                    if (sx < 0) sx += row->w;
-                    size_t di = ((size_t)(row->y + y) * set->atlas_width
-                               + (row->x + x)) * 4;
-                    size_t si = ((size_t)(row->y + y) * set->atlas_width
-                               + (row->x + sx)) * 4;
-                    memcpy(&set->atlas_pixels[di],
-                           &set->atlas_base_pixels[si], 4);
-                }
-            }
-        }
-    }
-    UpdateTexture(set->atlas_texture, set->atlas_pixels);
-}
 
 static int model_id_filter_contains(const uint32_t *ids, int id_count, uint32_t id) {
     if (!ids) return 1;
@@ -352,51 +226,7 @@ static ModelSet *models_load_filtered(const char *path, const uint32_t *ids, int
         atlas_path[sizeof(atlas_path) - 1] = '\0';
         char *dot = strrchr(atlas_path, '.');
         if (dot) strcpy(dot, ".atlas");
-
-        FILE *af = fc_asset_fopen(atlas_path, "rb");
-        if (af) {
-            uint32_t atlas_magic, width, height;
-            if (fc_read_exact(af, &atlas_magic, sizeof(atlas_magic), 1, atlas_path, "atlas magic")
-                    && atlas_magic == ATLS_MAGIC
-                    && fc_read_exact(af, &width, sizeof(width), 1, atlas_path, "atlas width")
-                    && fc_read_exact(af, &height, sizeof(height), 1, atlas_path, "atlas height")) {
-                size_t sz = (size_t)width * height * 4;
-                unsigned char *pixels = malloc(sz);
-                if (pixels
-                        && fc_read_exact(af, pixels, sizeof(unsigned char), sz, atlas_path, "atlas pixels")) {
-                    Image img = {
-                        .data = pixels,
-                        .width = (int)width,
-                        .height = (int)height,
-                        .mipmaps = 1,
-                        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
-                    };
-                    set->atlas_texture = LoadTextureFromImage(img);
-                    if (set->atlas_texture.id > 0)
-                        SetTextureFilter(set->atlas_texture, TEXTURE_FILTER_POINT);
-                    if (set->atlas_texture.id > 0) {
-                        set->atlas_width = (int)width;
-                        set->atlas_height = (int)height;
-                        set->atlas_base_pixels = malloc(sz);
-                        set->atlas_pixels = malloc(sz);
-                        if (set->atlas_base_pixels && set->atlas_pixels) {
-                            memcpy(set->atlas_base_pixels, pixels, sz);
-                            memcpy(set->atlas_pixels, pixels, sz);
-                            models_load_texture_anims(set, atlas_path);
-                        } else {
-                            free(set->atlas_base_pixels);
-                            free(set->atlas_pixels);
-                            set->atlas_base_pixels = NULL;
-                            set->atlas_pixels = NULL;
-                        }
-                    }
-                    fprintf(stderr, "models atlas: %ux%u loaded from %s\n",
-                            width, height, atlas_path);
-                }
-                free(pixels);
-            }
-            fc_asset_close(af);
-        } else {
+        if (!fc_animated_atlas_load(&set->atlas, atlas_path)) {
             fprintf(stderr, "models atlas: can't open %s\n", atlas_path);
         }
     }
@@ -597,8 +427,9 @@ static ModelSet *models_load_filtered(const char *path, const uint32_t *ids, int
         }
 
         Model ray_model = LoadModelFromMesh(mesh);
-        if (has_tex && set->atlas_texture.id > 0)
-            ray_model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = set->atlas_texture;
+        if (has_tex && set->atlas.texture.id > 0)
+            ray_model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture =
+                set->atlas.texture;
 
         set->entries[m] = (ModelEntry){
             .model_id = mid, .model = ray_model, .loaded = 1,
@@ -650,10 +481,7 @@ static void models_free(ModelSet *set) {
             free(set->entries[i].face_uvs);
         }
     }
-    if (set->atlas_texture.id > 0) UnloadTexture(set->atlas_texture);
-    free(set->atlas_base_pixels);
-    free(set->atlas_pixels);
-    free(set->texture_anims);
+    fc_animated_atlas_unload(&set->atlas);
     free(set->entries);
     free(set->index_by_id);
     free(set);

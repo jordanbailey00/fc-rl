@@ -3,6 +3,9 @@
 
 set(FC_VIEWER_SOURCES
     src/viewer.c
+    src/fc_animated_atlas.c
+    src/fc_asset_raylib.c
+    src/fc_assets.c
     src/fc_actor_visual.c
     src/fc_click_feedback.c
     src/fc_minimap.c
@@ -103,6 +106,7 @@ add_test(NAME test_projectile_visual COMMAND test_projectile_visual)
 
 add_executable(validate_assets
     tests/validate_assets.c
+    src/fc_assets.c
 )
 target_include_directories(validate_assets PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
