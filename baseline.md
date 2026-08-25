@@ -501,6 +501,36 @@ caller-specific values and accounting. Production code decreased by 5 LOC.
 Throughput was 956,771 SPS and training uptime was 104.176655 seconds, within
 ordinary run-to-run machine-load variation.
 
+## Comparison 14: decomposed core transitions
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`sq77fz7t`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/sq77fz7t) (`morning-armadillo-1240`) |
+| Tag | `v4.5_refactor_core_transitions_100m` |
+| Git commit at run start | `1b180a591` plus the documented uncommitted transition decomposition |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `dc1b01a9c97dd8beaa925773e8ae8843224dee5810e8885e935dd4c9dfb4208c` |
+| Backend binary SHA-256 | `e1f6de5d2748af173354125f40cd3f721de69a49232c75d4faae0aa04fa4569d` |
+| Backend source SHA-256 | `641539d2a8ad4ce587956cb6a8e70dcc02ad11e940254988a45f58362e5b79f6` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260825T191857Z-train-1234677.json` |
+
+Result: behavioral parity is exact against baseline `m916qfsv` and preceding
+comparison `1pmv1yzs`. All 124 `env/*` metrics, agent steps, epoch, and
+policy/value/entropy/KL/loss values are byte-for-byte equal. Against both runs,
+136 of 150 summary values match exactly; the 14 differences are only
+timestamps, wall-clock performance, throughput, and utilization telemetry.
+
+The large player-action and NPC-pending-hit transitions are now short
+coordinators over phase-named private helpers, and wave-duration accounting has
+one implementation. Production code increased by 53 LOC; the benefit is
+smaller independently reviewable transitions and explicit ordering rather than
+code removal. Throughput was 864,150 SPS and training uptime was 115.646568
+seconds. The final telemetry sample reported only 59% GPU utilization versus
+100% in `1pmv1yzs`; GPU evaluation and training time both increased, so this
+run's lower throughput is recorded as machine/GPU-load variance rather than a
+core behavior change.
+
 ## Reproduction command
 
 ```bash

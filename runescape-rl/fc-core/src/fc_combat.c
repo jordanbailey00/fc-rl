@@ -2,6 +2,7 @@
 #include "fc_npc.h"
 #include "fc_pathfinding.h"
 #include "fc_prayer.h"
+#include "fc_wave_internal.h"
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -439,6 +440,54 @@ void fc_resolve_player_pending_hits(FcState* state) {
     p->num_pending_hits = write;
 }
 
+static void complete_fight_caves(FcState* state) {
+    state->jad_killed = 1;
+    state->ep_jad_killed = 1;
+
+    /* Jad death completes the cave and immediately despawns surviving
+     * healers, matching the encounter lifecycle. */
+    for (int i = 0; i < FC_MAX_NPCS; i++) {
+        FcNpc* other = &state->npcs[i];
+        if (other->active && !other->is_dead &&
+            other->npc_type == NPC_YT_HURKOT) {
+            other->is_dead = 1;
+            other->died_this_tick = 1;
+            other->death_timer = 0;
+            state->npcs_remaining--;
+        }
+    }
+    state->wave_just_cleared = 1;
+    state->terminal = TERMINAL_CAVE_COMPLETE;
+    fc_wave_record_current_duration(state);
+}
+
+static void resolve_npc_death(FcState* state, FcNpc* npc) {
+    npc->is_dead = 1;
+    npc->died_this_tick = 1;
+    npc->death_timer = 3;
+
+    /* Each entity is one kill. A Tz-Kek parent is counted here before its two
+     * children are counted through this same path later. */
+    state->npcs_killed_this_tick++;
+    if (npc->npc_type == NPC_YT_HURKOT &&
+        npc->is_respawned_jad_healer) {
+        state->respawned_jad_healers_killed_this_tick++;
+    }
+    state->total_npcs_killed++;
+
+    if (npc->npc_type == NPC_TZTOK_JAD) {
+        complete_fight_caves(state);
+    }
+
+    /* The Tz-Kek parent was pre-counted as two at spawn. Only its split
+     * children decrement the wave's remaining-work count when they die. */
+    if (npc->npc_type == NPC_TZ_KEK) {
+        fc_npc_tz_kek_split(state, npc->x, npc->y);
+    } else {
+        state->npcs_remaining--;
+    }
+}
+
 void fc_resolve_npc_pending_hits(FcState* state, int npc_idx) {
     FcNpc* npc = &state->npcs[npc_idx];
     int write = 0;
@@ -482,56 +531,7 @@ void fc_resolve_npc_pending_hits(FcState* state, int npc_idx) {
             /* NPC death — keep active for a few ticks so viewer can
              * show the killing hitsplat and death animation. */
             if (npc->current_hp <= 0 && !npc->is_dead) {
-                npc->is_dead = 1;
-                npc->died_this_tick = 1;
-                npc->death_timer = 3;  /* remain visible for 3 ticks */
-                /* Each NPC entity is one kill. The Tz-Kek parent is counted
-                 * here before splitting, and each child is counted when it
-                 * later reaches this same death path. */
-                state->npcs_killed_this_tick++;
-                if (npc->npc_type == NPC_YT_HURKOT &&
-                    npc->is_respawned_jad_healer) {
-                    state->respawned_jad_healers_killed_this_tick++;
-                }
-                state->total_npcs_killed++;
-
-                if (npc->npc_type == NPC_TZTOK_JAD) {
-                    state->jad_killed = 1;
-                    state->ep_jad_killed = 1;
-
-                    /* Jad death = cave complete (matches real OSRS).
-                     * Despawn any surviving healers immediately. */
-                    for (int k = 0; k < FC_MAX_NPCS; k++) {
-                        FcNpc *other = &state->npcs[k];
-                        if (other->active && !other->is_dead &&
-                            other->npc_type == NPC_YT_HURKOT) {
-                            other->is_dead = 1;
-                            other->died_this_tick = 1;
-                            other->death_timer = 0;
-                            state->npcs_remaining--;
-                        }
-                    }
-                    state->wave_just_cleared = 1;
-                    state->terminal = TERMINAL_CAVE_COMPLETE;
-
-                    /* Record wave 63 duration */
-                    int wave_ticks = state->tick - state->wave_start_tick;
-                    if (wave_ticks > state->ep_max_wave_ticks) {
-                        state->ep_max_wave_ticks = wave_ticks;
-                        state->ep_max_wave_ticks_wave = state->current_wave;
-                    }
-                }
-
-                /* Tz-Kek parent: split into 2 small Tz-Kek.
-                 * RSPS: parent death does NOT decrement remaining (not in despawn list).
-                 * The parent was pre-counted as 2 at spawn time.
-                 * Only the split children decrement on death. */
-                if (npc->npc_type == NPC_TZ_KEK) {
-                    fc_npc_tz_kek_split(state, npc->x, npc->y);
-                    /* Don't decrement remaining — children will do it */
-                } else {
-                    state->npcs_remaining--;
-                }
+                resolve_npc_death(state, npc);
             }
 
             h->active = 0;

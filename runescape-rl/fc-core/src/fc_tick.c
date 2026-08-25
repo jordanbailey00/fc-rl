@@ -123,26 +123,13 @@ static int npc_slot_to_index(const FcState* state, int slot) {
 /* Process player actions                                                    */
 /* ======================================================================== */
 
-static void process_player_actions(FcState* state,
-                                   const int actions[FC_NUM_ACTION_HEADS],
-                                   FcPrayerTransition* prayer_transition) {
-    FcPlayer* p = &state->player;
-    int was_attack_ready = (p->attack_timer <= 0 && state->npcs_remaining > 0);
-
-    int act_move     = actions[0];
-    int act_attack   = actions[1];
-    int act_prayer   = actions[2];
-    int act_eat      = actions[3];
-    int act_drink    = actions[4];
-    int act_target_x = actions[5];
-    int act_target_y = actions[6];
-    int explicit_directional_move = (act_move != FC_MOVE_IDLE);
-    int explicit_tile_move = (act_target_x > 0 && act_target_y > 0);
-    int explicit_move = explicit_directional_move || explicit_tile_move;
-    int explicit_attack = (act_attack > FC_ATTACK_NONE);
-    int requested_attack_idx = -1;
+static void record_player_action_selection(
+    FcState* state, const int actions[FC_NUM_ACTION_HEADS]) {
+    int act_move = actions[0];
+    int act_attack = actions[1];
+    int act_prayer = actions[2];
     int invalid_classes[FC_INVALID_ACTION_CLASS_COUNT];
-    int target_metrics_recorded = 0;
+
     if (state->npcs_remaining > 0) {
         if (act_move == FC_MOVE_IDLE) {
             state->ep_action_move_idle_ticks++;
@@ -173,357 +160,367 @@ static void process_player_actions(FcState* state,
             state->ep_invalid_action_classes[i]++;
         }
     }
+}
 
-    /* Resolve attack slots against the pre-action NPC slot ordering. The action
-     * was chosen from the previous observation, so movement later in this tick
-     * must not rebind slot N to a different NPC identity. */
-    if (explicit_attack) {
-        requested_attack_idx = npc_slot_to_index(state, act_attack - 1);
+static void apply_player_prayer_action(
+    FcState* state, int action, FcPrayerTransition* transition) {
+    FcPlayer* player = &state->player;
+
+    *transition = fc_prayer_apply_action(player, action);
+    state->render_events.prayer_prior = transition->prior_prayer;
+    state->render_events.prayer_final = transition->actual_final_prayer;
+    state->render_events.prayer_off_performed = transition->off_performed;
+    state->render_events.prayer_on_succeeded = transition->on_succeeded;
+    state->render_events.prayer_flick_performed =
+        transition->explicit_off_then_on &&
+        transition->off_performed &&
+        transition->on_succeeded;
+    if (transition->final_state_changed ||
+        (transition->explicit_off_then_on &&
+         transition->off_performed && transition->on_succeeded)) {
+        player->prayer_changed_this_tick = 1;
     }
+}
 
-    /* ---- Prayer (instant, processed first) ---- */
-    {
-        *prayer_transition = fc_prayer_apply_action(p, act_prayer);
-        state->render_events.prayer_prior = prayer_transition->prior_prayer;
-        state->render_events.prayer_final = prayer_transition->actual_final_prayer;
-        state->render_events.prayer_off_performed = prayer_transition->off_performed;
-        state->render_events.prayer_on_succeeded = prayer_transition->on_succeeded;
-        state->render_events.prayer_flick_performed =
-            prayer_transition->explicit_off_then_on &&
-            prayer_transition->off_performed &&
-            prayer_transition->on_succeeded;
-        if (prayer_transition->final_state_changed ||
-            (prayer_transition->explicit_off_then_on &&
-             prayer_transition->off_performed &&
-             prayer_transition->on_succeeded)) {
-            p->prayer_changed_this_tick = 1;
-        }
-    }
+static void apply_player_supplies(FcState* state, int eat_action,
+                                  int drink_action) {
+    FcPlayer* player = &state->player;
 
-    /* ---- Eat food ---- */
-    if (act_eat != FC_EAT_NONE && fc_eat_action_valid(state, act_eat)) {
-        int heal = act_eat == FC_EAT_SHARK ? 200 : 180;
-        int* cooldown_timer = act_eat == FC_EAT_SHARK
-            ? &p->food_timer : &p->combo_timer;
-        int cooldown = act_eat == FC_EAT_SHARK
+    if (eat_action != FC_EAT_NONE &&
+        fc_eat_action_valid(state, eat_action)) {
+        int heal = eat_action == FC_EAT_SHARK ? 200 : 180;
+        int* cooldown_timer = eat_action == FC_EAT_SHARK
+            ? &player->food_timer : &player->combo_timer;
+        int cooldown = eat_action == FC_EAT_SHARK
             ? FC_FOOD_COOLDOWN_TICKS : FC_COMBO_EAT_TICKS;
-        state->pre_eat_hp = p->current_hp;
+        state->pre_eat_hp = player->current_hp;
         state->ep_food_pre_hp_sum += state->pre_eat_hp;
-        int hp_missing = p->max_hp - p->current_hp;
+        int hp_missing = player->max_hp - player->current_hp;
         if (heal > hp_missing) state->ep_food_overhealed++;
         state->ep_food_eaten++;
-        p->total_food_eaten++;
-        p->current_hp += heal;
-        if (p->current_hp > p->max_hp) p->current_hp = p->max_hp;
-        p->sharks_remaining--;
+        player->total_food_eaten++;
+        player->current_hp += heal;
+        if (player->current_hp > player->max_hp) {
+            player->current_hp = player->max_hp;
+        }
+        player->sharks_remaining--;
         *cooldown_timer = cooldown;
-        p->food_eaten_this_tick = 1;
+        player->food_eaten_this_tick = 1;
         state->food_used_this_tick = 1;
     }
 
-    /* ---- Drink prayer potion ---- */
-    if (act_drink == FC_DRINK_PRAYER_POT &&
-        fc_drink_action_valid(state, act_drink)) {
-        state->pre_drink_prayer = p->current_prayer;
+    if (drink_action == FC_DRINK_PRAYER_POT &&
+        fc_drink_action_valid(state, drink_action)) {
+        state->pre_drink_prayer = player->current_prayer;
         state->ep_pot_pre_prayer_sum += state->pre_drink_prayer;
-        int prayer_missing = p->max_prayer - p->current_prayer;
+        int prayer_missing = player->max_prayer - player->current_prayer;
         state->ep_pots_used++;
-        if (p->current_prayer > p->max_prayer / 5)
+        if (player->current_prayer > player->max_prayer / 5) {
             state->ep_pots_wasted++;
-        p->total_potions_used++;
+        }
+        player->total_potions_used++;
         int restore = fc_prayer_potion_restore(FC_PLAYER_PRAYER_LVL);
         if (restore > prayer_missing) state->ep_pots_overrestored++;
-        p->current_prayer += restore;
-        if (p->current_prayer > p->max_prayer) p->current_prayer = p->max_prayer;
-        p->prayer_doses_remaining--;
-        p->potion_timer = FC_POTION_COOLDOWN_TICKS;
-        p->potion_used_this_tick = 1;
+        player->current_prayer += restore;
+        if (player->current_prayer > player->max_prayer) {
+            player->current_prayer = player->max_prayer;
+        }
+        player->prayer_doses_remaining--;
+        player->potion_timer = FC_POTION_COOLDOWN_TICKS;
+        player->potion_used_this_tick = 1;
         state->prayer_potion_used_this_tick = 1;
     }
+}
 
-    /* Explicit movement starts a fresh movement intent. Clear stale routes and
-     * combat approach before auto-attack can consume old state this tick. */
+static void prepare_player_interaction(FcState* state, int explicit_move,
+                                       int explicit_attack,
+                                       int requested_attack_idx) {
+    FcPlayer* player = &state->player;
+
+    /* Explicit movement starts a fresh movement intent before auto-attack can
+     * consume a stale route or combat approach. */
     if (explicit_move) {
-        p->route_len = 0;
-        p->route_idx = 0;
-        p->approach_target = 0;
-        p->approach_target_x = -1;
-        p->approach_target_y = -1;
-        p->approach_target_size = 0;
+        player->route_len = 0;
+        player->route_idx = 0;
+        player->approach_target = 0;
+        player->approach_target_x = -1;
+        player->approach_target_y = -1;
+        player->approach_target_size = 0;
         if (!explicit_attack) {
-            p->attack_target_idx = -1;
+            player->attack_target_idx = -1;
         }
     }
 
-    /* ---- Attack target selection ---- */
-    /* Select and evaluate attacks before movement, so a same-tick move cannot
-     * create range or LOS for a new shot. A successful attack also consumes
-     * this tick's movement opportunity below. */
-    if (explicit_attack) {
-        if (requested_attack_idx >= 0 &&
-            state->npcs[requested_attack_idx].active &&
-            !state->npcs[requested_attack_idx].is_dead) {
-            if (p->attack_target_idx != requested_attack_idx) {
-                p->approach_target_x = -1;
-                p->approach_target_y = -1;
-                p->approach_target_size = 0;
-            }
-            p->attack_target_idx = requested_attack_idx;
-            p->approach_target = explicit_move ? 0 : 1;
+    /* Target selection precedes movement so movement cannot rebind a slot or
+     * make the selected attack valid retroactively. */
+    if (explicit_attack && requested_attack_idx >= 0 &&
+        state->npcs[requested_attack_idx].active &&
+        !state->npcs[requested_attack_idx].is_dead) {
+        if (player->attack_target_idx != requested_attack_idx) {
+            player->approach_target_x = -1;
+            player->approach_target_y = -1;
+            player->approach_target_size = 0;
+        }
+        player->attack_target_idx = requested_attack_idx;
+        player->approach_target = explicit_move ? 0 : 1;
+    }
+}
+
+static void launch_player_attack(FcState* state, FcNpc* target, int distance) {
+    FcPlayer* player = &state->player;
+    int att_roll = fc_player_ranged_attack_roll(player, target);
+    const FcNpcStats* target_stats = fc_npc_get_stats(target->npc_type);
+    int def_roll = fc_npc_def_roll(target_stats->def_level,
+                                   target_stats->ranged_def_bonus);
+    float chance = fc_hit_chance(att_roll, def_roll);
+    int hit = fc_rng_float(state) < chance ? 1 : 0;
+    int final_max_hit_hp = fc_player_ranged_final_max_hit_hp(player, target);
+    int damage = hit
+        ? fc_roll_player_damage_tenths(state, final_max_hit_hp) : 0;
+    int delay = fc_ranged_hit_delay(distance);
+
+    fc_queue_pending_hit(target->pending_hits, &target->num_pending_hits,
+                         FC_MAX_PENDING_HITS, damage, delay,
+                         ATTACK_RANGED, -1, 0);
+    state->attack_attempt_this_tick = 1;
+    state->render_events.player_attack_fired = 1;
+    state->render_events.player_attack_source_x = player->x;
+    state->render_events.player_attack_source_y = player->y;
+    state->render_events.player_attack_target_npc_slot =
+        player->attack_target_idx;
+    state->render_events.player_attack_target_x = target->x;
+    state->render_events.player_attack_target_y = target->y;
+    state->render_events.player_attack_target_size = target->size;
+    state->render_events.player_attack_hit_delay_ticks = delay;
+    if (target->npc_type > NPC_NONE && target->npc_type < NPC_TYPE_COUNT) {
+        state->ep_attack_cycles_to_npc_type[target->npc_type]++;
+    }
+    player->attack_timer = player->weapon_speed;
+    if (player->weapon_uses_ammo && player->ammo_count > 0) {
+        player->ammo_count--;
+    }
+    player->hit_landed_this_tick = 1;
+
+    int any_adjacent = 0;
+    for (int i = 0; i < FC_MAX_NPCS; i++) {
+        FcNpc* other = &state->npcs[i];
+        if (other->active && !other->is_dead &&
+            fc_distance_to_npc(player->x, player->y, other) <= 1) {
+            any_adjacent = 1;
+            break;
         }
     }
+    if (!any_adjacent) state->safespot_attack_this_tick = 1;
+}
 
-    /* ---- Auto-attack current target ---- */
-    /* Like Void CombatMovement: if target set, walk toward it until in range,
-     * then attack on cooldown. Player stays still once in range. */
-    if (p->attack_target_idx >= 0 && (!p->weapon_uses_ammo || p->ammo_count > 0)) {
-        FcNpc* target = &state->npcs[p->attack_target_idx];
-        if (!target->active || target->is_dead) {
-            p->attack_target_idx = -1;  /* target died, clear */
-            p->approach_target = 0;
-            p->approach_target_x = -1;
-            p->approach_target_y = -1;
-            p->approach_target_size = 0;
-        } else {
-            int dist = fc_distance_to_npc(p->x, p->y, target);
-            int weapon_range = p->weapon_range;
-            int has_los = fc_has_los_between_areas(
-                p->x, p->y, 1,
-                target->x, target->y, target->size, state->los_flags);
-            int target_can_fire = (dist > 0 && dist <= weapon_range && has_los);
-            int target_ready = (p->attack_timer <= 0);
-
-            if (target->npc_type > NPC_NONE && target->npc_type < NPC_TYPE_COUNT) {
-                state->ep_target_ticks_by_npc_type[target->npc_type]++;
-            }
-            state->ep_target_held_ticks++;
-            target_metrics_recorded = 1;
-            if (target_can_fire) {
-                state->ep_target_in_range_los_ticks++;
-                if (!target_ready) {
-                    state->ep_attack_cooldown_wait_ticks++;
-                }
-            } else {
-                state->ep_target_out_of_range_or_los_ticks++;
-            }
-
-            int route_endpoint_can_fire = 0;
-            int target_moved =
-                p->approach_target_x != target->x ||
-                p->approach_target_y != target->y ||
-                p->approach_target_size != target->size;
-            if (p->route_idx < p->route_len) {
-                int endpoint = p->route_len - 1;
-                int rx = p->route_x[endpoint];
-                int ry = p->route_y[endpoint];
-                int route_dist = fc_distance_between_areas(
-                    rx, ry, 1, target->x, target->y, target->size);
-                route_endpoint_can_fire = route_dist > 0 &&
-                    route_dist <= weapon_range &&
-                    fc_has_los_between_areas(
-                        rx, ry, 1, target->x, target->y, target->size,
-                        state->los_flags);
-            }
-
-            if (!target_can_fire && p->approach_target &&
-                (target_moved || p->route_idx >= p->route_len ||
-                 !route_endpoint_can_fire) &&
-                !explicit_directional_move && !explicit_tile_move) {
-                /* Rebuild against the target's current rectangle whenever the
-                 * queued endpoint is no longer a valid firing tile. */
-                p->route_len = fc_pathfind_attack_position(
-                    p->x, p->y, target->x, target->y, target->size,
-                    weapon_range, state->walkable, state->movement_flags,
-                    state->los_flags, p->route_x, p->route_y, FC_MAX_ROUTE);
-                p->route_idx = 0;
-                p->approach_target_x = target->x;
-                p->approach_target_y = target->y;
-                p->approach_target_size = target->size;
-            }
-
-            /* Face the attack target */
-            {
-                float tx = (float)target->x + (float)target->size*0.5f;
-                float ty = (float)target->y + (float)target->size*0.5f;
-                float dx = tx - ((float)p->x + 0.5f);
-                float dy = ty - ((float)p->y + 0.5f);
-                set_player_facing_from_delta(p, dx, dy);
-            }
-
-            if (target_can_fire && target_ready) {
-                /* In range — fire attack */
-                int att_roll = fc_player_ranged_attack_roll(p, target);
-                const FcNpcStats* tstats = fc_npc_get_stats(target->npc_type);
-                int def_roll = fc_npc_def_roll(tstats->def_level,
-                                               tstats->ranged_def_bonus);
-                float chance = fc_hit_chance(att_roll, def_roll);
-
-                int hit = (fc_rng_float(state) < chance) ? 1 : 0;
-                int final_max_hit_hp =
-                    fc_player_ranged_final_max_hit_hp(p, target);
-                int damage = hit ?
-                    fc_roll_player_damage_tenths(state, final_max_hit_hp) : 0;
-
-                int delay = fc_ranged_hit_delay(dist);
-                fc_queue_pending_hit(target->pending_hits, &target->num_pending_hits,
-                                     FC_MAX_PENDING_HITS,
-                                     damage, delay, ATTACK_RANGED, -1, 0);
-
-                state->attack_attempt_this_tick = 1;
-                state->render_events.player_attack_fired = 1;
-                state->render_events.player_attack_source_x = p->x;
-                state->render_events.player_attack_source_y = p->y;
-                state->render_events.player_attack_target_npc_slot =
-                    p->attack_target_idx;
-                state->render_events.player_attack_target_x = target->x;
-                state->render_events.player_attack_target_y = target->y;
-                state->render_events.player_attack_target_size = target->size;
-                state->render_events.player_attack_hit_delay_ticks = delay;
-                if (target->npc_type > NPC_NONE && target->npc_type < NPC_TYPE_COUNT) {
-                    state->ep_attack_cycles_to_npc_type[target->npc_type]++;
-                }
-                p->attack_timer = p->weapon_speed;
-                if (p->weapon_uses_ammo && p->ammo_count > 0)
-                    p->ammo_count--;
-                p->hit_landed_this_tick = 1;  /* flag for viewer hitsplat */
-
-                /* Safespot: attacked with no NPC adjacent (dist <= 1) */
-                int any_adjacent = 0;
-                for (int j = 0; j < FC_MAX_NPCS; j++) {
-                    FcNpc *n2 = &state->npcs[j];
-                    if (n2->active && !n2->is_dead) {
-                        int d = fc_distance_to_npc(p->x, p->y, n2);
-                        if (d <= 1) { any_adjacent = 1; break; }
-                    }
-                }
-                if (!any_adjacent) state->safespot_attack_this_tick = 1;
-            }
-
-            if (target_can_fire && target_ready && !state->attack_attempt_this_tick) {
-                state->ep_ready_but_no_attack_ticks++;
-            }
-        }
+static void record_player_target_held(FcState* state, const FcNpc* target) {
+    if (target->npc_type > NPC_NONE && target->npc_type < NPC_TYPE_COUNT) {
+        state->ep_target_ticks_by_npc_type[target->npc_type]++;
     }
+    state->ep_target_held_ticks++;
+}
+
+static int process_player_target(FcState* state,
+                                 int explicit_directional_move,
+                                 int explicit_tile_move) {
+    FcPlayer* player = &state->player;
+    int metrics_recorded = 0;
+
+    /* Like Void CombatMovement: approach until the current target is in range,
+     * then attack on cooldown and remain stationary for this tick. */
+    if (player->attack_target_idx < 0 ||
+        (player->weapon_uses_ammo && player->ammo_count <= 0)) {
+        return metrics_recorded;
+    }
+
+    FcNpc* target = &state->npcs[player->attack_target_idx];
+    if (!target->active || target->is_dead) {
+        player->attack_target_idx = -1;
+        player->approach_target = 0;
+        player->approach_target_x = -1;
+        player->approach_target_y = -1;
+        player->approach_target_size = 0;
+        return metrics_recorded;
+    }
+
+    int dist = fc_distance_to_npc(player->x, player->y, target);
+    int weapon_range = player->weapon_range;
+    int has_los = fc_has_los_between_areas(
+        player->x, player->y, 1,
+        target->x, target->y, target->size, state->los_flags);
+    int target_can_fire = dist > 0 && dist <= weapon_range && has_los;
+    int target_ready = player->attack_timer <= 0;
+
+    record_player_target_held(state, target);
+    metrics_recorded = 1;
+    if (target_can_fire) {
+        state->ep_target_in_range_los_ticks++;
+        if (!target_ready) {
+            state->ep_attack_cooldown_wait_ticks++;
+        }
+    } else {
+        state->ep_target_out_of_range_or_los_ticks++;
+    }
+
+    int route_endpoint_can_fire = 0;
+    int target_moved =
+        player->approach_target_x != target->x ||
+        player->approach_target_y != target->y ||
+        player->approach_target_size != target->size;
+    if (player->route_idx < player->route_len) {
+        int endpoint = player->route_len - 1;
+        int rx = player->route_x[endpoint];
+        int ry = player->route_y[endpoint];
+        int route_dist = fc_distance_between_areas(
+            rx, ry, 1, target->x, target->y, target->size);
+        route_endpoint_can_fire = route_dist > 0 &&
+            route_dist <= weapon_range &&
+            fc_has_los_between_areas(
+                rx, ry, 1, target->x, target->y, target->size,
+                state->los_flags);
+    }
+
+    if (!target_can_fire && player->approach_target &&
+        (target_moved || player->route_idx >= player->route_len ||
+         !route_endpoint_can_fire) &&
+        !explicit_directional_move && !explicit_tile_move) {
+        /* Rebuild against the target's current rectangle whenever the queued
+         * endpoint is no longer a valid firing tile. */
+        player->route_len = fc_pathfind_attack_position(
+            player->x, player->y, target->x, target->y, target->size,
+            weapon_range, state->walkable, state->movement_flags,
+            state->los_flags, player->route_x, player->route_y, FC_MAX_ROUTE);
+        player->route_idx = 0;
+        player->approach_target_x = target->x;
+        player->approach_target_y = target->y;
+        player->approach_target_size = target->size;
+    }
+
+    float target_x = (float)target->x + (float)target->size * 0.5f;
+    float target_y = (float)target->y + (float)target->size * 0.5f;
+    set_player_facing_from_delta(
+        player, target_x - ((float)player->x + 0.5f),
+        target_y - ((float)player->y + 0.5f));
+
+    if (target_can_fire && target_ready) {
+        launch_player_attack(state, target, dist);
+    }
+
+    if (target_can_fire && target_ready &&
+        !state->attack_attempt_this_tick) {
+        state->ep_ready_but_no_attack_ticks++;
+    }
+    return metrics_recorded;
+}
+
+static void process_player_movement(FcState* state, int move_action,
+                                    int target_x_action, int target_y_action,
+                                    int explicit_move, int explicit_attack) {
+    FcPlayer* player = &state->player;
 
     /* If no attack fired, explicit movement replaces the combat interaction.
      * A fired attack wins the conflict and keeps its target for this tick. */
     if (explicit_move && !state->attack_attempt_this_tick) {
-        p->approach_target = 0;
+        player->approach_target = 0;
         if (explicit_attack) {
-            p->attack_target_idx = -1;
+            player->attack_target_idx = -1;
         }
     }
 
-    /* ---- Walk-to-tile (high-level pathfinding, heads 5+6) ---- */
-    /* When both target_x and target_y are non-zero, BFS pathfind to that tile.
-     * This is identical to a human clicking a tile in the viewer. The route is
-     * consumed one step per tick by the movement code below. */
     if (!state->attack_attempt_this_tick &&
-        act_target_x > 0 && act_target_y > 0) {
-        int tx = act_target_x - 1;  /* 1-64 → 0-63 */
-        int ty = act_target_y - 1;
-        if (tx >= 0 && tx < FC_ARENA_WIDTH &&
-            ty >= 0 && ty < FC_ARENA_HEIGHT) {
-            int steps = fc_pathfind_bfs_move_near(
-                p->x, p->y, tx, ty,
+        target_x_action > 0 && target_y_action > 0) {
+        int target_x = target_x_action - 1;
+        int target_y = target_y_action - 1;
+        if (target_x >= 0 && target_x < FC_ARENA_WIDTH &&
+            target_y >= 0 && target_y < FC_ARENA_HEIGHT) {
+            player->route_len = fc_pathfind_bfs_move_near(
+                player->x, player->y, target_x, target_y,
                 state->walkable, state->movement_flags,
-                p->route_x, p->route_y, FC_MAX_ROUTE);
-            p->route_len = steps;
-            p->route_idx = 0;
-            /* Clear attack target — walking to tile cancels combat approach */
-            p->attack_target_idx = -1;
-            p->approach_target = 0;
-            p->approach_target_x = -1;
-            p->approach_target_y = -1;
-            p->approach_target_size = 0;
+                player->route_x, player->route_y, FC_MAX_ROUTE);
+            player->route_idx = 0;
+            player->attack_target_idx = -1;
+            player->approach_target = 0;
+            player->approach_target_x = -1;
+            player->approach_target_y = -1;
+            player->approach_target_size = 0;
         }
     }
 
-    /* ---- Movement ---- */
-    /* Three modes (priority order):
-     * 1. Route-based (from walk-to-tile action or combat approach): consume steps
-     * 2. Directional (RL action head 0): immediate step in direction
-     * 3. Idle
-     * Route takes priority. If route active, directional input is ignored. */
+    /* Routes take priority over the directional action. Attacking suppresses
+     * both forms of movement for this tick only. */
     if (state->attack_attempt_this_tick) {
-        /* An attack interaction stops ordinary movement for this game tick,
-         * but does not create an animation-length movement lock. A movement
-         * action may be processed normally on the next tick. */
-        p->route_len = 0;
-        p->route_idx = 0;
-    } else if (p->route_idx < p->route_len) {
-        /* Consume steps from the route: 1 if walking, 2 if running */
-        int steps = p->is_running ? 2 : 1;
-        for (int s = 0; s < steps && p->route_idx < p->route_len; s++) {
-            int nx = p->route_x[p->route_idx];
-            int ny = p->route_y[p->route_idx];
-            int dx = nx - p->x;
-            int dy = ny - p->y;
-            if (fc_footprint_step_walkable(p->x, p->y, dx, dy, 1,
-                                           state->walkable,
-                                           state->movement_flags)) {
-                /* Update facing based on movement direction */
-                set_player_facing_from_delta(p, (float)dx, (float)dy);
-                p->x = nx;
-                p->y = ny;
+        player->route_len = 0;
+        player->route_idx = 0;
+    } else if (player->route_idx < player->route_len) {
+        int steps = player->is_running ? 2 : 1;
+        for (int i = 0;
+             i < steps && player->route_idx < player->route_len; i++) {
+            int next_x = player->route_x[player->route_idx];
+            int next_y = player->route_y[player->route_idx];
+            int dx = next_x - player->x;
+            int dy = next_y - player->y;
+            if (fc_footprint_step_walkable(
+                    player->x, player->y, dx, dy, 1,
+                    state->walkable, state->movement_flags)) {
+                set_player_facing_from_delta(player, (float)dx, (float)dy);
+                player->x = next_x;
+                player->y = next_y;
                 state->movement_this_tick = 1;
                 record_player_move_waypoint(state);
             } else {
-                p->route_len = p->route_idx;
+                player->route_len = player->route_idx;
                 break;
             }
-            p->route_idx++;
+            player->route_idx++;
         }
-    } else if (act_move == FC_MOVE_IDLE) {
+    } else if (move_action == FC_MOVE_IDLE) {
         state->idle_this_tick = 1;
-    } else if (act_move >= FC_MOVE_WALK_N && act_move <= FC_MOVE_RUN_NW) {
-        /* Directional movement (for RL agents) */
-        int dx = FC_MOVE_DX[act_move];
-        int dy = FC_MOVE_DY[act_move];
-        int max_steps = (act_move >= FC_MOVE_RUN_N) ? 2 : 1;
-        int old_x = p->x;
-        int old_y = p->y;
+    } else if (move_action >= FC_MOVE_WALK_N &&
+               move_action <= FC_MOVE_RUN_NW) {
+        int dx = FC_MOVE_DX[move_action];
+        int dy = FC_MOVE_DY[move_action];
+        int max_steps = move_action >= FC_MOVE_RUN_N ? 2 : 1;
+        int old_x = player->x;
+        int old_y = player->y;
         int step_x[FC_MAX_RENDER_MOVE_WAYPOINTS];
         int step_y[FC_MAX_RENDER_MOVE_WAYPOINTS];
         int moved = fc_move_toward_traced(
-            &p->x, &p->y, dx, dy, max_steps,
+            &player->x, &player->y, dx, dy, max_steps,
             state->walkable, state->movement_flags,
             step_x, step_y, FC_MAX_RENDER_MOVE_WAYPOINTS);
         if (moved > 0) {
             int recorded = moved;
-            if (recorded > FC_MAX_RENDER_MOVE_WAYPOINTS)
+            if (recorded > FC_MAX_RENDER_MOVE_WAYPOINTS) {
                 recorded = FC_MAX_RENDER_MOVE_WAYPOINTS;
+            }
             state->render_events.player_move_waypoint_count = recorded;
             for (int i = 0; i < recorded; i++) {
                 state->render_events.player_move_waypoint_x[i] = step_x[i];
                 state->render_events.player_move_waypoint_y[i] = step_y[i];
             }
-            int moved_dx = p->x - old_x;
-            int moved_dy = p->y - old_y;
             set_player_facing_from_delta(
-                p, (float)moved_dx, (float)moved_dy);
+                player, (float)(player->x - old_x),
+                (float)(player->y - old_y));
             state->movement_this_tick = 1;
-            p->is_running = (moved >= 2) ? 1 : 0;
+            player->is_running = moved >= 2 ? 1 : 0;
         }
     }
+}
 
-    if (state->npcs_remaining > 0) {
-        int target_active = 0;
-        if (p->attack_target_idx >= 0) {
-            FcNpc* current_target = &state->npcs[p->attack_target_idx];
-            target_active = current_target->active && !current_target->is_dead;
-        }
-        if (!target_active) {
-            if (!target_metrics_recorded) {
+static void record_player_action_outcome(FcState* state, int was_attack_ready,
+                                         int target_metrics_recorded) {
+    FcPlayer* player = &state->player;
+
+    if (state->npcs_remaining > 0 && !target_metrics_recorded) {
+        if (player->attack_target_idx >= 0) {
+            FcNpc* target = &state->npcs[player->attack_target_idx];
+            if (target->active && !target->is_dead) {
+                record_player_target_held(state, target);
+            } else {
                 state->ep_no_target_ticks++;
             }
-        } else if (!target_metrics_recorded) {
-            FcNpc* current_target = &state->npcs[p->attack_target_idx];
-            if (current_target->npc_type > NPC_NONE &&
-                current_target->npc_type < NPC_TYPE_COUNT) {
-                state->ep_target_ticks_by_npc_type[current_target->npc_type]++;
-            }
-            state->ep_target_held_ticks++;
+        } else {
+            state->ep_no_target_ticks++;
         }
     }
 
@@ -533,6 +530,50 @@ static void process_player_actions(FcState* state,
             state->ep_attack_attempt_ticks++;
         }
     }
+}
+
+static void process_player_actions(FcState* state,
+                                   const int actions[FC_NUM_ACTION_HEADS],
+                                   FcPrayerTransition* prayer_transition) {
+    FcPlayer* p = &state->player;
+    int was_attack_ready = (p->attack_timer <= 0 && state->npcs_remaining > 0);
+
+    int act_move     = actions[0];
+    int act_attack   = actions[1];
+    int act_prayer   = actions[2];
+    int act_eat      = actions[3];
+    int act_drink    = actions[4];
+    int act_target_x = actions[5];
+    int act_target_y = actions[6];
+    int explicit_directional_move = (act_move != FC_MOVE_IDLE);
+    int explicit_tile_move = (act_target_x > 0 && act_target_y > 0);
+    int explicit_move = explicit_directional_move || explicit_tile_move;
+    int explicit_attack = (act_attack > FC_ATTACK_NONE);
+    int requested_attack_idx = -1;
+    int target_metrics_recorded = 0;
+    record_player_action_selection(state, actions);
+
+    /* Resolve attack slots against the pre-action NPC slot ordering. The action
+     * was chosen from the previous observation, so movement later in this tick
+     * must not rebind slot N to a different NPC identity. */
+    if (explicit_attack) {
+        requested_attack_idx = npc_slot_to_index(state, act_attack - 1);
+    }
+
+    /* Prayer remains instant and precedes supplies. */
+    apply_player_prayer_action(state, act_prayer, prayer_transition);
+    apply_player_supplies(state, act_eat, act_drink);
+
+    prepare_player_interaction(state, explicit_move, explicit_attack,
+                               requested_attack_idx);
+
+    target_metrics_recorded = process_player_target(
+        state, explicit_directional_move, explicit_tile_move);
+
+    process_player_movement(state, act_move, act_target_x, act_target_y,
+                            explicit_move, explicit_attack);
+    record_player_action_outcome(state, was_attack_ready,
+                                 target_metrics_recorded);
 }
 
 /* ======================================================================== */

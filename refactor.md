@@ -312,21 +312,32 @@ Implemented.
 
 ### Decompose the two largest core transitions
 
-Expected source-LOC reduction: small or neutral; maintainability improvement is
-the primary benefit.
+Status: implemented. This intentionally favors explicit phase boundaries over
+source-LOC reduction; production code increased by 53 LOC.
 
-- `process_player_actions()` in `fc_tick.c` is approximately 425 LOC and mixes
-  action analytics, prayer, supplies, target binding, approach routing, attack
-  launch, movement, facing, render events, and target metrics.
-- Split it into phase-named private helpers while preserving the documented
-  tick order. Useful boundaries include action metrics, supplies, target and
-  approach planning, attack launch, movement, and post-action metrics.
-- `fc_resolve_npc_pending_hits()` in `fc_combat.c` mixes queue advancement,
-  damage analytics, healer tagging, death state, Jad completion, healer
-  despawn, Tz-Kek splitting, and wave accounting. Extract an NPC-death handler
-  so pending-hit resolution is easier to verify independently.
-- The repeated longest-wave-duration update in Jad death and normal wave
-  advancement can then become one small metrics helper.
+- The former approximately 425-line `process_player_actions()` transition is
+  now a 43-line coordinator. Private helpers separately own action analytics,
+  prayer application, supplies, interaction intent, attack launch, target
+  metrics, movement, and post-action analytics.
+- The coordinator preserves the original order exactly: prayer, supplies,
+  interaction preparation, target/attack processing, movement, then outcome
+  accounting. Pre-action NPC-slot binding and all render-event writes remain at
+  their original semantic points.
+- `fc_resolve_npc_pending_hits()` now owns only queue advancement, resolved-hit
+  accounting, damage application, and healer-distraction tagging. Private death
+  handlers own NPC death bookkeeping, Jad completion and healer despawn, and
+  Tz-Kek splitting/wave accounting.
+- Jad completion and normal wave advancement now use one private
+  `fc_wave_record_current_duration()` helper. It is declared in an internal
+  header and does not widen the public core API.
+- No state layout, RNG call, action, observation, reward, render-event, or
+  contract changed. Focused player/death tests pass, all 165 C tests pass, and
+  local, CPU, and CUDA production builds pass. The deterministic 628-line trace
+  is byte-for-byte unchanged at SHA-256
+  `74ec5a04a9625d31ab95febf1b655a61631229541c2149f3a280d21bea16023c`.
+- The 100M W&B regression `sq77fz7t` exactly matches baseline `m916qfsv` and
+  preceding run `1pmv1yzs` on all 124 `env/*` values and every non-performance
+  summary value.
 
 ### Move large header implementations and data into normal modules
 

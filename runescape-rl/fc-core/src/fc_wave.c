@@ -2,6 +2,7 @@
 #include "fc_npc.h"
 #include "fc_api.h"
 #include "fc_spawn_internal.h"
+#include "fc_wave_internal.h"
 
 /*
  * fc_wave.c — 63-wave Fight Caves spawn table with 15 rotations.
@@ -1238,6 +1239,14 @@ void fc_wave_spawn(FcState* state, int wave_num) {
 /* Wave advancement                                                          */
 /* ======================================================================== */
 
+void fc_wave_record_current_duration(FcState* state) {
+    int wave_ticks = state->tick - state->wave_start_tick;
+    if (wave_ticks > state->ep_max_wave_ticks) {
+        state->ep_max_wave_ticks = wave_ticks;
+        state->ep_max_wave_ticks_wave = state->current_wave;
+    }
+}
+
 int fc_wave_check_advance(FcState* state) {
     /* Don't advance if wave hasn't started or NPCs still alive */
     if (state->current_wave <= 0) return 0;
@@ -1246,12 +1255,7 @@ int fc_wave_check_advance(FcState* state) {
 
     state->wave_just_cleared = 1;
 
-    /* Track wave duration */
-    int wave_ticks = state->tick - state->wave_start_tick;
-    if (wave_ticks > state->ep_max_wave_ticks) {
-        state->ep_max_wave_ticks = wave_ticks;
-        state->ep_max_wave_ticks_wave = state->current_wave;
-    }
+    fc_wave_record_current_duration(state);
 
     /* Check if all waves complete */
     if (state->current_wave >= FC_NUM_WAVES) {
