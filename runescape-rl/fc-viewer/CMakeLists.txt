@@ -122,6 +122,7 @@ target_include_directories(validate_assets PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/fc-core/include
 )
+target_link_libraries(validate_assets PRIVATE fc_core)
 add_test(NAME validate_assets COMMAND validate_assets)
 
 find_package(Python3 COMPONENTS Interpreter QUIET)

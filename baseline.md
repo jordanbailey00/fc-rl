@@ -531,6 +531,33 @@ seconds. The final telemetry sample reported only 59% GPU utilization versus
 run's lower throughput is recorded as machine/GPU-load variance rather than a
 core behavior change.
 
+## Comparison 15: reward and loadout modules moved out of headers
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`nffnh657`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/nffnh657) (`woven-shape-1241`) |
+| Tag | `v4.5_refactor_reward_loadout_modules_100m` |
+| Git commit at run start | `db4bcfd94` plus the documented uncommitted reward/loadout module refactor |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `dc1b01a9c97dd8beaa925773e8ae8843224dee5810e8885e935dd4c9dfb4208c` |
+| Backend binary SHA-256 | `8b8ebf5bd9061509337fbf59b4d785eecead85dd3ee40ca212fd698b0c5dd8d5` |
+| Backend source SHA-256 | `acaeb381878cc8ab53244cf884c92caef887dd6e29efc11e09d7e20efac62292` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260825T214638Z-train-1289930.json` |
+
+Result: behavioral parity is exact against baseline `m916qfsv` and preceding
+comparison `sq77fz7t`. All 124 `env/*` metrics, agent steps, epoch, and
+policy/value/entropy/KL/loss values are byte-for-byte equal. Against both runs,
+136 of 150 summary values match exactly; the 14 differences are only
+timestamps, wall-clock performance, throughput, and utilization telemetry.
+
+Reward logic and immutable loadout data now each have one compiled definition.
+The two affected public headers decreased from 1,101 lines combined to 257,
+while total production source and build code decreased by 8 LOC. Throughput was
+953,842 SPS and training uptime was 103.832579 seconds, comparable to the
+956,771 SPS and 104.176655 seconds of comparison `1pmv1yzs` under full GPU
+utilization.
+
 ## Reproduction command
 
 ```bash

@@ -23,6 +23,7 @@ DEFAULT_KEYS_PATH = (
 )
 DEFAULT_OUT_DIR = REPO_ROOT / "build" / "fc_assets_generated"
 LOADOUT_HEADER = REPO_ROOT / "fc-core" / "include" / "fc_player_init.h"
+LOADOUT_SOURCE = REPO_ROOT / "fc-core" / "src" / "fc_loadouts.c"
 
 FIGHT_CAVES_REGIONS = [(37, 79)]
 FIGHT_CAVES_NPC_IDS = [3116, 3118, 3120, 3121, 3123, 3125, 3127, 3128]
@@ -107,10 +108,10 @@ def _eval_c_int_expr(expr: str, symbols: dict[str, int]) -> int:
 def _extract_initializer_blocks(text: str, name: str) -> list[str]:
     start = text.find(name)
     if start < 0:
-        raise SystemExit(f"could not find {name} in {LOADOUT_HEADER}")
+        raise SystemExit(f"could not find {name} in {LOADOUT_SOURCE}")
     open_idx = text.find("{", start)
     if open_idx < 0:
-        raise SystemExit(f"could not find {name} initializer in {LOADOUT_HEADER}")
+        raise SystemExit(f"could not find {name} initializer in {LOADOUT_SOURCE}")
 
     depth = 0
     end_idx = -1
@@ -123,7 +124,7 @@ def _extract_initializer_blocks(text: str, name: str) -> list[str]:
                 end_idx = i
                 break
     if end_idx < 0:
-        raise SystemExit(f"unterminated {name} initializer in {LOADOUT_HEADER}")
+        raise SystemExit(f"unterminated {name} initializer in {LOADOUT_SOURCE}")
 
     content = text[open_idx + 1:end_idx]
     blocks: list[str] = []
@@ -142,10 +143,9 @@ def _extract_initializer_blocks(text: str, name: str) -> list[str]:
     return blocks
 
 
-def load_player_loadouts_from_header() -> list[tuple[int, str, list[int]]]:
-    raw = LOADOUT_HEADER.read_text()
-    symbols = _parse_loadout_symbols(raw)
-    text = _strip_c_comments(raw)
+def load_player_loadouts() -> list[tuple[int, str, list[int]]]:
+    symbols = _parse_loadout_symbols(LOADOUT_HEADER.read_text())
+    text = _strip_c_comments(LOADOUT_SOURCE.read_text())
     loadouts: list[tuple[int, str, list[int]]] = []
     for block in _extract_initializer_blocks(text, "FC_LOADOUTS"):
         name = re.search(r"\.name\s*=\s*\"([^\"]+)\"", block)
@@ -154,7 +154,7 @@ def load_player_loadouts_from_header() -> list[tuple[int, str, list[int]]]:
                              block, flags=re.S)
         item_count = re.search(r"\.model_item_count\s*=\s*(\d+)", block)
         if not (name and model_id and item_ids and item_count):
-            raise SystemExit(f"incomplete loadout metadata in {LOADOUT_HEADER}:\n{block}")
+            raise SystemExit(f"incomplete loadout metadata in {LOADOUT_SOURCE}:\n{block}")
         ids = [
             _parse_c_int(piece)
             for piece in item_ids.group("ids").split(",")
@@ -169,7 +169,7 @@ def load_player_loadouts_from_header() -> list[tuple[int, str, list[int]]]:
     return loadouts
 
 
-FIGHT_CAVES_PLAYER_LOADOUTS = load_player_loadouts_from_header()
+FIGHT_CAVES_PLAYER_LOADOUTS = load_player_loadouts()
 
 
 def is_under(path: Path, root: Path) -> bool:

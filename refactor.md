@@ -341,26 +341,36 @@ source-LOC reduction; production code increased by 53 LOC.
 
 ### Move large header implementations and data into normal modules
 
-Expected source-LOC reduction: small or neutral; this reduces coupling,
-compile work, and duplicate internal data.
+Status: implemented. Production source and build code decreased by 8 LOC, but
+the primary result is one compiled definition of each implementation and data
+set. The two public headers decreased from 1,101 lines combined to 257.
 
-- `fc_reward.h` contains approximately 400 LOC of `static inline`
-  implementation in addition to its types. Move the implementation to
-  `fc_reward.c`; leave only the small supported reward API and data types in
-  the header. Helpers such as clamping, wave-progress calculation, and threat
-  collection can become private.
-- `fc_player_init.h` defines the full nine-entry `static const FC_LOADOUTS`
-  table, so each separately compiled translation unit receives an internal
-  copy. Move the table to a single `fc_loadouts.c` definition and expose a
-  read-only declaration or accessor.
-- Remove the confirmed unused loadout aliases after that move:
+- `fc_reward.h` now contains only reward data types, channel names, and the
+  supported function declarations. The complete implementation is compiled
+  once in `fc_reward.c`; clamping, wave-progress calculation, cave-progress
+  calculation, and threat collection are private to that module.
+- The immutable nine-entry `FC_LOADOUTS` table is now defined once in
+  `fc_loadouts.c` and exposed through a read-only declaration in
+  `fc_player_init.h`. Core, training, viewer, validation, and the asset pipeline
+  all consume this same source of truth.
+- The asset validator now links `fc_core`; this replaces the private loadout
+  copy it previously received from the header. `build_fc_assets.py` now reads
+  table initializers from `fc_loadouts.c` while reading public identifiers from
+  `fc_player_init.h`.
+- Removed the confirmed unused loadout aliases:
   `FC_PLAYER_ATTACK_LVL`, `FC_PLAYER_STRENGTH_LVL`,
   `FC_PLAYER_WEAPON_KIND`, `FC_PLAYER_CRYSTAL_PIECE_MASK`,
   `FC_EQUIP_DEF_STAB`, `FC_EQUIP_DEF_SLASH`,
   `FC_EQUIP_PRAYER_BONUS`, and `FC_PLAYER_AMMO`.
-- This work should follow the normal-core-library build refactor above so a new
-  `.c` file does not have to be wired into both a conventional build and the
-  current training amalgamation.
+- Both new modules use the canonical `core_sources.txt`, so CMake and local,
+  CPU, and CUDA training builds compile and link the same files.
+- Exact loadout, combat, reward, viewer, and asset tests pass; all 165 CTest
+  tests pass. The asset parser resolves all nine expected model definitions.
+  The deterministic 628-line trace is byte-for-byte unchanged at SHA-256
+  `74ec5a04a9625d31ab95febf1b655a61631229541c2149f3a280d21bea16023c`.
+- The 100M W&B regression `nffnh657` exactly matches baseline `m916qfsv` and
+  preceding run `sq77fz7t` on all 124 `env/*` values and every non-performance
+  summary value.
 
 ### Narrow the public core surface
 
