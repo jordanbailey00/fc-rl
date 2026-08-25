@@ -18,40 +18,7 @@ int main(void) {
     env.terminals = (float*)calloc(1, sizeof(float));
 
     {
-        FcRewardParams defaults = fc_reward_default_params();
-        env.w_damage_dealt = defaults.w_damage_dealt;
-        env.w_progress = defaults.w_progress;
-        env.negative_progress_multiplier = defaults.negative_progress_multiplier;
-        env.w_damage_taken = defaults.w_damage_taken;
-        env.w_npc_kill = defaults.w_npc_kill;
-        env.w_wave_clear = defaults.w_wave_clear;
-        env.w_jad_kill = defaults.w_jad_kill;
-        env.w_cave_complete = defaults.w_cave_complete;
-        env.w_player_death = defaults.w_player_death;
-        env.scale_player_death_with_progress = defaults.scale_player_death_with_progress;
-        env.player_death_min_scale = defaults.player_death_min_scale;
-        env.w_correct_jad_prayer = defaults.w_correct_jad_prayer;
-        env.w_correct_danger_prayer = defaults.w_correct_danger_prayer;
-        env.w_prayer_lost = defaults.w_prayer_lost;
-        env.w_invalid_action = defaults.w_invalid_action;
-        env.w_tick_penalty = defaults.w_tick_penalty;
-
-        env.shape_unnecessary_prayer_penalty = defaults.shape_unnecessary_prayer_penalty;
-        env.shape_wave_stall_base_penalty = defaults.shape_wave_stall_base_penalty;
-        env.shape_wave_stall_cap = defaults.shape_wave_stall_cap;
-        env.shape_wave_stall_start = defaults.shape_wave_stall_start;
-        env.shape_wave_stall_ramp_interval = defaults.shape_wave_stall_ramp_interval;
-        env.shape_jad_heal_penalty = defaults.shape_jad_heal_penalty;
-        env.shape_npc_heal_penalty = defaults.shape_npc_heal_penalty;
-        env.shape_no_progress_penalty_1 = defaults.shape_no_progress_penalty_1;
-        env.shape_no_progress_penalty_2 = defaults.shape_no_progress_penalty_2;
-        env.shape_no_progress_penalty_3 = defaults.shape_no_progress_penalty_3;
-        env.shape_no_attack_base_penalty = defaults.shape_no_attack_base_penalty;
-        env.shape_no_attack_wave_scale = defaults.shape_no_attack_wave_scale;
-        env.shape_no_progress_start_1 = defaults.shape_no_progress_start_1;
-        env.shape_no_progress_start_2 = defaults.shape_no_progress_start_2;
-        env.shape_no_progress_start_3 = defaults.shape_no_progress_start_3;
-        env.shape_no_attack_start = defaults.shape_no_attack_start;
+        env.reward_params = fc_reward_default_params();
         env.initial_sharks = 0;
         env.initial_prayer_doses = 0;
 

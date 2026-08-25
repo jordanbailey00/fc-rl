@@ -258,6 +258,33 @@ uptime was 104.000881 seconds. The complete regression suite passes all 167
 remaining tests; the count decreased from 169 only because two tests existed
 solely for the removed, never-integrated dynamic-BFS API.
 
+## Comparison 5: reward parameters stored directly
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`e6o99d6d`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/e6o99d6d) (`olive-serenity-1230`) |
+| Tag | `v4.5_refactor_reward_params_storage_100m` |
+| Git commit at run start | `4618a0ea0215ec57bf4ef90c900cb3e2c8a687e8` plus the documented uncommitted reward-parameter refactor |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `dc1b01a9c97dd8beaa925773e8ae8843224dee5810e8885e935dd4c9dfb4208c` |
+| Backend binary SHA-256 | `0161d2f6d4b494277b0f7389a68b12bb32f18326d00d0f20bdcd0f59ad0ec997` |
+| Backend source SHA-256 | `bf670d0037ed711415ad009274a724518cf92b12dce2122a4b6b8fa69f7610a7` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260825T005942Z-train-1044013.json` |
+
+Result: behavioral parity is exact against the original baseline `m916qfsv`
+and the immediately preceding comparison `4qmy1v9y`. All 124 `env/*` metrics
+are byte-for-byte equal, as are agent steps, epoch, and every recorded
+policy/value/entropy/KL/loss value. Each summary contains the same 150 keys;
+135 values match exactly and the 15 differences are limited to timestamps,
+wall-clock performance, throughput, and CPU/GPU memory/utilization telemetry.
+
+The training backend source and binary hashes changed because reward parameter
+storage moved from duplicated adapter fields into one `FcRewardParams` member.
+The configuration and model contract remained identical. Throughput was
+957,587 SPS and training uptime was 103.107399 seconds, effectively unchanged
+from Comparison 4.
+
 ## Reproduction command
 
 ```bash

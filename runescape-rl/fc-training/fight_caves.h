@@ -137,41 +137,8 @@ typedef struct FightCaves {
     /* Game state */
     FcState state;
 
-    /* Reward shaping weights (from config) */
-    float w_damage_dealt;       /* legacy per-hit damage shaping; active fc_revamp config sets 0 */
-    float w_progress;
-    float negative_progress_multiplier;
-    float w_damage_taken;
-    float w_npc_kill;
-    float w_wave_clear;
-    float w_jad_kill;
-    float w_cave_complete;
-    float w_player_death;
-    int scale_player_death_with_progress;
-    float player_death_min_scale;
-    float w_correct_jad_prayer;      /* optional additional Jad-only bonus */
-    float w_correct_danger_prayer;   /* shared correct-block reward, including Jad */
-    float w_prayer_lost;             /* per prayer point lost from overhead drain or Tz-Kih */
-    float w_invalid_action;
-    float w_tick_penalty;
-
-    /* Configurable shaping terms (kept separate from reward-feature weights) */
-    float shape_unnecessary_prayer_penalty;
-    float shape_wave_stall_base_penalty;
-    float shape_wave_stall_cap;
-    float shape_jad_heal_penalty;
-    float shape_npc_heal_penalty;
-    float shape_no_progress_penalty_1;
-    float shape_no_progress_penalty_2;
-    float shape_no_progress_penalty_3;
-    float shape_no_attack_base_penalty;
-    float shape_no_attack_wave_scale;
-    int shape_wave_stall_start;
-    int shape_wave_stall_ramp_interval;
-    int shape_no_progress_start_1;
-    int shape_no_progress_start_2;
-    int shape_no_progress_start_3;
-    int shape_no_attack_start;
+    /* Reward weights and shaping configuration, initialized once per env. */
+    FcRewardParams reward_params;
     int initial_sharks;
     int initial_prayer_doses;
     FcRewardRuntime reward_runtime;
@@ -248,56 +215,14 @@ static void fc_puffer_write_obs(FightCaves* env) {
     }
 }
 
-static FcRewardParams fc_reward_params_from_env(const FightCaves* env) {
-    FcRewardParams params;
-    memset(&params, 0, sizeof(params));
-
-    params.w_damage_dealt = env->w_damage_dealt;
-    params.w_progress = env->w_progress;
-    params.negative_progress_multiplier = env->negative_progress_multiplier;
-    params.w_damage_taken = env->w_damage_taken;
-    params.w_npc_kill = env->w_npc_kill;
-    params.w_wave_clear = env->w_wave_clear;
-    params.w_jad_kill = env->w_jad_kill;
-    params.w_cave_complete = env->w_cave_complete;
-    params.w_player_death = env->w_player_death;
-    params.scale_player_death_with_progress = env->scale_player_death_with_progress;
-    params.player_death_min_scale = env->player_death_min_scale;
-    params.w_correct_jad_prayer = env->w_correct_jad_prayer;
-    params.w_correct_danger_prayer = env->w_correct_danger_prayer;
-    params.w_prayer_lost = env->w_prayer_lost;
-    params.w_invalid_action = env->w_invalid_action;
-    params.w_tick_penalty = env->w_tick_penalty;
-
-    params.shape_unnecessary_prayer_penalty = env->shape_unnecessary_prayer_penalty;
-    params.shape_wave_stall_base_penalty = env->shape_wave_stall_base_penalty;
-    params.shape_wave_stall_cap = env->shape_wave_stall_cap;
-    params.shape_jad_heal_penalty = env->shape_jad_heal_penalty;
-    params.shape_npc_heal_penalty = env->shape_npc_heal_penalty;
-    params.shape_no_progress_penalty_1 = env->shape_no_progress_penalty_1;
-    params.shape_no_progress_penalty_2 = env->shape_no_progress_penalty_2;
-    params.shape_no_progress_penalty_3 = env->shape_no_progress_penalty_3;
-    params.shape_no_attack_base_penalty = env->shape_no_attack_base_penalty;
-    params.shape_no_attack_wave_scale = env->shape_no_attack_wave_scale;
-
-    params.shape_wave_stall_start = env->shape_wave_stall_start;
-    params.shape_wave_stall_ramp_interval = env->shape_wave_stall_ramp_interval;
-    params.shape_no_progress_start_1 = env->shape_no_progress_start_1;
-    params.shape_no_progress_start_2 = env->shape_no_progress_start_2;
-    params.shape_no_progress_start_3 = env->shape_no_progress_start_3;
-    params.shape_no_attack_start = env->shape_no_attack_start;
-
-    return params;
-}
-
 /* ======================================================================== */
 /* Reward computation from reward features                                   */
 /* ======================================================================== */
 
 static float fc_puffer_compute_reward(FightCaves* env) {
-    FcRewardParams params = fc_reward_params_from_env(env);
     FcRewardBreakdown breakdown =
-        fc_reward_compute_breakdown(&env->state, &params, &env->reward_runtime);
+        fc_reward_compute_breakdown(
+            &env->state, &env->reward_params, &env->reward_runtime);
     fc_reward_sync_progress_state(&env->state, &env->reward_runtime);
 
     if (breakdown.threat_ctx.tokxil_melee) env->state.ep_tokxil_melee_ticks++;

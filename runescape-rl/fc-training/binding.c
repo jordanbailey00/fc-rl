@@ -23,79 +23,90 @@
 #define Env FightCaves
 #include "vecenv.h"
 
+static void fc_override_float_config(
+        Dict* kwargs, const char* key, float* value) {
+    DictItem* item = dict_get_unsafe(kwargs, key);
+    if (item != NULL) *value = (float)item->value;
+}
+
+static void fc_override_int_config(Dict* kwargs, const char* key, int* value) {
+    DictItem* item = dict_get_unsafe(kwargs, key);
+    if (item != NULL) *value = (int)item->value;
+}
+
 void my_init(Env* env, Dict* kwargs) {
     env->num_agents = 1;  /* Fight Caves is single-agent */
-    FcRewardParams defaults = fc_reward_default_params();
+    env->reward_params = fc_reward_default_params();
 
     /* Reward shaping weights (from config/fight_caves.ini [env] section) */
-    DictItem* item;
-    item = dict_get_unsafe(kwargs, "w_damage_dealt");
-    env->w_damage_dealt = item ? (float)item->value : defaults.w_damage_dealt;
-    item = dict_get_unsafe(kwargs, "w_progress");
-    env->w_progress = item ? (float)item->value : defaults.w_progress;
-    item = dict_get_unsafe(kwargs, "negative_progress_multiplier");
-    env->negative_progress_multiplier = item ? (float)item->value : defaults.negative_progress_multiplier;
-    item = dict_get_unsafe(kwargs, "w_damage_taken");
-    env->w_damage_taken = item ? (float)item->value : defaults.w_damage_taken;
-    item = dict_get_unsafe(kwargs, "w_npc_kill");
-    env->w_npc_kill = item ? (float)item->value : defaults.w_npc_kill;
-    item = dict_get_unsafe(kwargs, "w_wave_clear");
-    env->w_wave_clear = item ? (float)item->value : defaults.w_wave_clear;
-    item = dict_get_unsafe(kwargs, "w_jad_kill");
-    env->w_jad_kill = item ? (float)item->value : defaults.w_jad_kill;
-    item = dict_get_unsafe(kwargs, "w_cave_complete");
-    env->w_cave_complete = item ? (float)item->value : defaults.w_cave_complete;
-    item = dict_get_unsafe(kwargs, "w_player_death");
-    env->w_player_death = item ? (float)item->value : defaults.w_player_death;
-    item = dict_get_unsafe(kwargs, "scale_player_death_with_progress");
-    env->scale_player_death_with_progress = item ? (int)item->value : defaults.scale_player_death_with_progress;
-    item = dict_get_unsafe(kwargs, "player_death_min_scale");
-    env->player_death_min_scale = item ? (float)item->value : defaults.player_death_min_scale;
-    item = dict_get_unsafe(kwargs, "w_correct_jad_prayer");
-    env->w_correct_jad_prayer = item ? (float)item->value : defaults.w_correct_jad_prayer;
-    item = dict_get_unsafe(kwargs, "w_correct_danger_prayer");
-    env->w_correct_danger_prayer = item ? (float)item->value : defaults.w_correct_danger_prayer;
-    item = dict_get_unsafe(kwargs, "w_prayer_lost");
-    env->w_prayer_lost = item ? (float)item->value : defaults.w_prayer_lost;
-    item = dict_get_unsafe(kwargs, "w_invalid_action");
-    env->w_invalid_action = item ? (float)item->value : defaults.w_invalid_action;
-    item = dict_get_unsafe(kwargs, "w_tick_penalty");
-    env->w_tick_penalty = item ? (float)item->value : defaults.w_tick_penalty;
+    fc_override_float_config(
+        kwargs, "w_damage_dealt", &env->reward_params.w_damage_dealt);
+    fc_override_float_config(
+        kwargs, "w_progress", &env->reward_params.w_progress);
+    fc_override_float_config(kwargs, "negative_progress_multiplier",
+        &env->reward_params.negative_progress_multiplier);
+    fc_override_float_config(
+        kwargs, "w_damage_taken", &env->reward_params.w_damage_taken);
+    fc_override_float_config(
+        kwargs, "w_npc_kill", &env->reward_params.w_npc_kill);
+    fc_override_float_config(
+        kwargs, "w_wave_clear", &env->reward_params.w_wave_clear);
+    fc_override_float_config(
+        kwargs, "w_jad_kill", &env->reward_params.w_jad_kill);
+    fc_override_float_config(
+        kwargs, "w_cave_complete", &env->reward_params.w_cave_complete);
+    fc_override_float_config(
+        kwargs, "w_player_death", &env->reward_params.w_player_death);
+    fc_override_int_config(kwargs, "scale_player_death_with_progress",
+        &env->reward_params.scale_player_death_with_progress);
+    fc_override_float_config(kwargs, "player_death_min_scale",
+        &env->reward_params.player_death_min_scale);
+    fc_override_float_config(kwargs, "w_correct_jad_prayer",
+        &env->reward_params.w_correct_jad_prayer);
+    fc_override_float_config(kwargs, "w_correct_danger_prayer",
+        &env->reward_params.w_correct_danger_prayer);
+    fc_override_float_config(
+        kwargs, "w_prayer_lost", &env->reward_params.w_prayer_lost);
+    fc_override_float_config(
+        kwargs, "w_invalid_action", &env->reward_params.w_invalid_action);
+    fc_override_float_config(
+        kwargs, "w_tick_penalty", &env->reward_params.w_tick_penalty);
 
     /* Configurable shaping terms */
-    item = dict_get_unsafe(kwargs, "shape_unnecessary_prayer_penalty");
-    env->shape_unnecessary_prayer_penalty = item ? (float)item->value : defaults.shape_unnecessary_prayer_penalty;
-    item = dict_get_unsafe(kwargs, "shape_wave_stall_base_penalty");
-    env->shape_wave_stall_base_penalty = item ? (float)item->value : defaults.shape_wave_stall_base_penalty;
-    item = dict_get_unsafe(kwargs, "shape_wave_stall_cap");
-    env->shape_wave_stall_cap = item ? (float)item->value : defaults.shape_wave_stall_cap;
-    item = dict_get_unsafe(kwargs, "shape_jad_heal_penalty");
-    env->shape_jad_heal_penalty = item ? (float)item->value : defaults.shape_jad_heal_penalty;
-    item = dict_get_unsafe(kwargs, "shape_npc_heal_penalty");
-    env->shape_npc_heal_penalty = item ? (float)item->value : defaults.shape_npc_heal_penalty;
-    item = dict_get_unsafe(kwargs, "shape_no_progress_penalty_1");
-    env->shape_no_progress_penalty_1 = item ? (float)item->value : defaults.shape_no_progress_penalty_1;
-    item = dict_get_unsafe(kwargs, "shape_no_progress_penalty_2");
-    env->shape_no_progress_penalty_2 = item ? (float)item->value : defaults.shape_no_progress_penalty_2;
-    item = dict_get_unsafe(kwargs, "shape_no_progress_penalty_3");
-    env->shape_no_progress_penalty_3 = item ? (float)item->value : defaults.shape_no_progress_penalty_3;
-    item = dict_get_unsafe(kwargs, "shape_no_attack_base_penalty");
-    env->shape_no_attack_base_penalty = item ? (float)item->value : defaults.shape_no_attack_base_penalty;
-    item = dict_get_unsafe(kwargs, "shape_no_attack_wave_scale");
-    env->shape_no_attack_wave_scale = item ? (float)item->value : defaults.shape_no_attack_wave_scale;
-    item = dict_get_unsafe(kwargs, "shape_wave_stall_start");
-    env->shape_wave_stall_start = item ? (int)item->value : defaults.shape_wave_stall_start;
-    item = dict_get_unsafe(kwargs, "shape_wave_stall_ramp_interval");
-    env->shape_wave_stall_ramp_interval = item ? (int)item->value : defaults.shape_wave_stall_ramp_interval;
-    item = dict_get_unsafe(kwargs, "shape_no_progress_start_1");
-    env->shape_no_progress_start_1 = item ? (int)item->value : defaults.shape_no_progress_start_1;
-    item = dict_get_unsafe(kwargs, "shape_no_progress_start_2");
-    env->shape_no_progress_start_2 = item ? (int)item->value : defaults.shape_no_progress_start_2;
-    item = dict_get_unsafe(kwargs, "shape_no_progress_start_3");
-    env->shape_no_progress_start_3 = item ? (int)item->value : defaults.shape_no_progress_start_3;
-    item = dict_get_unsafe(kwargs, "shape_no_attack_start");
-    env->shape_no_attack_start = item ? (int)item->value : defaults.shape_no_attack_start;
-    item = dict_get_unsafe(kwargs, "initial_sharks");
+    fc_override_float_config(kwargs, "shape_unnecessary_prayer_penalty",
+        &env->reward_params.shape_unnecessary_prayer_penalty);
+    fc_override_float_config(kwargs, "shape_wave_stall_base_penalty",
+        &env->reward_params.shape_wave_stall_base_penalty);
+    fc_override_float_config(kwargs, "shape_wave_stall_cap",
+        &env->reward_params.shape_wave_stall_cap);
+    fc_override_float_config(kwargs, "shape_jad_heal_penalty",
+        &env->reward_params.shape_jad_heal_penalty);
+    fc_override_float_config(kwargs, "shape_npc_heal_penalty",
+        &env->reward_params.shape_npc_heal_penalty);
+    fc_override_float_config(kwargs, "shape_no_progress_penalty_1",
+        &env->reward_params.shape_no_progress_penalty_1);
+    fc_override_float_config(kwargs, "shape_no_progress_penalty_2",
+        &env->reward_params.shape_no_progress_penalty_2);
+    fc_override_float_config(kwargs, "shape_no_progress_penalty_3",
+        &env->reward_params.shape_no_progress_penalty_3);
+    fc_override_float_config(kwargs, "shape_no_attack_base_penalty",
+        &env->reward_params.shape_no_attack_base_penalty);
+    fc_override_float_config(kwargs, "shape_no_attack_wave_scale",
+        &env->reward_params.shape_no_attack_wave_scale);
+    fc_override_int_config(kwargs, "shape_wave_stall_start",
+        &env->reward_params.shape_wave_stall_start);
+    fc_override_int_config(kwargs, "shape_wave_stall_ramp_interval",
+        &env->reward_params.shape_wave_stall_ramp_interval);
+    fc_override_int_config(kwargs, "shape_no_progress_start_1",
+        &env->reward_params.shape_no_progress_start_1);
+    fc_override_int_config(kwargs, "shape_no_progress_start_2",
+        &env->reward_params.shape_no_progress_start_2);
+    fc_override_int_config(kwargs, "shape_no_progress_start_3",
+        &env->reward_params.shape_no_progress_start_3);
+    fc_override_int_config(kwargs, "shape_no_attack_start",
+        &env->reward_params.shape_no_attack_start);
+
+    DictItem* item = dict_get_unsafe(kwargs, "initial_sharks");
     env->initial_sharks = item ? (int)item->value : 0;
     item = dict_get_unsafe(kwargs, "initial_prayer_doses");
     env->initial_prayer_doses = item ? (int)item->value : 0;

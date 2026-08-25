@@ -117,17 +117,23 @@ Completed on 2026-08-24. Net reduction: 297 LOC.
 - The 100M regression run `4qmy1v9y` exactly matched the baseline on all 124
   environment metrics and all recorded learning metrics.
 
-### 7. Store reward configuration once in training
+### 7. Store reward configuration once in training — completed
 
-Estimated reduction: approximately 80-120 LOC.
+Completed on 2026-08-24. Net reduction: 97 LOC.
 
-- `FightCaves` individually mirrors every member of `FcRewardParams`.
-- `fc_reward_params_from_env()` copies all of them back into an
-  `FcRewardParams` every tick.
-- `binding.c` and the standalone launcher separately initialize the same
-  fields.
-- Store `FcRewardParams reward_params` directly in `FightCaves`, initialize
-  defaults once, and override configured members.
+- Replaced the individual reward and shaping members in `FightCaves` with one
+  `FcRewardParams reward_params` member.
+- Removed `fc_reward_params_from_env()` and its complete per-tick field copy;
+  reward calculation now consumes the stored parameters directly.
+- Initialized the defaults once in both Puffer and standalone environments.
+  The Puffer binding applies the same named float and integer config overrides
+  directly to the stored structure.
+- Preserved all config keys, default values, reward semantics, clipping,
+  observations, actions, metrics, and contract versions.
+- Verified the standalone and CPU Puffer builds, deterministic linked/Puffer
+  replay parity, and all 162 tests.
+- The 100M regression run `e6o99d6d` exactly matched the baseline on all 124
+  environment metrics and all recorded learning metrics.
 
 ## Larger maintainability refactors
 
