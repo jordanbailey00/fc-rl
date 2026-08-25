@@ -6,6 +6,7 @@
 #include "fc_npc.h"
 #include "fc_wave.h"
 #include "fc_contracts.h"
+#include "fc_action_internal.h"
 #include "fc_spawn_internal.h"
 
 /*
@@ -99,6 +100,11 @@ static void record_player_move_waypoint(FcState* state) {
     events->player_move_waypoint_x[index] = state->player.x;
     events->player_move_waypoint_y[index] = state->player.y;
     events->player_move_waypoint_count++;
+}
+
+static void set_player_facing_from_delta(FcPlayer* player, float dx, float dy) {
+    if (dx == 0.0f && dy == 0.0f) return;
+    player->facing_angle = atan2f(dx, -dy) * (180.0f / 3.14159f);
 }
 
 /* ======================================================================== */
@@ -195,9 +201,12 @@ static void process_player_actions(FcState* state,
     }
 
     /* ---- Eat food ---- */
-    if (act_eat == FC_EAT_SHARK && p->food_timer <= 0 &&
-        p->sharks_remaining > 0 && p->current_hp < p->max_hp) {
-        int heal = 200;  /* shark heals 20 HP = 200 tenths */
+    if (act_eat != FC_EAT_NONE && fc_eat_action_valid(state, act_eat)) {
+        int heal = act_eat == FC_EAT_SHARK ? 200 : 180;
+        int* cooldown_timer = act_eat == FC_EAT_SHARK
+            ? &p->food_timer : &p->combo_timer;
+        int cooldown = act_eat == FC_EAT_SHARK
+            ? FC_FOOD_COOLDOWN_TICKS : FC_COMBO_EAT_TICKS;
         state->pre_eat_hp = p->current_hp;
         state->ep_food_pre_hp_sum += state->pre_eat_hp;
         int hp_missing = p->max_hp - p->current_hp;
@@ -207,31 +216,14 @@ static void process_player_actions(FcState* state,
         p->current_hp += heal;
         if (p->current_hp > p->max_hp) p->current_hp = p->max_hp;
         p->sharks_remaining--;
-        p->food_timer = FC_FOOD_COOLDOWN_TICKS;
-        p->food_eaten_this_tick = 1;
-        state->food_used_this_tick = 1;
-    }
-    /* Combo eat: simplified — treat as another shark for now */
-    if (act_eat == FC_EAT_COMBO && p->combo_timer <= 0 &&
-        p->sharks_remaining > 0 && p->current_hp < p->max_hp) {
-        int heal = 180;  /* karambwan heals 18 HP = 180 tenths */
-        state->pre_eat_hp = p->current_hp;
-        state->ep_food_pre_hp_sum += state->pre_eat_hp;
-        int hp_missing = p->max_hp - p->current_hp;
-        if (heal > hp_missing) state->ep_food_overhealed++;
-        state->ep_food_eaten++;
-        p->total_food_eaten++;
-        p->current_hp += heal;
-        if (p->current_hp > p->max_hp) p->current_hp = p->max_hp;
-        p->sharks_remaining--;
-        p->combo_timer = FC_COMBO_EAT_TICKS;
+        *cooldown_timer = cooldown;
         p->food_eaten_this_tick = 1;
         state->food_used_this_tick = 1;
     }
 
     /* ---- Drink prayer potion ---- */
-    if (act_drink == FC_DRINK_PRAYER_POT && p->potion_timer <= 0 &&
-        p->prayer_doses_remaining > 0 && p->current_prayer < p->max_prayer) {
+    if (act_drink == FC_DRINK_PRAYER_POT &&
+        fc_drink_action_valid(state, act_drink)) {
         state->pre_drink_prayer = p->current_prayer;
         state->ep_pot_pre_prayer_sum += state->pre_drink_prayer;
         int prayer_missing = p->max_prayer - p->current_prayer;
@@ -355,9 +347,7 @@ static void process_player_actions(FcState* state,
                 float ty = (float)target->y + (float)target->size*0.5f;
                 float dx = tx - ((float)p->x + 0.5f);
                 float dy = ty - ((float)p->y + 0.5f);
-                if (dx != 0 || dy != 0) {
-                    p->facing_angle = atan2f(dx, -dy) * (180.0f / 3.14159f);
-                }
+                set_player_facing_from_delta(p, dx, dy);
             }
 
             if (target_can_fire && target_ready) {
@@ -473,10 +463,7 @@ static void process_player_actions(FcState* state,
                                            state->walkable,
                                            state->movement_flags)) {
                 /* Update facing based on movement direction */
-                if (dx != 0 || dy != 0) {
-                    /* atan2 of world X delta and negated world Y delta (for Raylib Z) */
-                    p->facing_angle = atan2f((float)dx, (float)(-dy)) * (180.0f / 3.14159f);
-                }
+                set_player_facing_from_delta(p, (float)dx, (float)dy);
                 p->x = nx;
                 p->y = ny;
                 state->movement_this_tick = 1;
@@ -513,10 +500,8 @@ static void process_player_actions(FcState* state,
             }
             int moved_dx = p->x - old_x;
             int moved_dy = p->y - old_y;
-            if (moved_dx != 0 || moved_dy != 0) {
-                p->facing_angle = atan2f((float)moved_dx, (float)(-moved_dy)) *
-                                  (180.0f / 3.14159f);
-            }
+            set_player_facing_from_delta(
+                p, (float)moved_dx, (float)moved_dy);
             state->movement_this_tick = 1;
             p->is_running = (moved >= 2) ? 1 : 0;
         }

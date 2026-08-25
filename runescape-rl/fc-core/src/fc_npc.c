@@ -514,9 +514,15 @@ static void jad_attack(FcState* state, FcNpc* npc, int npc_idx) {
 /* Yt-MejKot: heal nearby NPCs                                              */
 /* ======================================================================== */
 
-static void record_npc_heal(FcState* state, FcNpc* source, FcNpc* target,
-                            int amount) {
-    if (amount <= 0) return;
+static int apply_npc_heal(FcState* state, FcNpc* source, FcNpc* target,
+                          int amount) {
+    int before = target->current_hp;
+    target->current_hp += amount;
+    if (target->current_hp > target->max_hp) {
+        target->current_hp = target->max_hp;
+    }
+    amount = target->current_hp - before;
+    if (amount <= 0) return 0;
     source->healing_given_this_tick += amount;
     target->healing_received_this_tick += amount;
     if (source->npc_type == NPC_YT_MEJKOT) {
@@ -534,6 +540,7 @@ static void record_npc_heal(FcState* state, FcNpc* source, FcNpc* target,
     if (target->npc_type == NPC_TZTOK_JAD) {
         state->jad_heal_amount_this_tick += amount;
     }
+    return amount;
 }
 
 static int npc_anchor_distance(const FcNpc* a, const FcNpc* b) {
@@ -572,10 +579,7 @@ static int yt_mejkot_try_heal(FcState* state, FcNpc* npc) {
     FcNpc* target = yt_mejkot_heal_target(state, npc);
     if (!target) return 0;
 
-    int before = target->current_hp;
-    target->current_hp += npc->heal_amount;
-    if (target->current_hp > target->max_hp) target->current_hp = target->max_hp;
-    record_npc_heal(state, npc, target, target->current_hp - before);
+    apply_npc_heal(state, npc, target, npc->heal_amount);
     npc->heal_target_idx = (int)(target - state->npcs);
     npc->attack_timer = npc->attack_speed;
     return 1;
@@ -611,12 +615,8 @@ static void yt_hurkot_heal_cycle(FcState* state, FcNpc* npc, FcNpc* jad) {
         return;
     }
 
-    int before = jad->current_hp;
-    jad->current_hp += npc->heal_amount;
-    if (jad->current_hp > jad->max_hp) jad->current_hp = jad->max_hp;
-    if (jad->current_hp > before) {
+    if (apply_npc_heal(state, npc, jad, npc->heal_amount) > 0) {
         state->jad_heal_procs_this_tick++;
-        record_npc_heal(state, npc, jad, jad->current_hp - before);
     }
 }
 

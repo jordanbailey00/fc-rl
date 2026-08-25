@@ -288,22 +288,27 @@ Implemented using the existing `fc_distance_between_areas()` primitive.
 
 ### Consolidate repeated action and healing mutations
 
-Estimated reduction: approximately 30-50 LOC.
+Implemented.
 
-- The shark and combo-eat branches in `process_player_actions()` duplicate HP
-  bookkeeping, over-heal analytics, inventory decrement, clamping, and event
-  flags. Select the heal amount and cooldown first, then apply the shared
-  mutation once.
-- Consumable legality is also encoded once in `fc_state.c` for masks and again
-  in `fc_tick.c` for execution. Shared semantic predicates for eating and
-  drinking would prevent the mask and executor from drifting apart.
-- `yt_mejkot_try_heal()` and `yt_hurkot_heal_cycle()` duplicate add-and-clamp
-  healing before calling `record_npc_heal()`. One helper can apply a bounded
-  NPC heal and return the actual amount restored; Jad-specific proc accounting
-  should remain explicit in the HurKot caller.
-- Player facing uses the same angle conversion in attack-facing, routed
-  movement, and directional movement. A focused facing-from-delta helper would
-  keep that coordinate convention in one place.
+- Shark and combo eating now select their heal amount and cooldown before one
+  shared HP, inventory, analytics, and event mutation.
+- The action mask and executor now use the same private eating and drinking
+  legality predicates. These remain internal to `fc-core` and do not expand
+  its public API.
+- One private NPC-heal helper now applies the bounded heal, records the actual
+  amount restored, and updates common heal analytics. HurKot's Jad-specific
+  proc counter remains explicit in its caller.
+- Attack-facing, routed movement, and directional movement now share one
+  facing-from-delta conversion with the existing coordinate convention and
+  floating-point expression preserved.
+- Production code decreased by 5 LOC with no new test code or public API.
+- Food/mask and healer tests pass, the full 165-test suite passes, and local,
+  CPU, and CUDA production builds pass. The deterministic 628-line trace is
+  byte-for-byte unchanged at SHA-256
+  `74ec5a04a9625d31ab95febf1b655a61631229541c2149f3a280d21bea16023c`.
+- The 100M W&B regression `1pmv1yzs` exactly matches baseline `m916qfsv` and
+  preceding run `ef65qg3w` on all 124 `env/*` values and every
+  non-performance summary value.
 
 ### Decompose the two largest core transitions
 

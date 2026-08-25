@@ -475,6 +475,32 @@ reuse the existing rectangle-distance primitive. Production code decreased by
 8 LOC. Throughput was 941,835 SPS and training uptime was 104.997709 seconds,
 within ordinary machine-load variation.
 
+## Comparison 13: consolidated food, healing, and facing mutations
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`1pmv1yzs`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/1pmv1yzs) (`unique-flower-1239`) |
+| Tag | `v4.5_refactor_food_heal_facing_final_100m` |
+| Git commit at run start | `dc6234297` plus the documented uncommitted food/healing/facing refactor |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `dc1b01a9c97dd8beaa925773e8ae8843224dee5810e8885e935dd4c9dfb4208c` |
+| Backend binary SHA-256 | `1ddba24706b92e8821b2922174d9c88dc41b5d5b32327639c189b63e77034df2` |
+| Backend source SHA-256 | `650f3067724e667c349839ee6b4066190b0cf94e18a3c989f8cc3a7101b4997b` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260825T175439Z-train-1211001.json` |
+
+Result: behavioral parity is exact against baseline `m916qfsv` and preceding
+comparison `ef65qg3w`. All 124 `env/*` metrics, agent steps, epoch, and
+policy/value/entropy/KL/loss values are byte-for-byte equal. Against both runs,
+136 of 150 summary values match exactly; the 14 differences are only
+timestamps, wall-clock performance, throughput, and utilization telemetry.
+
+Food mutations, consumable legality, bounded NPC healing, and player-facing
+conversion now each have one implementation while retaining their existing
+caller-specific values and accounting. Production code decreased by 5 LOC.
+Throughput was 956,771 SPS and training uptime was 104.176655 seconds, within
+ordinary run-to-run machine-load variation.
+
 ## Reproduction command
 
 ```bash

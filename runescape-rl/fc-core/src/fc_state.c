@@ -4,6 +4,7 @@
 #include "fc_wave.h"
 #include "fc_pathfinding.h"
 #include "fc_player_init.h"
+#include "fc_action_internal.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -360,7 +361,7 @@ static int prayer_action_valid(int action) {
     return action >= 0 && action < FC_PRAYER_DIM;
 }
 
-static int eat_action_valid(const FcState* state, int action) {
+int fc_eat_action_valid(const FcState* state, int action) {
     const FcPlayer* p = &state->player;
 
     if (action < 0 || action >= FC_EAT_DIM) return 0;
@@ -378,7 +379,7 @@ static int eat_action_valid(const FcState* state, int action) {
     return 0;
 }
 
-static int drink_action_valid(const FcState* state, int action) {
+int fc_drink_action_valid(const FcState* state, int action) {
     const FcPlayer* p = &state->player;
 
     if (action < 0 || action >= FC_DRINK_DIM) return 0;
@@ -790,15 +791,15 @@ void fc_write_mask(const FcState* state, float* out) {
      * having them hidden by the mask. */
 
     /* EAT */
-    if (!eat_action_valid(state, FC_EAT_SHARK)) {
+    if (!fc_eat_action_valid(state, FC_EAT_SHARK)) {
         out[FC_MASK_EAT_START + FC_EAT_SHARK] = 0.0f;
     }
-    if (!eat_action_valid(state, FC_EAT_COMBO)) {
+    if (!fc_eat_action_valid(state, FC_EAT_COMBO)) {
         out[FC_MASK_EAT_START + FC_EAT_COMBO] = 0.0f;
     }
 
     /* DRINK */
-    if (!drink_action_valid(state, FC_DRINK_PRAYER_POT)) {
+    if (!fc_drink_action_valid(state, FC_DRINK_PRAYER_POT)) {
         out[FC_MASK_DRINK_START + FC_DRINK_PRAYER_POT] = 0.0f;
     }
 }
