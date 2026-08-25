@@ -379,6 +379,31 @@ typedef struct {
 /* ======================================================================== */
 
 #define FC_MAX_RENDER_MOVE_WAYPOINTS 2
+#define FC_MAX_RENDER_NPC_ATTACKS FC_MAX_NPCS
+#define FC_MAX_RENDER_HITS 32
+
+typedef struct {
+    int npc_slot;
+    int npc_type;
+    int attack_style;
+    int source_x;
+    int source_y;
+    int source_size;
+    int target_x;
+    int target_y;
+    int hit_delay_ticks;
+    int prayer_lock_tick;
+    int hit_queued;
+} FcRenderNpcAttack;
+
+typedef struct {
+    int target_entity_type;  /* FcEntityType */
+    int target_npc_slot;     /* -1 when the player is the target */
+    int source_npc_slot;     /* -1 when the player is the source */
+    int attack_style;
+    int damage;
+    int blocked;
+} FcRenderHit;
 
 /*
  * Authoritative, read-only facts captured while a simulation tick executes.
@@ -405,6 +430,16 @@ typedef struct {
     int player_attack_target_y;
     int player_attack_target_size;
     int player_attack_hit_delay_ticks;
+
+    /* NPC attacks captured when the NPC AI commits the attack. There can be
+     * at most one launch per NPC during a simulation tick. */
+    int npc_attack_count;
+    FcRenderNpcAttack npc_attacks[FC_MAX_RENDER_NPC_ATTACKS];
+
+    /* Hits captured when pending-hit resolution consumes them. This includes
+     * misses and prayer-blocked hits whose final damage is zero. */
+    int hit_count;
+    FcRenderHit hits[FC_MAX_RENDER_HITS];
 
     /* Exact player movement path consumed during this tick. Waypoints contain
      * each successfully reached tile, including the final tile. */

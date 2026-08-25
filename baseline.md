@@ -285,6 +285,33 @@ The configuration and model contract remained identical. Throughput was
 957,587 SPS and training uptime was 103.107399 seconds, effectively unchanged
 from Comparison 4.
 
+## Comparison 6: authoritative viewer render events
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`gg503t3n`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/gg503t3n) (`vital-sea-1231`) |
+| Tag | `v4.5_refactor_render_events_100m` |
+| Git commit at run start | `665385ddc` plus the documented uncommitted render-event refactor |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `dc1b01a9c97dd8beaa925773e8ae8843224dee5810e8885e935dd4c9dfb4208c` |
+| Backend binary SHA-256 | `52245be037b67e9908a54e5b4966d83b8c5c3b0995aac853d02f6e97e31fb5bd` |
+| Backend source SHA-256 | `341abd5096380b9c1f0834e06c09684a59eb9e79a2e953626d839fa58256ca3c` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260825T012351Z-train-1055935.json` |
+
+Result: behavioral parity is exact against the original baseline `m916qfsv`
+and all prior comparison runs. All 124 `env/*` metrics are byte-for-byte equal,
+as are agent steps, epoch, and every recorded policy/value/entropy/KL/loss
+value. Each summary contains the same 150 keys; 136 values match exactly and
+the 14 differences are limited to timestamps, wall-clock performance,
+throughput, and CPU/GPU memory/utilization telemetry.
+
+The core now publishes presentation-only NPC launch and hit-resolution events,
+which changes the backend source and binary hashes but not the state hash,
+model contract, training configuration, or policy-visible behavior. Throughput
+was 990,767 SPS and training uptime was 100.094437 seconds, within ordinary
+run-to-run variation and faster than Comparison 5 in this single sample.
+
 ## Reproduction command
 
 ```bash

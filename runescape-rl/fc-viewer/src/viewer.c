@@ -285,6 +285,13 @@ typedef struct {
     int target_slot;
     float target_y_offset;
     int track_target;
+    int attack_style;
+    int launch_tick;
+    int has_deferred_hitsplat;
+    FcVisualTargetKind hitsplat_actor_kind;
+    int hitsplat_actor_slot;
+    float hitsplat_world_x, hitsplat_world_y, hitsplat_world_z;
+    int hitsplat_damage;
     Color color;
     float radius;
     uint32_t spot_id;            /* travel spotanim ID (0 = no travel visual) */
@@ -400,6 +407,7 @@ typedef struct {
     int npc_attack_visual_style[FC_MAX_NPCS];
     float npc_attack_visual_timer[FC_MAX_NPCS];
     float npc_prayer_indicator_timer[FC_MAX_NPCS];
+    int npc_prayer_lock_tick[FC_MAX_NPCS];
     /* Hitsplats */
     Hitsplat hitsplats[MAX_HITSPLATS];
     float player_healthbar_timer;
@@ -1271,12 +1279,6 @@ static void mark_npc_attack_visual(ViewerState* v, int npc_idx,
     v->npc_prayer_indicator_timer[npc_idx] = 0.30f;
 }
 
-static void mark_npc_attack_indicator(ViewerState* v, int npc_idx) {
-    if (!v || npc_idx < 0 || npc_idx >= FC_MAX_NPCS) return;
-    v->npc_prayer_indicator_timer[npc_idx] = 0.30f;
-}
-
-
 static float policy_replay_time_scale(const ViewerState* v) {
     if (!v || v->tps <= 0.0f) return 1.0f;
     float scale = v->tps / (float)POLICY_REPLAY_BASE_TPS;
@@ -1294,18 +1296,6 @@ static float policy_replay_duration(const ViewerState* v, float seconds) {
     seconds /= scale;
     if (seconds < 0.05f) seconds = 0.05f;
     return seconds;
-}
-
-static int pending_hit_continues(const FcPendingHit* before,
-                                 const FcPendingHit* after) {
-    if (!before || !after || !before->active || !after->active)
-        return 0;
-    return after->ticks_remaining == before->ticks_remaining - 1 &&
-           after->damage == before->damage &&
-           after->attack_style == before->attack_style &&
-           after->source_npc_idx == before->source_npc_idx &&
-           after->prayer_drain == before->prayer_drain &&
-           after->prayer_lock_tick == before->prayer_lock_tick;
 }
 
 static void mark_player_attack_visual(ViewerState* v) {
@@ -1827,6 +1817,7 @@ static void reset_ep(ViewerState* v) {
         v->npc_attack_visual_style[i] = ATTACK_NONE;
         v->npc_attack_visual_timer[i] = 0.0f;
         v->npc_prayer_indicator_timer[i] = 0.0f;
+        v->npc_prayer_lock_tick[i] = -1;
     }
 }
 
@@ -1887,6 +1878,7 @@ static void viewer_jump_to_wave(ViewerState* v, int wave) {
         v->npc_attack_visual_style[i] = ATTACK_NONE;
         v->npc_attack_visual_timer[i] = 0.0f;
         v->npc_prayer_indicator_timer[i] = 0.0f;
+        v->npc_prayer_lock_tick[i] = -1;
     }
 }
 
@@ -1982,6 +1974,7 @@ static void configure_projectile_tracking(
     ViewerState* v, VisualProjectile* vp,
     FcVisualTargetKind source_kind, int source_slot,
     FcVisualTargetKind target_kind, int target_slot,
+    int attack_style,
     float launch_delay_client_ticks, float end_time_client_ticks,
     float angle, float progress, int track_target) {
     if (!v || !vp) return;
@@ -1990,6 +1983,8 @@ static void configure_projectile_tracking(
     vp->target_kind = target_kind;
     vp->target_slot = target_slot;
     vp->track_target = track_target;
+    vp->attack_style = attack_style;
+    vp->launch_tick = v->state.tick;
     vp->projectile_angle = angle >= 0.0f ? angle : 15.0f;
     vp->projectile_progress = progress >= 0.0f ? progress : 0.0f;
     /* RuneC's launch and endpoint metadata is already the client-authoritative
@@ -2186,6 +2181,59 @@ static void spawn_hitsplat(ViewerState* v,
                            float wx, float wy, float wz, int damage_tenths) {
     spawn_status_splat(v, actor_kind, actor_slot, wx, wy, wz,
                        damage_tenths, HITSPLAT_DAMAGE);
+}
+
+/* Associate a resolved ranged/magic hit with the oldest matching projectile.
+ * Combat damage remains authoritative at the simulation tick boundary; only
+ * the visible splat is retained until the client-side projectile arrives. */
+static int defer_hitsplat_to_projectile(
+    ViewerState* v, const FcRenderHit* hit,
+    FcVisualTargetKind actor_kind, int actor_slot,
+    float wx, float wy, float wz) {
+    if (!v || !hit || hit->attack_style == ATTACK_MELEE) return 0;
+
+    FcVisualTargetKind source_kind;
+    FcVisualTargetKind target_kind;
+    int source_slot;
+    int target_slot;
+    if (hit->target_entity_type == ENTITY_PLAYER) {
+        if (hit->source_npc_slot < 0) return 0;
+        source_kind = FC_VISUAL_TARGET_NPC;
+        source_slot = hit->source_npc_slot;
+        target_kind = FC_VISUAL_TARGET_PLAYER;
+        target_slot = 0;
+    } else if (hit->target_entity_type == ENTITY_NPC) {
+        if (hit->target_npc_slot < 0) return 0;
+        source_kind = FC_VISUAL_TARGET_PLAYER;
+        source_slot = 0;
+        target_kind = FC_VISUAL_TARGET_NPC;
+        target_slot = hit->target_npc_slot;
+    } else {
+        return 0;
+    }
+
+    VisualProjectile* match = NULL;
+    for (int i = 0; i < MAX_PROJECTILES; i++) {
+        VisualProjectile* vp = &v->projectiles[i];
+        if (!vp->active || vp->has_deferred_hitsplat ||
+            vp->launch_tick >= v->state.tick ||
+            vp->source_kind != source_kind || vp->source_slot != source_slot ||
+            vp->target_kind != target_kind || vp->target_slot != target_slot ||
+            vp->attack_style != hit->attack_style) {
+            continue;
+        }
+        if (!match || vp->elapsed > match->elapsed) match = vp;
+    }
+    if (!match) return 0;
+
+    match->has_deferred_hitsplat = 1;
+    match->hitsplat_actor_kind = actor_kind;
+    match->hitsplat_actor_slot = actor_slot;
+    match->hitsplat_world_x = wx;
+    match->hitsplat_world_y = wy;
+    match->hitsplat_world_z = wz;
+    match->hitsplat_damage = hit->damage;
+    return 1;
 }
 
 /* Terrain loader — the terrain mesh is the floor heightmap.
@@ -2711,7 +2759,8 @@ static void draw_npc_prayer_window_indicators(ViewerState* v) {
         if (entity->entity_type != ENTITY_NPC || entity->is_dead ||
             npc_idx < 0 || npc_idx >= FC_MAX_NPCS ||
             (v->npc_prayer_indicator_timer[npc_idx] <= 0.0f &&
-             !dbg_npc_prayer_window_open(&v->state, npc_idx))) {
+             (v->npc_prayer_lock_tick[npc_idx] < 0 ||
+              v->state.tick >= v->npc_prayer_lock_tick[npc_idx]))) {
             continue;
         }
 
@@ -4199,31 +4248,6 @@ int main(int argc, char** argv) {
                 v.prev_npc_active[ni] = v.state.npcs[ni].active;
             }
 
-            /* Snapshot pending hit counts BEFORE tick (to detect new projectiles) */
-            int prev_player_hits = v.state.player.num_pending_hits;
-            FcPendingHit prev_player_pending[FC_MAX_PENDING_HITS];
-            memcpy(prev_player_pending, v.state.player.pending_hits,
-                   sizeof(prev_player_pending));
-            int prev_npc_hits[FC_MAX_NPCS];
-            int prev_npc_hit_resolves[FC_MAX_NPCS];
-            int prev_npc_attack_timers[FC_MAX_NPCS];
-            int prev_npc_prayer_windows[FC_MAX_NPCS];
-            for (int ni = 0; ni < FC_MAX_NPCS; ni++) {
-                prev_npc_hits[ni] = v.state.npcs[ni].num_pending_hits;
-                prev_npc_hit_resolves[ni] = 0;
-                prev_npc_attack_timers[ni] = v.state.npcs[ni].attack_timer;
-                prev_npc_prayer_windows[ni] =
-                    dbg_npc_prayer_window_open(&v.state, ni);
-                for (int hi = 0; hi < v.state.npcs[ni].num_pending_hits; hi++) {
-                    const FcPendingHit* pending =
-                        &v.state.npcs[ni].pending_hits[hi];
-                    if (pending->active && pending->ticks_remaining <= 1) {
-                        prev_npc_hit_resolves[ni] = 1;
-                        break;
-                    }
-                }
-            }
-
             /* Step simulation */
             fc_step(&v.state, v.actions);
             if (used_human_actions && v.actions[5] > 0 && v.actions[6] > 0)
@@ -4273,17 +4297,7 @@ int main(int argc, char** argv) {
                 if (vis_tile_y >= FC_ARENA_HEIGHT) vis_tile_y = FC_ARENA_HEIGHT - 1;
                 float gy_p = ground_y(&v, vis_tile_x, vis_tile_y);
                 float p3x = vis_px + 0.5f;
-                float p3y = gy_p + 1.5f;
                 float p3z = -(vis_py + 0.5f);
-                /* Player hitsplat: only show when an incoming NPC hit resolved.
-                 * hit_landed_this_tick is overloaded in the core and also flips
-                 * when the player fires their own ranged attack, which would
-                 * otherwise create false blue 0 splats on the player. */
-                if (v.state.player.hit_source_npc_type != NPC_NONE) {
-                    spawn_hitsplat(&v, FC_VISUAL_TARGET_PLAYER, 0,
-                                   p3x, gy_p + 2.5f, p3z,
-                                   v.state.player.damage_taken_this_tick);
-                }
                 if (v.state.tz_kih_prayer_drain_this_tick > 0) {
                     spawn_status_splat(&v, FC_VISUAL_TARGET_PLAYER, 0,
                                        p3x + 0.3f, gy_p + 3.0f, p3z,
@@ -4328,34 +4342,51 @@ int main(int argc, char** argv) {
                         FC_VISUAL_TARGET_PLAYER, 0,
                         FC_VISUAL_TARGET_NPC,
                         v.render_events.player_attack_target_npc_slot,
+                        ATTACK_RANGED,
                         profile->projectile_launch_delay_client_ticks,
                         profile_end_time,
                         profile->projectile_angle,
                         profile->projectile_progress, 1);
                 }
 
-                /* NPC damage taken — hitsplats */
+                /* Hit-resolution events preserve zero-damage misses/blocks and
+                 * multiple same-tick impacts without inspecting hit queues. */
+                for (int hi = 0; hi < v.render_events.hit_count; hi++) {
+                    const FcRenderHit* hit = &v.render_events.hits[hi];
+                    if (hit->target_entity_type == ENTITY_PLAYER) {
+                        if (!defer_hitsplat_to_projectile(
+                                &v, hit, FC_VISUAL_TARGET_PLAYER, 0,
+                                p3x, gy_p + 2.5f, p3z)) {
+                            spawn_hitsplat(&v, FC_VISUAL_TARGET_PLAYER, 0,
+                                           p3x, gy_p + 2.5f, p3z,
+                                           hit->damage);
+                        }
+                        continue;
+                    }
+                    if (hit->target_entity_type != ENTITY_NPC ||
+                        hit->target_npc_slot < 0 ||
+                        hit->target_npc_slot >= FC_MAX_NPCS) {
+                        continue;
+                    }
+                    FcNpc* target = &v.state.npcs[hit->target_npc_slot];
+                    float gy_n = ground_y(&v, target->x, target->y);
+                    float nx = (float)target->x + (float)target->size * 0.5f;
+                    float nz = -((float)target->y +
+                                 (float)target->size * 0.5f);
+                    float nh = gy_n + 1.0f + (float)target->size * 0.5f;
+                    if (!defer_hitsplat_to_projectile(
+                            &v, hit, FC_VISUAL_TARGET_NPC,
+                            hit->target_npc_slot, nx, nh, nz)) {
+                        spawn_hitsplat(&v, FC_VISUAL_TARGET_NPC,
+                                       hit->target_npc_slot,
+                                       nx, nh, nz, hit->damage);
+                    }
+                }
+
+                /* NPC healing remains a final-state per-tick presentation
+                 * value; unlike attacks and hits, it is not reconstructed. */
                 for (int i = 0; i < FC_MAX_NPCS; i++) {
                     FcNpc* n = &v.state.npcs[i];
-                    if (!n->active && !n->died_this_tick && n->damage_taken_this_tick == 0) continue;
-                    int same_tick_player_hit =
-                        v.render_events.player_attack_fired &&
-                        v.render_events.player_attack_target_npc_slot == i &&
-                        v.render_events.player_attack_hit_delay_ticks <= 1;
-                    int hit_resolved = n->damage_taken_this_tick > 0 ||
-                                       n->died_this_tick ||
-                                       prev_npc_hit_resolves[i] ||
-                                       same_tick_player_hit ||
-                                       (prev_npc_hits[i] > n->num_pending_hits);
-                    if (hit_resolved) {
-                        float gy_n = ground_y(&v, n->x, n->y);
-                        float nx = (float)n->x + (float)n->size*0.5f;
-                        float nz = -((float)n->y + (float)n->size*0.5f);
-                        float nh = gy_n + 1.0f + (float)n->size*0.5f;
-                        spawn_hitsplat(&v, FC_VISUAL_TARGET_NPC, i,
-                                       nx, nh, nz,
-                                       n->damage_taken_this_tick);
-                    }
                     if (n->healing_received_this_tick > 0) {
                         float gy_n = ground_y(&v, n->x, n->y);
                         float nx = (float)n->x + (float)n->size*0.5f;
@@ -4368,48 +4399,57 @@ int main(int argc, char** argv) {
                     }
                 }
 
-                /* NPC ranged/magic fired → one projectile per newly queued
-                 * pending hit. Match surviving pre-step hits as a multiset so
-                 * queue compaction cannot hide a new attack when an old hit
-                 * resolves during the same simulation step. */
-                unsigned char matched_previous[FC_MAX_PENDING_HITS] = {0};
-                for (int hi = 0; hi < v.state.player.num_pending_hits; hi++) {
-                    FcPendingHit* ph = &v.state.player.pending_hits[hi];
-                    if (!ph->active || ph->source_npc_idx < 0) continue;
-                    int continued = 0;
-                    for (int old = 0; old < prev_player_hits; old++) {
-                        if (!matched_previous[old] &&
-                            pending_hit_continues(&prev_player_pending[old], ph)) {
-                            matched_previous[old] = 1;
-                            continued = 1;
-                            break;
-                        }
+                /* NPC launches are reported directly by the AI transition, so
+                 * animations and projectiles no longer depend on queue diffs. */
+                for (int ai = 0; ai < v.render_events.npc_attack_count; ai++) {
+                    const FcRenderNpcAttack* attack =
+                        &v.render_events.npc_attacks[ai];
+                    int npc_idx = attack->npc_slot;
+                    if (npc_idx < 0 || npc_idx >= FC_MAX_NPCS) continue;
+                    mark_npc_attack_visual(&v, npc_idx,
+                                           attack->attack_style);
+                    v.npc_prayer_lock_tick[npc_idx] =
+                        attack->prayer_lock_tick;
+                    if (!attack->hit_queued ||
+                        attack->attack_style == ATTACK_MELEE) {
+                        continue;
                     }
-                    if (continued) continue;
-                    FcNpc* src = &v.state.npcs[ph->source_npc_idx];
-                    if (!src->active) continue;
-                    mark_npc_attack_visual(&v, ph->source_npc_idx,
-                                           ph->attack_style);
-                    if (ph->attack_style == ATTACK_MELEE) continue;  /* no projectile for melee */
-                    int sx_tile = src->x;
-                    int sy_tile = src->y;
-                    if (src->size > 1) {
-                        if (v.state.player.x < src->x) sx_tile = src->x;
-                        else if (v.state.player.x >= src->x + src->size) sx_tile = src->x + src->size - 1;
-                        else sx_tile = v.state.player.x;
-                        if (v.state.player.y < src->y) sy_tile = src->y;
-                        else if (v.state.player.y >= src->y + src->size) sy_tile = src->y + src->size - 1;
-                        else sy_tile = v.state.player.y;
+
+                    int sx_tile = attack->source_x;
+                    int sy_tile = attack->source_y;
+                    if (attack->source_size > 1) {
+                        if (attack->target_x < attack->source_x)
+                            sx_tile = attack->source_x;
+                        else if (attack->target_x >=
+                                 attack->source_x + attack->source_size)
+                            sx_tile = attack->source_x +
+                                      attack->source_size - 1;
+                        else
+                            sx_tile = attack->target_x;
+                        if (attack->target_y < attack->source_y)
+                            sy_tile = attack->source_y;
+                        else if (attack->target_y >=
+                                 attack->source_y + attack->source_size)
+                            sy_tile = attack->source_y +
+                                      attack->source_size - 1;
+                        else
+                            sy_tile = attack->target_y;
                     }
                     float src_ground = ground_y(&v, sx_tile, sy_tile);
                     float s3x = (float)sx_tile + 0.5f;
-                    float s3y = src_ground + 1.0f + (float)src->size*0.3f;
+                    float s3y = src_ground + 1.0f +
+                                (float)attack->source_size * 0.3f;
                     float s3z = -((float)sy_tile + 0.5f);
-                    float dst_y = p3y;
-                    Color pc = (ph->attack_style == ATTACK_MAGIC)
+                    float target_ground = ground_y(
+                        &v, attack->target_x, attack->target_y);
+                    float target_x = (float)attack->target_x + 0.5f;
+                    float target_y = target_ground + 1.5f;
+                    float target_z = -((float)attack->target_y + 0.5f);
+                    Color pc = (attack->attack_style == ATTACK_MAGIC)
                         ? CLITERAL(Color){255, 104, 36, 235}
                         : CLITERAL(Color){218, 178, 92, 235};
-                    float rad = (src->npc_type == NPC_TZTOK_JAD) ? 0.3f : 0.15f;
+                    float rad = (attack->npc_type == NPC_TZTOK_JAD)
+                        ? 0.3f : 0.15f;
                     uint32_t travel_spot = 0;
                     uint32_t launch_spot = 0;
                     uint32_t impact_spot = 0;
@@ -4422,7 +4462,7 @@ int main(int argc, char** argv) {
                     float profile_step_multiplier = 0.0f;
                     float fixed_profile_end_time = -1.0f;
                     int track_target = 1;
-                    if (src->npc_type == NPC_TOK_XIL) {
+                    if (attack->npc_type == NPC_TOK_XIL) {
                         travel_spot = PROJ_TOK_XIL_SPINE;
                         impact_spot = PROJ_TOK_XIL_IMPACT;
                         profile_start_height = 296.0f;
@@ -4431,7 +4471,7 @@ int main(int argc, char** argv) {
                         profile_angle = 16.0f;
                         profile_progress = 0.0f;
                         profile_step_multiplier = 5.0f;
-                    } else if (src->npc_type == NPC_KET_ZEK) {
+                    } else if (attack->npc_type == NPC_KET_ZEK) {
                         travel_spot = PROJ_KET_ZEK_FIRE;
                         impact_spot = PROJ_KET_ZEK_IMPACT;
                         profile_start_height = 192.0f;
@@ -4441,8 +4481,8 @@ int main(int argc, char** argv) {
                         profile_length_adjustment = 8.0f;
                         profile_progress = 0.0f;
                         profile_step_multiplier = 8.0f;
-                    } else if (src->npc_type == NPC_TZTOK_JAD &&
-                               ph->attack_style == ATTACK_MAGIC) {
+                    } else if (attack->npc_type == NPC_TZTOK_JAD &&
+                               attack->attack_style == ATTACK_MAGIC) {
                         launch_spot = PROJ_JAD_MAGIC_LAUNCH;
                         travel_spot = PROJ_JAD_MAGIC_TRAVEL;
                         impact_spot = PROJ_JAD_MAGIC_IMPACT;
@@ -4452,8 +4492,8 @@ int main(int argc, char** argv) {
                         profile_angle = 16.0f;
                         profile_progress = 64.0f;
                         profile_step_multiplier = 5.0f;
-                    } else if (src->npc_type == NPC_TZTOK_JAD &&
-                               ph->attack_style == ATTACK_RANGED) {
+                    } else if (attack->npc_type == NPC_TZTOK_JAD &&
+                               attack->attack_style == ATTACK_RANGED) {
                         /* RuneC models Jad ranged as a delayed impact on the
                          * attacked tile, not as a homing travel projectile. */
                         impact_spot = PROJ_JAD_RANGED_IMPACT;
@@ -4467,64 +4507,37 @@ int main(int argc, char** argv) {
                     if (profile_start_height >= 0.0f)
                         s3y = src_ground + profile_start_height / 128.0f;
                     if (profile_end_height >= 0.0f)
-                        dst_y = gy_p + profile_end_height / 128.0f;
+                        target_y = target_ground +
+                                   profile_end_height / 128.0f;
                     int projectile_distance = projectile_tile_distance(
                         sx_tile, sy_tile,
-                        v.state.player.x, v.state.player.y);
+                        attack->target_x, attack->target_y);
                     float profile_end_time = fixed_profile_end_time >= 0.0f
                         ? fixed_profile_end_time
                         : fc_projectile_profile_end_cycle(
                             profile_start_time, profile_length_adjustment,
                             profile_step_multiplier, projectile_distance);
                     VisualProjectile* vp =
-                        spawn_projectile(&v, s3x, s3y, s3z, p3x, dst_y, p3z,
+                        spawn_projectile(&v, s3x, s3y, s3z,
+                                         target_x, target_y, target_z,
                                          0.1f, pc, rad, travel_spot,
                                          launch_spot, impact_spot);
                     configure_projectile_tracking(
                         &v, vp,
-                        FC_VISUAL_TARGET_NPC, ph->source_npc_idx,
+                        FC_VISUAL_TARGET_NPC, npc_idx,
                         FC_VISUAL_TARGET_PLAYER, 0,
+                        attack->attack_style,
                         profile_start_time, profile_end_time,
                         profile_angle, profile_progress, track_target);
                 }
 
+                /* End delayed indicators at the lock boundary reported by the
+                 * launch event; immediate attacks retain only the short pulse. */
                 for (int ni = 0; ni < FC_MAX_NPCS; ni++) {
-                    FcNpc* n = &v.state.npcs[ni];
-                    if (!n->active || n->npc_type != NPC_TZTOK_JAD ||
-                        v.npc_attack_visual_timer[ni] > 0.0f ||
-                        n->attack_timer != n->attack_speed)
-                        continue;
-                    if (fc_npc_can_melee_player(v.state.player.x,
-                                                v.state.player.y,
-                                                n->x, n->y, n->size,
-                                                v.state.walkable,
-                                                v.state.movement_flags)) {
-                        mark_npc_attack_visual(&v, ni, ATTACK_MELEE);
-                    }
-                }
-
-                /* Delay-one attacks can be queued and resolved entirely inside
-                 * fc_step(), leaving no pending-hit entry for the presentation
-                 * layer to diff. A cooldown reset is the remaining read-only
-                 * launch signal. Exclude MejKot heals, which share that timer. */
-                for (int ni = 0; ni < FC_MAX_NPCS; ni++) {
-                    FcNpc* n = &v.state.npcs[ni];
-                    if (!v.prev_npc_active[ni] || !n->active || n->is_dead ||
-                        prev_npc_attack_timers[ni] > 1 ||
-                        n->attack_timer != n->attack_speed ||
-                        (n->npc_type == NPC_YT_MEJKOT &&
-                         n->healing_given_this_tick > 0)) {
-                        continue;
-                    }
-                    mark_npc_attack_indicator(&v, ni);
-                }
-
-                /* Do not let the minimum launch pulse extend a delayed
-                 * indicator beyond the authoritative lock boundary. */
-                for (int ni = 0; ni < FC_MAX_NPCS; ni++) {
-                    if (prev_npc_prayer_windows[ni] &&
-                        !dbg_npc_prayer_window_open(&v.state, ni)) {
+                    if (v.npc_prayer_lock_tick[ni] >= 0 &&
+                        v.state.tick >= v.npc_prayer_lock_tick[ni]) {
                         v.npc_prayer_indicator_timer[ni] = 0.0f;
+                        v.npc_prayer_lock_tick[ni] = -1;
                     }
                 }
 
@@ -4661,6 +4674,16 @@ int main(int argc, char** argv) {
                                           effect_secs, v.projectiles[i].color,
                                           v.projectiles[i].radius * 1.4f,
                                           0.0f);
+                        if (v.projectiles[i].has_deferred_hitsplat) {
+                            spawn_hitsplat(
+                                &v,
+                                v.projectiles[i].hitsplat_actor_kind,
+                                v.projectiles[i].hitsplat_actor_slot,
+                                v.projectiles[i].hitsplat_world_x,
+                                v.projectiles[i].hitsplat_world_y,
+                                v.projectiles[i].hitsplat_world_z,
+                                v.projectiles[i].hitsplat_damage);
+                        }
                         free_projectile(&v.projectiles[i]);
                     }
                 }
@@ -4810,6 +4833,7 @@ skip_player_anim_update:
                     v.npc_attack_visual_style[ni] = ATTACK_NONE;
                     v.npc_attack_visual_timer[ni] = 0.0f;
                     v.npc_prayer_indicator_timer[ni] = 0.0f;
+                    v.npc_prayer_lock_tick[ni] = -1;
                     v.npc_healthbar_timer[ni] = 0.0f;
                     continue;
                 }
@@ -4850,9 +4874,6 @@ skip_player_anim_update:
                 } else if (v.npc_attack_visual_timer[ni] > 0.0f) {
                     action_seq = npc_attack_animation_id(
                         n->npc_type, v.npc_attack_visual_style[ni]);
-                } else if (n->attack_timer == n->attack_speed) {
-                    action_seq = npc_attack_animation_id(n->npc_type,
-                                                         n->attack_style);
                 }
 
                 AnimSequence* pose = advance_anim_track(

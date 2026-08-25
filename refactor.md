@@ -137,13 +137,28 @@ Completed on 2026-08-24. Net reduction: 97 LOC.
 
 ## Larger maintainability refactors
 
-### Viewer event reconstruction
+### Viewer event reconstruction — completed
 
-The viewer snapshots pending hits before `fc_step()` and diffs queues afterward
-to infer NPC attacks, projectiles, and impacts. Extend the presentation-only
-`FcRenderEvents` contract to report these authoritative events. This should
-eliminate inference code and prevent visual drift without changing gameplay.
-Add strong render-event tests before removing the reconstruction path.
+Completed on 2026-08-24.
+
+- Extended the presentation-only `FcRenderEvents` contract with bounded NPC
+  launch and hit-resolution event lists.
+- NPC launch events preserve the authoritative source NPC and tile, target
+  tile, selected style, hit delay, delayed Prayer-lock tick, and whether the
+  pending hit was successfully queued.
+- Hit events report player and NPC impacts at resolution time, including
+  misses and Prayer-blocked hits whose final damage is zero.
+- Removed the viewer's pending-hit snapshots, multiset queue matching,
+  queue-shrink impact detection, cooldown-reset launch fallback, Jad-melee
+  special case, and attack-timer animation fallback.
+- The debug Prayer-window indicator now follows the lock boundary carried by
+  the launch event instead of inspecting pending-hit queues.
+- The viewer now consumes core events read-only for player launches, NPC
+  launches, movement, Prayer transitions, and hit resolutions. Combat state,
+  timing, observations, actions, rewards, and policy contracts are unchanged.
+- Added deterministic coverage for player impacts, delayed NPC projectiles,
+  blocked zero-damage resolutions, same-tick melee launches and impacts, Jad's
+  delayed Prayer lock, and next-tick event clearing. All 162 tests pass.
 
 ### Animation mixing
 

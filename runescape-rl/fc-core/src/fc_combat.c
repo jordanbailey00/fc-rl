@@ -327,6 +327,21 @@ int fc_queue_pending_hit(FcPendingHit hits[], int* num_hits, int max_hits,
 /* Resolve pending hits (called each tick)                                   */
 /* ======================================================================== */
 
+static void record_render_hit(FcState* state, int target_entity_type,
+                              int target_npc_slot, int source_npc_slot,
+                              int attack_style, int damage, int blocked) {
+    FcRenderEvents* events = &state->render_events;
+    if (events->hit_count >= FC_MAX_RENDER_HITS) return;
+
+    FcRenderHit* hit = &events->hits[events->hit_count++];
+    hit->target_entity_type = target_entity_type;
+    hit->target_npc_slot = target_npc_slot;
+    hit->source_npc_slot = source_npc_slot;
+    hit->attack_style = attack_style;
+    hit->damage = damage;
+    hit->blocked = blocked;
+}
+
 void fc_resolve_player_pending_hits(FcState* state) {
     FcPlayer* p = &state->player;
     int write = 0;
@@ -355,6 +370,9 @@ void fc_resolve_player_pending_hits(FcState* state) {
             state->damage_taken_this_tick += final_damage;
             p->total_damage_taken += final_damage;
             p->hit_landed_this_tick = 1;
+            record_render_hit(state, ENTITY_PLAYER, -1,
+                              h->source_npc_idx, h->attack_style,
+                              final_damage, blocked);
 
             /* Auto-retaliate: if player has no target, target the attacker.
              * approach_target stays 0 — player attacks in place, doesn't chase. */
@@ -451,6 +469,8 @@ void fc_resolve_npc_pending_hits(FcState* state, int npc_idx) {
             if (h->damage > 0) {
                 state->hits_landed_this_tick++;
             }
+            record_render_hit(state, ENTITY_NPC, npc_idx, -1,
+                              h->attack_style, h->damage, 0);
 
             /* Track Jad-specific damage */
             if (npc->npc_type == NPC_TZTOK_JAD) {

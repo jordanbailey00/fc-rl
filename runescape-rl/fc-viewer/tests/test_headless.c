@@ -902,19 +902,29 @@ static void test_render_events(void) {
         events.player_attack_target_npc_slot == 0 &&
         events.player_attack_target_x == 12 &&
         events.player_attack_target_y == 10 &&
+        events.hit_count == 1 &&
+        events.hits[0].target_entity_type == ENTITY_NPC &&
+        events.hits[0].target_npc_slot == 0 &&
+        events.hits[0].source_npc_slot == -1 &&
+        events.hits[0].attack_style == ATTACK_RANGED &&
         events.player_move_waypoint_count == 0 &&
         state.player.x == 10 && state.player.y == 10 &&
         state.player.attack_target_idx == 0) {
         PASS();
     } else {
         snprintf(err, sizeof(err),
-                 "fired=%d src=(%d,%d) target=%d@(%d,%d) waypoints=%d pos=(%d,%d) post_target=%d",
+                 "fired=%d src=(%d,%d) target=%d@(%d,%d) hits=%d hit_target=%d/%d hit_source=%d hit_style=%d waypoints=%d pos=(%d,%d) post_target=%d",
                  events.player_attack_fired,
                  events.player_attack_source_x,
                  events.player_attack_source_y,
                  events.player_attack_target_npc_slot,
                  events.player_attack_target_x,
                  events.player_attack_target_y,
+                 events.hit_count,
+                 events.hits[0].target_entity_type,
+                 events.hits[0].target_npc_slot,
+                 events.hits[0].source_npc_slot,
+                 events.hits[0].attack_style,
                  events.player_move_waypoint_count,
                  state.player.x, state.player.y,
                  state.player.attack_target_idx);
@@ -963,6 +973,162 @@ static void test_render_events(void) {
                  events.prayer_flick_performed, events.prayer_prior,
                  events.prayer_final, events.prayer_off_performed,
                  events.prayer_on_succeeded);
+        FAIL(err);
+    }
+
+    fc_destroy(&state);
+
+    init_manual_test_state(&state);
+    fc_npc_spawn(&state.npcs[0], NPC_TOK_XIL, 17, 10, 0);
+    state.npcs[0].movement_speed = 0;
+    state.npcs[0].attack_timer = 0;
+    state.npcs_remaining = 1;
+    state.player.attack_timer = 999;
+    state.player.prayer = PRAYER_PROTECT_RANGE;
+    memset(actions, 0, sizeof(actions));
+
+    fc_step(&state, actions);
+    fc_fill_render_events(&state, &events);
+
+    TEST("NPC launch event reports the authoritative projectile attack");
+    if (events.npc_attack_count == 1 &&
+        events.npc_attacks[0].npc_slot == 0 &&
+        events.npc_attacks[0].npc_type == NPC_TOK_XIL &&
+        events.npc_attacks[0].attack_style == ATTACK_RANGED &&
+        events.npc_attacks[0].source_x == 17 &&
+        events.npc_attacks[0].source_y == 10 &&
+        events.npc_attacks[0].target_x == 10 &&
+        events.npc_attacks[0].target_y == 10 &&
+        events.npc_attacks[0].hit_delay_ticks == 2 &&
+        events.npc_attacks[0].hit_queued == 1 &&
+        events.hit_count == 0) {
+        PASS();
+    } else {
+        snprintf(err, sizeof(err),
+                 "attacks=%d slot=%d type=%d style=%d src=(%d,%d) target=(%d,%d) delay=%d queued=%d hits=%d",
+                 events.npc_attack_count,
+                 events.npc_attacks[0].npc_slot,
+                 events.npc_attacks[0].npc_type,
+                 events.npc_attacks[0].attack_style,
+                 events.npc_attacks[0].source_x,
+                 events.npc_attacks[0].source_y,
+                 events.npc_attacks[0].target_x,
+                 events.npc_attacks[0].target_y,
+                 events.npc_attacks[0].hit_delay_ticks,
+                 events.npc_attacks[0].hit_queued,
+                 events.hit_count);
+        FAIL(err);
+    }
+
+    fc_step(&state, actions);
+    fc_fill_render_events(&state, &events);
+
+    TEST("Deferred NPC hit event reports its exact resolution");
+    if (events.npc_attack_count == 0 && events.hit_count == 1 &&
+        events.hits[0].target_entity_type == ENTITY_PLAYER &&
+        events.hits[0].target_npc_slot == -1 &&
+        events.hits[0].source_npc_slot == 0 &&
+        events.hits[0].attack_style == ATTACK_RANGED &&
+        events.hits[0].damage == 0 &&
+        state.player.damage_taken_this_tick == 0 &&
+        events.hits[0].blocked == 1) {
+        PASS();
+    } else {
+        snprintf(err, sizeof(err),
+                 "attacks=%d hits=%d target=%d/%d source=%d style=%d damage=%d/%d blocked=%d",
+                 events.npc_attack_count, events.hit_count,
+                 events.hits[0].target_entity_type,
+                 events.hits[0].target_npc_slot,
+                 events.hits[0].source_npc_slot,
+                 events.hits[0].attack_style,
+                 events.hits[0].damage,
+                 state.player.damage_taken_this_tick,
+                 events.hits[0].blocked);
+        FAIL(err);
+    }
+
+    fc_destroy(&state);
+
+    init_manual_test_state(&state);
+    fc_npc_spawn(&state.npcs[0], NPC_TZTOK_JAD, 17, 10, 0);
+    state.npcs[0].movement_speed = 0;
+    state.npcs[0].attack_timer = 0;
+    state.npcs_remaining = 1;
+    state.player.attack_timer = 999;
+    memset(actions, 0, sizeof(actions));
+
+    fc_step(&state, actions);
+    fc_fill_render_events(&state, &events);
+
+    TEST("Jad launch event exposes the authoritative Prayer lock tick");
+    if (events.npc_attack_count == 1 &&
+        events.npc_attacks[0].npc_slot == 0 &&
+        events.npc_attacks[0].npc_type == NPC_TZTOK_JAD &&
+        (events.npc_attacks[0].attack_style == ATTACK_RANGED ||
+         events.npc_attacks[0].attack_style == ATTACK_MAGIC) &&
+        events.npc_attacks[0].prayer_lock_tick == state.tick + 1 &&
+        events.npc_attacks[0].hit_delay_ticks >= 3 &&
+        events.npc_attacks[0].hit_queued == 1) {
+        PASS();
+    } else {
+        snprintf(err, sizeof(err),
+                 "attacks=%d slot=%d type=%d style=%d lock=%d expected=%d delay=%d queued=%d",
+                 events.npc_attack_count,
+                 events.npc_attacks[0].npc_slot,
+                 events.npc_attacks[0].npc_type,
+                 events.npc_attacks[0].attack_style,
+                 events.npc_attacks[0].prayer_lock_tick,
+                 state.tick + 1,
+                 events.npc_attacks[0].hit_delay_ticks,
+                 events.npc_attacks[0].hit_queued);
+        FAIL(err);
+    }
+
+    fc_destroy(&state);
+
+    init_manual_test_state(&state);
+    fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 11, 10, 0);
+    state.npcs[0].movement_speed = 0;
+    state.npcs[0].attack_timer = 0;
+    state.npcs_remaining = 1;
+    state.player.attack_timer = 999;
+    memset(actions, 0, sizeof(actions));
+
+    fc_step(&state, actions);
+    fc_fill_render_events(&state, &events);
+
+    TEST("Same-tick melee launch and impact are both explicit events");
+    if (events.npc_attack_count == 1 && events.hit_count == 1 &&
+        events.npc_attacks[0].npc_slot == 0 &&
+        events.npc_attacks[0].attack_style == ATTACK_MELEE &&
+        events.npc_attacks[0].hit_delay_ticks == 1 &&
+        events.hits[0].target_entity_type == ENTITY_PLAYER &&
+        events.hits[0].source_npc_slot == 0 &&
+        events.hits[0].attack_style == ATTACK_MELEE) {
+        PASS();
+    } else {
+        snprintf(err, sizeof(err),
+                 "attacks=%d attack_style=%d delay=%d hits=%d target=%d source=%d hit_style=%d",
+                 events.npc_attack_count,
+                 events.npc_attacks[0].attack_style,
+                 events.npc_attacks[0].hit_delay_ticks,
+                 events.hit_count,
+                 events.hits[0].target_entity_type,
+                 events.hits[0].source_npc_slot,
+                 events.hits[0].attack_style);
+        FAIL(err);
+    }
+
+    state.npcs[0].attack_timer = 999;
+    fc_step(&state, actions);
+    fc_fill_render_events(&state, &events);
+
+    TEST("Render attack and hit events clear at the next tick boundary");
+    if (events.npc_attack_count == 0 && events.hit_count == 0) {
+        PASS();
+    } else {
+        snprintf(err, sizeof(err), "attacks=%d hits=%d",
+                 events.npc_attack_count, events.hit_count);
         FAIL(err);
     }
 
