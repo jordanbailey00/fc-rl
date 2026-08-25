@@ -251,18 +251,21 @@ Implemented.
 
 ### Separate NPC style selection from common attack launch
 
-Estimated reduction: approximately 25-40 LOC.
+Implemented.
 
-- `jad_attack()` and `npc_generic_attack()` correctly have different style
-  selection rules, but duplicate the attack-level lookup, attack and defence
-  rolls, hit chance, damage roll, pending-hit queueing, and cooldown reset.
-- Keep style selection in the specialized functions and move only the common
-  launch/queue operation into a helper.
-- Make Jad's minimum projectile delay, delayed prayer-lock policy, and zero
-  prayer drain explicit parameters or an explicit launch-policy value. Do not
-  hide these differences behind an incidental `npc_type` check.
-- Verify that the helper consumes RNG in the same order and only when the old
-  paths did.
+- `jad_attack()` and `npc_generic_attack()` retain their distinct style,
+  range/LOS, hit-delay, prayer-drain, and prayer-lock decisions.
+- One private `launch_npc_attack()` helper now owns their duplicated attack and
+  defence rolls, hit/damage RNG, pending-hit initialization, render event, and
+  cooldown reset. Jad-specific behavior is passed explicitly rather than
+  inferred from NPC type.
+- Production code decreased by 9 LOC with no new public API or test code.
+- Existing generic/Jad RNG, damage, prayer-lock, and call-site tests pass; the
+  full 165-test suite passes; and the 628-line deterministic trace is exactly
+  unchanged.
+- The 100M W&B regression `y4vimecf` exactly matches baseline `m916qfsv` and
+  preceding run `og4lc7gn` on all 124 `env/*` values and every
+  non-performance summary value.
 
 ### Centralize core distance primitives
 

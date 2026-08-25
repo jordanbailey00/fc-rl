@@ -430,6 +430,43 @@ static void record_npc_attack(FcState* state, const FcNpc* npc, int npc_idx,
     attack->hit_queued = hit_queued;
 }
 
+static void launch_npc_attack(FcState* state, FcNpc* npc, int npc_idx,
+                              int attack_style, int hit_delay_ticks,
+                              int prayer_drain, int prayer_lock_delay_ticks) {
+    const FcNpcStats* stats = fc_npc_get_stats(npc->npc_type);
+    FcPlayer* player = &state->player;
+    int max_hit_hp = fc_npc_max_hit_hp_for_style(stats, attack_style);
+    int attack_level = npc_attack_level_for_style(stats, attack_style);
+    int attack_roll = fc_npc_attack_roll(attack_level, stats->att_bonus);
+    FcAttackType attack_type =
+        npc_attack_type_for_style(stats, attack_style);
+    int defence_roll = fc_player_def_roll(player, attack_type);
+    float hit_chance = fc_hit_chance(attack_roll, defence_roll);
+    int hit = fc_rng_float(state) < hit_chance;
+    int damage = hit ? fc_roll_npc_damage_tenths(state, max_hit_hp) : 0;
+
+    int hit_queued = fc_queue_pending_hit(
+        player->pending_hits, &player->num_pending_hits, FC_MAX_PENDING_HITS,
+        damage, hit_delay_ticks, attack_style, npc_idx, prayer_drain);
+    int prayer_lock_tick = -1;
+    if (hit_queued) {
+        FcPendingHit* queued =
+            &player->pending_hits[player->num_pending_hits - 1];
+        if (prayer_lock_delay_ticks > 0) {
+            queued->prayer_snapshot = -1;
+            queued->prayer_lock_tick =
+                state->tick + prayer_lock_delay_ticks;
+            prayer_lock_tick = queued->prayer_lock_tick;
+        } else {
+            queued->prayer_snapshot = player->prayer_at_tick_start;
+        }
+    }
+
+    record_npc_attack(state, npc, npc_idx, attack_style, hit_delay_ticks,
+                      prayer_lock_tick, hit_queued);
+    npc->attack_timer = npc->attack_speed;
+}
+
 static void jad_attack(FcState* state, FcNpc* npc, int npc_idx) {
     const FcNpcStats* stats = fc_npc_get_stats(npc->npc_type);
     FcPlayer* p = &state->player;
@@ -468,37 +505,11 @@ static void jad_attack(FcState* state, FcNpc* npc, int npc_idx) {
 
     if (!in_range) return;
 
-    int use_max_hit_hp = fc_npc_max_hit_hp_for_style(stats, use_style);
-    int att_level = npc_attack_level_for_style(stats, use_style);
-    int att_roll = fc_npc_attack_roll(att_level, stats->att_bonus);
-    FcAttackType attack_type = npc_attack_type_for_style(stats, use_style);
-    int def_roll = fc_player_def_roll(p, attack_type);
-    float chance = fc_hit_chance(att_roll, def_roll);
-
-    int hit = (fc_rng_float(state) < chance) ? 1 : 0;
-    int damage = hit ?
-        fc_roll_npc_damage_tenths(state, use_max_hit_hp) : 0;
     int delay = fc_npc_hit_delay(npc->npc_type, use_style, dist);
     if (use_style != ATTACK_MELEE && delay < 3) delay = 3;
-
-    int hit_queued = fc_queue_pending_hit(
-        p->pending_hits, &p->num_pending_hits, FC_MAX_PENDING_HITS,
-        damage, delay, use_style, npc_idx, 0);
-    int prayer_lock_tick = -1;
-    if (hit_queued) {
-        FcPendingHit* queued = &p->pending_hits[p->num_pending_hits - 1];
-        if (use_style == ATTACK_MELEE) {
-            queued->prayer_snapshot = p->prayer_at_tick_start;
-        } else {
-            queued->prayer_snapshot = -1;
-            queued->prayer_lock_tick = state->tick + 2;
-            prayer_lock_tick = queued->prayer_lock_tick;
-        }
-    }
-
-    record_npc_attack(state, npc, npc_idx, use_style, delay,
-                      prayer_lock_tick, hit_queued);
-    npc->attack_timer = npc->attack_speed;
+    int prayer_lock_delay = use_style == ATTACK_MELEE ? 0 : 2;
+    launch_npc_attack(state, npc, npc_idx, use_style, delay, 0,
+                      prayer_lock_delay);
 }
 
 /* ======================================================================== */
@@ -682,29 +693,9 @@ static void npc_generic_attack(FcState* state, FcNpc* npc, int npc_idx) {
 
     if (!in_range) return;
 
-    int use_max_hit_hp = fc_npc_max_hit_hp_for_style(stats, use_style);
-    int att_level = npc_attack_level_for_style(stats, use_style);
-    int att_roll = fc_npc_attack_roll(att_level, stats->att_bonus);
-    FcAttackType attack_type = npc_attack_type_for_style(stats, use_style);
-    int def_roll = fc_player_def_roll(p, attack_type);
-    float chance = fc_hit_chance(att_roll, def_roll);
-
-    int hit = (fc_rng_float(state) < chance) ? 1 : 0;
-    int damage = hit ?
-        fc_roll_npc_damage_tenths(state, use_max_hit_hp) : 0;
-
     int delay = fc_npc_hit_delay(npc->npc_type, use_style, dist);
-
-    int hit_queued = fc_queue_pending_hit(
-        p->pending_hits, &p->num_pending_hits, FC_MAX_PENDING_HITS,
-        damage, delay, use_style, npc_idx, stats->prayer_drain);
-    if (hit_queued) {
-        FcPendingHit* queued = &p->pending_hits[p->num_pending_hits - 1];
-        queued->prayer_snapshot = p->prayer_at_tick_start;
-    }
-
-    record_npc_attack(state, npc, npc_idx, use_style, delay, -1, hit_queued);
-    npc->attack_timer = npc->attack_speed;
+    launch_npc_attack(state, npc, npc_idx, use_style, delay,
+                      stats->prayer_drain, 0);
 }
 
 static int npc_has_attack_position(FcState* state, FcNpc* npc) {

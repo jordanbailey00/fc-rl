@@ -425,6 +425,31 @@ policies, counters, deterministic traversal order, and slot ordering remain
 unchanged. Throughput was 973,021 SPS and training uptime was 101.206108
 seconds, within ordinary run-to-run machine-load variation.
 
+## Comparison 11: shared NPC attack launch
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`y4vimecf`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/y4vimecf) (`apricot-sky-1236`) |
+| Tag | `v4.5_refactor_npc_attack_launch_100m` |
+| Git commit at run start | `d7aa69094` plus the documented uncommitted attack-launch refactor |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `dc1b01a9c97dd8beaa925773e8ae8843224dee5810e8885e935dd4c9dfb4208c` |
+| Backend binary SHA-256 | `ba12a668f67db0c878489bd22f6d274322ebf6ee0d1f163040815a8c5e6014fe` |
+| Backend source SHA-256 | `555da98e01eb501a08705f67f3ff123354029313a2dcf383e591619b6b0b9c94` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260825T172803Z-train-1190109.json` |
+
+Result: behavioral parity is exact against the original baseline `m916qfsv`
+and preceding comparison `og4lc7gn`. All 124 `env/*` metrics, agent steps,
+epoch, and policy/value/entropy/KL/loss values are byte-for-byte equal. Of 150
+summary values, 135 match exactly; the 15 differences are only timestamps,
+wall-clock performance, throughput, and CPU/GPU utilization telemetry.
+
+Generic NPCs and Jad now share one private attack-launch calculation while
+retaining separate style, range, delay, drain, and prayer-lock policies.
+Production code decreased by 9 LOC. Throughput was 960,078 SPS and training
+uptime was 102.956156 seconds, within ordinary machine-load variation.
+
 ## Reproduction command
 
 ```bash
