@@ -1,7 +1,7 @@
 #include "fc_wave.h"
 #include "fc_npc.h"
 #include "fc_api.h"
-#include "fc_pathfinding.h"
+#include "fc_spawn_internal.h"
 
 /*
  * fc_wave.c — 63-wave Fight Caves spawn table with 15 rotations.
@@ -1211,28 +1211,6 @@ int fc_wave_spawn_dir(int wave_num, int rotation, int npc_index) {
 /* Spawn wave NPCs into the arena                                            */
 /* ======================================================================== */
 
-/* Find a valid spawn position for an NPC of given size near (sx,sy).
- * Checks terrain and live entity occupancy. If the base position doesn't fit,
- * searches nearby tiles in expanding rings (up to radius 5). */
-static void find_valid_spawn(const FcState* state, int* sx, int* sy, int size) {
-    if (fc_footprint_available_for_entity(state, *sx, *sy, size, -1, 0)) return;
-
-    /* Search nearby in expanding rings */
-    for (int r = 1; r <= 5; r++) {
-        for (int dx = -r; dx <= r; dx++) {
-            for (int dy = -r; dy <= r; dy++) {
-                if (dx != -r && dx != r && dy != -r && dy != r) continue; /* ring only */
-                int nx = *sx + dx, ny = *sy + dy;
-                if (fc_footprint_available_for_entity(state, nx, ny, size, -1, 0)) {
-                    *sx = nx; *sy = ny;
-                    return;
-                }
-            }
-        }
-    }
-    /* Couldn't find valid position — use original (NPC will be stuck but alive) */
-}
-
 void fc_wave_spawn(FcState* state, int wave_num) {
     const FcWaveEntry* wave = fc_wave_get(wave_num);
     int rotation = state->rotation_id;
@@ -1243,21 +1221,16 @@ void fc_wave_spawn(FcState* state, int wave_num) {
         int sx, sy;
         fc_spawn_position(dir, &sx, &sy);
 
-        /* Validate footprint for large NPCs */
         const FcNpcStats* stats = fc_npc_get_stats(npc_type);
-        find_valid_spawn(state, &sx, &sy, stats->size);
+        /* Wave spawning retains its radius-five fallback policy: if no valid
+         * footprint is found, the original regional tile is still used. */
+        (void)fc_spawn_find_available_footprint(
+            state, sx, sy, stats->size, 5, &sx, &sy);
 
-        /* Find a free NPC slot */
-        for (int slot = 0; slot < FC_MAX_NPCS; slot++) {
-            if (!state->npcs[slot].active) {
-                fc_npc_spawn(&state->npcs[slot], npc_type, sx, sy,
-                             state->next_spawn_index++);
-                /* Tz-Kek counts as 2 in wave remaining (pre-counts the split).
-                 * RSPS: ids.sumOf { if (it == "tz_kek") 2 else 1 } */
-                state->npcs_remaining += (npc_type == NPC_TZ_KEK) ? 2 : 1;
-                break;
-            }
-        }
+        if (fc_spawn_npc_first_free(state, npc_type, sx, sy) < 0) continue;
+        /* Tz-Kek counts as 2 in wave remaining (pre-counts the split).
+         * RSPS: ids.sumOf { if (it == "tz_kek") 2 else 1 } */
+        state->npcs_remaining += (npc_type == NPC_TZ_KEK) ? 2 : 1;
     }
 }
 

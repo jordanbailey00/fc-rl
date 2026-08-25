@@ -228,21 +228,26 @@ items already listed above.
 
 ### Consolidate spawn-position search and NPC-slot allocation
 
-Estimated reduction: approximately 50-80 LOC.
+Implemented.
 
-- `find_valid_split_spawn()` in `fc_npc.c` and
-  `find_valid_healer_spawn()` in `fc_tick.c` are effectively identical
-  expanding-ring searches.
-- `find_valid_spawn()` in `fc_wave.c` is the same operation with a radius-five
-  limit and a different failure policy.
-- Wave spawning, Tz-Kek splitting, and Jad-healer spawning also independently
-  scan for the first inactive NPC slot before calling `fc_npc_spawn()`.
-- Add one nearest-available-footprint helper with an explicit maximum radius
-  and boolean result, plus one helper that allocates and initializes the first
-  free NPC slot. Keep wave counters, split pre-counting, healer generation
-  flags, and each caller's failure behavior outside those helpers.
-- Preserve the current ring traversal and first-free-slot order exactly; both
-  are determinism-sensitive tie-breakers.
+- Added one private spawn module that owns the expanding-ring footprint search
+  and lowest-free-slot allocation used by wave spawns, Tz-Kek splits, and Jad
+  healers.
+- The search accepts an explicit radius and reports failure, while callers keep
+  their distinct policies: wave spawning retains its radius-five/original-tile
+  fallback, and split/healer spawning retain the full-arena search.
+- The helper preserves the prior ring traversal and first-free-slot ordering,
+  builds occupancy once per search, and leaves wave counters, split counting,
+  and healer-generation state in their original callers.
+- Added a guardrail test pinning blocked-tile relocation, lowest-slot reuse,
+  spawn-index assignment, and NPC-count changes. Existing split and healer
+  tests continue to pin their exact behavior.
+- The deterministic 628-line trace is byte-for-byte identical before and after
+  the refactor, all 165 tests pass, and local, CPU, and CUDA production builds
+  pass.
+- The 100M W&B regression `og4lc7gn` exactly matches baseline `m916qfsv` and
+  preceding run `1axxklis` on all 124 `env/*` values and every non-performance
+  summary value.
 
 ### Separate NPC style selection from common attack launch
 

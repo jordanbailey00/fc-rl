@@ -2,6 +2,7 @@
 #include "fc_combat.h"
 #include "fc_pathfinding.h"
 #include "fc_api.h"
+#include "fc_spawn_internal.h"
 #include <stddef.h>
 
 /*
@@ -375,37 +376,6 @@ static int npc_dynamic_step_toward_player_bounds(FcState* state, int npc_idx) {
     return npc_dynamic_step_toward(state, npc_idx, target_x, target_y);
 }
 
-static int split_spawn_tile_valid(const FcState* state, int x, int y, int size) {
-    return fc_footprint_available_for_entity(state, x, y, size, -1, 0);
-}
-
-static int find_valid_split_spawn(const FcState* state,
-                                  int preferred_x, int preferred_y, int size,
-                                  int* out_x, int* out_y) {
-    if (split_spawn_tile_valid(state, preferred_x, preferred_y, size)) {
-        *out_x = preferred_x;
-        *out_y = preferred_y;
-        return 1;
-    }
-
-    for (int r = 1; r < FC_ARENA_WIDTH; r++) {
-        for (int dx = -r; dx <= r; dx++) {
-            for (int dy = -r; dy <= r; dy++) {
-                if (dx != -r && dx != r && dy != -r && dy != r) continue;
-                int nx = preferred_x + dx;
-                int ny = preferred_y + dy;
-                if (split_spawn_tile_valid(state, nx, ny, size)) {
-                    *out_x = nx;
-                    *out_y = ny;
-                    return 1;
-                }
-            }
-        }
-    }
-
-    return 0;
-}
-
 /* ======================================================================== */
 /* Tz-Kek: split on death — spawn 2 small Tz-Kek                            */
 /* ======================================================================== */
@@ -415,25 +385,23 @@ void fc_npc_tz_kek_split(FcState* state, int dead_x, int dead_y) {
      * Do NOT increment npcs_remaining — the parent Tz-Kek was pre-counted as 2
      * at wave spawn time. These children inherit that count and decrement normally
      * when they die. (Matches RSPS: parent not in npcDespawn list, children are.) */
-    int spawned = 0;
     const FcNpcStats* child_stats = fc_npc_get_stats(NPC_TZ_KEK_SM);
-    for (int i = 0; i < FC_MAX_NPCS && spawned < 2; i++) {
-        if (!state->npcs[i].active) {
-            int sx = dead_x + (spawned == 0 ? 0 : 1);
-            int sy = dead_y;
-            /* Clamp to arena */
-            if (sx >= FC_ARENA_WIDTH - 1) sx = dead_x - 1;
-            if (sx < 1) sx = 1;
+    for (int spawned = 0; spawned < 2; spawned++) {
+        int sx = dead_x + (spawned == 0 ? 0 : 1);
+        int sy = dead_y;
+        /* Clamp to arena */
+        if (sx >= FC_ARENA_WIDTH - 1) sx = dead_x - 1;
+        if (sx < 1) sx = 1;
 
-            if (!find_valid_split_spawn(state, sx, sy, child_stats->size, &sx, &sy)) {
-                continue;
-            }
-
-            fc_npc_spawn(&state->npcs[i], NPC_TZ_KEK_SM, sx, sy,
-                         state->next_spawn_index++);
-            /* No npcs_remaining++ — already pre-counted */
-            spawned++;
+        if (!fc_spawn_find_available_footprint(
+                state, sx, sy, child_stats->size, FC_ARENA_WIDTH - 1,
+                &sx, &sy)) {
+            break;
         }
+        if (fc_spawn_npc_first_free(state, NPC_TZ_KEK_SM, sx, sy) < 0) {
+            break;
+        }
+        /* No npcs_remaining++ — already pre-counted */
     }
 }
 

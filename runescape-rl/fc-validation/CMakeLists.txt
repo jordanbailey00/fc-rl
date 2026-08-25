@@ -560,6 +560,11 @@ add_test(NAME phase3_healer_spawn_validity
 set_tests_properties(phase3_healer_spawn_validity PROPERTIES
     LABELS "phase3;guardrail")
 
+add_test(NAME spawn_search_and_slot_allocation
+    COMMAND phase2_guardrails_core spawn_search_and_slot_allocation)
+set_tests_properties(spawn_search_and_slot_allocation PROPERTIES
+    LABELS "guardrail;spawn;determinism")
+
 add_test(NAME special_tz_kih_prayer_drain
     COMMAND phase2_guardrails_core special_tz_kih_prayer_drain)
 set_tests_properties(special_tz_kih_prayer_drain PROPERTIES

@@ -1497,6 +1497,14 @@ static int test_healer_spawn_validity(void) {
 
     fc_step(&state, actions);
 
+    for (int slot = 1; slot <= FC_JAD_NUM_HEALERS; slot++) {
+        if (!state.npcs[slot].active || state.npcs[slot].is_dead ||
+            state.npcs[slot].npc_type != NPC_YT_HURKOT) {
+            fc_destroy(&state);
+            return fail("Jad healers did not consume the first free NPC slots");
+        }
+    }
+
     for (int i = 0; i < FC_MAX_NPCS; i++) {
         FcNpc* n = &state.npcs[i];
         if (!n->active || n->is_dead || n->npc_type != NPC_YT_HURKOT) continue;
@@ -2707,6 +2715,15 @@ static int test_step3_tz_kek_split_avoids_occupied_tiles(void) {
 
     fc_npc_tz_kek_split(&state, 10, 10);
 
+    if (!state.npcs[1].active || state.npcs[1].npc_type != NPC_TZ_KEK_SM ||
+        state.npcs[1].x != 9 || state.npcs[1].y != 9 ||
+        !state.npcs[2].active || state.npcs[2].npc_type != NPC_TZ_KEK_SM ||
+        state.npcs[2].x != 10 || state.npcs[2].y != 9 ||
+        state.npcs[1].spawn_index != 1 || state.npcs[2].spawn_index != 2) {
+        fc_destroy(&state);
+        return fail("Tz-Kek split search or first-free slot ordering drifted");
+    }
+
     for (int i = 0; i < FC_MAX_NPCS; i++) {
         FcNpc* n = &state.npcs[i];
         if (!n->active || n->is_dead || n->npc_type != NPC_TZ_KEK_SM) continue;
@@ -2737,6 +2754,36 @@ static int test_step3_tz_kek_split_avoids_occupied_tiles(void) {
 
     fc_destroy(&state);
     return pass("Tz-Kek split children avoid player/NPC/wall occupancy");
+}
+
+static int test_spawn_search_and_slot_allocation(void) {
+    FcState state;
+    int preferred_x;
+    int preferred_y;
+
+    make_open_manual_state(&state, 20, 20);
+    fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 1, 1, 0);
+    fc_npc_spawn(&state.npcs[2], NPC_TZ_KIH, 60, 60, 1);
+    state.npcs_remaining = 2;
+    state.next_spawn_index = 2;
+    state.rotation_id = 0;
+    fc_spawn_position(fc_wave_spawn_dir(1, state.rotation_id, 0),
+                      &preferred_x, &preferred_y);
+    state.walkable[preferred_x][preferred_y] = 0;
+
+    fc_wave_spawn(&state, 1);
+
+    if (!state.npcs[1].active || state.npcs[1].npc_type != NPC_TZ_KIH ||
+        state.npcs[1].x != preferred_x - 1 ||
+        state.npcs[1].y != preferred_y - 1 ||
+        state.npcs[1].spawn_index != 2 || state.next_spawn_index != 3 ||
+        state.npcs_remaining != 3) {
+        fc_destroy(&state);
+        return fail("wave spawn search or first-free slot ordering drifted");
+    }
+
+    fc_destroy(&state);
+    return pass("spawn searches and NPC allocation retain deterministic ordering");
 }
 
 static int test_step4_ranged_npc_chases_player_bounds_not_los_tile(void) {
@@ -3441,7 +3488,7 @@ static int test_osrs_bfs_expansion_order(void) {
 
 int main(int argc, char** argv) {
     if (argc != 2) {
-        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|safespot_reward_disabled|npc_heal_penalty_actual_heal|prayer_loss_penalty|correct_prayer_reward_all_npcs|no_attack_penalty_wave_scaled|player_death_progress_scaled|simple_reward_zeroed_channels|npc_kill_reward_eligibility|tz_kek_split_kill_rewards|wave_clear_reward_scaling|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|special_tz_kih_prayer_drain|special_mejkot_heal_replaces_attack|special_adjacent_style_selection|special_hurkot_behavior|mechanics_observation_events|safespot_los|diagonal_corner_clipping|directional_movement_wall_boundaries|directional_movement_diagonal_and_sized|directional_movement_route_regression|npc_moves_when_attack_blocked|movement_cannot_enable_same_tick_attack_range|movement_cannot_enable_same_tick_attack_los|attack_suppresses_same_tick_movement_when_already_valid|movement_resumes_tick_after_attack|step1_movement_only_clears_stale_target|step1_projectile_survives_movement_cancel|step1_attack_move_out_of_range_clears_target|step1_directional_cancels_old_approach_route|step1_directional_beats_old_tile_route|step1_attack_approach_without_explicit_movement|step2_occupancy_marks_and_ignores_entities|step2_dynamic_footprint_static_and_occupied|step2_entity_wrapper_ignores_self_blocks_others|step2_dynamic_diagonal_blocks_occupied_corner|step2_start_reservation_blocks_swap_tile|player_directional_ignores_npc_occupancy|player_tile_route_accepts_npc_occupied_target|player_prebuilt_route_ignores_npc_and_keeps_static_collision|player_move_mask_ignores_npc_and_keeps_static_collision|player_combat_approach_ignores_npc_occupancy|step3_npc_blocked_by_other_npc|step3_large_npc_blocked_by_healer_footprint|step3_tz_kek_split_avoids_occupied_tiles|step4_ranged_npc_chases_player_bounds_not_los_tile|step4_large_npc_chase_checks_full_footprint|step4_npc_stays_when_current_position_can_attack|invalid_action_classes|hp_regeneration_interval>\n",
+        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|safespot_reward_disabled|npc_heal_penalty_actual_heal|prayer_loss_penalty|correct_prayer_reward_all_npcs|no_attack_penalty_wave_scaled|player_death_progress_scaled|simple_reward_zeroed_channels|npc_kill_reward_eligibility|tz_kek_split_kill_rewards|wave_clear_reward_scaling|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|spawn_search_and_slot_allocation|special_tz_kih_prayer_drain|special_mejkot_heal_replaces_attack|special_adjacent_style_selection|special_hurkot_behavior|mechanics_observation_events|safespot_los|diagonal_corner_clipping|directional_movement_wall_boundaries|directional_movement_diagonal_and_sized|directional_movement_route_regression|npc_moves_when_attack_blocked|movement_cannot_enable_same_tick_attack_range|movement_cannot_enable_same_tick_attack_los|attack_suppresses_same_tick_movement_when_already_valid|movement_resumes_tick_after_attack|step1_movement_only_clears_stale_target|step1_projectile_survives_movement_cancel|step1_attack_move_out_of_range_clears_target|step1_directional_cancels_old_approach_route|step1_directional_beats_old_tile_route|step1_attack_approach_without_explicit_movement|step2_occupancy_marks_and_ignores_entities|step2_dynamic_footprint_static_and_occupied|step2_entity_wrapper_ignores_self_blocks_others|step2_dynamic_diagonal_blocks_occupied_corner|step2_start_reservation_blocks_swap_tile|player_directional_ignores_npc_occupancy|player_tile_route_accepts_npc_occupied_target|player_prebuilt_route_ignores_npc_and_keeps_static_collision|player_move_mask_ignores_npc_and_keeps_static_collision|player_combat_approach_ignores_npc_occupancy|step3_npc_blocked_by_other_npc|step3_large_npc_blocked_by_healer_footprint|step3_tz_kek_split_avoids_occupied_tiles|step4_ranged_npc_chases_player_bounds_not_los_tile|step4_large_npc_chase_checks_full_footprint|step4_npc_stays_when_current_position_can_attack|invalid_action_classes|hp_regeneration_interval>\n",
                 argv[0]);
         return 2;
     }
@@ -3469,6 +3516,7 @@ int main(int argc, char** argv) {
     if (strcmp(argv[1], "progress_observation_fields") == 0) return test_progress_observation_fields();
     if (strcmp(argv[1], "prayer_deadline_observation_fields") == 0) return test_prayer_deadline_observation_fields();
     if (strcmp(argv[1], "healer_spawn_validity") == 0) return test_healer_spawn_validity();
+    if (strcmp(argv[1], "spawn_search_and_slot_allocation") == 0) return test_spawn_search_and_slot_allocation();
     if (strcmp(argv[1], "special_tz_kih_prayer_drain") == 0) return test_special_tz_kih_prayer_drain();
     if (strcmp(argv[1], "special_mejkot_heal_replaces_attack") == 0) return test_special_mejkot_heal_replaces_attack();
     if (strcmp(argv[1], "special_adjacent_style_selection") == 0) return test_special_adjacent_style_selection();

@@ -6,6 +6,7 @@
 #include "fc_npc.h"
 #include "fc_wave.h"
 #include "fc_contracts.h"
+#include "fc_spawn_internal.h"
 
 /*
  * fc_tick.c — Main tick loop for Fight Caves simulation.
@@ -568,37 +569,6 @@ static void decrement_player_timers(FcPlayer* p) {
 /* Jad healer auto-spawn                                                     */
 /* ======================================================================== */
 
-static int healer_spawn_tile_valid(const FcState* state, int x, int y, int size) {
-    return fc_footprint_available_for_entity(state, x, y, size, -1, 0);
-}
-
-static int find_valid_healer_spawn(const FcState* state,
-                                   int preferred_x, int preferred_y,
-                                   int size, int* out_x, int* out_y) {
-    if (healer_spawn_tile_valid(state, preferred_x, preferred_y, size)) {
-        *out_x = preferred_x;
-        *out_y = preferred_y;
-        return 1;
-    }
-
-    for (int r = 1; r < FC_ARENA_WIDTH; r++) {
-        for (int dx = -r; dx <= r; dx++) {
-            for (int dy = -r; dy <= r; dy++) {
-                if (dx != -r && dx != r && dy != -r && dy != r) continue;
-                int nx = preferred_x + dx;
-                int ny = preferred_y + dy;
-                if (healer_spawn_tile_valid(state, nx, ny, size)) {
-                    *out_x = nx;
-                    *out_y = ny;
-                    return 1;
-                }
-            }
-        }
-    }
-
-    return 0;
-}
-
 /*
  * Jad healer spawn (from TzhaarFightCave.kt npcLevelChanged handler):
  *   Trigger: Jad HP drops below 150 HP.
@@ -657,21 +627,18 @@ static void check_jad_healers(FcState* state) {
             int hx, hy;
             fc_spawn_position(spawn_dirs[h], &hx, &hy);
 
-            if (!find_valid_healer_spawn(state, hx, hy, healer_stats->size, &hx, &hy)) {
+            if (!fc_spawn_find_available_footprint(
+                    state, hx, hy, healer_stats->size, FC_ARENA_WIDTH - 1,
+                    &hx, &hy)) {
                 continue;
             }
 
-            for (int slot = 0; slot < FC_MAX_NPCS; slot++) {
-                if (!state->npcs[slot].active) {
-                    fc_npc_spawn(&state->npcs[slot], NPC_YT_HURKOT, hx, hy,
-                                 state->next_spawn_index++);
-                    state->npcs[slot].is_respawned_jad_healer =
-                        is_respawn_generation;
-                    state->npcs_remaining++;
-                    spawned++;
-                    break;
-                }
-            }
+            int slot = fc_spawn_npc_first_free(state, NPC_YT_HURKOT, hx, hy);
+            if (slot < 0) break;
+            state->npcs[slot].is_respawned_jad_healer =
+                is_respawn_generation;
+            state->npcs_remaining++;
+            spawned++;
         }
         if (spawned > 0) {
             state->jad_healers_spawned = 1;

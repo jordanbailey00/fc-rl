@@ -396,6 +396,35 @@ policy-visible behavior are unchanged. Throughput was 947,046 SPS and training
 uptime was 104.255678 seconds, within ordinary run-to-run machine-load
 variation.
 
+## Comparison 10: shared spawn search and NPC-slot allocation
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`og4lc7gn`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/og4lc7gn) (`true-wood-1235`) |
+| Tag | `v4.5_refactor_spawn_allocation_100m` |
+| Git commit at run start | `478caefdd` plus the documented uncommitted spawn/allocation refactor |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `dc1b01a9c97dd8beaa925773e8ae8843224dee5810e8885e935dd4c9dfb4208c` |
+| Backend binary SHA-256 | `143709fb7174ba665bde0715e06948e393159fca49dec1b788248bb8f7861cdb` |
+| Backend source SHA-256 | `a64d082b5f02c7d49a74706484a3f09c25305d636588804990f7ea1469aa4374` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260825T045159Z-train-1158078.json` |
+
+Result: behavioral parity is exact against the original baseline `m916qfsv`
+and the immediately preceding comparison `1axxklis`. All three summaries have
+the same 150 keys. All 124 `env/*` metrics are byte-for-byte equal, as are
+agent steps, epoch, and every recorded policy/value/entropy/KL/loss value. In
+each comparison, 136 of 150 summary values match exactly; the 14 differences
+are only timestamps, wall-clock performance, throughput, and CPU/GPU
+memory/utilization telemetry.
+
+The backend source and binary hashes changed because wave spawning, Tz-Kek
+splitting, and Jad-healer spawning now share one private footprint search and
+one first-free-slot allocator. Their caller-specific search radii, failure
+policies, counters, deterministic traversal order, and slot ordering remain
+unchanged. Throughput was 973,021 SPS and training uptime was 101.206108
+seconds, within ordinary run-to-run machine-load variation.
+
 ## Reproduction command
 
 ```bash
