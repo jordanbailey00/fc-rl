@@ -326,7 +326,7 @@ MUTATIONS = (
         "fc-validation/tests/parity_fix_replay.c",
         "    print_runtime(output, runtime);\n",
         "    (void)runtime;\n",
-        ("parity_det_002_same_version_replay", "parity_det_003_core_puffer_replay"),
+        ("parity_det_002_same_version_replay",),
     ),
     Mutation(
         "evaluator_falls_back_random",

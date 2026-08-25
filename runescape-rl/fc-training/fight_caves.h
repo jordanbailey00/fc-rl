@@ -1,8 +1,8 @@
 /*
  * fight_caves.h — PufferLib 4.0 environment wrapper for Fight Caves.
  *
- * Wraps the FC backend (fc_*.c) into PufferLib's c_reset/c_step/c_render
- * interface. All game logic lives in the fc_*.c files included below.
+ * Wraps the linked fc_core library into PufferLib's c_reset/c_step/c_render
+ * interface. All game logic lives in fc-core.
  * This file only handles the PufferLib adapter layer:
  *   - FightCaves struct with PufferLib-required fields
  *   - c_reset: init game state, compute initial obs
@@ -17,7 +17,7 @@
 #include <string.h>
 #include <stdio.h>
 
-/* Include all backend sources directly (compiled as one unit) */
+/* Public fc_core interfaces used by the training adapter. */
 #include "fc_types.h"
 #include "fc_contracts.h"
 #include "fc_api.h"
@@ -27,19 +27,6 @@
 #include "fc_prayer.h"
 #include "fc_reward.h"
 #include "fc_wave.h"
-
-/* Backend .c files — included directly so fight_caves.h is self-contained.
- * PufferLib compiles binding.c which includes this header. */
-#include "fc_rng.c"
-#include "fc_pathfinding.c"
-#include "fc_prayer.c"
-#include "fc_combat.c"
-#include "fc_npc.c"
-#include "fc_wave.c"
-#include "fc_tick.c"
-#include "fc_state.c"
-#include "fc_hash.c"
-#include "fc_episode_summary.c"
 
 /* ======================================================================== */
 /* PufferLib Log struct (required fields)                                    */

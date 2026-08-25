@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare permanent same-version and linked-core/direct-include traces."""
+"""Compare permanent same-version deterministic traces."""
 
 from __future__ import annotations
 
@@ -211,21 +211,12 @@ def main() -> int:
     same.add_argument("linked_binary", type=Path)
     same.add_argument("artifact", type=Path)
 
-    cross = subparsers.add_parser("core_puffer")
-    cross.add_argument("linked_binary", type=Path)
-    cross.add_argument("puffer_binary", type=Path)
-    cross.add_argument("artifact", type=Path)
-
     args = parser.parse_args()
     artifact = args.artifact.resolve()
     prefix = artifact.with_suffix("")
 
-    if args.case == "same_version":
-        binaries = [args.linked_binary, args.linked_binary]
-        names = ["linked_run_1", "linked_run_2"]
-    else:
-        binaries = [args.linked_binary, args.puffer_binary]
-        names = ["linked_fc_core", "puffer_direct_include"]
+    binaries = [args.linked_binary, args.linked_binary]
+    names = ["linked_run_1", "linked_run_2"]
 
     traces = [Path(f"{prefix}-{name}.trace") for name in names]
     lines = [run_trace(binary, trace) for binary, trace in zip(binaries, traces)]

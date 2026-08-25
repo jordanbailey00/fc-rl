@@ -43,6 +43,56 @@ def analytics_no_global_metrics() -> int:
     return 0
 
 
+def normal_core_linkage() -> int:
+    """Training must link the canonical fc_core library, not include .c files."""
+    source_list_path = RUNESCAPE_DIR / "fc-core" / "core_sources.txt"
+    cmake_path = RUNESCAPE_DIR / "fc-core" / "CMakeLists.txt"
+    adapter_path = RUNESCAPE_DIR / "fc-training" / "fight_caves.h"
+    build_path = RUNESCAPE_DIR / "fc-training" / "build.sh"
+    failures: list[str] = []
+
+    sources = [
+        line.strip()
+        for line in source_list_path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    if not sources:
+        failures.append("fc-core/core_sources.txt is empty")
+    if len(sources) != len(set(sources)):
+        failures.append("fc-core/core_sources.txt contains duplicate sources")
+    for source in sources:
+        if not source.endswith(".c"):
+            failures.append(f"non-C core source listed: {source}")
+        if not (RUNESCAPE_DIR / "fc-core" / source).is_file():
+            failures.append(f"listed core source is unavailable: {source}")
+
+    cmake = cmake_path.read_text(encoding="utf-8")
+    adapter = adapter_path.read_text(encoding="utf-8")
+    build = build_path.read_text(encoding="utf-8")
+    if "core_sources.txt" not in cmake or "file(STRINGS" not in cmake:
+        failures.append("fc-core CMake does not consume core_sources.txt")
+    if re.search(r'^\s*#include\s+"[^"]+\.c"', adapter, re.MULTILINE):
+        failures.append("fight_caves.h still directly includes implementation files")
+    for snippet in (
+        'FC_CORE_SOURCE_LIST="$REPO_DIR/fc-core/core_sources.txt"',
+        'CORE_LIB="build/libfc_core.a"',
+        '"$STATIC_LIB" "$CORE_LIB"',
+    ):
+        if snippet not in build:
+            failures.append(f"fc-training/build.sh missing {snippet!r}")
+    if 'FC_CORE_SRC="$REPO_DIR/fc-core/src"' in build:
+        failures.append("training build still exposes fc-core/src as an include path")
+
+    if failures:
+        print("FAIL: training does not use normal fc_core linkage:")
+        for failure in failures:
+            print(f"  {failure}")
+        return 1
+
+    print("PASS: all training build variants link the canonical fc_core library")
+    return 0
+
+
 def live_no_supplies_simplified_config() -> int:
     """The authoritative live config should stay on the no-supplies contract."""
     paths = [
@@ -503,10 +553,12 @@ def parity_stale_literals() -> int:
 
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
-        print("usage: phase2_static_guardrails.py <analytics_no_global_metrics|live_no_supplies_simplified_config|env_log_key_budget|native_action_mask_contract|viewer_policy_pipe_matches_puffer_contract|viewer_training_parity_contract|standalone_prayer_action_range|parity_stale_literals>", file=sys.stderr)
+        print("usage: phase2_static_guardrails.py <analytics_no_global_metrics|normal_core_linkage|live_no_supplies_simplified_config|env_log_key_budget|native_action_mask_contract|viewer_policy_pipe_matches_puffer_contract|viewer_training_parity_contract|standalone_prayer_action_range|parity_stale_literals>", file=sys.stderr)
         return 2
     if argv[1] == "analytics_no_global_metrics":
         return analytics_no_global_metrics()
+    if argv[1] == "normal_core_linkage":
+        return normal_core_linkage()
     if argv[1] == "live_no_supplies_simplified_config":
         return live_no_supplies_simplified_config()
     if argv[1] == "env_log_key_budget":

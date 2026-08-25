@@ -200,10 +200,25 @@ Implemented on 2026-08-24.
 
 ### Training build structure
 
-`runescape-rl/fc-training/fight_caves.h` directly includes every core `.c`
-file. Compiling and linking `fc_core` normally would make the Puffer adapter
-smaller and less coupled. This is primarily an architectural improvement rather
-than a major source-LOC reduction.
+Implemented on 2026-08-24.
+
+- Added one canonical `fc-core/core_sources.txt` manifest consumed by both
+  CMake and the production training build.
+- `fight_caves.h` now includes only public core interfaces. It no longer
+  compiles gameplay implementation files into every adapter translation unit.
+- Standalone, CPU, and CUDA training builds compile `libfc_core.a` once and
+  link it after the small Puffer adapter archive.
+- Training validation links the normal `fc_core` CMake target. The obsolete
+  validation-only direct-included duplicate core and its now-trivial parity
+  comparison were removed; same-version deterministic replay remains.
+- Contract source hashing now covers the canonical source manifest, and the
+  CUDA health probe links both adapter and core archives.
+- Added an architecture guardrail that rejects implementation includes,
+  missing manifest entries, and training builds that stop linking the core
+  archive. Standalone, CPU, and CUDA production builds pass, including verified
+  `sm_120` CUDA device code, and the complete suite passes all 164 tests.
+- The 100M W&B regression `1axxklis` exactly matches baseline `m916qfsv` on all
+  124 `env/*` values and every non-performance summary value.
 
 ## Additional `fc-core` opportunities
 

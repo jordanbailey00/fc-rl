@@ -89,7 +89,19 @@ cd "$PUFFERLIB_DIR"
 # Compiler settings
 CLANG_WARN=(-Wall -Werror=return-type -Wno-unused-but-set-variable)
 FC_CORE_INCLUDE="$REPO_DIR/fc-core/include"
-FC_CORE_SRC="$REPO_DIR/fc-core/src"
+FC_CORE_SOURCE_LIST="$REPO_DIR/fc-core/core_sources.txt"
+
+if [ ! -f "$FC_CORE_SOURCE_LIST" ]; then
+    echo "Error: canonical fc_core source list not found at $FC_CORE_SOURCE_LIST" >&2
+    exit 1
+fi
+mapfile -t FC_CORE_SOURCES < <(
+    sed -e '/^[[:space:]]*#/d' -e '/^[[:space:]]*$/d' "$FC_CORE_SOURCE_LIST"
+)
+if [ "${#FC_CORE_SOURCES[@]}" -eq 0 ]; then
+    echo "Error: canonical fc_core source list is empty" >&2
+    exit 1
+fi
 
 if [ -n "$DEBUG" ] || [ "$MODE" = "local" ]; then
     CLANG_OPT=(-g -O0 "${CLANG_WARN[@]}")
@@ -125,14 +137,43 @@ done
 
 mkdir -p build
 
+# Compile the gameplay core once as a normal static library. The standalone,
+# CPU, and CUDA adapters all link this same archive instead of compiling core
+# implementation files through fight_caves.h.
+CORE_OBJ_DIR="build/fc_core"
+CORE_LIB="build/libfc_core.a"
+CORE_OBJECTS=()
+mkdir -p "$CORE_OBJ_DIR"
+echo "Compiling fc_core library..."
+for relative_source in "${FC_CORE_SOURCES[@]}"; do
+    core_source="$REPO_DIR/fc-core/$relative_source"
+    if [ ! -f "$core_source" ]; then
+        echo "Error: fc_core source listed but unavailable: $core_source" >&2
+        exit 1
+    fi
+    object_name="${relative_source//\//_}"
+    core_object="$CORE_OBJ_DIR/${object_name%.c}.o"
+    ${CC:-gcc} -c "${CLANG_OPT[@]}" \
+        -I"$FC_CORE_INCLUDE" \
+        "${ACTIVE_LOADOUT_FLAGS[@]}" \
+        "${CONTRACT_VERSION_FLAGS[@]}" \
+        -fno-semantic-interposition -fvisibility=hidden \
+        -fPIC -fopenmp \
+        "$core_source" -o "$core_object"
+    CORE_OBJECTS+=("$core_object")
+done
+rm -f "${CORE_LIB}.tmp"
+ar rcs "${CORE_LIB}.tmp" "${CORE_OBJECTS[@]}"
+mv "${CORE_LIB}.tmp" "$CORE_LIB"
+
 # Standalone executable (for testing without Python)
 if [ "$MODE" = "local" ] || [ "$MODE" = "fast" ]; then
     echo "Compiling standalone $ENV..."
     ${CC:-gcc} "${CLANG_OPT[@]}" \
-        -I"$PUFFERLIB_DIR/src" -I"$SRC_DIR" -I"$FC_CORE_INCLUDE" -I"$FC_CORE_SRC" \
+        -I"$PUFFERLIB_DIR/src" -I"$SRC_DIR" -I"$FC_CORE_INCLUDE" \
         "${ACTIVE_LOADOUT_FLAGS[@]}" \
         "${CONTRACT_VERSION_FLAGS[@]}" \
-        "$SRC_DIR/$ENV.c" -o "$ENV" \
+        "$SRC_DIR/$ENV.c" "$CORE_LIB" -o "$ENV" \
         -lm -lpthread -fopenmp
     echo "Built: ./$ENV"
     exit 0
@@ -144,7 +185,7 @@ STATIC_LIB="build/libstatic_${ENV}.a"
 
 echo "Compiling static library for $ENV..."
 ${CC:-gcc} -c "${CLANG_OPT[@]}" \
-    -I"$PUFFERLIB_DIR/src" -I"$SRC_DIR" -I"$FC_CORE_INCLUDE" -I"$FC_CORE_SRC" \
+    -I"$PUFFERLIB_DIR/src" -I"$SRC_DIR" -I"$FC_CORE_INCLUDE" \
     "${ACTIVE_LOADOUT_FLAGS[@]}" \
     "${CONTRACT_VERSION_FLAGS[@]}" \
     -fno-semantic-interposition -fvisibility=hidden \
@@ -180,7 +221,7 @@ if [ "$MODE" = "cpu" ]; then
         src/bindings_cpu.cpp -o build/bindings_cpu.o
 
     ${CXX:-g++} -shared -fPIC -fopenmp \
-        build/bindings_cpu.o "$STATIC_LIB" \
+        build/bindings_cpu.o "$STATIC_LIB" "$CORE_LIB" \
         -lm -lpthread -lgomp -O2 \
         -Bsymbolic-functions \
         -o "$OUTPUT"
@@ -278,7 +319,7 @@ else
     fi
 
     ${CXX:-g++} -shared -fPIC -fopenmp \
-        build/bindings.o "$STATIC_LIB" \
+        build/bindings.o "$STATIC_LIB" "$CORE_LIB" \
         -L"$CUDA_HOME/lib64" $CUDNN_LFLAG \
         -lcudart -lnccl $NVML_LINK_INPUT -lcublas -lcusolver -lcurand $CUDNN_LINK_INPUT \
         -lgomp -O2 \

@@ -366,6 +366,36 @@ State transitions, state hashing, observations, actions, rewards, configuration,
 and the model contract are unchanged. Throughput was 902,805 SPS and training
 uptime was 105.876713 seconds, within run-to-run machine-load variation.
 
+## Comparison 9: normal `fc_core` linkage
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`1axxklis`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/1axxklis) (`royal-dawn-1234`) |
+| Tag | `v4.5_refactor_normal_core_link_100m` |
+| Git commit at run start | `8bce65f69` plus the documented uncommitted normal-link refactor |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `dc1b01a9c97dd8beaa925773e8ae8843224dee5810e8885e935dd4c9dfb4208c` |
+| Backend binary SHA-256 | `ebdaf82bbc958416a8d3f1e216b5be45df0694dd222edd7f4eb99b6104f1d67a` |
+| Backend source SHA-256 | `c355fae57e738c31aee9bbd0d710f9b4910fdfea687af16d508ad914490739b8` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260825T030700Z-train-1129599.json` |
+
+Result: behavioral parity is exact against the original baseline `m916qfsv`
+and the immediately preceding comparison `r9fnqnxh`. All three summaries have
+the same 150 keys. All 124 `env/*` metrics are byte-for-byte equal, as are
+agent steps, epoch, and every recorded policy/value/entropy/KL/loss value. In
+each comparison, 136 of 150 summary values match exactly; the 14 differences
+are only timestamps, wall-clock performance, throughput, and CPU/GPU
+memory/utilization telemetry.
+
+The backend source and binary hashes changed because gameplay is now compiled
+once into `libfc_core.a` and normally linked into the training extension rather
+than directly included through `fight_caves.h`. The configuration, model
+contract, state transitions, observations, actions, rewards, state hashes, and
+policy-visible behavior are unchanged. Throughput was 947,046 SPS and training
+uptime was 104.255678 seconds, within ordinary run-to-run machine-load
+variation.
+
 ## Reproduction command
 
 ```bash

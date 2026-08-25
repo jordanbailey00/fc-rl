@@ -187,7 +187,7 @@ def configure_and_build(
     if not all_targets:
         build_command.extend((
             "--target", "parity_fix_core", "parity_fix_replay_linked",
-            "parity_fix_replay_puffer", "parity_fix_soak",
+            "parity_fix_soak",
         ))
     recorder.run(f"build-{loadout}", build_command)
 
@@ -204,9 +204,8 @@ def run_loadout_checks(
 ) -> None:
     core = binary(build_dir, "parity_fix_core")
     linked = binary(build_dir, "parity_fix_replay_linked")
-    direct = binary(build_dir, "parity_fix_replay_puffer")
     soak = binary(build_dir, "parity_fix_soak")
-    replay_artifact = build_dir / "fc-validation" / "loadout-core-puffer.json"
+    replay_artifact = build_dir / "fc-validation" / "loadout-replay.json"
     failure_trace = build_dir / "fc-validation" / "loadout-soak-failure.json"
 
     recorder.run(
@@ -217,7 +216,7 @@ def run_loadout_checks(
         [
             sys.executable,
             str(source / "fc-validation" / "tests" / "parity_fix_replay.py"),
-            "core_puffer", str(linked), str(direct), str(replay_artifact),
+            "same_version", str(linked), str(replay_artifact),
         ],
         environment,
     )

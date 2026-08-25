@@ -927,7 +927,8 @@ def backend_source_hash(runescape_dir: str | Path, puffer_dir: str | Path) -> st
         for path in subtree.rglob("*"):
             if not path.is_file() or "build" in path.parts:
                 continue
-            if path.suffix in {".c", ".h", ".sh"} or path.name == "CMakeLists.txt":
+            if (path.suffix in {".c", ".h", ".sh"}
+                    or path.name in {"CMakeLists.txt", "core_sources.txt"}):
                 candidates.append(path)
     for relative in ("src/vecenv.h", "src/pufferlib.cu", "src/bindings.cu"):
         path = puffer / relative

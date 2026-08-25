@@ -8,9 +8,10 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 SOURCE="$SCRIPT_DIR/parity_training_health_probe.cu"
 BUILD_DIR="$REPO_DIR/build/parity-training-health"
 STATIC_LIB="$PUFFER_DIR/build/libstatic_fight_caves.a"
+CORE_LIB="$PUFFER_DIR/build/libfc_core.a"
 CUDA_ARCH_SH="$REPO_DIR/fc-training/cuda_arch.sh"
 
-if [ ! -f "$STATIC_LIB" ]; then
+if [ ! -f "$STATIC_LIB" ] || [ ! -f "$CORE_LIB" ]; then
     echo "Error: build the canonical Fight Caves CUDA backend first" >&2
     exit 1
 fi
@@ -50,6 +51,7 @@ PUFFER_SOURCE_NEWER="$(
 if [ -f "$OUTPUT" ] \
         && [ "$OUTPUT" -nt "$SOURCE" ] \
         && [ "$OUTPUT" -nt "$STATIC_LIB" ] \
+        && [ "$OUTPUT" -nt "$CORE_LIB" ] \
         && [ -z "$PUFFER_SOURCE_NEWER" ]; then
     echo "$OUTPUT"
     exit 0
@@ -87,7 +89,7 @@ if [ -n "$CUDNN_INCLUDE" ]; then INCLUDES+=(-I"$CUDNN_INCLUDE"); fi
 LINK_ARGS=(-L"$CUDA_ROOT/lib64")
 if [ -n "$CUDNN_LIB" ]; then LINK_ARGS+=(-L"$CUDNN_LIB"); fi
 "${CXX:-g++}" -shared -fPIC -fopenmp \
-    "$OBJECT" "$STATIC_LIB" \
+    "$OBJECT" "$STATIC_LIB" "$CORE_LIB" \
     "${LINK_ARGS[@]}" -lcudart -lnccl "$NVML_LINK" \
     -lcublas -lcusolver -lcurand "$CUDNN_LINK" -lgomp -O2 \
     -Bsymbolic-functions -o "$OUTPUT"

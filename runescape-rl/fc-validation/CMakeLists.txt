@@ -54,10 +54,9 @@ target_include_directories(parity_fix_hash PRIVATE
 )
 target_link_libraries(parity_fix_hash PRIVATE fc_core m)
 
-# The same deterministic trace runner is compiled once against the normally
-# linked core and once against the exact direct-included source set used by the
-# Fight Caves Puffer adapter. The Python comparator owns artifact metadata and
-# first-difference diagnostics.
+# The deterministic trace runner uses the same normally linked core consumed
+# by the Fight Caves Puffer adapter. The Python comparator owns artifact
+# metadata and first-difference diagnostics.
 add_executable(parity_fix_replay_linked
     tests/parity_fix_replay.c
 )
@@ -68,25 +67,6 @@ target_include_directories(parity_fix_replay_linked PRIVATE
     ${PROJECT_SOURCE_DIR}/fc-core/include
 )
 target_link_libraries(parity_fix_replay_linked PRIVATE fc_core m)
-
-add_executable(parity_fix_replay_puffer
-    tests/parity_fix_replay.c
-    tests/parity_fix_puffer_core.c
-)
-target_compile_definitions(parity_fix_replay_puffer PRIVATE
-    FC_REPLAY_BACKEND_NAME="puffer_direct_include"
-)
-if(FC_ACTIVE_LOADOUT)
-    target_compile_definitions(parity_fix_replay_puffer PRIVATE
-        FC_ACTIVE_LOADOUT=${FC_ACTIVE_LOADOUT}
-    )
-endif()
-target_include_directories(parity_fix_replay_puffer PRIVATE
-    ${PROJECT_SOURCE_DIR}/fc-training
-    ${PROJECT_SOURCE_DIR}/fc-core/include
-    ${PROJECT_SOURCE_DIR}/fc-core/src
-)
-target_link_libraries(parity_fix_replay_puffer PRIVATE m)
 
 add_executable(parity_fix_soak
     tests/parity_fix_soak.c
@@ -611,9 +591,8 @@ add_executable(phase2_guardrails_training
 target_include_directories(phase2_guardrails_training PRIVATE
     ${PROJECT_SOURCE_DIR}/fc-training
     ${PROJECT_SOURCE_DIR}/fc-core/include
-    ${PROJECT_SOURCE_DIR}/fc-core/src
 )
-target_link_libraries(phase2_guardrails_training PRIVATE m)
+target_link_libraries(phase2_guardrails_training PRIVATE fc_core m)
 
 add_test(NAME phase3_rng_seed_diversity
     COMMAND phase2_guardrails_training rng_seed_diversity)
@@ -675,22 +654,19 @@ if(Python3_Interpreter_FOUND)
     set_tests_properties(parity_det_002_same_version_replay PROPERTIES
         LABELS "parity_fix;determinism;replay")
 
-    add_test(NAME parity_det_003_core_puffer_replay
-        COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity_fix_replay.py
-                core_puffer
-                $<TARGET_FILE:parity_fix_replay_linked>
-                $<TARGET_FILE:parity_fix_replay_puffer>
-                ${CMAKE_CURRENT_BINARY_DIR}/parity-det-003.json)
-    set_tests_properties(parity_det_003_core_puffer_replay PROPERTIES
-        LABELS "parity_fix;determinism;replay;training")
-
     add_test(NAME phase3_analytics_no_globals
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/../tools/validation/tests/phase2_static_guardrails.py
                 analytics_no_global_metrics)
     set_tests_properties(phase3_analytics_no_globals PROPERTIES
         LABELS "phase3;guardrail")
+
+    add_test(NAME training_normal_core_linkage
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/../tools/validation/tests/phase2_static_guardrails.py
+                normal_core_linkage)
+    set_tests_properties(training_normal_core_linkage PROPERTIES
+        LABELS "training;guardrail;architecture")
 
     add_test(NAME phase7_live_no_supplies_simplified_config
         COMMAND ${Python3_EXECUTABLE}
