@@ -35,6 +35,23 @@ promise of an exact final diff.
 No source or configuration was changed during this audit. The analysis tools,
 instrumented builds, logs, and coverage data were created under `/tmp`.
 
+## Remediation status
+
+The two unused public core pathfinding APIs were removed in commit `7a8e87fb2`.
+The caller-free viewer-function set identified below was then removed: 27
+definitions plus their public declarations, totaling 429 deleted lines. This
+includes the high-confidence loader/drawing helpers, dormant UI convenience
+wrappers, and the uninvoked runtime self-test subgraph. Active lower-level UI,
+asset, animation, and rendering paths remain intact.
+
+Post-remediation validation passed all 163 CTest tests. A repeat strict Clang,
+Cppcheck, and linker-reachability scan found no remaining caller-free function
+from the audited set. Clang still reports header-defined animation helpers as
+unused in a small test translation unit, but the production viewer calls those
+same helpers; these remain confirmed false positives. The 100M deterministic
+training comparison is recorded as Comparison 20 in `baseline.md` and matches
+the original baseline exactly on every behavioral and learning metric.
+
 ## Tools built for this audit
 
 ### Static analysis tool

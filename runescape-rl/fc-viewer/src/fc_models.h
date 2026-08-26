@@ -457,16 +457,6 @@ static ModelSet *models_load(const char *path) {
     return models_load_filtered(path, NULL, 0);
 }
 
-static void models_set_shader(ModelSet *set, Shader shader) {
-    if (!set || !set->loaded || shader.id <= 0) return;
-    for (int i = 0; i < set->count; i++) {
-        ModelEntry *entry = &set->entries[i];
-        if (!entry->loaded) continue;
-        for (int m = 0; m < entry->model.materialCount; m++)
-            entry->model.materials[m].shader = shader;
-    }
-}
-
 static void models_free(ModelSet *set) {
     if (!set) return;
     for (int i = 0; i < set->count; i++) {

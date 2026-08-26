@@ -999,13 +999,6 @@ static void set_context_action_op(RuneCUiState *ui, int action_index, int op) {
     ui->context_action_op[action_index] = op;
 }
 
-void runec_ui_open_context(RuneCUiState *ui, Vector2 pos, const char *title,
-                           const char **actions, int action_count) {
-    if (!ui || !actions || action_count <= 0)
-        return;
-    set_context(ui, pos, title, actions, action_count);
-}
-
 void runec_ui_clear_selected_target(RuneCUiState *ui) {
     if (!ui)
         return;
@@ -1030,13 +1023,6 @@ static RuneCUiComponentOverride *component_override_slot(
     memset(override, 0, sizeof(*override));
     override->component_id = component_id;
     return override;
-}
-
-void runec_ui_clear_component_overrides(RuneCUiState *ui) {
-    if (!ui)
-        return;
-    ui->component_override_count = 0;
-    ui->item_container_override_count = 0;
 }
 
 static RuneCUiItemContainerOverride *item_container_override_slot(
@@ -1113,18 +1099,6 @@ int runec_ui_set_component_hidden(RuneCUiState *ui, uint32_t component_id,
     return 1;
 }
 
-int runec_ui_set_component_model(RuneCUiState *ui, uint32_t component_id,
-                                 int model_type, int model_id) {
-    RuneCUiComponentOverride *override =
-        component_override_slot(ui, component_id, 1);
-    if (!override)
-        return 0;
-    override->flags |= RUNEC_UI_COMPONENT_OVERRIDE_MODEL;
-    override->model_type = model_type;
-    override->model_id = model_id;
-    return 1;
-}
-
 int runec_ui_set_component_item(RuneCUiState *ui, uint32_t component_id,
                                 uint32_t item_id, uint32_t icon_item_id,
                                 int quantity, int selected) {
@@ -1137,40 +1111,6 @@ int runec_ui_set_component_item(RuneCUiState *ui, uint32_t component_id,
     override->icon_item_id = (int32_t)(icon_item_id ? icon_item_id : item_id);
     override->item_quantity = quantity > 0 ? quantity : 1;
     override->selected = selected ? 1 : 0;
-    return 1;
-}
-
-int runec_ui_set_component_animation(RuneCUiState *ui, uint32_t component_id,
-                                     int animation_id) {
-    RuneCUiComponentOverride *override =
-        component_override_slot(ui, component_id, 1);
-    if (!override)
-        return 0;
-    override->flags |= RUNEC_UI_COMPONENT_OVERRIDE_ANIM;
-    override->animation_id = animation_id;
-    return 1;
-}
-
-int runec_ui_set_component_color(RuneCUiState *ui, uint32_t component_id,
-                                 int color) {
-    RuneCUiComponentOverride *override =
-        component_override_slot(ui, component_id, 1);
-    if (!override)
-        return 0;
-    override->flags |= RUNEC_UI_COMPONENT_OVERRIDE_COLOR;
-    override->text_color = color;
-    return 1;
-}
-
-int runec_ui_set_component_scroll(RuneCUiState *ui, uint32_t component_id,
-                                  int scroll_x, int scroll_y) {
-    RuneCUiComponentOverride *override =
-        component_override_slot(ui, component_id, 1);
-    if (!override)
-        return 0;
-    override->flags |= RUNEC_UI_COMPONENT_OVERRIDE_SCROLL;
-    override->scroll_x = scroll_x;
-    override->scroll_y = scroll_y;
     return 1;
 }
 
@@ -1288,52 +1228,9 @@ int runec_ui_open_subinterface(RuneCUiState *ui, RuneCUiOpenMount mount,
     return 1;
 }
 
-int runec_ui_open_interface(RuneCUiState *ui, RuneCUiOpenMount mount,
-                            RuneCUiTab tab, const char *group) {
-    return runec_ui_open_subinterface(ui, mount, tab, 0, group);
-}
-
 int runec_ui_open_top_interface(RuneCUiState *ui, const char *group) {
     return runec_ui_open_subinterface(ui, RUNEC_UI_MOUNT_SCREEN,
                                       RUNEC_UI_TAB_NONE, 0, group);
-}
-
-int runec_ui_open_overlay(RuneCUiState *ui, const char *group) {
-    return runec_ui_open_subinterface(ui, RUNEC_UI_MOUNT_OVERLAY,
-                                      RUNEC_UI_TAB_NONE, 0, group);
-}
-
-int runec_ui_open_modal(RuneCUiState *ui, const char *group) {
-    return runec_ui_open_subinterface(ui, RUNEC_UI_MOUNT_MODAL,
-                                      RUNEC_UI_TAB_NONE, 0, group);
-}
-
-int runec_ui_move_interface(RuneCUiState *ui, RuneCUiOpenMount from_mount,
-                            RuneCUiTab from_tab, RuneCUiOpenMount to_mount,
-                            RuneCUiTab to_tab, uint32_t target_component_id) {
-    if (!ui)
-        return 0;
-    for (int i = 0; i < ui->open_interface_count; i++) {
-        RuneCUiOpenInterface *open = &ui->open_interfaces[i];
-        if (!open->active || open->mount != from_mount || open->tab != from_tab)
-            continue;
-        open->mount = to_mount;
-        open->tab = to_tab;
-        open->target_component_id = target_component_id;
-        return 1;
-    }
-    return 0;
-}
-
-void runec_ui_close_interface(RuneCUiState *ui, RuneCUiOpenMount mount,
-                              RuneCUiTab tab) {
-    if (!ui)
-        return;
-    for (int i = 0; i < ui->open_interface_count; i++) {
-        RuneCUiOpenInterface *open = &ui->open_interfaces[i];
-        if (open->active && open->mount == mount && open->tab == tab)
-            open->active = 0;
-    }
 }
 
 void runec_ui_init(RuneCUiState *ui) {
@@ -1943,190 +1840,6 @@ static int close_modal_interfaces(RuneCUiState *ui) {
         }
     }
     return closed;
-}
-
-static int ui_selftest_fail(char *error, size_t error_cap, const char *message) {
-    if (error && error_cap > 0) {
-        snprintf(error, error_cap, "%s", message ? message : "unknown failure");
-    }
-    return 0;
-}
-
-static int open_group_active(const RuneCUiState *ui, RuneCUiOpenMount mount,
-                             RuneCUiTab tab, const char *group) {
-    const RuneCUiOpenInterface *open = find_open_interface(ui, mount, tab);
-    return open && group && strcmp(open->group, group) == 0;
-}
-
-static const RuneCUiComponentOverride *find_component_override(
-    const RuneCUiState *ui, uint32_t component_id) {
-    if (!ui || component_id == 0)
-        return NULL;
-    for (int i = 0; i < ui->component_override_count; i++) {
-        if (ui->component_overrides[i].component_id == component_id)
-            return &ui->component_overrides[i];
-    }
-    return NULL;
-}
-
-static int any_modal_or_overlay_active(const RuneCUiState *ui) {
-    if (!ui)
-        return 0;
-    for (int i = 0; i < ui->open_interface_count; i++) {
-        const RuneCUiOpenInterface *open = &ui->open_interfaces[i];
-        if (!open->active)
-            continue;
-        if (open->mount == RUNEC_UI_MOUNT_MODAL
-                || open->mount == RUNEC_UI_MOUNT_OVERLAY)
-            return 1;
-    }
-    return 0;
-}
-
-static int store_has_listener_and_trigger(const RuneCUiInterfaceStore *store) {
-    int saw_listener = 0;
-    int saw_trigger = 0;
-    if (!store || !store->loaded)
-        return 0;
-    for (int g = 0; g < store->group_count; g++) {
-        const RuneCUiInterfaceGroup *group = &store->groups[g];
-        for (int c = 0; c < group->component_count; c++) {
-            const RuneCUiComponent *component = &group->components[c];
-            if (component->listener_count > 0)
-                saw_listener = 1;
-            if (component->trigger_count > 0)
-                saw_trigger = 1;
-            if (saw_listener && saw_trigger)
-                return 1;
-        }
-    }
-    return 0;
-}
-
-int runec_ui_runtime_selftest(RuneCUiState *ui, char *error, size_t error_cap) {
-    if (!ui)
-        return ui_selftest_fail(error, error_cap, "ui state is null");
-    if (!ui->decoded_ui_enabled || !ui->decoded_ui_ready)
-        return ui_selftest_fail(error, error_cap, "decoded UI is not ready");
-
-    const char *required_groups[] = {
-        "toplevel_osrs_stretch", "orbs", "inventory",
-        "wornitems", "stats", "prayerbook", "magic_spellbook",
-        "combat_interface", "equipment", "ge_pricechecker_side", "deathkeep",
-    };
-    for (int i = 0; i < (int)(sizeof(required_groups) / sizeof(required_groups[0])); i++) {
-        if (!decoded_group_available(ui, required_groups[i]))
-            return ui_selftest_fail(error, error_cap, "required UI group missing");
-    }
-    if (!store_has_listener_and_trigger(&ui->interfaces))
-        return ui_selftest_fail(error, error_cap, "listener/trigger metadata missing");
-
-    if (!open_group_active(ui, RUNEC_UI_MOUNT_SCREEN, RUNEC_UI_TAB_NONE,
-                           "toplevel_osrs_stretch"))
-        return ui_selftest_fail(error, error_cap, "top-level interface not open");
-    if (!open_group_active(ui, RUNEC_UI_MOUNT_MAP, RUNEC_UI_TAB_NONE,
-                           "orbs"))
-        return ui_selftest_fail(error, error_cap, "orbs interface not open");
-
-    for (int tab = 0; tab < RUNEC_UI_TAB_COUNT; tab++) {
-        const char *group = decoded_group_for_tab((RuneCUiTab)tab);
-        if (!group || !decoded_group_available(ui, group))
-            continue;
-        ui->active_tab = (RuneCUiTab)tab;
-        if (!runec_ui_open_subinterface(ui, RUNEC_UI_MOUNT_SIDE_CONTENT,
-                ui->active_tab, RUNEC_UI_TOP_SIDE_CONTAINER, group)) {
-            return ui_selftest_fail(error, error_cap, "failed to open side tab");
-        }
-        if (!open_group_active(ui, RUNEC_UI_MOUNT_SIDE_CONTENT,
-                               ui->active_tab, group)) {
-            return ui_selftest_fail(error, error_cap, "side tab group mismatch");
-        }
-    }
-
-    ui->active_tab = RUNEC_UI_TAB_INVENTORY;
-    sync_decoded_component_overrides(ui);
-    const RuneCUiItemContainerOverride *inventory = NULL;
-    for (int i = 0; i < ui->item_container_override_count; i++) {
-        if (ui->item_container_overrides[i].component_id
-                == RUNEC_UI_INVENTORY_ITEMS_COMPONENT) {
-            inventory = &ui->item_container_overrides[i];
-            break;
-        }
-    }
-    if (!inventory || inventory->slot_count != RUNEC_UI_INV_SLOT_COUNT
-            || !inventory->slots[0].enabled)
-        return ui_selftest_fail(error, error_cap, "inventory override missing");
-
-    const RuneCUiComponentOverride *weapon = find_component_override(
-        ui, RUNEC_UI_COMPONENT_ID(RUNEC_UI_GROUP_WORNITEMS, 15));
-    if (!weapon || !(weapon->flags & RUNEC_UI_COMPONENT_OVERRIDE_ITEM))
-        return ui_selftest_fail(error, error_cap, "equipment item override missing");
-
-    const char *actions[] = {"Use", "Examine", "Drop"};
-    runec_ui_open_context(ui, (Vector2){32, 32}, "Coins", actions, 3);
-    if (!ui->context_open || ui->context_action_count != 3)
-        return ui_selftest_fail(error, error_cap, "context menu smoke failed");
-
-    set_selected_item_target(ui, 0);
-    if (ui->selected_target.kind != RUNEC_UI_SELECTED_ITEM)
-        return ui_selftest_fail(error, error_cap, "selected item target failed");
-    runec_ui_clear_selected_target(ui);
-    set_selected_spell_target(ui, 5, "Wind Strike");
-    if (ui->selected_target.kind != RUNEC_UI_SELECTED_SPELL)
-        return ui_selftest_fail(error, error_cap, "selected spell target failed");
-    runec_ui_clear_selected_target(ui);
-
-    RuneCUiListenerEvent event = {
-        .kind = RUNEC_UI_LISTENER_ON_LOAD,
-        .component_id = RUNEC_UI_MAGIC_FILTER_CONTAINER,
-        .op = -1,
-        .mouse = {0},
-    };
-    if (!dispatch_local_listener(ui, &event, NULL) || ui->magic_filter_open)
-        return ui_selftest_fail(error, error_cap, "magic filter load failed");
-    const RuneCUiComponentOverride *filter = find_component_override(
-        ui, RUNEC_UI_MAGIC_FILTER_CONTAINER);
-    if (!filter || !(filter->flags & RUNEC_UI_COMPONENT_OVERRIDE_HIDDEN)
-            || !filter->hidden)
-        return ui_selftest_fail(error, error_cap, "magic filter hidden override failed");
-
-    event.kind = RUNEC_UI_LISTENER_ON_CLICK;
-    event.component_id = RUNEC_UI_MAGIC_FILTER_BUTTON;
-    if (!dispatch_local_listener(ui, &event, NULL) || !ui->magic_filter_open)
-        return ui_selftest_fail(error, error_cap, "magic filter click failed");
-
-    event.kind = RUNEC_UI_LISTENER_ON_OP;
-    event.component_id = RUNEC_UI_WORN_EQUIPMENT_BUTTON;
-    if (!dispatch_local_listener(ui, &event, NULL)
-            || !open_group_active(ui, RUNEC_UI_MOUNT_MODAL,
-                                  RUNEC_UI_TAB_NONE, "equipment")) {
-        return ui_selftest_fail(error, error_cap, "equipment modal failed");
-    }
-    event.component_id = RUNEC_UI_WORN_PRICE_BUTTON;
-    if (!dispatch_local_listener(ui, &event, NULL)
-            || !open_group_active(ui, RUNEC_UI_MOUNT_OVERLAY,
-                                  RUNEC_UI_TAB_NONE, "ge_pricechecker_side")) {
-        return ui_selftest_fail(error, error_cap, "price checker overlay failed");
-    }
-    event.component_id = RUNEC_UI_WORN_DEATH_BUTTON;
-    if (!dispatch_local_listener(ui, &event, NULL)
-            || !open_group_active(ui, RUNEC_UI_MOUNT_MODAL,
-                                  RUNEC_UI_TAB_NONE, "deathkeep")) {
-        return ui_selftest_fail(error, error_cap, "deathkeep modal failed");
-    }
-
-    int previous_lines = ui->chat_line_count;
-    event.component_id = RUNEC_UI_WORN_FOLLOWER_BUTTON;
-    if (!dispatch_local_listener(ui, &event, NULL)
-            || ui->chat_line_count < previous_lines
-            || strcmp(ui->chat_lines[0], "You do not have a follower to call.") != 0) {
-        return ui_selftest_fail(error, error_cap, "follower hook failed");
-    }
-
-    dispatch_local_transmit_listeners(ui);
-    if (!close_modal_interfaces(ui) || any_modal_or_overlay_active(ui))
-        return ui_selftest_fail(error, error_cap, "modal close smoke failed");
-    return 1;
 }
 
 static const char *decoded_hit_title(const RuneCUiHitResult *hit) {
@@ -2807,12 +2520,6 @@ static int draw_asset_centered(const RuneCUiState *ui, const char *name,
     };
     runec_ui_draw_asset(&ui->assets, name, dst, tint);
     return 1;
-}
-
-static void draw_slot_box(Rectangle r, int selected) {
-    DrawRectangleRec(r, (Color){20, 17, 12, selected ? 220 : 150});
-    DrawRectangleLinesEx(r, selected ? 2.0f : 1.0f,
-                         selected ? OSRS_YELLOW : (Color){87, 70, 48, 210});
 }
 
 static void draw_asset_tiled(const RuneCUiState *ui, const char *name,

@@ -154,10 +154,6 @@ int fc_osrs_text_init(void) {
     return 1;
 }
 
-int fc_osrs_text_ready(void) {
-    return g_font_ready;
-}
-
 static unsigned char next_osrs_character(const unsigned char* text,
                                          size_t remaining,
                                          size_t* consumed) {

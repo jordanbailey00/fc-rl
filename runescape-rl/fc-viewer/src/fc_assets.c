@@ -228,11 +228,6 @@ int fc_asset_exists(const char* logical_path) {
     return fc_asset_resolve_path(logical_path, resolved, sizeof(resolved));
 }
 
-int fc_repo_exists(const char* logical_path) {
-    char resolved[FC_ASSET_PATH_MAX];
-    return fc_repo_resolve_path(logical_path, resolved, sizeof(resolved));
-}
-
 FILE* fc_asset_fopen(const char* logical_path, const char* mode) {
     char resolved[FC_ASSET_PATH_MAX];
     FILE* f;
@@ -244,21 +239,6 @@ FILE* fc_asset_fopen(const char* logical_path, const char* mode) {
     f = fopen(resolved, mode);
     if (!f)
         fprintf(stderr, "fc_asset_fopen: cannot open %s: %s\n",
-                resolved, strerror(errno));
-    return f;
-}
-
-FILE* fc_repo_fopen(const char* logical_path, const char* mode) {
-    char resolved[FC_ASSET_PATH_MAX];
-    FILE* f;
-    if (!fc_repo_resolve_path(logical_path, resolved, sizeof(resolved))) {
-        fprintf(stderr, "fc_repo_fopen: missing %s (looked for %s)\n",
-                logical_path ? logical_path : "(null)", resolved);
-        return NULL;
-    }
-    f = fopen(resolved, mode);
-    if (!f)
-        fprintf(stderr, "fc_repo_fopen: cannot open %s: %s\n",
                 resolved, strerror(errno));
     return f;
 }

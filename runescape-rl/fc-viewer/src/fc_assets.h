@@ -12,10 +12,8 @@ const char* fc_repo_root(void);
 int fc_asset_resolve_path(const char* logical_path, char* out, size_t cap);
 int fc_repo_resolve_path(const char* logical_path, char* out, size_t cap);
 int fc_asset_exists(const char* logical_path);
-int fc_repo_exists(const char* logical_path);
 
 FILE* fc_asset_fopen(const char* logical_path, const char* mode);
-FILE* fc_repo_fopen(const char* logical_path, const char* mode);
 int fc_asset_close(FILE* f);
 unsigned char* fc_asset_read_all(const char* logical_path, size_t* out_size);
 

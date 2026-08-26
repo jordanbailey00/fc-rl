@@ -257,43 +257,22 @@ void runec_ui_set_combat_style_profile(RuneCUiState *ui, int core_weapon_categor
 void runec_ui_sync_status(RuneCUiState *ui, int world_x, int world_y,
                           int local_x, int local_y, uint32_t tick,
                           int running, int paused);
-void runec_ui_open_context(RuneCUiState *ui, Vector2 pos, const char *title,
-                           const char **actions, int action_count);
 void runec_ui_clear_selected_target(RuneCUiState *ui);
-void runec_ui_clear_component_overrides(RuneCUiState *ui);
 int runec_ui_set_component_text(RuneCUiState *ui, uint32_t component_id,
                                 const char *text);
 int runec_ui_set_component_hidden(RuneCUiState *ui, uint32_t component_id,
                                   int hidden);
-int runec_ui_set_component_model(RuneCUiState *ui, uint32_t component_id,
-                                 int model_type, int model_id);
 int runec_ui_set_component_item(RuneCUiState *ui, uint32_t component_id,
                                 uint32_t item_id, uint32_t icon_item_id,
                                 int quantity, int selected);
-int runec_ui_set_component_animation(RuneCUiState *ui, uint32_t component_id,
-                                     int animation_id);
-int runec_ui_set_component_color(RuneCUiState *ui, uint32_t component_id,
-                                 int color);
-int runec_ui_set_component_scroll(RuneCUiState *ui, uint32_t component_id,
-                                  int scroll_x, int scroll_y);
-int runec_ui_open_interface(RuneCUiState *ui, RuneCUiOpenMount mount,
-                            RuneCUiTab tab, const char *group);
 int runec_ui_open_top_interface(RuneCUiState *ui, const char *group);
 int runec_ui_open_subinterface(RuneCUiState *ui, RuneCUiOpenMount mount,
                                RuneCUiTab tab, uint32_t target_component_id,
                                const char *group);
-int runec_ui_open_overlay(RuneCUiState *ui, const char *group);
-int runec_ui_open_modal(RuneCUiState *ui, const char *group);
-int runec_ui_move_interface(RuneCUiState *ui, RuneCUiOpenMount from_mount,
-                            RuneCUiTab from_tab, RuneCUiOpenMount to_mount,
-                            RuneCUiTab to_tab, uint32_t target_component_id);
-void runec_ui_close_interface(RuneCUiState *ui, RuneCUiOpenMount mount,
-                              RuneCUiTab tab);
 int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h);
 void runec_ui_draw(RuneCUiState *ui, int screen_w, int screen_h);
 Rectangle runec_ui_chat_panel_rect(const RuneCUiState *ui,
                                    int screen_w, int screen_h);
 const char *runec_ui_tab_name(RuneCUiTab tab);
-int runec_ui_runtime_selftest(RuneCUiState *ui, char *error, size_t error_cap);
 
 #endif

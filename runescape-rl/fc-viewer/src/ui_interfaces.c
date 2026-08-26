@@ -944,14 +944,6 @@ int runec_ui_interfaces_draw_group_ex(RuneCUiInterfaceStore *store,
     return drew;
 }
 
-int runec_ui_interfaces_draw_group(RuneCUiInterfaceStore *store,
-                                   const RuneCUiAssets *assets,
-                                   const char *group_name,
-                                   Rectangle mount) {
-    return runec_ui_interfaces_draw_group_ex(store, assets, group_name,
-                                            mount, NULL);
-}
-
 static int find_component_rect_recursive(const RuneCUiInterfaceGroup *group,
                                          const RuneCUiComponent *component,
                                          const char *component_name,
@@ -1095,15 +1087,6 @@ int runec_ui_interfaces_hit_test_ex(const RuneCUiInterfaceStore *store,
             return 1;
     }
     return 0;
-}
-
-int runec_ui_interfaces_hit_test(const RuneCUiInterfaceStore *store,
-                                 const char *group_name,
-                                 Rectangle mount,
-                                 Vector2 point,
-                                 RuneCUiHitResult *out_hit) {
-    return runec_ui_interfaces_hit_test_ex(store, group_name, mount, point,
-                                          out_hit, NULL);
 }
 
 int runec_ui_interfaces_component_rect(const RuneCUiInterfaceStore *store,

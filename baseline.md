@@ -665,6 +665,33 @@ subject was the deleted footprint wrapper was removed. The complete suite now
 passes 163/163 tests. Production code decreased by 34 LOC. Throughput was
 1,004,402 SPS and training uptime was 102.189196 seconds.
 
+## Comparison 20: removed unused viewer functions
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`c7i6etqu`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/c7i6etqu) (`ruby-butterfly-1246`) |
+| Tag | `v4.5_refactor_unused_viewer_functions_100m` |
+| Git commit at run start | `7a8e87fb2` plus the documented uncommitted viewer-function cleanup |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `446a78a42f8a88b9435a52169914a7ee724980170aff5e0e15010bc92959ab4b` |
+| Backend binary SHA-256 | `e0015300b9d84123fda37f2539db41155ff6020f262beb50674837cc8b0d88a9` |
+| Backend source SHA-256 | `f0a929522f88ee174c13762df2570fddbfeb1d0e23df0f67a1f40d0c6e2a72e3` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260826T024254Z-train-1424515.json` |
+
+Result: behavioral parity is exact against baseline `m916qfsv` and preceding
+comparison `nqgg0y6a`. All 124 `env/*` metrics, agent steps, epoch, and all
+seven policy/value/entropy/KL/loss values are byte-for-byte equal. The current
+summary matches 136 of 150 baseline fields exactly; the 14 differences are
+only timestamps, wall-clock performance, throughput, and CPU/GPU utilization
+telemetry.
+
+Twenty-seven caller-free viewer functions and their declarations were removed,
+including obsolete loader helpers, UI convenience wrappers, and the uninvoked
+runtime self-test subgraph. No live rendering or gameplay path was changed.
+Production code decreased by 429 LOC. The complete suite passes 163/163 tests.
+Throughput was 954,976 SPS and training uptime was 103.612085 seconds.
+
 ## Reproduction command
 
 ```bash

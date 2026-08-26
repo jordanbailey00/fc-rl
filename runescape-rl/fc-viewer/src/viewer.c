@@ -1610,29 +1610,6 @@ static void toggle_godmode(ViewerState* v) {
     fprintf(stderr, "GODMODE: %s\n", v->godmode ? "ON" : "OFF");
 }
 
-static void format_speed_label(const ViewerState* v, char* buf, size_t buf_size) {
-    if (v->policy_pipe) {
-        int multiplier = policy_replay_tps_to_multiplier(v->tps);
-        if (float_near(v->tps, NORMAL_TPS)) {
-            snprintf(buf, buf_size, "Replay:5/3 TPS");
-        } else if (multiplier > 0) {
-            snprintf(buf, buf_size, "Replay:%dx", multiplier);
-        } else {
-            snprintf(buf, buf_size, "Replay:%.2f TPS", v->tps);
-        }
-        return;
-    }
-    if (float_near(v->tps, NORMAL_TPS)) {
-        snprintf(buf, buf_size, "TPS:5/3");
-        return;
-    }
-    if (float_near(v->tps, roundf(v->tps))) {
-        snprintf(buf, buf_size, "TPS:%.0f", v->tps);
-    } else {
-        snprintf(buf, buf_size, "TPS:%.2f", v->tps);
-    }
-}
-
 static void print_policy_episode_summary(const ViewerState* v) {
     const FcState* s = &v->state;
     FcEpisodeSummary summary;
@@ -2257,23 +2234,6 @@ static TerrainMesh* load_terrain(ViewerState* v) {
         return tm;
     }
     return NULL;
-}
-
-/* Load collision map for use during object height compression */
-static int load_collision_for_objects(uint8_t coll[64][64]) {
-    FILE* f = fc_repo_fopen("fc-core/assets/fightcaves.collision", "rb");
-    uint8_t buf[64*64];
-    if (!f) return 0;
-    if (!fc_read_exact(f, buf, 1, sizeof(buf),
-                       "fc-core/assets/fightcaves.collision", "collision map")) {
-        fclose(f);
-        return 0;
-    }
-    fclose(f);
-    for (int y = 0; y < 64; y++)
-        for (int x = 0; x < 64; x++)
-            coll[x][y] = buf[y * 64 + x];
-    return 1;
 }
 
 /* Objects loader — no modifications */

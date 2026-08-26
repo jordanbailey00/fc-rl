@@ -209,18 +209,6 @@ static float terrain_height_at(TerrainMesh* tm, int world_x, int world_y) {
     return tm->heightmap[lx + ly * tm->hm_width];
 }
 
-/**
- * Average height of a tile's 4 corners. matches how OSRS places players
- * on sloped terrain (average of SW, SE, NW, NE corner heights).
- */
-static float terrain_height_avg(TerrainMesh* tm, int world_x, int world_y) {
-    float h00 = terrain_height_at(tm, world_x, world_y);
-    float h10 = terrain_height_at(tm, world_x + 1, world_y);
-    float h01 = terrain_height_at(tm, world_x, world_y + 1);
-    float h11 = terrain_height_at(tm, world_x + 1, world_y + 1);
-    return (h00 + h10 + h01 + h11) * 0.25f;
-}
-
 static void terrain_free(TerrainMesh* tm) {
     if (!tm) return;
     if (tm->loaded) {

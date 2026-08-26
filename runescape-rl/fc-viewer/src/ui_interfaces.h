@@ -213,10 +213,6 @@ void runec_ui_interfaces_unload(RuneCUiInterfaceStore *store);
 const RuneCUiInterfaceGroup *runec_ui_interface_group(
     const RuneCUiInterfaceStore *store, const char *name);
 
-int runec_ui_interfaces_draw_group(RuneCUiInterfaceStore *store,
-                                   const RuneCUiAssets *assets,
-                                   const char *group_name,
-                                   Rectangle mount);
 int runec_ui_interfaces_draw_group_ex(RuneCUiInterfaceStore *store,
                                       const RuneCUiAssets *assets,
                                       const char *group_name,
@@ -234,11 +230,6 @@ int runec_ui_interfaces_component_rect_by_id(const RuneCUiInterfaceStore *store,
                                              Rectangle mount,
                                              Rectangle *out_rect);
 
-int runec_ui_interfaces_hit_test(const RuneCUiInterfaceStore *store,
-                                 const char *group_name,
-                                 Rectangle mount,
-                                 Vector2 point,
-                                 RuneCUiHitResult *out_hit);
 int runec_ui_interfaces_hit_test_ex(const RuneCUiInterfaceStore *store,
                                     const char *group_name,
                                     Rectangle mount,
