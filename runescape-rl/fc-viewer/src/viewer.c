@@ -859,7 +859,7 @@ static AnimSequence* advance_anim_track(AnimCache* cache,
         return NULL;
 
     AnimSequence* seq = anim_get_sequence(cache, desired_seq);
-    if (!seq || seq->frame_count <= 0) return NULL;
+    if (!seq || seq->frame_count == 0) return NULL;
 
     if (*current_seq != desired_seq) {
         *current_seq = desired_seq;
@@ -896,7 +896,7 @@ static float anim_frame_duration_seconds(const AnimSequence* seq,
 }
 
 static float anim_track_duration_seconds(const AnimSequence* seq) {
-    if (!seq || seq->frame_count <= 0) return 0.0f;
+    if (!seq || seq->frame_count == 0) return 0.0f;
     float duration = 0.0f;
     for (int i = 0; i < seq->frame_count; i++)
         duration += anim_frame_duration_seconds(seq, i);
@@ -915,8 +915,8 @@ static void retarget_anim_track_preserving_phase(
 
     AnimSequence* old_seq = anim_get_sequence(cache, *current_seq);
     AnimSequence* new_seq = anim_get_sequence(cache, desired_seq);
-    if (!old_seq || old_seq->frame_count <= 0 ||
-        !new_seq || new_seq->frame_count <= 0)
+    if (!old_seq || old_seq->frame_count == 0 ||
+        !new_seq || new_seq->frame_count == 0)
         return;
 
     int old_frame = *frame_index;
@@ -972,7 +972,7 @@ static AnimSequence* advance_anim_track_once(AnimCache* cache,
         return NULL;
 
     AnimSequence* seq = anim_get_sequence(cache, desired_seq);
-    if (!seq || seq->frame_count <= 0) return NULL;
+    if (!seq || seq->frame_count == 0) return NULL;
 
     if (*current_seq != desired_seq) {
         *current_seq = desired_seq;
@@ -997,7 +997,7 @@ static AnimSequence* advance_anim_track_once(AnimCache* cache,
 }
 
 static float anim_sequence_duration_seconds(const AnimSequence* seq) {
-    if (!seq || seq->frame_count <= 0) return 0.45f;
+    if (!seq || seq->frame_count == 0) return 0.45f;
     float total = 0.0f;
     for (int i = 0; i < seq->frame_count; i++) {
         float frame_delay = (float)seq->frames[i].delay * 0.02f;
@@ -1009,7 +1009,7 @@ static float anim_sequence_duration_seconds(const AnimSequence* seq) {
 }
 
 static float anim_sequence_duration_client_cycles(const AnimSequence* seq) {
-    if (!seq || seq->frame_count <= 0) return 0.0f;
+    if (!seq || seq->frame_count == 0) return 0.0f;
     float total = 0.0f;
     for (int i = 0; i < seq->frame_count; i++)
         total += seq->frames[i].delay > 0 ? seq->frames[i].delay : 1;
@@ -1031,15 +1031,14 @@ static void update_entry_animation(NpcModelEntry* entry,
         return;
 
     AnimSequence* seq = anim_get_sequence(cache, (uint16_t)animation_id);
-    if (!seq || seq->frame_count <= 0) return;
+    if (!seq || seq->frame_count == 0) return;
 
     if (!*state || (*state)->vert_count != entry->base_vert_count) {
         if (*state) anim_model_state_free(*state);
         *state = anim_model_state_create(entry->vertex_skins,
                                          entry->base_vert_count);
         *current_seq = (uint16_t)animation_id;
-        *frame_index = seq->frame_count > 0
-            ? ((int)phase_ticks % seq->frame_count) : 0;
+        *frame_index = (int)phase_ticks % seq->frame_count;
         if (*frame_index < 0) *frame_index = 0;
         *frame_timer = (float)seq->frames[*frame_index].delay * 0.02f;
         if (*frame_timer < 0.016f) *frame_timer = 0.016f;
@@ -2534,7 +2533,7 @@ static void draw_click_cross(ViewerState* v) {
     int base = v->click_feedback.cross_kind == FC_CLICK_CROSS_INTERACTION
         ? FC_CLICK_CROSS_FRAME_COUNT : 0;
     Texture2D texture = v->click_cross_tex[base + frame];
-    if (texture.id <= 0) return;
+    if (texture.id == 0) return;
     DrawTexture(texture,
                 (int)roundf(v->click_feedback.cross_screen_x) -
                     texture.width / 2,
@@ -3879,24 +3878,6 @@ int main(int argc, char** argv) {
             "data/sprites/ui/prayeron_12.png");
         v.tex_pray_magic_off = fc_load_texture_asset(
             "data/sprites/ui/prayeroff_12.png");
-        if (v.tex_pray_melee_on.id == 0)
-            v.tex_pray_melee_on = fc_load_texture_asset(
-                "sprites/protect_melee_on.png");
-        if (v.tex_pray_melee_off.id == 0)
-            v.tex_pray_melee_off = fc_load_texture_asset(
-                "sprites/protect_melee_off.png");
-        if (v.tex_pray_range_on.id == 0)
-            v.tex_pray_range_on = fc_load_texture_asset(
-                "sprites/protect_missiles_on.png");
-        if (v.tex_pray_range_off.id == 0)
-            v.tex_pray_range_off = fc_load_texture_asset(
-                "sprites/protect_missiles_off.png");
-        if (v.tex_pray_magic_on.id == 0)
-            v.tex_pray_magic_on = fc_load_texture_asset(
-                "sprites/protect_magic_on.png");
-        if (v.tex_pray_magic_off.id == 0)
-            v.tex_pray_magic_off = fc_load_texture_asset(
-                "sprites/protect_magic_off.png");
     }
 
     v.combat_style = 1;  /* Rapid default */

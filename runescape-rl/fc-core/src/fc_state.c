@@ -354,7 +354,7 @@ static int attack_action_valid(const FcState* state, int action) {
 
     visible = fc_visible_npc_indices(state, visible_indices);
     slot = action - 1;
-    return slot >= 0 && slot < visible;
+    return slot < visible;
 }
 
 static int prayer_action_valid(int action) {

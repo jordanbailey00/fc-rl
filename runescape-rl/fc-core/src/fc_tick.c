@@ -417,8 +417,7 @@ static void process_player_movement(FcState* state, int move_action,
         target_x_action > 0 && target_y_action > 0) {
         int target_x = target_x_action - 1;
         int target_y = target_y_action - 1;
-        if (target_x >= 0 && target_x < FC_ARENA_WIDTH &&
-            target_y >= 0 && target_y < FC_ARENA_HEIGHT) {
+        if (target_x < FC_ARENA_WIDTH && target_y < FC_ARENA_HEIGHT) {
             player->route_len = fc_pathfind_bfs_move_near(
                 player->x, player->y, target_x, target_y,
                 state->walkable, state->movement_flags,

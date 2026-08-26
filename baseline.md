@@ -867,6 +867,37 @@ pure-numeric aliases. This removes 448,932 asset bytes. The suite passes
 Raylib/OpenGL viewer startup loaded the retained assets successfully.
 Throughput was 992,154 SPS and training uptime was 97.769951 seconds.
 
+## Comparison 27: removed stale viewer assets and redundant conditions
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`9bdvdg61`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/9bdvdg61) (`autumn-sea-1253`) |
+| Tag | `v4.5_refactor_stale_viewer_assets_conditions_removed_100m` |
+| Git commit at run start | `078c6fbc9` plus the documented uncommitted cleanup |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `446a78a42f8a88b9435a52169914a7ee724980170aff5e0e15010bc92959ab4b` |
+| Backend binary SHA-256 | `8206a91a31421223998adf5dd9da0fdd5a8e23727ba9e43041e8d8fd249d5ee5` |
+| Backend source SHA-256 | `edb593c6dbd6b5c0ae1a9c9882a0158022d2e52db18b83f25ebd739accd4dcd6` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260826T180740Z-train-1517230.json` |
+
+Result: behavioral parity remains exact against baseline `m916qfsv` and the
+preceding comparison `atxm2i8l`. All 124 `env/*` metrics, agent steps, epoch,
+and all seven policy/value/entropy/KL/loss values are byte-for-byte equal. The
+current summary matches 136 of 150 baseline fields and 135 of 150 preceding-run
+fields; all differences are timestamps, wall-clock performance, throughput,
+and CPU/GPU utilization telemetry.
+
+The unused `fc_player.anims` and bold font, six byte-identical prayer fallback
+sprites, their loader and asset-builder fallback paths, one unused UI intent,
+and the documented redundant bounds/unsigned checks were removed or
+simplified. The canonical `fc_all.anims`, prayer sprites, and regular/small
+fonts remain authoritative. This removes 50,065 asset bytes and 70 net source
+lines. No atlas file or atlas allocation was changed. The suite passes 163/163
+tests, the asset builder parses successfully, and a real Raylib/OpenGL viewer
+startup loaded the canonical assets. Throughput was 972,741 SPS and training
+uptime was 98.521417 seconds.
+
 ## Reproduction command
 
 ```bash

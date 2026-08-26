@@ -129,7 +129,7 @@ int fc_animated_atlas_load(FcAnimatedAtlas* atlas, const char* atlas_path) {
         .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
     };
     loaded.texture = LoadTextureFromImage(image);
-    if (loaded.texture.id <= 0) {
+    if (loaded.texture.id == 0) {
         free(source_pixels);
         return 0;
     }
@@ -158,7 +158,7 @@ int fc_animated_atlas_load(FcAnimatedAtlas* atlas, const char* atlas_path) {
 void fc_animated_atlas_update(FcAnimatedAtlas* atlas, float dt) {
     size_t total;
     if (!atlas || !atlas->pixels || !atlas->base_pixels
-            || atlas->texture.id <= 0 || atlas->anim_count <= 0)
+            || atlas->texture.id == 0 || atlas->anim_count <= 0)
         return;
 
     atlas->anim_ticks += dt * 50.0f;
@@ -178,7 +178,6 @@ void fc_animated_atlas_update(FcAnimatedAtlas* atlas, float dt) {
             int center_h;
             if (pad * 2 >= row->h) pad = 0;
             center_h = row->h - pad * 2;
-            if (center_h <= 0) center_h = row->h;
             shift %= center_h;
             if (row->direction == 1) shift = -shift;
             for (int y = 0; y < row->h; y++) {

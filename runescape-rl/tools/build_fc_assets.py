@@ -541,49 +541,6 @@ def export_fc_los(cache_dir: Path, output: Path) -> None:
     print(f"LOS region {rx},{ry}: {blocked_count} tiles with projectile flags")
 
 
-def alias_fc_sprites(sprites_dir: Path) -> None:
-    aliases = {
-        "protect_magic_on.png": "prayeron_12.png",
-        "protect_magic_off.png": "prayeroff_12.png",
-        "protect_missiles_on.png": "prayeron_13.png",
-        "protect_missiles_off.png": "prayeroff_13.png",
-        "protect_melee_on.png": "prayeron_14.png",
-        "protect_melee_off.png": "prayeroff_14.png",
-    }
-    for dst_name, src_name in aliases.items():
-        src = sprites_dir / src_name
-        dst = sprites_dir / dst_name
-        if src.exists():
-            shutil.copy2(src, dst)
-
-FC_VIEWER_COMPAT_SPRITES = {
-    "protect_magic_off.png",
-    "protect_magic_on.png",
-    "protect_melee_off.png",
-    "protect_melee_on.png",
-    "protect_missiles_off.png",
-    "protect_missiles_on.png",
-}
-
-
-def prune_unreferenced_compat_sprites(sprites_dir: Path) -> None:
-    """Keep only the top-level compatibility sprites consumed by the viewer."""
-    for path in sprites_dir.iterdir():
-        if path.is_file() and path.name not in FC_VIEWER_COMPAT_SPRITES:
-            path.unlink()
-
-
-def export_fc_sprites(cache_dir: Path, output: Path) -> None:
-    import export_sprites_modern
-
-    output.mkdir(parents=True, exist_ok=True)
-    rc = export_sprites_modern.main(["--cache", str(cache_dir), "--output", str(output)])
-    if rc != 0:
-        raise SystemExit(f"sprite export failed with exit code {rc}")
-    alias_fc_sprites(output)
-    prune_unreferenced_compat_sprites(output)
-
-
 def build_manifest(staging_root: Path, cache_dir: Path) -> dict[str, object]:
     files = []
     generated_roots = [
@@ -671,7 +628,6 @@ def main(argv: list[str]) -> int:
         shutil.rmtree(out_dir)
     assets_dir = out_dir / "fc-viewer" / "assets"
     core_assets_dir = out_dir / "fc-core" / "assets"
-    sprites_dir = assets_dir / "sprites"
     assets_dir.mkdir(parents=True, exist_ok=True)
     core_assets_dir.mkdir(parents=True, exist_ok=True)
 
@@ -715,7 +671,6 @@ def main(argv: list[str]) -> int:
         assets_dir / "fightcaves.oanim",
         assets_dir / "fc_all.anims",
     )
-    export_fc_sprites(cache_dir, sprites_dir)
     export_fc_collision(cache_dir, core_assets_dir / "fightcaves.collision")
     export_fc_movement(cache_dir, core_assets_dir / "fightcaves.movement")
     export_fc_los(cache_dir, core_assets_dir / "fightcaves.los")
