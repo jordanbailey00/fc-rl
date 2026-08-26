@@ -4177,8 +4177,6 @@ int main(int argc, char** argv) {
                 if (v.dbg_flags == 0) v.dbg_flags = DBG_COLLISION;
                 else if (v.dbg_flags == DBG_COLLISION) v.dbg_flags = DBG_LOS;
                 else if (v.dbg_flags == DBG_LOS) v.dbg_flags = DBG_PATH | DBG_RANGE;
-                else if (v.dbg_flags == (DBG_PATH | DBG_RANGE)) v.dbg_flags = DBG_ENTITY_INFO;
-                else if (v.dbg_flags == DBG_ENTITY_INFO) v.dbg_flags = DBG_OBS | DBG_MASK | DBG_REWARD;
                 else v.dbg_flags = 0;
             } else {
                 /* Toggle all on/off */

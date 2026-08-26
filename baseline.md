@@ -613,6 +613,31 @@ decreased by 25 LOC. Throughput was 951,098 SPS and training uptime was
 102.968839 seconds, comparable to the preceding run's 946,812 SPS and
 105.416005 seconds.
 
+## Comparison 18: removed dead viewer debugging systems
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`gg2cqj2d`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/gg2cqj2d) (`comfy-firefly-1244`) |
+| Tag | `v4.5_refactor_dead_viewer_debug_100m` |
+| Git commit at run start | `3dd2f9958` plus the documented uncommitted viewer-debug cleanup |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `446a78a42f8a88b9435a52169914a7ee724980170aff5e0e15010bc92959ab4b` |
+| Backend binary SHA-256 | `087d3461e5e6ec5e2d5f1d8871eb6245cc056cd4298cccc456920e0b5c520cd9` |
+| Backend source SHA-256 | `97f12929254f2a8c4e30ecffdc90ca41b2ac39a9081b7f5c050892bdccf5fce6` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260826T011955Z-train-1372891.json` |
+
+Result: behavioral parity is exact against baseline `m916qfsv` and preceding
+comparison `3zvy6nuq`. All 124 `env/*` metrics, agent steps, epoch, and every
+recorded policy/value/entropy/KL/loss value are byte-for-byte equal. The only
+differences are wall-clock performance, throughput, and CPU/GPU utilization
+telemetry.
+
+The unused viewer debug module, two unreachable overlay panels, their dead
+mode-selection states, and newly orphaned helpers were removed. Production and
+build code decreased by 512 LOC. The core and training inputs are unchanged;
+throughput was 828,034 SPS and training uptime was 120.156476 seconds.
+
 ## Reproduction command
 
 ```bash

@@ -11,7 +11,6 @@ set(FC_VIEWER_SOURCES
     src/fc_minimap.c
     src/fc_osrs_text.c
     src/fc_projectile_visual.c
-    src/fc_debug.c
     src/ui.c
     src/ui_assets.c
     src/ui_interfaces.c

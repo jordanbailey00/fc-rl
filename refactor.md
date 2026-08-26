@@ -38,18 +38,27 @@ Completed reduction: 836 net LOC, plus five obsolete sprite assets.
 - Preserved the active RuneC UI and prayer interface; the latter is now named
   `draw_runec_prayer_tab()` to reflect that it is live code.
 
-### 3. Remove two dead viewer debugging systems
+### 3. Remove two dead viewer debugging systems — completed
 
-Estimated reduction: approximately 475 LOC.
+Completed on 2026-08-25. Net reduction: 512 LOC.
 
-- `runescape-rl/fc-viewer/src/fc_debug.c` and `fc_debug.h` are compiled but
-  have no runtime callers. Their only outside dependency is a validation test
-  that inspects the files' text.
-- `dbg_draw_entity_info()` and `dbg_draw_obs()` in
-  `runescape-rl/fc-viewer/src/fc_debug_overlay.h` are also unreachable. The
-  active tabbed debug panel supersedes their information.
-- Update or remove the static validation assertions that preserve the unused
-  action-trace subsystem.
+- Removed `fc_debug.c` and `fc_debug.h`, including the unused conditional event
+  logger and growable action-trace buffer. They had no callers; deterministic
+  replay, policy replay, render events, and the active viewer event log use
+  separate live implementations.
+- Removed unreachable `dbg_draw_entity_info()` and `dbg_draw_obs()` panels.
+  The active RuneC console's Player, Obs, Mask, Reward, and Log tabs retain the
+  same information through `dbg_draw_panel_tabs()`.
+- Removed four dead mode bits and the two Shift+O cycle states that selected
+  them but rendered nothing. The master debug toggle and Shift+O still expose
+  collision, LOS, path, and range overlays.
+- Removed the old panels' now-unused color and reward-label helpers, and stopped
+  compiling the deleted module into `fc_viewer`.
+- No core, training, policy, observation, action, reward, state-hash, or asset
+  contract changed. The viewer and complete repository build, all 164 tests
+  pass, and the 100M W&B regression `gg2cqj2d` exactly matches baseline
+  `m916qfsv` and preceding run `3zvy6nuq` on all 124 `env/*` metrics and every
+  recorded policy/value/entropy/KL/loss value.
 
 ### 4. Consolidate duplicated asset and atlas loaders — completed
 
