@@ -390,11 +390,6 @@ add_test(NAME step2_dynamic_footprint_static_and_occupied
 set_tests_properties(step2_dynamic_footprint_static_and_occupied PROPERTIES
     LABELS "step2;guardrail;movement;collision")
 
-add_test(NAME step2_entity_wrapper_ignores_self_blocks_others
-    COMMAND phase2_guardrails_core step2_entity_wrapper_ignores_self_blocks_others)
-set_tests_properties(step2_entity_wrapper_ignores_self_blocks_others PROPERTIES
-    LABELS "step2;guardrail;movement;collision")
-
 add_test(NAME step2_dynamic_diagonal_blocks_occupied_corner
     COMMAND phase2_guardrails_core step2_dynamic_diagonal_blocks_occupied_corner)
 set_tests_properties(step2_dynamic_diagonal_blocks_occupied_corner PROPERTIES

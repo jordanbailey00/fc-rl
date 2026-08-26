@@ -1742,7 +1742,7 @@ static int test_directional_movement_route_regression(void) {
         return fail("Fight Caves movement asset lost the wall-only regression tile");
     }
 
-    int steps = fc_pathfind_bfs(
+    int steps = fc_pathfind_bfs_move_near(
         32, 32, 44, 14,
         state.walkable, state.movement_flags,
         route_x, route_y, FC_MAX_ROUTE);
@@ -2322,36 +2322,6 @@ static int test_step2_dynamic_footprint_static_and_occupied(void) {
 
     fc_destroy(&state);
     return pass("dynamic footprint checks static terrain and occupancy");
-}
-
-static int test_step2_entity_wrapper_ignores_self_blocks_others(void) {
-    FcState state;
-
-    make_open_manual_state(&state, 10, 10);
-    fc_npc_spawn(&state.npcs[0], NPC_TOK_XIL, 12, 12, 0);
-    state.npcs[0].size = 2;
-    fc_npc_spawn(&state.npcs[1], NPC_TZ_KIH, 15, 12, 1);
-    state.npcs_remaining = 2;
-
-    if (!fc_footprint_available_for_entity(&state, 12, 12, 2, 0, 0)) {
-        fc_destroy(&state);
-        return fail("entity availability did not ignore moving NPC's own footprint");
-    }
-    if (fc_footprint_available_for_entity(&state, 15, 12, 2, 0, 0)) {
-        fc_destroy(&state);
-        return fail("entity availability allowed overlap with another NPC");
-    }
-    if (fc_footprint_available_for_entity(&state, 10, 10, 1, 0, 0)) {
-        fc_destroy(&state);
-        return fail("entity availability allowed overlap with player tile");
-    }
-    if (!fc_footprint_available_for_entity(&state, 10, 10, 1, 0, 1)) {
-        fc_destroy(&state);
-        return fail("entity availability did not honor ignore_player");
-    }
-
-    fc_destroy(&state);
-    return pass("entity availability ignores self while blocking player/other NPCs");
 }
 
 static int test_step2_dynamic_diagonal_blocks_occupied_corner(void) {
@@ -3447,9 +3417,9 @@ static int test_osrs_bfs_expansion_order(void) {
     int route_y[FC_MAX_ROUTE];
     make_open_manual_state(&state, 10, 10);
     state.walkable[11][10] = 0;
-    int steps = fc_pathfind_bfs(10, 10, 12, 10,
-                                state.walkable, state.movement_flags,
-                                route_x, route_y, FC_MAX_ROUTE);
+    int steps = fc_pathfind_bfs_move_near(10, 10, 12, 10,
+                                          state.walkable, state.movement_flags,
+                                          route_x, route_y, FC_MAX_ROUTE);
     if (steps != 4 || route_x[0] != 10 || route_y[0] != 9) {
         char msg[128];
         snprintf(msg, sizeof(msg), "native BFS shape steps=%d first=(%d,%d)",
@@ -3464,7 +3434,7 @@ static int test_osrs_bfs_expansion_order(void) {
 
 int main(int argc, char** argv) {
     if (argc != 2) {
-        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|npc_heal_penalty_actual_heal|prayer_loss_penalty|correct_prayer_reward_all_npcs|no_attack_penalty_wave_scaled|player_death_progress_scaled|simple_reward_zeroed_channels|npc_kill_reward_eligibility|tz_kek_split_kill_rewards|wave_clear_reward_scaling|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|spawn_search_and_slot_allocation|special_tz_kih_prayer_drain|special_mejkot_heal_replaces_attack|special_adjacent_style_selection|special_hurkot_behavior|mechanics_observation_events|safespot_los|diagonal_corner_clipping|directional_movement_wall_boundaries|directional_movement_diagonal_and_sized|directional_movement_route_regression|npc_moves_when_attack_blocked|movement_cannot_enable_same_tick_attack_range|movement_cannot_enable_same_tick_attack_los|attack_suppresses_same_tick_movement_when_already_valid|movement_resumes_tick_after_attack|step1_movement_only_clears_stale_target|step1_projectile_survives_movement_cancel|step1_attack_move_out_of_range_clears_target|step1_directional_cancels_old_approach_route|step1_directional_beats_old_tile_route|step1_attack_approach_without_explicit_movement|step2_occupancy_marks_and_ignores_entities|step2_dynamic_footprint_static_and_occupied|step2_entity_wrapper_ignores_self_blocks_others|step2_dynamic_diagonal_blocks_occupied_corner|step2_start_reservation_blocks_swap_tile|player_directional_ignores_npc_occupancy|player_tile_route_accepts_npc_occupied_target|player_prebuilt_route_ignores_npc_and_keeps_static_collision|player_move_mask_ignores_npc_and_keeps_static_collision|player_combat_approach_ignores_npc_occupancy|step3_npc_blocked_by_other_npc|step3_large_npc_blocked_by_healer_footprint|step3_tz_kek_split_avoids_occupied_tiles|step4_ranged_npc_chases_player_bounds_not_los_tile|step4_large_npc_chase_checks_full_footprint|step4_npc_stays_when_current_position_can_attack|invalid_action_classes|hp_regeneration_interval>\n",
+        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|npc_heal_penalty_actual_heal|prayer_loss_penalty|correct_prayer_reward_all_npcs|no_attack_penalty_wave_scaled|player_death_progress_scaled|simple_reward_zeroed_channels|npc_kill_reward_eligibility|tz_kek_split_kill_rewards|wave_clear_reward_scaling|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|spawn_search_and_slot_allocation|special_tz_kih_prayer_drain|special_mejkot_heal_replaces_attack|special_adjacent_style_selection|special_hurkot_behavior|mechanics_observation_events|safespot_los|diagonal_corner_clipping|directional_movement_wall_boundaries|directional_movement_diagonal_and_sized|directional_movement_route_regression|npc_moves_when_attack_blocked|movement_cannot_enable_same_tick_attack_range|movement_cannot_enable_same_tick_attack_los|attack_suppresses_same_tick_movement_when_already_valid|movement_resumes_tick_after_attack|step1_movement_only_clears_stale_target|step1_projectile_survives_movement_cancel|step1_attack_move_out_of_range_clears_target|step1_directional_cancels_old_approach_route|step1_directional_beats_old_tile_route|step1_attack_approach_without_explicit_movement|step2_occupancy_marks_and_ignores_entities|step2_dynamic_footprint_static_and_occupied|step2_dynamic_diagonal_blocks_occupied_corner|step2_start_reservation_blocks_swap_tile|player_directional_ignores_npc_occupancy|player_tile_route_accepts_npc_occupied_target|player_prebuilt_route_ignores_npc_and_keeps_static_collision|player_move_mask_ignores_npc_and_keeps_static_collision|player_combat_approach_ignores_npc_occupancy|step3_npc_blocked_by_other_npc|step3_large_npc_blocked_by_healer_footprint|step3_tz_kek_split_avoids_occupied_tiles|step4_ranged_npc_chases_player_bounds_not_los_tile|step4_large_npc_chase_checks_full_footprint|step4_npc_stays_when_current_position_can_attack|invalid_action_classes|hp_regeneration_interval>\n",
                 argv[0]);
         return 2;
     }
@@ -3515,7 +3485,6 @@ int main(int argc, char** argv) {
     if (strcmp(argv[1], "step1_attack_approach_without_explicit_movement") == 0) return test_step1_attack_approach_without_explicit_movement();
     if (strcmp(argv[1], "step2_occupancy_marks_and_ignores_entities") == 0) return test_step2_occupancy_marks_and_ignores_entities();
     if (strcmp(argv[1], "step2_dynamic_footprint_static_and_occupied") == 0) return test_step2_dynamic_footprint_static_and_occupied();
-    if (strcmp(argv[1], "step2_entity_wrapper_ignores_self_blocks_others") == 0) return test_step2_entity_wrapper_ignores_self_blocks_others();
     if (strcmp(argv[1], "step2_dynamic_diagonal_blocks_occupied_corner") == 0) return test_step2_dynamic_diagonal_blocks_occupied_corner();
     if (strcmp(argv[1], "step2_start_reservation_blocks_swap_tile") == 0) return test_step2_start_reservation_blocks_swap_tile();
     if (strcmp(argv[1], "player_directional_ignores_npc_occupancy") == 0) return test_player_directional_ignores_npc_occupancy();

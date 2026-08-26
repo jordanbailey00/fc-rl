@@ -93,15 +93,6 @@ int fc_footprint_available_dynamic(
     return 1;
 }
 
-int fc_footprint_available_for_entity(const FcState* state,
-                                      int x, int y, int size,
-                                      int moving_npc_idx,
-                                      int ignore_player) {
-    uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
-    fc_build_occupancy(state, occupied, moving_npc_idx, ignore_player);
-    return fc_footprint_available_dynamic(x, y, size, state->walkable, occupied);
-}
-
 /* Low-byte equivalents of the composite clipping masks used by the native
  * client route finder. A non-walkable or occupied tile is the local equivalent
  * of its whole-tile LOC blocker. */
@@ -608,15 +599,6 @@ static int fc_bfs_route(
     if (found_x < 0 || (found_x == sx && found_y == sy)) return 0;
     return fc_reconstruct_route(sx, sy, found_x, found_y, pdx, pdy,
                                 out_x, out_y, max_steps);
-}
-
-int fc_pathfind_bfs(int sx, int sy, int dx, int dy,
-                    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-                    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-                    int out_x[], int out_y[], int max_steps) {
-    return fc_bfs_route(sx, sy, dx, dy, 1, 0, FC_ROUTE_EXACT, 0,
-                        walkable, movement_flags, NULL,
-                        out_x, out_y, max_steps);
 }
 
 int fc_pathfind_bfs_move_near(

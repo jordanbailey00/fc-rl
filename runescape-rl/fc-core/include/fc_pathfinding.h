@@ -58,13 +58,6 @@ int fc_footprint_step_available_dynamic(
     const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
     const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
 
-/* Convenience wrapper that builds current occupancy from the state before
- * checking the requested footprint. */
-int fc_footprint_available_for_entity(const FcState* state,
-                                      int x, int y, int size,
-                                      int moving_npc_idx,
-                                      int ignore_player);
-
 /* ======================================================================== */
 /* Movement                                                                  */
 /* ======================================================================== */
@@ -116,15 +109,6 @@ int fc_npc_can_melee_player(int player_x, int player_y,
 /* ======================================================================== */
 /* BFS pathfinding (for click-to-move)                                       */
 /* ======================================================================== */
-
-/* Find a path from (sx,sy) to (dx,dy) using BFS on the walkable grid.
- * Stores the path (sequence of tile coordinates) in out_x[], out_y[].
- * Returns the number of steps (0 if no path or already there).
- * max_steps limits output array size. Path does NOT include the start tile. */
-int fc_pathfind_bfs(int sx, int sy, int dx, int dy,
-                    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-                    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
-                    int out_x[], int out_y[], int max_steps);
 
 /* Native move-near fallback for human click-to-move. If the exact destination
  * is unreachable, chooses the reachable tile within ten tiles with the lowest

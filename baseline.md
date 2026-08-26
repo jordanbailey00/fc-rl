@@ -638,6 +638,33 @@ mode-selection states, and newly orphaned helpers were removed. Production and
 build code decreased by 512 LOC. The core and training inputs are unchanged;
 throughput was 828,034 SPS and training uptime was 120.156476 seconds.
 
+## Comparison 19: removed unused public pathfinding APIs
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`nqgg0y6a`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/nqgg0y6a) (`lemon-water-1245`) |
+| Tag | `v4.5_refactor_unused_pathfinding_apis_100m` |
+| Git commit at run start | `cae3a48ef` plus the documented uncommitted pathfinding API cleanup |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `446a78a42f8a88b9435a52169914a7ee724980170aff5e0e15010bc92959ab4b` |
+| Backend binary SHA-256 | `e0015300b9d84123fda37f2539db41155ff6020f262beb50674837cc8b0d88a9` |
+| Backend source SHA-256 | `f0a929522f88ee174c13762df2570fddbfeb1d0e23df0f67a1f40d0c6e2a72e3` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260826T022738Z-train-1412289.json` |
+
+Result: behavioral parity is exact against baseline `m916qfsv` and preceding
+comparison `gg2cqj2d`. All 124 `env/*` metrics, agent steps, epoch, and every
+recorded policy/value/entropy/KL/loss value are byte-for-byte equal. In both
+comparisons, 135 of 150 summary values match exactly; the 15 differences are
+only timestamps, wall-clock performance, throughput, and utilization telemetry.
+
+The unused exact-destination BFS wrapper and entity-footprint convenience
+wrapper were removed from the core implementation and public header. Two route
+guardrails now exercise the live move-near BFS API, while the test whose sole
+subject was the deleted footprint wrapper was removed. The complete suite now
+passes 163/163 tests. Production code decreased by 34 LOC. Throughput was
+1,004,402 SPS and training uptime was 102.189196 seconds.
+
 ## Reproduction command
 
 ```bash
