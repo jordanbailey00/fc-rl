@@ -748,6 +748,36 @@ complete suite again passes 163/163 tests. Throughput was 639,593 SPS and
 training uptime was 139.876110 seconds; this timing-only slowdown occurred
 without any behavioral or learning-metric difference.
 
+## Comparison 23: removed dormant decoded-UI state
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`r4hne4fg`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/r4hne4fg) (`drawn-water-1249`) |
+| Tag | `v4.5_refactor_viewer_ui_state_100m` |
+| Git commit at run start | `950d0af5f` plus the documented uncommitted viewer-only cleanup |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `446a78a42f8a88b9435a52169914a7ee724980170aff5e0e15010bc92959ab4b` |
+| Backend binary SHA-256 | `e0015300b9d84123fda37f2539db41155ff6020f262beb50674837cc8b0d88a9` |
+| Backend source SHA-256 | `f0a929522f88ee174c13762df2570fddbfeb1d0e23df0f67a1f40d0c6e2a72e3` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260826T033427Z-train-1461774.json` |
+
+Result: behavioral parity is exact against baseline `m916qfsv` and preceding
+comparison `2bzeigyh`. All 124 `env/*` metrics, agent steps, epoch, and all
+seven policy/value/entropy/KL/loss values are byte-for-byte equal. The current
+summary matches 136 of 150 baseline fields and 135 of 150 preceding-run fields
+exactly; all differences are timestamps, wall-clock performance, throughput,
+and CPU/GPU utilization telemetry.
+
+Dead component override modes, the copied event-mask cache, unused decoded
+metadata and payload storage, dormant interface/status/chat fields, and their
+unreachable helpers were removed. The decoder still consumes skipped fields so
+the `interfaces.bin` format remains aligned. Production code decreased by 229
+LOC excluding blank and comment-only lines (240 net physical source lines).
+The complete suite passes 163/163 tests, and decoded-interface startup was
+smoke-tested successfully. Throughput was 953,900 SPS and training uptime was
+100.651127 seconds.
+
 ## Reproduction command
 
 ```bash

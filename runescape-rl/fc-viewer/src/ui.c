@@ -25,7 +25,6 @@
 #define RUNEC_UI_COMPONENT_ID(group_id, file_id) \
     ((((uint32_t)(group_id)) << 16) | ((uint32_t)(file_id) & 0xffffu))
 #define RUNEC_UI_GROUP_TOPLEVEL 161u
-#define RUNEC_UI_GROUP_CHATBOX 162u
 #define RUNEC_UI_GROUP_ORBS 160u
 #define RUNEC_UI_GROUP_INVENTORY 149u
 #define RUNEC_UI_GROUP_MAGIC 218u
@@ -44,13 +43,11 @@
 #define RUNEC_UI_WORN_EQUIPMENT_BUTTON RUNEC_UI_COMPONENT_ID(RUNEC_UI_GROUP_WORNITEMS, 1)
 #define RUNEC_UI_WORN_PRICE_BUTTON RUNEC_UI_COMPONENT_ID(RUNEC_UI_GROUP_WORNITEMS, 3)
 #define RUNEC_UI_WORN_DEATH_BUTTON RUNEC_UI_COMPONENT_ID(RUNEC_UI_GROUP_WORNITEMS, 5)
-#define RUNEC_UI_WORN_FOLLOWER_BUTTON RUNEC_UI_COMPONENT_ID(RUNEC_UI_GROUP_WORNITEMS, 7)
 
 typedef struct RuneCUiLayout {
     Rectangle chat;
     Rectangle chat_messages;
     Rectangle chat_controls;
-    Rectangle chat_input;
     Rectangle map;
     Rectangle minimap;
     Rectangle compass;
@@ -616,14 +613,6 @@ static float fmin2(float a, float b) {
     return a < b ? a : b;
 }
 
-static void ui_add_chat(RuneCUiState *ui, const char *text) {
-    if (ui->chat_line_count < RUNEC_UI_CHAT_LINES)
-        ui->chat_line_count++;
-    for (int i = ui->chat_line_count - 1; i > 0; i--)
-        copy_text(ui->chat_lines[i], sizeof(ui->chat_lines[i]), ui->chat_lines[i - 1]);
-    copy_text(ui->chat_lines[0], sizeof(ui->chat_lines[0]), text);
-}
-
 static int decoded_group_available(const RuneCUiState *ui, const char *group) {
     return ui && group && group[0]
         && runec_ui_interface_group(&ui->interfaces, group) != NULL;
@@ -684,15 +673,6 @@ static int local_handler_death_keep(RuneCUiState *ui,
     return local_open_modal(ui, "deathkeep");
 }
 
-static int local_handler_call_follower(RuneCUiState *ui,
-                                       const RuneCUiListenerEvent *event,
-                                       const RuneCUiHitResult *hit) {
-    (void)event;
-    (void)hit;
-    ui_add_chat(ui, "You do not have a follower to call.");
-    return 1;
-}
-
 static const RuneCUiLocalListenerHandler g_local_listener_handlers[] = {
     {RUNEC_UI_MAGIC_FILTER_CONTAINER, RUNEC_UI_LISTENER_ON_LOAD,
      local_handler_magic_filter},
@@ -704,8 +684,6 @@ static const RuneCUiLocalListenerHandler g_local_listener_handlers[] = {
      local_handler_price_checker},
     {RUNEC_UI_WORN_DEATH_BUTTON, RUNEC_UI_LISTENER_ON_OP,
      local_handler_death_keep},
-    {RUNEC_UI_WORN_FOLLOWER_BUTTON, RUNEC_UI_LISTENER_ON_OP,
-     local_handler_call_follower},
 };
 
 static int dispatch_local_listener(RuneCUiState *ui,
@@ -806,7 +784,6 @@ static void ui_layout(int screen_w, int screen_h, RuneCUiLayout *out) {
                             RUNEC_OSRS_CHAT_W, RUNEC_OSRS_CHAT_H};
     out->chat_messages = (Rectangle){7, out->chat.y + 7, 506, 126};
     out->chat_controls = (Rectangle){0, out->chat.y + 142, 519, 23};
-    out->chat_input = (Rectangle){8, out->chat.y + 124, 500, 17};
 
     out->map = (Rectangle){(float)screen_w - RUNEC_OSRS_MAP_CONTAINER_W, 0,
                            RUNEC_OSRS_MAP_CONTAINER_W, RUNEC_OSRS_MAP_CONTAINER_H};
@@ -866,7 +843,6 @@ static void apply_decoded_mounts(const RuneCUiState *ui,
         layout->chat = rect;
         layout->chat_messages = (Rectangle){rect.x + 7, rect.y + 7, 506, 126};
         layout->chat_controls = (Rectangle){rect.x, rect.y + 142, 519, 23};
-        layout->chat_input = (Rectangle){rect.x + 8, rect.y + 124, 500, 17};
     }
     if (runec_ui_interfaces_component_rect_by_id(&ui->interfaces, top_group,
             RUNEC_UI_TOP_MAP_CONTAINER, screen, &rect)) {
@@ -1112,54 +1088,11 @@ static void set_selected_spell_target(RuneCUiState *ui, int slot,
     copy_text(ui->selected_target.verb, sizeof(ui->selected_target.verb), "Cast");
 }
 
-static void set_component_event_mask(RuneCUiState *ui, uint32_t component_id,
-                                     uint32_t mask) {
-    if (!ui || component_id == 0 || mask == 0)
-        return;
-    for (int i = 0; i < ui->event_mask_count; i++) {
-        if (ui->event_masks[i].component_id == component_id) {
-            ui->event_masks[i].mask = mask;
-            return;
-        }
-    }
-    if (ui->event_mask_count >= RUNEC_UI_EVENT_MASKS)
-        return;
-    ui->event_masks[ui->event_mask_count++] =
-        (RuneCUiComponentEventMask){component_id, mask};
-}
-
-static void seed_event_masks_for_group(RuneCUiState *ui, const char *group_name) {
-    if (!ui || !ui->decoded_ui_ready || !group_name)
-        return;
-    const RuneCUiInterfaceGroup *group =
-        runec_ui_interface_group(&ui->interfaces, group_name);
-    if (!group)
-        return;
-    for (int i = 0; i < group->component_count; i++) {
-        const RuneCUiComponent *component = &group->components[i];
-        set_component_event_mask(ui, component->id, component->click_mask);
-    }
-}
-
-static uint32_t event_mask_for_component(const RuneCUiState *ui,
-                                         uint32_t component_id,
-                                         uint32_t fallback) {
-    if (!ui || component_id == 0)
-        return fallback;
-    for (int i = 0; i < ui->event_mask_count; i++) {
-        if (ui->event_masks[i].component_id == component_id)
-            return ui->event_masks[i].mask;
-    }
-    return fallback;
-}
-
-static int decoded_component_op_allowed(const RuneCUiState *ui,
-                                        const RuneCUiHitResult *hit,
+static int decoded_component_op_allowed(const RuneCUiHitResult *hit,
                                         int op) {
     if (!hit)
         return 0;
-    uint32_t mask = event_mask_for_component(ui, hit->component_id,
-                                             hit->click_mask);
+    uint32_t mask = hit->click_mask;
     if (mask == 0)
         return 0;
     if (op < 0)
@@ -1180,7 +1113,6 @@ int runec_ui_open_subinterface(RuneCUiState *ui, RuneCUiOpenMount mount,
         if (open->active && open->mount == mount && open->tab == tab) {
             copy_text(open->group, sizeof(open->group), group);
             open->target_component_id = target_component_id;
-            seed_event_masks_for_group(ui, group);
             dispatch_local_group_listeners(ui, group,
                                            RUNEC_UI_LISTENER_ON_LOAD);
             return 1;
@@ -1194,9 +1126,7 @@ int runec_ui_open_subinterface(RuneCUiState *ui, RuneCUiOpenMount mount,
     open->mount = mount;
     open->tab = tab;
     open->target_component_id = target_component_id;
-    open->z_order = ui->open_interface_count;
     copy_text(open->group, sizeof(open->group), group);
-    seed_event_masks_for_group(ui, group);
     dispatch_local_group_listeners(ui, group, RUNEC_UI_LISTENER_ON_LOAD);
     return 1;
 }
@@ -1313,9 +1243,6 @@ void runec_ui_init(RuneCUiState *ui) {
     ui->equipment[4] = (RuneCUiSlot){11828, 11828, 1, "Body", 1};
     ui->equipment[7] = (RuneCUiSlot){11830, 11830, 1, "Legs", 1};
 
-    ui_add_chat(ui, "Welcome to RuneC.");
-    ui_add_chat(ui, "OSRS UI shell is cache-sprite backed.");
-    ui_add_chat(ui, "Click tabs, inventory, prayers, spells, or the minimap.");
 }
 
 void runec_ui_shutdown(RuneCUiState *ui) {
@@ -1374,18 +1301,6 @@ void runec_ui_set_item_icon(RuneCUiState *ui, uint32_t icon_item_id, Texture2D t
     }
     ui->item_icons[ui->item_icon_count++] =
         (RuneCUiItemIcon){icon_item_id, texture, 1};
-}
-
-void runec_ui_sync_status(RuneCUiState *ui, int world_x, int world_y,
-                          int local_x, int local_y, uint32_t tick,
-                          int running, int paused) {
-    ui->world_x = world_x;
-    ui->world_y = world_y;
-    ui->local_x = local_x;
-    ui->local_y = local_y;
-    ui->tick = tick;
-    ui->running = running;
-    ui->paused = paused;
 }
 
 static void sync_decoded_component_overrides(RuneCUiState *ui) {
@@ -1837,18 +1752,17 @@ static const char *decoded_action_for_op(const RuneCUiHitResult *hit, int op) {
     return "Select";
 }
 
-static int decoded_primary_op(const RuneCUiState *ui,
-                              const RuneCUiHitResult *hit) {
+static int decoded_primary_op(const RuneCUiHitResult *hit) {
     if (!hit)
         return -1;
     for (int i = 0; i < hit->action_count
             && i < RUNEC_UI_INTERFACE_MAX_ACTIONS; i++) {
-        if (hit->actions[i][0] && decoded_component_op_allowed(ui, hit, i))
+        if (hit->actions[i][0] && decoded_component_op_allowed(hit, i))
             return i;
     }
-    if (hit->target_verb[0] && decoded_component_op_allowed(ui, hit, 0))
+    if (hit->target_verb[0] && decoded_component_op_allowed(hit, 0))
         return 0;
-    if (hit->click_mask != 0 && decoded_component_op_allowed(ui, hit, 0))
+    if (hit->click_mask != 0 && decoded_component_op_allowed(hit, 0))
         return 0;
     if (hit->listener_mask & ((1u << RUNEC_UI_LISTENER_ON_OP)
             | (1u << RUNEC_UI_LISTENER_ON_CLICK))) {
@@ -1938,7 +1852,7 @@ static int decoded_left_click(RuneCUiState *ui,
                               Vector2 mouse) {
     if (!ui || !hit)
         return 0;
-    int op = decoded_primary_op(ui, hit);
+    int op = decoded_primary_op(hit);
     if (op < 0)
         return 0;
 
@@ -2078,7 +1992,7 @@ static int open_decoded_context(RuneCUiState *ui, Vector2 mouse,
     int ops[RUNEC_UI_CONTEXT_ACTIONS];
     int count = 0;
     if (hit->target_verb[0] && count < RUNEC_UI_CONTEXT_ACTIONS
-            && decoded_component_op_allowed(ui, hit, 0)) {
+            && decoded_component_op_allowed(hit, 0)) {
         copy_text(action_buf[count], sizeof(action_buf[count]), hit->target_verb);
         actions[count] = action_buf[count];
         ops[count] = 0;
@@ -2087,7 +2001,7 @@ static int open_decoded_context(RuneCUiState *ui, Vector2 mouse,
     for (int i = 0; i < hit->action_count && count < RUNEC_UI_CONTEXT_ACTIONS; i++) {
         if (!hit->actions[i][0])
             continue;
-        if (!decoded_component_op_allowed(ui, hit, i))
+        if (!decoded_component_op_allowed(hit, i))
             continue;
         copy_text(action_buf[count], sizeof(action_buf[count]), hit->actions[i]);
         actions[count] = action_buf[count];
@@ -2095,7 +2009,7 @@ static int open_decoded_context(RuneCUiState *ui, Vector2 mouse,
         count++;
     }
     if (count == 0 && hit->click_mask != 0
-            && decoded_component_op_allowed(ui, hit, 0)) {
+            && decoded_component_op_allowed(hit, 0)) {
         actions[count] = "Select";
         ops[count] = 0;
         count++;
@@ -2201,7 +2115,6 @@ int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h) {
 
         if (CheckCollisionPointRec(mouse, layout.run_orb)) {
             ui->last_intent.kind = RUNEC_UI_INTENT_RUN_TOGGLE;
-            ui->last_intent.primary = !ui->running;
             ui->last_intent.position = mouse;
             return 1;
         }
@@ -3207,12 +3120,8 @@ static Rectangle open_interface_mount_rect(const RuneCUiState *ui,
     }
 
     switch (open ? open->mount : RUNEC_UI_MOUNT_SCREEN) {
-    case RUNEC_UI_MOUNT_CHAT:
-        return layout->chat;
     case RUNEC_UI_MOUNT_MAP:
         return layout->map;
-    case RUNEC_UI_MOUNT_SIDE:
-        return layout->side;
     case RUNEC_UI_MOUNT_SIDE_CONTENT:
         return layout->side_content;
     case RUNEC_UI_MOUNT_OVERLAY:

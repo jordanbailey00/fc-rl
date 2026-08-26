@@ -19,6 +19,10 @@
      | (1u << RUNEC_UI_LISTENER_ON_TARGET_ENTER) \
      | (1u << RUNEC_UI_LISTENER_ON_TARGET_LEAVE))
 
+enum {
+    RUNEC_UI_LISTENER_VALUE_STRING = 1
+};
+
 typedef struct RuneCUiReader {
     const unsigned char *data;
     size_t size;
@@ -83,6 +87,15 @@ static char *read_string(RuneCUiReader *r) {
     return out;
 }
 
+static void skip_string(RuneCUiReader *r) {
+    uint16_t len = read_u16(r);
+    if (r->failed || r->pos + len > r->size) {
+        r->failed = 1;
+        return;
+    }
+    r->pos += len;
+}
+
 static unsigned char *read_file_bytes(const char *path, size_t *out_size) {
     FILE *fp = fc_asset_fopen(path, "rb");
     if (!fp)
@@ -115,13 +128,6 @@ static void free_component(RuneCUiComponent *component) {
     free(component->target_verb);
     for (int i = 0; i < component->action_count; i++)
         free(component->actions[i]);
-    for (int i = 0; i < component->listener_count; i++) {
-        RuneCUiComponentListener *listener = &component->listeners[i];
-        for (int v = 0; v < listener->value_count; v++) {
-            if (listener->values[v].kind == RUNEC_UI_LISTENER_VALUE_STRING)
-                free(listener->values[v].string_value);
-        }
-    }
 }
 
 void runec_ui_interfaces_unload(RuneCUiInterfaceStore *store) {
@@ -199,7 +205,7 @@ int runec_ui_interfaces_load(RuneCUiInterfaceStore *store, const char *path) {
             component->parent_id = read_i32(&r);
             component->group_id = read_u32(&r);
             component->file_id = read_u32(&r);
-            component->is_if3 = read_u8(&r);
+            (void)read_u8(&r); /* is_if3 */
             component->type = read_u8(&r);
             component->hidden = read_u8(&r);
             component->sprite_tiling = read_u8(&r);
@@ -213,7 +219,7 @@ int runec_ui_interfaces_load(RuneCUiInterfaceStore *store, const char *path) {
             component->border_type = read_u8(&r);
             component->line_width = read_u8(&r);
             component->line_height = read_u8(&r);
-            component->content_type = read_i32(&r);
+            (void)read_i32(&r); /* content_type */
             component->x = read_i32(&r);
             component->y = read_i32(&r);
             component->width = read_i32(&r);
@@ -225,7 +231,7 @@ int runec_ui_interfaces_load(RuneCUiInterfaceStore *store, const char *path) {
             component->scroll_width = read_i32(&r);
             component->scroll_height = read_i32(&r);
             component->sprite_id = read_i32(&r);
-            component->texture_id = read_i32(&r);
+            (void)read_i32(&r); /* texture_id */
             component->shadow_color = read_i32(&r);
             component->model_id = read_i32(&r);
             component->model_type = read_i32(&r);
@@ -251,78 +257,26 @@ int runec_ui_interfaces_load(RuneCUiInterfaceStore *store, const char *path) {
             }
             if (version >= 2) {
                 int encoded_listener_count = (int)read_u8(&r);
-                int listener_count = encoded_listener_count;
-                if (listener_count > RUNEC_UI_INTERFACE_MAX_LISTENERS)
-                    listener_count = RUNEC_UI_INTERFACE_MAX_LISTENERS;
-                component->listener_count = listener_count;
                 for (int l = 0; l < encoded_listener_count; l++) {
                     int raw_kind = (int)read_u8(&r);
                     int encoded_value_count = (int)read_u8(&r);
-                    RuneCUiComponentListener *listener =
-                        l < RUNEC_UI_INTERFACE_MAX_LISTENERS
-                            ? &component->listeners[l] : NULL;
-                    if (listener) {
-                        listener->kind = raw_kind >= 0
-                            && raw_kind < RUNEC_UI_LISTENER_COUNT
-                            ? (RuneCUiListenerKind)raw_kind
-                            : RUNEC_UI_LISTENER_ON_LOAD;
-                        if (raw_kind >= 0 && raw_kind < RUNEC_UI_LISTENER_COUNT)
-                            component->listener_mask |= 1u << (unsigned)raw_kind;
-                    }
-                    int value_count = encoded_value_count;
-                    if (value_count > RUNEC_UI_INTERFACE_MAX_LISTENER_VALUES)
-                        value_count = RUNEC_UI_INTERFACE_MAX_LISTENER_VALUES;
-                    if (listener)
-                        listener->value_count = value_count;
+                    if (raw_kind < RUNEC_UI_LISTENER_COUNT)
+                        component->listener_mask |= 1u << (unsigned)raw_kind;
                     for (int v = 0; v < encoded_value_count; v++) {
                         int value_type = (int)read_u8(&r);
-                        if (value_type == RUNEC_UI_LISTENER_VALUE_STRING) {
-                            char *value = read_string(&r);
-                            if (listener && v < RUNEC_UI_INTERFACE_MAX_LISTENER_VALUES) {
-                                listener->values[v].kind = RUNEC_UI_LISTENER_VALUE_STRING;
-                                listener->values[v].string_value = value;
-                            } else {
-                                free(value);
-                            }
-                        } else {
-                            int32_t value = read_i32(&r);
-                            if (listener && v < RUNEC_UI_INTERFACE_MAX_LISTENER_VALUES) {
-                                listener->values[v].kind = RUNEC_UI_LISTENER_VALUE_INT;
-                                listener->values[v].int_value = value;
-                            }
-                        }
+                        if (value_type == RUNEC_UI_LISTENER_VALUE_STRING)
+                            skip_string(&r);
+                        else
+                            (void)read_i32(&r);
                     }
                 }
 
                 int encoded_trigger_count = (int)read_u8(&r);
-                int trigger_count = encoded_trigger_count;
-                if (trigger_count > RUNEC_UI_INTERFACE_MAX_TRIGGERS)
-                    trigger_count = RUNEC_UI_INTERFACE_MAX_TRIGGERS;
-                component->trigger_count = trigger_count;
                 for (int t = 0; t < encoded_trigger_count; t++) {
-                    int raw_kind = (int)read_u8(&r);
+                    (void)read_u8(&r); /* trigger kind */
                     int encoded_value_count = (int)read_u8(&r);
-                    RuneCUiComponentTrigger *trigger =
-                        t < RUNEC_UI_INTERFACE_MAX_TRIGGERS
-                            ? &component->triggers[t] : NULL;
-                    if (trigger) {
-                        trigger->kind = raw_kind >= 0
-                            && raw_kind < RUNEC_UI_TRIGGER_COUNT
-                            ? (RuneCUiTriggerKind)raw_kind
-                            : RUNEC_UI_TRIGGER_VAR_TRANSMIT;
-                        if (raw_kind >= 0 && raw_kind < RUNEC_UI_TRIGGER_COUNT)
-                            component->trigger_mask |= 1u << (unsigned)raw_kind;
-                    }
-                    int value_count = encoded_value_count;
-                    if (value_count > RUNEC_UI_INTERFACE_MAX_TRIGGER_VALUES)
-                        value_count = RUNEC_UI_INTERFACE_MAX_TRIGGER_VALUES;
-                    if (trigger)
-                        trigger->value_count = value_count;
-                    for (int v = 0; v < encoded_value_count; v++) {
-                        int32_t value = read_i32(&r);
-                        if (trigger && v < RUNEC_UI_INTERFACE_MAX_TRIGGER_VALUES)
-                            trigger->values[v] = value;
-                    }
+                    for (int v = 0; v < encoded_value_count; v++)
+                        (void)read_i32(&r);
                 }
             }
         }
@@ -457,27 +411,15 @@ static RuneCUiComponent component_with_override(
         out.hidden = override->hidden ? 1 : 0;
     if (override->flags & RUNEC_UI_COMPONENT_OVERRIDE_TEXT)
         out.text = (char *)override->text;
-    if (override->flags & RUNEC_UI_COMPONENT_OVERRIDE_MODEL) {
-        out.model_id = override->model_id;
-        out.model_type = override->model_type;
-    }
-    if (override->flags & RUNEC_UI_COMPONENT_OVERRIDE_COLOR)
-        out.text_color = override->text_color;
     return out;
 }
 
 static Rectangle component_child_parent_rect(
     Rectangle rect,
-    const RuneCUiComponent *component,
-    const RuneCUiComponentOverride *override) {
-    Rectangle out = component->type == 0
+    const RuneCUiComponent *component) {
+    return component->type == 0
         ? rect_expand_to_scroll(rect, component)
         : rect;
-    if (override && (override->flags & RUNEC_UI_COMPONENT_OVERRIDE_SCROLL)) {
-        out.x -= (float)override->scroll_x;
-        out.y -= (float)override->scroll_y;
-    }
-    return out;
 }
 
 static void apply_scissor(Rectangle rect) {
@@ -878,8 +820,7 @@ static void draw_component(RuneCUiInterfaceStore *store,
         const RuneCUiComponent *child = &group->components[i];
         if (child->parent_id != (int32_t)component->id)
             continue;
-        Rectangle child_parent =
-            component_child_parent_rect(rect, component, override);
+        Rectangle child_parent = component_child_parent_rect(rect, component);
         Rectangle child_rect = layout_component(child, child_parent, 0);
         if (component->type == 0 && rect_has_area(rect)) {
             Rectangle prev = {0};
@@ -1011,16 +952,13 @@ static int component_hit_interactive(const RuneCUiComponent *component) {
 }
 
 static void fill_hit_result(RuneCUiHitResult *out,
-                            const RuneCUiComponent *component,
-                            Rectangle rect) {
+                            const RuneCUiComponent *component) {
     memset(out, 0, sizeof(*out));
     out->component_id = component->id;
     out->group_id = component->group_id;
     out->file_id = component->file_id;
-    out->rect = rect;
     out->click_mask = component->click_mask;
     out->listener_mask = component->listener_mask;
-    out->trigger_mask = component->trigger_mask;
     out->action_count = component->action_count;
     copy_hit_text(out->name, sizeof(out->name), component->name);
     copy_hit_text(out->text, sizeof(out->text), component->text);
@@ -1047,8 +985,7 @@ static int hit_test_component_recursive(const RuneCUiInterfaceGroup *group,
             || !CheckCollisionPointRec(point, rect))
         return 0;
 
-    Rectangle child_parent =
-        component_child_parent_rect(rect, component, override);
+    Rectangle child_parent = component_child_parent_rect(rect, component);
     for (int i = group->component_count - 1; i >= 0; i--) {
         const RuneCUiComponent *child = &group->components[i];
         if (child->parent_id != (int32_t)component->id)
@@ -1061,7 +998,7 @@ static int hit_test_component_recursive(const RuneCUiInterfaceGroup *group,
 
     if (!component_hit_interactive(component))
         return 0;
-    fill_hit_result(out_hit, component, rect);
+    fill_hit_result(out_hit, component);
     return 1;
 }
 

@@ -628,9 +628,6 @@ static void sync_fc_ui_items(ViewerState* v) {
 static void sync_fc_ui_status(ViewerState* v) {
     if (!v) return;
     FcPlayer* p = &v->state.player;
-    runec_ui_sync_status(&v->ui, FC_WORLD_ORIGIN_X + p->x,
-                         FC_WORLD_ORIGIN_Y + p->y, p->x, p->y,
-                         (uint32_t)v->state.tick, p->is_running, v->paused);
     v->ui.hitpoints = p->current_hp > 0 ? (p->current_hp + 9) / 10 : 0;
     v->ui.hitpoints_max = p->max_hp > 0 ? (p->max_hp + 9) / 10 : 0;
     v->ui.prayer_points = p->current_prayer > 0 ? (p->current_prayer + 9) / 10 : 0;

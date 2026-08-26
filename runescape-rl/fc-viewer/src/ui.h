@@ -9,7 +9,6 @@
 
 #define RUNEC_UI_INV_SLOT_COUNT 28
 #define RUNEC_UI_EQUIP_SLOT_COUNT 14
-#define RUNEC_UI_CHAT_LINES 7
 #define RUNEC_UI_CHAT_INPUT_MAX 128
 #define RUNEC_UI_CONTEXT_ACTIONS 5
 #define RUNEC_UI_MINIMAP_DOTS 256
@@ -18,7 +17,6 @@
 #define RUNEC_UI_OPEN_INTERFACES 32
 #define RUNEC_UI_COMPONENT_OVERRIDES 256
 #define RUNEC_UI_ITEM_CONTAINER_OVERRIDES 8
-#define RUNEC_UI_EVENT_MASKS 512
 #define RUNEC_UI_COMBAT_STYLE_COUNT 4
 
 typedef enum RuneCUiTab {
@@ -47,8 +45,6 @@ typedef enum RuneCUiIntentKind {
     RUNEC_UI_INTENT_SPELL_SLOT,
     RUNEC_UI_INTENT_AUTOCAST_SPELL,
     RUNEC_UI_INTENT_SKILL_SLOT,
-    RUNEC_UI_INTENT_CHAT_FOCUS,
-    RUNEC_UI_INTENT_CHAT_SEND,
     RUNEC_UI_INTENT_MINIMAP_CLICK,
     RUNEC_UI_INTENT_RUN_TOGGLE,
     RUNEC_UI_INTENT_COMBAT_STYLE,
@@ -143,9 +139,7 @@ typedef struct RuneCUiDragState {
 
 typedef enum RuneCUiOpenMount {
     RUNEC_UI_MOUNT_SCREEN = 0,
-    RUNEC_UI_MOUNT_CHAT,
     RUNEC_UI_MOUNT_MAP,
-    RUNEC_UI_MOUNT_SIDE,
     RUNEC_UI_MOUNT_SIDE_CONTENT,
     RUNEC_UI_MOUNT_OVERLAY,
     RUNEC_UI_MOUNT_MODAL
@@ -156,14 +150,8 @@ typedef struct RuneCUiOpenInterface {
     RuneCUiOpenMount mount;
     RuneCUiTab tab;
     uint32_t target_component_id;
-    int z_order;
     char group[48];
 } RuneCUiOpenInterface;
-
-typedef struct RuneCUiComponentEventMask {
-    uint32_t component_id;
-    uint32_t mask;
-} RuneCUiComponentEventMask;
 
 typedef struct RuneCUiState {
     RuneCUiTab active_tab;
@@ -193,18 +181,6 @@ typedef struct RuneCUiState {
     int skill_base[RUNEC_UI_SKILL_COUNT];
     int skill_total;
 
-    int world_x;
-    int world_y;
-    int local_x;
-    int local_y;
-    uint32_t tick;
-    int running;
-    int paused;
-
-    int chat_focused;
-    char chat_input[RUNEC_UI_CHAT_INPUT_MAX];
-    char chat_lines[RUNEC_UI_CHAT_LINES][96];
-    int chat_line_count;
     int magic_filter_open;
 
     int context_open;
@@ -239,8 +215,6 @@ typedef struct RuneCUiState {
     int component_override_count;
     RuneCUiItemContainerOverride item_container_overrides[RUNEC_UI_ITEM_CONTAINER_OVERRIDES];
     int item_container_override_count;
-    RuneCUiComponentEventMask event_masks[RUNEC_UI_EVENT_MASKS];
-    int event_mask_count;
 } RuneCUiState;
 
 void runec_ui_init(RuneCUiState *ui);
@@ -254,9 +228,6 @@ void runec_ui_set_minimap_rotation(RuneCUiState *ui, float radians);
 void runec_ui_set_item_icon(RuneCUiState *ui, uint32_t icon_item_id, Texture2D texture);
 void runec_ui_set_combat_weapon_name(RuneCUiState *ui, const char *name);
 void runec_ui_set_combat_style_profile(RuneCUiState *ui, int core_weapon_category);
-void runec_ui_sync_status(RuneCUiState *ui, int world_x, int world_y,
-                          int local_x, int local_y, uint32_t tick,
-                          int running, int paused);
 void runec_ui_clear_selected_target(RuneCUiState *ui);
 int runec_ui_set_component_text(RuneCUiState *ui, uint32_t component_id,
                                 const char *text);

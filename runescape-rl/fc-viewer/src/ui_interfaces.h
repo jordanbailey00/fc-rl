@@ -7,18 +7,10 @@
 #include <stdint.h>
 
 #define RUNEC_UI_INTERFACE_MAX_ACTIONS 10
-#define RUNEC_UI_INTERFACE_MAX_LISTENERS 18
-#define RUNEC_UI_INTERFACE_MAX_LISTENER_VALUES 16
-#define RUNEC_UI_INTERFACE_MAX_TRIGGERS 3
-#define RUNEC_UI_INTERFACE_MAX_TRIGGER_VALUES 32
 #define RUNEC_UI_INTERFACE_SPRITE_CACHE 256
 #define RUNEC_UI_COMPONENT_OVERRIDE_TEXT   0x00000001u
 #define RUNEC_UI_COMPONENT_OVERRIDE_HIDDEN 0x00000002u
-#define RUNEC_UI_COMPONENT_OVERRIDE_MODEL  0x00000004u
-#define RUNEC_UI_COMPONENT_OVERRIDE_COLOR  0x00000008u
-#define RUNEC_UI_COMPONENT_OVERRIDE_SCROLL 0x00000010u
 #define RUNEC_UI_COMPONENT_OVERRIDE_ITEM   0x00000020u
-#define RUNEC_UI_COMPONENT_OVERRIDE_ANIM   0x00000040u
 #define RUNEC_UI_ITEM_CONTAINER_MAX_SLOTS 64
 
 typedef enum RuneCUiListenerKind {
@@ -43,42 +35,11 @@ typedef enum RuneCUiListenerKind {
     RUNEC_UI_LISTENER_COUNT
 } RuneCUiListenerKind;
 
-typedef enum RuneCUiTriggerKind {
-    RUNEC_UI_TRIGGER_VAR_TRANSMIT = 0,
-    RUNEC_UI_TRIGGER_INV_TRANSMIT,
-    RUNEC_UI_TRIGGER_STAT_TRANSMIT,
-    RUNEC_UI_TRIGGER_COUNT
-} RuneCUiTriggerKind;
-
-typedef enum RuneCUiListenerValueKind {
-    RUNEC_UI_LISTENER_VALUE_INT = 0,
-    RUNEC_UI_LISTENER_VALUE_STRING
-} RuneCUiListenerValueKind;
-
-typedef struct RuneCUiListenerValue {
-    RuneCUiListenerValueKind kind;
-    int32_t int_value;
-    char *string_value;
-} RuneCUiListenerValue;
-
-typedef struct RuneCUiComponentListener {
-    RuneCUiListenerKind kind;
-    int value_count;
-    RuneCUiListenerValue values[RUNEC_UI_INTERFACE_MAX_LISTENER_VALUES];
-} RuneCUiComponentListener;
-
-typedef struct RuneCUiComponentTrigger {
-    RuneCUiTriggerKind kind;
-    int value_count;
-    int32_t values[RUNEC_UI_INTERFACE_MAX_TRIGGER_VALUES];
-} RuneCUiComponentTrigger;
-
 typedef struct RuneCUiComponent {
     uint32_t id;
     int32_t parent_id;
     uint32_t group_id;
     uint32_t file_id;
-    unsigned char is_if3;
     unsigned char type;
     unsigned char hidden;
     unsigned char sprite_tiling;
@@ -93,7 +54,6 @@ typedef struct RuneCUiComponent {
     unsigned char line_width;
     unsigned char line_height;
 
-    int32_t content_type;
     int32_t x;
     int32_t y;
     int32_t width;
@@ -105,7 +65,6 @@ typedef struct RuneCUiComponent {
     int32_t scroll_width;
     int32_t scroll_height;
     int32_t sprite_id;
-    int32_t texture_id;
     int32_t shadow_color;
     int32_t model_id;
     int32_t model_type;
@@ -121,11 +80,6 @@ typedef struct RuneCUiComponent {
     char *actions[RUNEC_UI_INTERFACE_MAX_ACTIONS];
     int action_count;
     uint32_t listener_mask;
-    RuneCUiComponentListener listeners[RUNEC_UI_INTERFACE_MAX_LISTENERS];
-    int listener_count;
-    uint32_t trigger_mask;
-    RuneCUiComponentTrigger triggers[RUNEC_UI_INTERFACE_MAX_TRIGGERS];
-    int trigger_count;
 } RuneCUiComponent;
 
 typedef struct RuneCUiInterfaceGroup {
@@ -154,15 +108,9 @@ typedef struct RuneCUiComponentOverride {
     char text[128];
     int hidden;
     int selected;
-    int32_t model_id;
-    int32_t model_type;
-    int32_t text_color;
-    int32_t scroll_x;
-    int32_t scroll_y;
     int32_t item_id;
     int32_t icon_item_id;
     int32_t item_quantity;
-    int32_t animation_id;
 } RuneCUiComponentOverride;
 
 typedef struct RuneCUiItemContainerSlot {
@@ -197,10 +145,8 @@ typedef struct RuneCUiHitResult {
     uint32_t component_id;
     uint32_t group_id;
     uint32_t file_id;
-    Rectangle rect;
     uint32_t click_mask;
     uint32_t listener_mask;
-    uint32_t trigger_mask;
     int action_count;
     char name[64];
     char text[128];
