@@ -22,27 +22,6 @@
 #define RUNEC_UI_SPELL_STEP_X 23
 #define RUNEC_UI_SPELL_STEP_Y 24
 #define RUNEC_UI_SPELL_ICON_SIZE 22
-#define RUNEC_UI_COMPONENT_ID(group_id, file_id) \
-    ((((uint32_t)(group_id)) << 16) | ((uint32_t)(file_id) & 0xffffu))
-#define RUNEC_UI_GROUP_TOPLEVEL 161u
-#define RUNEC_UI_GROUP_ORBS 160u
-#define RUNEC_UI_GROUP_INVENTORY 149u
-#define RUNEC_UI_GROUP_MAGIC 218u
-#define RUNEC_UI_GROUP_STATS 320u
-#define RUNEC_UI_GROUP_WORNITEMS 387u
-#define RUNEC_UI_GROUP_PRAYER 541u
-#define RUNEC_UI_GROUP_COMBAT 593u
-#define RUNEC_UI_TOP_CHAT_CONTAINER RUNEC_UI_COMPONENT_ID(RUNEC_UI_GROUP_TOPLEVEL, 96)
-#define RUNEC_UI_TOP_MAP_CONTAINER RUNEC_UI_COMPONENT_ID(RUNEC_UI_GROUP_TOPLEVEL, 95)
-#define RUNEC_UI_TOP_SIDE_CONTAINER RUNEC_UI_COMPONENT_ID(RUNEC_UI_GROUP_TOPLEVEL, 73)
-#define RUNEC_UI_TOP_MAIN_MODAL RUNEC_UI_COMPONENT_ID(RUNEC_UI_GROUP_TOPLEVEL, 16)
-#define RUNEC_UI_TOP_SIDE_MODAL RUNEC_UI_COMPONENT_ID(RUNEC_UI_GROUP_TOPLEVEL, 74)
-#define RUNEC_UI_INVENTORY_ITEMS_COMPONENT RUNEC_UI_COMPONENT_ID(RUNEC_UI_GROUP_INVENTORY, 0)
-#define RUNEC_UI_MAGIC_FILTER_BUTTON RUNEC_UI_COMPONENT_ID(RUNEC_UI_GROUP_MAGIC, 202)
-#define RUNEC_UI_MAGIC_FILTER_CONTAINER RUNEC_UI_COMPONENT_ID(RUNEC_UI_GROUP_MAGIC, 203)
-#define RUNEC_UI_WORN_EQUIPMENT_BUTTON RUNEC_UI_COMPONENT_ID(RUNEC_UI_GROUP_WORNITEMS, 1)
-#define RUNEC_UI_WORN_PRICE_BUTTON RUNEC_UI_COMPONENT_ID(RUNEC_UI_GROUP_WORNITEMS, 3)
-#define RUNEC_UI_WORN_DEATH_BUTTON RUNEC_UI_COMPONENT_ID(RUNEC_UI_GROUP_WORNITEMS, 5)
 
 typedef struct RuneCUiLayout {
     Rectangle chat;
@@ -62,29 +41,6 @@ typedef struct RuneCUiLayout {
     Rectangle side_content;
     Rectangle tab[RUNEC_UI_TAB_COUNT];
 } RuneCUiLayout;
-
-typedef struct RuneCUiListenerEvent {
-    RuneCUiListenerKind kind;
-    uint32_t component_id;
-    int op;
-    Vector2 mouse;
-} RuneCUiListenerEvent;
-
-typedef int (*RuneCUiLocalHandlerFn)(RuneCUiState *ui,
-                                     const RuneCUiListenerEvent *event,
-                                     const RuneCUiHitResult *hit);
-
-typedef struct RuneCUiLocalListenerHandler {
-    uint32_t component_id;
-    RuneCUiListenerKind kind;
-    RuneCUiLocalHandlerFn handler;
-} RuneCUiLocalListenerHandler;
-
-static Rectangle open_interface_mount_rect(const RuneCUiState *ui,
-                                           const RuneCUiLayout *layout,
-                                           const RuneCUiOpenInterface *open,
-                                           int screen_w,
-                                           int screen_h);
 
 static const char *g_prayer_names[25] = {
     "Thick Skin", "Burst of Strength", "Clarity of Thought", "Sharp Eye",
@@ -199,51 +155,6 @@ static const char *g_equipment_names[RUNEC_UI_EQUIP_SLOT_COUNT] = {
     "Legs", "Unused", "Hands", "Feet", "Unused", "Ring", "Quiver",
 };
 
-static const char *decoded_group_for_tab(RuneCUiTab tab) {
-    switch (tab) {
-    case RUNEC_UI_TAB_COMBAT: return "combat_interface";
-    case RUNEC_UI_TAB_SKILLS: return "stats";
-    case RUNEC_UI_TAB_QUESTS: return "questjournal";
-    case RUNEC_UI_TAB_INVENTORY: return "inventory";
-    case RUNEC_UI_TAB_EQUIPMENT: return "wornitems";
-    case RUNEC_UI_TAB_PRAYER: return "prayerbook";
-    case RUNEC_UI_TAB_SPELLBOOK: return "magic_spellbook";
-    case RUNEC_UI_TAB_SETTINGS: return "settings_side";
-    default: return NULL;
-    }
-}
-
-static const RuneCUiOpenInterface *find_open_interface(
-    const RuneCUiState *ui,
-    RuneCUiOpenMount mount,
-    RuneCUiTab tab) {
-    if (!ui)
-        return NULL;
-    for (int i = 0; i < ui->open_interface_count; i++) {
-        const RuneCUiOpenInterface *open = &ui->open_interfaces[i];
-        if (open->active && open->mount == mount && open->tab == tab)
-            return open;
-    }
-    return NULL;
-}
-
-static const char *open_group_for_mount(const RuneCUiState *ui,
-                                        RuneCUiOpenMount mount,
-                                        RuneCUiTab tab) {
-    const RuneCUiOpenInterface *open = find_open_interface(ui, mount, tab);
-    return open && open->group[0] ? open->group : NULL;
-}
-
-static const char *open_group_for_side_content(const RuneCUiState *ui) {
-    const char *group = open_group_for_mount(ui, RUNEC_UI_MOUNT_SIDE_CONTENT,
-                                             ui ? ui->active_tab : RUNEC_UI_TAB_NONE);
-    if (group)
-        return group;
-    if (!ui)
-        return NULL;
-    return decoded_group_for_tab(ui->active_tab);
-}
-
 static const Rectangle g_equipment_offsets[RUNEC_UI_EQUIP_SLOT_COUNT] = {
     {77, 4, 36, 36},
     {36, 43, 36, 36},
@@ -265,10 +176,6 @@ static const char *g_worn_icon_names[RUNEC_UI_EQUIP_SLOT_COUNT] = {
     "wornicons_0", "wornicons_1", "wornicons_2", "wornicons_3",
     "wornicons_4", "wornicons_5", "wornicons_10", "wornicons_6",
     NULL, "wornicons_7", "wornicons_8", NULL, "wornicons_9", "wornicons_11",
-};
-
-static const int g_worn_slot_component_file[RUNEC_UI_EQUIP_SLOT_COUNT] = {
-    15, 16, 17, 18, 19, 20, 30, 21, -1, 22, 23, -1, 24, 25,
 };
 
 typedef struct RuneCUiCombatStyleDef {
@@ -613,154 +520,6 @@ static float fmin2(float a, float b) {
     return a < b ? a : b;
 }
 
-static int decoded_group_available(const RuneCUiState *ui, const char *group) {
-    return ui && group && group[0]
-        && runec_ui_interface_group(&ui->interfaces, group) != NULL;
-}
-
-static int local_open_modal(RuneCUiState *ui, const char *group) {
-    if (!decoded_group_available(ui, group))
-        return 0;
-    return runec_ui_open_subinterface(ui, RUNEC_UI_MOUNT_MODAL,
-                                      RUNEC_UI_TAB_NONE,
-                                      RUNEC_UI_TOP_MAIN_MODAL, group);
-}
-
-static int local_open_side_overlay(RuneCUiState *ui, const char *group) {
-    if (!decoded_group_available(ui, group))
-        return 0;
-    return runec_ui_open_subinterface(ui, RUNEC_UI_MOUNT_OVERLAY,
-                                      RUNEC_UI_TAB_NONE,
-                                      RUNEC_UI_TOP_SIDE_MODAL, group);
-}
-
-static int local_handler_magic_filter(RuneCUiState *ui,
-                                      const RuneCUiListenerEvent *event,
-                                      const RuneCUiHitResult *hit) {
-    (void)hit;
-    if (!ui || !event)
-        return 0;
-    if (event->kind == RUNEC_UI_LISTENER_ON_LOAD)
-        ui->magic_filter_open = 0;
-    else
-        ui->magic_filter_open = !ui->magic_filter_open;
-    runec_ui_set_component_hidden(ui, RUNEC_UI_MAGIC_FILTER_CONTAINER,
-                                  !ui->magic_filter_open);
-    return 1;
-}
-
-static int local_handler_equipment_stats(RuneCUiState *ui,
-                                         const RuneCUiListenerEvent *event,
-                                         const RuneCUiHitResult *hit) {
-    (void)event;
-    (void)hit;
-    return local_open_modal(ui, "equipment");
-}
-
-static int local_handler_price_checker(RuneCUiState *ui,
-                                       const RuneCUiListenerEvent *event,
-                                       const RuneCUiHitResult *hit) {
-    (void)event;
-    (void)hit;
-    return local_open_side_overlay(ui, "ge_pricechecker_side");
-}
-
-static int local_handler_death_keep(RuneCUiState *ui,
-                                    const RuneCUiListenerEvent *event,
-                                    const RuneCUiHitResult *hit) {
-    (void)event;
-    (void)hit;
-    return local_open_modal(ui, "deathkeep");
-}
-
-static const RuneCUiLocalListenerHandler g_local_listener_handlers[] = {
-    {RUNEC_UI_MAGIC_FILTER_CONTAINER, RUNEC_UI_LISTENER_ON_LOAD,
-     local_handler_magic_filter},
-    {RUNEC_UI_MAGIC_FILTER_BUTTON, RUNEC_UI_LISTENER_ON_CLICK,
-     local_handler_magic_filter},
-    {RUNEC_UI_WORN_EQUIPMENT_BUTTON, RUNEC_UI_LISTENER_ON_OP,
-     local_handler_equipment_stats},
-    {RUNEC_UI_WORN_PRICE_BUTTON, RUNEC_UI_LISTENER_ON_OP,
-     local_handler_price_checker},
-    {RUNEC_UI_WORN_DEATH_BUTTON, RUNEC_UI_LISTENER_ON_OP,
-     local_handler_death_keep},
-};
-
-static int dispatch_local_listener(RuneCUiState *ui,
-                                   const RuneCUiListenerEvent *event,
-                                   const RuneCUiHitResult *hit) {
-    if (!ui || !event || event->component_id == 0)
-        return 0;
-    int count = (int)(sizeof(g_local_listener_handlers)
-                      / sizeof(g_local_listener_handlers[0]));
-    for (int i = 0; i < count; i++) {
-        const RuneCUiLocalListenerHandler *entry = &g_local_listener_handlers[i];
-        if (entry->component_id != event->component_id
-                || entry->kind != event->kind || !entry->handler) {
-            continue;
-        }
-        if (entry->handler(ui, event, hit))
-            return 1;
-    }
-    return 0;
-}
-
-static int dispatch_local_listener_for_hit(RuneCUiState *ui,
-                                           const RuneCUiHitResult *hit,
-                                           RuneCUiListenerKind kind,
-                                           int op,
-                                           Vector2 mouse) {
-    if (!hit)
-        return 0;
-    RuneCUiListenerEvent event = {
-        .kind = kind,
-        .component_id = hit->component_id,
-        .op = op,
-        .mouse = mouse,
-    };
-    return dispatch_local_listener(ui, &event, hit);
-}
-
-static void dispatch_local_group_listeners(RuneCUiState *ui,
-                                           const char *group_name,
-                                           RuneCUiListenerKind kind) {
-    if (!ui || !group_name)
-        return;
-    const RuneCUiInterfaceGroup *group =
-        runec_ui_interface_group(&ui->interfaces, group_name);
-    if (!group)
-        return;
-    uint32_t bit = 1u << (unsigned)kind;
-    for (int i = 0; i < group->component_count; i++) {
-        const RuneCUiComponent *component = &group->components[i];
-        if ((component->listener_mask & bit) == 0)
-            continue;
-        RuneCUiListenerEvent event = {
-            .kind = kind,
-            .component_id = component->id,
-            .op = -1,
-            .mouse = {0},
-        };
-        dispatch_local_listener(ui, &event, NULL);
-    }
-}
-
-static void dispatch_local_transmit_listeners(RuneCUiState *ui) {
-    if (!ui || !ui->decoded_ui_enabled || !ui->decoded_ui_ready)
-        return;
-    for (int i = 0; i < ui->open_interface_count; i++) {
-        const RuneCUiOpenInterface *open = &ui->open_interfaces[i];
-        if (!open->active || !open->group[0])
-            continue;
-        dispatch_local_group_listeners(ui, open->group,
-                                       RUNEC_UI_LISTENER_ON_VAR_TRANSMIT);
-        dispatch_local_group_listeners(ui, open->group,
-                                       RUNEC_UI_LISTENER_ON_INV_TRANSMIT);
-        dispatch_local_group_listeners(ui, open->group,
-                                       RUNEC_UI_LISTENER_ON_STAT_TRANSMIT);
-    }
-}
-
 const char *runec_ui_tab_name(RuneCUiTab tab) {
     switch (tab) {
     case RUNEC_UI_TAB_COMBAT: return "Combat";
@@ -827,68 +586,6 @@ static void ui_layout(int screen_w, int screen_h, RuneCUiLayout *out) {
     }
 }
 
-static void apply_decoded_mounts(const RuneCUiState *ui,
-                                 int screen_w, int screen_h,
-                                 RuneCUiLayout *layout) {
-    if (!ui->decoded_ui_enabled || !ui->decoded_ui_ready)
-        return;
-    const char *top_group =
-        open_group_for_mount(ui, RUNEC_UI_MOUNT_SCREEN, RUNEC_UI_TAB_NONE);
-    if (!top_group)
-        top_group = "toplevel_osrs_stretch";
-    Rectangle screen = {0, 0, (float)screen_w, (float)screen_h};
-    Rectangle rect = {0};
-    if (runec_ui_interfaces_component_rect_by_id(&ui->interfaces, top_group,
-            RUNEC_UI_TOP_CHAT_CONTAINER, screen, &rect)) {
-        layout->chat = rect;
-        layout->chat_messages = (Rectangle){rect.x + 7, rect.y + 7, 506, 126};
-        layout->chat_controls = (Rectangle){rect.x, rect.y + 142, 519, 23};
-    }
-    if (runec_ui_interfaces_component_rect_by_id(&ui->interfaces, top_group,
-            RUNEC_UI_TOP_MAP_CONTAINER, screen, &rect)) {
-        layout->map = rect;
-        layout->minimap = (Rectangle){rect.x + RUNEC_OSRS_MINIMAP_X,
-                                      rect.y + RUNEC_OSRS_MINIMAP_Y,
-                                      RUNEC_OSRS_MINIMAP_W,
-                                      RUNEC_OSRS_MINIMAP_H};
-        layout->compass = (Rectangle){rect.x + RUNEC_OSRS_COMPASS_X,
-                                      rect.y + RUNEC_OSRS_COMPASS_Y,
-                                      RUNEC_OSRS_COMPASS_W,
-                                      RUNEC_OSRS_COMPASS_H};
-        layout->xp_orb = (Rectangle){rect.x + RUNEC_OSRS_ORBS_X + RUNEC_OSRS_XP_X,
-                                     rect.y + RUNEC_OSRS_ORBS_Y + RUNEC_OSRS_XP_Y, 27, 27};
-        layout->hp_orb = (Rectangle){rect.x + RUNEC_OSRS_ORBS_X + RUNEC_OSRS_HP_X,
-                                     rect.y + RUNEC_OSRS_ORBS_Y + RUNEC_OSRS_HP_Y, 57, 34};
-        layout->prayer_orb = (Rectangle){rect.x + RUNEC_OSRS_ORBS_X + RUNEC_OSRS_PRAYER_X,
-                                         rect.y + RUNEC_OSRS_ORBS_Y + RUNEC_OSRS_PRAYER_Y, 57, 34};
-        layout->run_orb = (Rectangle){rect.x + RUNEC_OSRS_ORBS_X + RUNEC_OSRS_RUN_X,
-                                      rect.y + RUNEC_OSRS_ORBS_Y + RUNEC_OSRS_RUN_Y, 57, 34};
-        layout->spec_orb = (Rectangle){rect.x + RUNEC_OSRS_ORBS_X + RUNEC_OSRS_SPEC_X,
-                                       rect.y + RUNEC_OSRS_ORBS_Y + RUNEC_OSRS_SPEC_Y, 57, 34};
-        layout->worldmap_button =
-            (Rectangle){rect.x + RUNEC_OSRS_ORBS_X + RUNEC_OSRS_WORLDMAP_X,
-                        rect.y + RUNEC_OSRS_ORBS_Y + RUNEC_OSRS_WORLDMAP_Y, 30, 30};
-    }
-    if (runec_ui_interfaces_component_rect(&ui->interfaces, top_group,
-            "side_menu", screen, &rect)) {
-        layout->side = rect;
-        layout->side_bg = rect;
-        for (int i = 0; i < (int)(sizeof(RUNEC_OSRS_SIDE_STONES) / sizeof(RUNEC_OSRS_SIDE_STONES[0])); i++) {
-            const RuneCUiStoneRef *ref = &RUNEC_OSRS_SIDE_STONES[i];
-            if (ref->logical_tab < 0 || ref->logical_tab >= RUNEC_UI_TAB_COUNT)
-                continue;
-            float row_y = rect.y + (i < 7 ? RUNEC_OSRS_SIDE_TOP_Y : RUNEC_OSRS_SIDE_BOTTOM_Y);
-            layout->tab[ref->logical_tab] =
-                (Rectangle){rect.x + ref->rect.x, row_y + ref->rect.y,
-                            ref->rect.width, ref->rect.height};
-        }
-    }
-    if (runec_ui_interfaces_component_rect_by_id(&ui->interfaces, top_group,
-            RUNEC_UI_TOP_SIDE_CONTAINER, screen, &rect)) {
-        layout->side_content = rect;
-    }
-}
-
 static int mouse_over_ui(const RuneCUiLayout *layout, Vector2 mouse) {
     if (CheckCollisionPointRec(mouse, layout->chat)
         || CheckCollisionPointRec(mouse, layout->side)
@@ -913,13 +610,11 @@ static void set_context(RuneCUiState *ui, Vector2 pos, const char *title,
     ui->context_source_kind = RUNEC_UI_CONTEXT_NONE;
     ui->context_source_slot = -1;
     ui->context_source_item_id = 0;
-    ui->context_source_component_id = 0;
     if (action_count > RUNEC_UI_CONTEXT_ACTIONS)
         action_count = RUNEC_UI_CONTEXT_ACTIONS;
     ui->context_action_count = action_count;
     for (int i = 0; i < action_count; i++) {
         copy_text(ui->context_actions[i], sizeof(ui->context_actions[i]), actions[i]);
-        ui->context_action_op[i] = i;
     }
 }
 
@@ -930,22 +625,6 @@ static void set_context_source(RuneCUiState *ui,
     ui->context_source_kind = source_kind;
     ui->context_source_slot = source_slot;
     ui->context_source_item_id = source_item_id;
-    ui->context_source_component_id = 0;
-}
-
-static void set_context_source_component(RuneCUiState *ui,
-                                         uint32_t component_id) {
-    ui->context_source_kind = RUNEC_UI_CONTEXT_COMPONENT;
-    ui->context_source_slot = -1;
-    ui->context_source_item_id = 0;
-    ui->context_source_component_id = component_id;
-}
-
-static void set_context_action_op(RuneCUiState *ui, int action_index, int op) {
-    if (!ui || action_index < 0 || action_index >= ui->context_action_count
-            || action_index >= RUNEC_UI_CONTEXT_ACTIONS)
-        return;
-    ui->context_action_op[action_index] = op;
 }
 
 void runec_ui_clear_selected_target(RuneCUiState *ui) {
@@ -955,114 +634,6 @@ void runec_ui_clear_selected_target(RuneCUiState *ui) {
     ui->selected_target.source_slot = -1;
 }
 
-static RuneCUiComponentOverride *component_override_slot(
-    RuneCUiState *ui,
-    uint32_t component_id,
-    int create) {
-    if (!ui || component_id == 0)
-        return NULL;
-    for (int i = 0; i < ui->component_override_count; i++) {
-        if (ui->component_overrides[i].component_id == component_id)
-            return &ui->component_overrides[i];
-    }
-    if (!create || ui->component_override_count >= RUNEC_UI_COMPONENT_OVERRIDES)
-        return NULL;
-    RuneCUiComponentOverride *override =
-        &ui->component_overrides[ui->component_override_count++];
-    memset(override, 0, sizeof(*override));
-    override->component_id = component_id;
-    return override;
-}
-
-static RuneCUiItemContainerOverride *item_container_override_slot(
-    RuneCUiState *ui,
-    uint32_t component_id,
-    int create) {
-    if (!ui || component_id == 0)
-        return NULL;
-    for (int i = 0; i < ui->item_container_override_count; i++) {
-        if (ui->item_container_overrides[i].component_id == component_id)
-            return &ui->item_container_overrides[i];
-    }
-    if (!create
-            || ui->item_container_override_count >= RUNEC_UI_ITEM_CONTAINER_OVERRIDES)
-        return NULL;
-    RuneCUiItemContainerOverride *override =
-        &ui->item_container_overrides[ui->item_container_override_count++];
-    memset(override, 0, sizeof(*override));
-    override->component_id = component_id;
-    override->selected_slot = -1;
-    return override;
-}
-
-static RuneCUiItemContainerOverride *set_item_container_override(
-    RuneCUiState *ui,
-    uint32_t component_id,
-    int slot_count,
-    int columns,
-    float x0,
-    float y0,
-    float step_x,
-    float step_y,
-    float slot_w,
-    float slot_h,
-    int selected_slot) {
-    RuneCUiItemContainerOverride *override =
-        item_container_override_slot(ui, component_id, 1);
-    if (!override)
-        return NULL;
-    if (slot_count > RUNEC_UI_ITEM_CONTAINER_MAX_SLOTS)
-        slot_count = RUNEC_UI_ITEM_CONTAINER_MAX_SLOTS;
-    memset(override->slots, 0, sizeof(override->slots));
-    override->slot_count = slot_count;
-    override->columns = columns;
-    override->x0 = x0;
-    override->y0 = y0;
-    override->step_x = step_x;
-    override->step_y = step_y;
-    override->slot_w = slot_w;
-    override->slot_h = slot_h;
-    override->selected_slot = selected_slot;
-    return override;
-}
-
-int runec_ui_set_component_text(RuneCUiState *ui, uint32_t component_id,
-                                const char *text) {
-    RuneCUiComponentOverride *override =
-        component_override_slot(ui, component_id, 1);
-    if (!override)
-        return 0;
-    override->flags |= RUNEC_UI_COMPONENT_OVERRIDE_TEXT;
-    copy_text(override->text, sizeof(override->text), text);
-    return 1;
-}
-
-int runec_ui_set_component_hidden(RuneCUiState *ui, uint32_t component_id,
-                                  int hidden) {
-    RuneCUiComponentOverride *override =
-        component_override_slot(ui, component_id, 1);
-    if (!override)
-        return 0;
-    override->flags |= RUNEC_UI_COMPONENT_OVERRIDE_HIDDEN;
-    override->hidden = hidden ? 1 : 0;
-    return 1;
-}
-
-int runec_ui_set_component_item(RuneCUiState *ui, uint32_t component_id,
-                                uint32_t item_id, uint32_t icon_item_id,
-                                int quantity, int selected) {
-    RuneCUiComponentOverride *override =
-        component_override_slot(ui, component_id, 1);
-    if (!override)
-        return 0;
-    override->flags |= RUNEC_UI_COMPONENT_OVERRIDE_ITEM;
-    override->item_id = (int32_t)item_id;
-    override->icon_item_id = (int32_t)(icon_item_id ? icon_item_id : item_id);
-    override->item_quantity = quantity > 0 ? quantity : 1;
-    override->selected = selected ? 1 : 0;
-    return 1;
-}
-
 static void set_selected_item_target(RuneCUiState *ui, int slot) {
     if (!ui || slot < 0 || slot >= RUNEC_UI_INV_SLOT_COUNT
             || !ui->inventory[slot].enabled)
@@ -1070,7 +641,6 @@ static void set_selected_item_target(RuneCUiState *ui, int slot) {
     ui->selected_target.kind = RUNEC_UI_SELECTED_ITEM;
     ui->selected_target.source_slot = slot;
     ui->selected_target.source_item_id = ui->inventory[slot].item_id;
-    ui->selected_target.source_component_id = 0;
     copy_text(ui->selected_target.label, sizeof(ui->selected_target.label),
               ui->inventory[slot].label);
     copy_text(ui->selected_target.verb, sizeof(ui->selected_target.verb), "Use");
@@ -1083,57 +653,8 @@ static void set_selected_spell_target(RuneCUiState *ui, int slot,
     ui->selected_target.kind = RUNEC_UI_SELECTED_SPELL;
     ui->selected_target.source_slot = slot;
     ui->selected_target.source_item_id = 0;
-    ui->selected_target.source_component_id = 0;
     copy_text(ui->selected_target.label, sizeof(ui->selected_target.label), name);
     copy_text(ui->selected_target.verb, sizeof(ui->selected_target.verb), "Cast");
-}
-
-static int decoded_component_op_allowed(const RuneCUiHitResult *hit,
-                                        int op) {
-    if (!hit)
-        return 0;
-    uint32_t mask = hit->click_mask;
-    if (mask == 0)
-        return 0;
-    if (op < 0)
-        return 1;
-    if (op < RUNEC_UI_INTERFACE_MAX_ACTIONS
-            && (mask & (1u << (unsigned)(op + 1))))
-        return 1;
-    return hit->action_count == 0 && op == 0;
-}
-
-int runec_ui_open_subinterface(RuneCUiState *ui, RuneCUiOpenMount mount,
-                               RuneCUiTab tab, uint32_t target_component_id,
-                               const char *group) {
-    if (!ui || !group || !group[0])
-        return 0;
-    for (int i = 0; i < ui->open_interface_count; i++) {
-        RuneCUiOpenInterface *open = &ui->open_interfaces[i];
-        if (open->active && open->mount == mount && open->tab == tab) {
-            copy_text(open->group, sizeof(open->group), group);
-            open->target_component_id = target_component_id;
-            dispatch_local_group_listeners(ui, group,
-                                           RUNEC_UI_LISTENER_ON_LOAD);
-            return 1;
-        }
-    }
-    if (ui->open_interface_count >= RUNEC_UI_OPEN_INTERFACES)
-        return 0;
-    RuneCUiOpenInterface *open = &ui->open_interfaces[ui->open_interface_count++];
-    memset(open, 0, sizeof(*open));
-    open->active = 1;
-    open->mount = mount;
-    open->tab = tab;
-    open->target_component_id = target_component_id;
-    copy_text(open->group, sizeof(open->group), group);
-    dispatch_local_group_listeners(ui, group, RUNEC_UI_LISTENER_ON_LOAD);
-    return 1;
-}
-
-int runec_ui_open_top_interface(RuneCUiState *ui, const char *group) {
-    return runec_ui_open_subinterface(ui, RUNEC_UI_MOUNT_SCREEN,
-                                      RUNEC_UI_TAB_NONE, 0, group);
 }
 
 void runec_ui_init(RuneCUiState *ui) {
@@ -1179,39 +700,6 @@ void runec_ui_init(RuneCUiState *ui) {
     }
 
     runec_ui_assets_load(&ui->assets);
-    const char *decoded = getenv("RUNEC_UI_DECODED");
-    ui->decoded_ui_enabled = decoded && decoded[0] && strcmp(decoded, "0") != 0;
-    if (ui->decoded_ui_enabled) {
-        ui->decoded_ui_ready =
-            runec_ui_interfaces_load(&ui->interfaces, "data/ui/interfaces.bin");
-        if (!ui->decoded_ui_ready) {
-            fprintf(stderr,
-                    "ui_interfaces: data/ui/interfaces.bin unavailable; using manual UI\n");
-        } else {
-            runec_ui_open_top_interface(ui, "toplevel_osrs_stretch");
-            runec_ui_open_subinterface(ui, RUNEC_UI_MOUNT_MAP,
-                                       RUNEC_UI_TAB_NONE,
-                                       RUNEC_UI_TOP_MAP_CONTAINER, "orbs");
-            runec_ui_open_subinterface(ui, RUNEC_UI_MOUNT_SIDE_CONTENT,
-                                       ui->active_tab,
-                                       RUNEC_UI_TOP_SIDE_CONTAINER,
-                                       decoded_group_for_tab(ui->active_tab));
-            const char *debug_modal = getenv("RUNEC_UI_OPEN_MODAL");
-            if (debug_modal && debug_modal[0]) {
-                runec_ui_open_subinterface(ui, RUNEC_UI_MOUNT_MODAL,
-                                           RUNEC_UI_TAB_NONE,
-                                           RUNEC_UI_TOP_MAIN_MODAL,
-                                           debug_modal);
-            }
-            const char *debug_overlay = getenv("RUNEC_UI_OPEN_SIDE_OVERLAY");
-            if (debug_overlay && debug_overlay[0]) {
-                runec_ui_open_subinterface(ui, RUNEC_UI_MOUNT_OVERLAY,
-                                           RUNEC_UI_TAB_NONE,
-                                           RUNEC_UI_TOP_SIDE_MODAL,
-                                           debug_overlay);
-            }
-        }
-    }
     Image minimap = GenImageColor(152, 152, BLANK);
     ui->minimap_texture = LoadTextureFromImage(minimap);
     UnloadImage(minimap);
@@ -1256,7 +744,6 @@ void runec_ui_shutdown(RuneCUiState *ui) {
     }
     ui->item_icon_count = 0;
     runec_ui_assets_unload(&ui->assets);
-    runec_ui_interfaces_unload(&ui->interfaces);
 }
 
 void runec_ui_clear_minimap(RuneCUiState *ui) {
@@ -1303,54 +790,6 @@ void runec_ui_set_item_icon(RuneCUiState *ui, uint32_t icon_item_id, Texture2D t
         (RuneCUiItemIcon){icon_item_id, texture, 1};
 }
 
-static void sync_decoded_component_overrides(RuneCUiState *ui) {
-    if (!ui)
-        return;
-    if (!ui->decoded_ui_enabled || !ui->decoded_ui_ready)
-        return;
-
-    RuneCUiItemContainerOverride *inventory =
-        set_item_container_override(
-            ui, RUNEC_UI_INVENTORY_ITEMS_COMPONENT,
-            RUNEC_UI_INV_SLOT_COUNT, 4,
-            RUNEC_OSRS_INVENTORY_SLOT_X, RUNEC_OSRS_INVENTORY_SLOT_Y,
-            RUNEC_OSRS_INVENTORY_SLOT_STEP_X, RUNEC_OSRS_INVENTORY_SLOT_STEP_Y,
-            RUNEC_OSRS_INVENTORY_SLOT_W, RUNEC_OSRS_INVENTORY_SLOT_H,
-            ui->selected_inventory_slot);
-    if (inventory) {
-        for (int i = 0; i < RUNEC_UI_INV_SLOT_COUNT; i++) {
-            inventory->slots[i] = (RuneCUiItemContainerSlot){
-                ui->inventory[i].item_id,
-                ui->inventory[i].icon_item_id,
-                ui->inventory[i].quantity,
-                ui->inventory[i].enabled,
-            };
-        }
-    }
-
-    for (int i = 0; i < RUNEC_UI_EQUIP_SLOT_COUNT; i++) {
-        if (g_worn_slot_component_file[i] < 0)
-            continue;
-        uint32_t component_id = RUNEC_UI_COMPONENT_ID(
-            RUNEC_UI_GROUP_WORNITEMS, g_worn_slot_component_file[i]);
-        const RuneCUiSlot *slot = &ui->equipment[i];
-        runec_ui_set_component_item(ui, component_id,
-                                    slot->enabled ? slot->item_id : 0,
-                                    slot->enabled ? slot->icon_item_id : 0,
-                                    slot->enabled ? slot->quantity : 1,
-                                    ui->selected_equipment_slot == i);
-    }
-
-    if (ui->active_tab == RUNEC_UI_TAB_SKILLS) {
-        char text[64];
-        snprintf(text, sizeof(text), "Total level: %d",
-                 ui->skill_total > 0 ? ui->skill_total : 0);
-        runec_ui_set_component_text(
-            ui, RUNEC_UI_COMPONENT_ID(RUNEC_UI_GROUP_STATS, 32), text);
-    }
-    dispatch_local_transmit_listeners(ui);
-}
-
 static int handle_context_click(RuneCUiState *ui, Vector2 mouse) {
     if (!ui->context_open)
         return 0;
@@ -1362,7 +801,6 @@ static int handle_context_click(RuneCUiState *ui, Vector2 mouse) {
         ui->context_source_kind = RUNEC_UI_CONTEXT_NONE;
         ui->context_source_slot = -1;
         ui->context_source_item_id = 0;
-        ui->context_source_component_id = 0;
         return 0;
     }
 
@@ -1370,7 +808,6 @@ static int handle_context_click(RuneCUiState *ui, Vector2 mouse) {
         Rectangle item = {box.x + 4, box.y + 22 + i * 20.0f, box.width - 8, 18};
         if (CheckCollisionPointRec(mouse, item)) {
             const char *action = ui->context_actions[i];
-            int op = ui->context_action_op[i];
             if (ui->context_source_kind == RUNEC_UI_CONTEXT_INVENTORY) {
                 if (strcmp(action, "Use") == 0) {
                     set_selected_item_target(ui, ui->context_source_slot);
@@ -1419,24 +856,6 @@ static int handle_context_click(RuneCUiState *ui, Vector2 mouse) {
                 copy_text(ui->last_intent.text,
                           sizeof(ui->last_intent.text),
                           ui->context_title);
-            } else if (ui->context_source_kind == RUNEC_UI_CONTEXT_COMPONENT) {
-                RuneCUiListenerEvent event = {
-                    .kind = RUNEC_UI_LISTENER_ON_OP,
-                    .component_id = ui->context_source_component_id,
-                    .op = op,
-                    .mouse = mouse,
-                };
-                if (dispatch_local_listener(ui, &event, NULL)) {
-                    ui->context_open = 0;
-                    ui->context_source_kind = RUNEC_UI_CONTEXT_NONE;
-                    ui->context_source_slot = -1;
-                    ui->context_source_item_id = 0;
-                    ui->context_source_component_id = 0;
-                    return 1;
-                }
-                ui->last_intent.kind = RUNEC_UI_INTENT_COMPONENT_ACTION;
-                ui->last_intent.primary = (int)ui->context_source_component_id;
-                ui->last_intent.secondary = op;
             } else {
                 ui->last_intent.kind = RUNEC_UI_INTENT_CONTEXT_ACTION;
                 ui->last_intent.primary = i;
@@ -1450,7 +869,6 @@ static int handle_context_click(RuneCUiState *ui, Vector2 mouse) {
             ui->context_source_kind = RUNEC_UI_CONTEXT_NONE;
             ui->context_source_slot = -1;
             ui->context_source_item_id = 0;
-            ui->context_source_component_id = 0;
             return 1;
         }
     }
@@ -1500,89 +918,13 @@ static int equipment_slot_at(const RuneCUiLayout *layout, Vector2 mouse) {
     return -1;
 }
 
-static const RuneCUiItemContainerOverride *find_item_container_for_component(
-    const RuneCUiState *ui,
-    uint32_t component_id) {
-    if (!ui)
-        return NULL;
-    for (int i = 0; i < ui->item_container_override_count; i++) {
-        const RuneCUiItemContainerOverride *override =
-            &ui->item_container_overrides[i];
-        if (override->component_id == component_id)
-            return override;
-    }
-    return NULL;
-}
-
-static int decoded_item_container_slot_at(const RuneCUiState *ui,
-                                          const RuneCUiLayout *layout,
-                                          const char *group,
-                                          uint32_t component_id,
-                                          Vector2 mouse) {
-    if (!ui || !ui->decoded_ui_enabled || !ui->decoded_ui_ready || !group)
-        return -1;
-    const RuneCUiItemContainerOverride *override =
-        find_item_container_for_component(ui, component_id);
-    if (!override || override->slot_count <= 0 || override->columns <= 0)
-        return -1;
-    Rectangle container = {0};
-    if (!runec_ui_interfaces_component_rect_by_id(
-            &ui->interfaces, group, component_id, layout->side_content,
-            &container))
-        return -1;
-    int count = override->slot_count;
-    if (count > RUNEC_UI_ITEM_CONTAINER_MAX_SLOTS)
-        count = RUNEC_UI_ITEM_CONTAINER_MAX_SLOTS;
-    for (int i = 0; i < count; i++) {
-        int col = i % override->columns;
-        int row = i / override->columns;
-        Rectangle r = {
-            container.x + override->x0 + (float)col * override->step_x,
-            container.y + override->y0 + (float)row * override->step_y,
-            override->slot_w,
-            override->slot_h,
-        };
-        if (CheckCollisionPointRec(mouse, r))
-            return i;
-    }
-    return -1;
-}
-
-static int ui_inventory_slot_at(const RuneCUiState *ui,
-                                const RuneCUiLayout *layout,
+static int ui_inventory_slot_at(const RuneCUiLayout *layout,
                                 Vector2 mouse) {
-    if (ui && ui->decoded_ui_enabled && ui->decoded_ui_ready
-            && ui->active_tab == RUNEC_UI_TAB_INVENTORY) {
-        int slot = decoded_item_container_slot_at(
-            ui, layout, open_group_for_side_content(ui),
-            RUNEC_UI_INVENTORY_ITEMS_COMPONENT, mouse);
-        if (slot >= 0)
-            return slot;
-    }
     return inv_slot_at(layout, mouse);
 }
 
-static int ui_equipment_slot_at(const RuneCUiState *ui,
-                                const RuneCUiLayout *layout,
+static int ui_equipment_slot_at(const RuneCUiLayout *layout,
                                 Vector2 mouse) {
-    if (ui && ui->decoded_ui_enabled && ui->decoded_ui_ready
-            && ui->active_tab == RUNEC_UI_TAB_EQUIPMENT) {
-        const char *group = open_group_for_side_content(ui);
-        for (int i = 0; i < RUNEC_UI_EQUIP_SLOT_COUNT; i++) {
-            if (g_worn_slot_component_file[i] < 0)
-                continue;
-            Rectangle r = {0};
-            uint32_t component_id = RUNEC_UI_COMPONENT_ID(
-                RUNEC_UI_GROUP_WORNITEMS, g_worn_slot_component_file[i]);
-            if (runec_ui_interfaces_component_rect_by_id(
-                    &ui->interfaces, group, component_id, layout->side_content,
-                    &r)
-                    && r.width > 0
-                    && CheckCollisionPointRec(mouse, r)) {
-                return i;
-            }
-        }
-    }
     return equipment_slot_at(layout, mouse);
 }
 
@@ -1659,375 +1001,9 @@ static int grid_index_at(const RuneCUiLayout *layout, Vector2 mouse,
     return -1;
 }
 
-static RuneCUiComponentOverrides decoded_overrides(const RuneCUiState *ui) {
-    return (RuneCUiComponentOverrides){
-        ui ? ui->component_overrides : NULL,
-        ui ? ui->component_override_count : 0,
-        ui ? ui->item_container_overrides : NULL,
-        ui ? ui->item_container_override_count : 0,
-    };
-}
-
-static int decoded_side_hit(const RuneCUiState *ui, const RuneCUiLayout *layout,
-                            Vector2 mouse, RuneCUiHitResult *hit) {
-    if (!ui || !ui->decoded_ui_enabled || !ui->decoded_ui_ready
-            || !CheckCollisionPointRec(mouse, layout->side_content))
-        return 0;
-    if (ui->active_tab == RUNEC_UI_TAB_COMBAT)
-        return 0;
-    const char *group = open_group_for_side_content(ui);
-    if (!group)
-        return 0;
-    RuneCUiComponentOverrides overrides = decoded_overrides(ui);
-    return runec_ui_interfaces_hit_test_ex(&ui->interfaces, group,
-                                           layout->side_content, mouse, hit,
-                                           &overrides);
-}
-
-static int decoded_modal_hit(const RuneCUiState *ui,
-                             const RuneCUiLayout *layout,
-                             int screen_w,
-                             int screen_h,
-                             Vector2 mouse,
-                             RuneCUiHitResult *hit) {
-    if (!ui || !ui->decoded_ui_enabled || !ui->decoded_ui_ready)
-        return 0;
-    RuneCUiComponentOverrides overrides = decoded_overrides(ui);
-    for (int i = ui->open_interface_count - 1; i >= 0; i--) {
-        const RuneCUiOpenInterface *open = &ui->open_interfaces[i];
-        if (!open->active || !open->group[0])
-            continue;
-        if (open->mount != RUNEC_UI_MOUNT_MODAL
-                && open->mount != RUNEC_UI_MOUNT_OVERLAY)
-            continue;
-        Rectangle mount =
-            open_interface_mount_rect(ui, layout, open, screen_w, screen_h);
-        if (!CheckCollisionPointRec(mouse, mount))
-            continue;
-        if (runec_ui_interfaces_hit_test_ex(&ui->interfaces, open->group,
-                                            mount, mouse, hit, &overrides)) {
-            return 1;
-        }
-        return 1;
-    }
-    return 0;
-}
-
-static int close_modal_interfaces(RuneCUiState *ui) {
-    if (!ui)
-        return 0;
-    int closed = 0;
-    for (int i = 0; i < ui->open_interface_count; i++) {
-        RuneCUiOpenInterface *open = &ui->open_interfaces[i];
-        if (!open->active)
-            continue;
-        if (open->mount == RUNEC_UI_MOUNT_MODAL
-                || open->mount == RUNEC_UI_MOUNT_OVERLAY) {
-            open->active = 0;
-            closed = 1;
-        }
-    }
-    return closed;
-}
-
-static const char *decoded_hit_title(const RuneCUiHitResult *hit) {
-    if (hit->name[0])
-        return hit->name;
-    if (hit->text[0])
-        return hit->text;
-    if (hit->target_verb[0])
-        return hit->target_verb;
-    return "Component";
-}
-
-static const char *decoded_action_for_op(const RuneCUiHitResult *hit, int op) {
-    if (!hit)
-        return NULL;
-    if (op >= 0 && op < hit->action_count
-            && op < RUNEC_UI_INTERFACE_MAX_ACTIONS
-            && hit->actions[op][0])
-        return hit->actions[op];
-    if (op == 0 && hit->target_verb[0])
-        return hit->target_verb;
-    return "Select";
-}
-
-static int decoded_primary_op(const RuneCUiHitResult *hit) {
-    if (!hit)
-        return -1;
-    for (int i = 0; i < hit->action_count
-            && i < RUNEC_UI_INTERFACE_MAX_ACTIONS; i++) {
-        if (hit->actions[i][0] && decoded_component_op_allowed(hit, i))
-            return i;
-    }
-    if (hit->target_verb[0] && decoded_component_op_allowed(hit, 0))
-        return 0;
-    if (hit->click_mask != 0 && decoded_component_op_allowed(hit, 0))
-        return 0;
-    if (hit->listener_mask & ((1u << RUNEC_UI_LISTENER_ON_OP)
-            | (1u << RUNEC_UI_LISTENER_ON_CLICK))) {
-        return 0;
-    }
-    return -1;
-}
-
-static int parse_int_suffix(const char *text, const char *prefix) {
-    size_t prefix_len = strlen(prefix);
-    if (!text || strncmp(text, prefix, prefix_len) != 0)
-        return -1;
-    const char *p = text + prefix_len;
-    if (!*p)
-        return -1;
-    int value = 0;
-    while (*p) {
-        if (*p < '0' || *p > '9')
-            return -1;
-        value = value * 10 + (*p - '0');
-        p++;
-    }
-    return value;
-}
-
-static int component_name_matches(const char *component_name,
-                                  const char *display_name) {
-    if (!component_name || !display_name)
-        return 0;
-    while (*component_name && *display_name) {
-        char a = *component_name == '_' ? ' ' : *component_name;
-        char b = *display_name;
-        if (tolower((unsigned char)a) != tolower((unsigned char)b))
-            return 0;
-        component_name++;
-        display_name++;
-    }
-    return *component_name == '\0' && *display_name == '\0';
-}
-
-static int skill_slot_from_component(const RuneCUiHitResult *hit) {
-    if (!hit || hit->group_id != RUNEC_UI_GROUP_STATS)
-        return -1;
-    int count = (int)(sizeof(RUNEC_OSRS_SKILLS) / sizeof(RUNEC_OSRS_SKILLS[0]));
-    for (int i = 0; i < count; i++) {
-        if (component_name_matches(hit->name, RUNEC_OSRS_SKILLS[i].name))
-            return i;
-    }
-    if (strcmp(hit->name, "total") == 0)
-        return count;
-    return -1;
-}
-
-static void title_from_component_name(const char *name, char *dst, size_t cap) {
-    if (!dst || cap == 0)
-        return;
-    if (!name)
-        name = "";
-    size_t out = 0;
-    int new_word = 1;
-    for (size_t i = 0; name[i] && out + 1 < cap; i++) {
-        char ch = name[i] == '_' ? ' ' : name[i];
-        if (ch == ' ') {
-            dst[out++] = ch;
-            new_word = 1;
-            continue;
-        }
-        if (new_word)
-            ch = (char)toupper((unsigned char)ch);
-        dst[out++] = ch;
-        new_word = 0;
-    }
-    dst[out] = '\0';
-}
-
-static void spell_title_from_component(const RuneCUiHitResult *hit,
-                                       char *dst, size_t cap) {
-    if (!hit || !hit->name[0]) {
-        copy_text(dst, cap, "Spell");
-        return;
-    }
-    title_from_component_name(hit->name, dst, cap);
-}
-
-static int decoded_left_click(RuneCUiState *ui,
-                              const RuneCUiHitResult *hit,
-                              Vector2 mouse) {
-    if (!ui || !hit)
-        return 0;
-    int op = decoded_primary_op(hit);
-    if (op < 0)
-        return 0;
-
-    if (ui->selected_target.kind == RUNEC_UI_SELECTED_ITEM) {
-        ui->last_intent.kind = RUNEC_UI_INTENT_SELECTED_ITEM_ON_COMPONENT;
-        ui->last_intent.primary = ui->selected_target.source_slot;
-        ui->last_intent.secondary = (int)hit->component_id;
-        ui->last_intent.position = mouse;
-        snprintf(ui->last_intent.text, sizeof(ui->last_intent.text),
-                 "%s -> %s", ui->selected_target.label,
-                 decoded_hit_title(hit));
-        runec_ui_clear_selected_target(ui);
-        return 1;
-    }
-    if (ui->selected_target.kind == RUNEC_UI_SELECTED_SPELL) {
-        ui->last_intent.kind = RUNEC_UI_INTENT_SELECTED_SPELL_ON_COMPONENT;
-        ui->last_intent.primary = ui->selected_target.source_slot;
-        ui->last_intent.secondary = (int)hit->component_id;
-        ui->last_intent.position = mouse;
-        snprintf(ui->last_intent.text, sizeof(ui->last_intent.text),
-                 "%s -> %s", ui->selected_target.label,
-                 decoded_hit_title(hit));
-        runec_ui_clear_selected_target(ui);
-        return 1;
-    }
-
-    if ((hit->listener_mask & (1u << RUNEC_UI_LISTENER_ON_CLICK))
-            && dispatch_local_listener_for_hit(
-                ui, hit, RUNEC_UI_LISTENER_ON_CLICK, op, mouse)) {
-        return 1;
-    }
-    if (dispatch_local_listener_for_hit(
-            ui, hit, RUNEC_UI_LISTENER_ON_OP, op, mouse)) {
-        return 1;
-    }
-
-    if (hit->group_id == RUNEC_UI_GROUP_COMBAT) {
-        int style = parse_int_suffix(hit->name, "");
-        if (style >= 0 && style < 4) {
-            ui->selected_combat_style = style;
-            ui->last_intent.kind = RUNEC_UI_INTENT_COMBAT_STYLE;
-            ui->last_intent.primary = style;
-            ui->last_intent.position = mouse;
-            const RuneCUiCombatStyleOption *option =
-                combat_style_option_by_index(ui, style);
-            copy_text(ui->last_intent.text, sizeof(ui->last_intent.text),
-                      option ? option->label : "Attack style");
-            return 1;
-        }
-        if (strcmp(hit->name, "retaliate") == 0) {
-            ui->auto_retaliate = !ui->auto_retaliate;
-            ui->last_intent.kind = RUNEC_UI_INTENT_AUTO_RETALIATE;
-            ui->last_intent.primary = ui->auto_retaliate;
-            ui->last_intent.position = mouse;
-            return 1;
-        }
-        if (strcmp(hit->name, "special_attack") == 0) {
-            ui->special_attack_enabled = !ui->special_attack_enabled;
-            ui->last_intent.kind = RUNEC_UI_INTENT_SPECIAL_ATTACK;
-            ui->last_intent.primary = ui->special_attack_enabled;
-            ui->last_intent.secondary = ui->special_attack_energy;
-            ui->last_intent.position = mouse;
-            return 1;
-        }
-    }
-
-    if (hit->group_id == RUNEC_UI_GROUP_WORNITEMS) {
-        int slot = parse_int_suffix(hit->name, "slot");
-        if (slot >= 0 && slot < RUNEC_UI_EQUIP_SLOT_COUNT) {
-            ui->selected_equipment_slot = slot;
-            ui->last_intent.kind = RUNEC_UI_INTENT_EQUIPMENT_SLOT;
-            ui->last_intent.primary = slot;
-            ui->last_intent.position = mouse;
-            return 1;
-        }
-    }
-
-    if (hit->group_id == RUNEC_UI_GROUP_PRAYER) {
-        int prayer_num = parse_int_suffix(hit->name, "prayer");
-        if (prayer_num > 0) {
-            int slot = prayer_num - 1;
-            ui->last_intent.kind = RUNEC_UI_INTENT_PRAYER_SLOT;
-            ui->last_intent.primary = slot;
-            ui->last_intent.position = mouse;
-            if (slot >= 0 && slot < (int)(sizeof(g_prayer_names) / sizeof(g_prayer_names[0])))
-                copy_text(ui->last_intent.text, sizeof(ui->last_intent.text),
-                          g_prayer_names[slot]);
-            else
-                snprintf(ui->last_intent.text, sizeof(ui->last_intent.text),
-                         "Prayer %d", prayer_num);
-            return 1;
-        }
-    }
-
-    if (hit->group_id == RUNEC_UI_GROUP_MAGIC && hit->file_id >= 5
-            && hit->file_id <= 200) {
-        char name[64];
-        spell_title_from_component(hit, name, sizeof(name));
-        set_selected_spell_target(ui, (int)hit->file_id, name);
-        ui->selected_target.source_component_id = hit->component_id;
-        ui->last_intent.kind = RUNEC_UI_INTENT_SELECTED_SPELL;
-        ui->last_intent.primary = (int)hit->file_id;
-        ui->last_intent.secondary = (int)hit->component_id;
-        ui->last_intent.position = mouse;
-        copy_text(ui->last_intent.text, sizeof(ui->last_intent.text), name);
-        return 1;
-    }
-
-    int skill = skill_slot_from_component(hit);
-    if (skill >= 0) {
-        ui->last_intent.kind = RUNEC_UI_INTENT_SKILL_SLOT;
-        ui->last_intent.primary = skill;
-        ui->last_intent.position = mouse;
-        copy_text(ui->last_intent.text, sizeof(ui->last_intent.text),
-                  skill < (int)(sizeof(RUNEC_OSRS_SKILLS) / sizeof(RUNEC_OSRS_SKILLS[0]))
-                      ? RUNEC_OSRS_SKILLS[skill].name
-                      : "Total level");
-        return 1;
-    }
-
-    const char *action = decoded_action_for_op(hit, op);
-    if (action) {
-        ui->last_intent.kind = RUNEC_UI_INTENT_COMPONENT_ACTION;
-        ui->last_intent.primary = (int)hit->component_id;
-        ui->last_intent.secondary = op;
-        ui->last_intent.position = mouse;
-        copy_text(ui->last_intent.text, sizeof(ui->last_intent.text), action);
-        return 1;
-    }
-    return 0;
-}
-
-static int open_decoded_context(RuneCUiState *ui, Vector2 mouse,
-                                const RuneCUiHitResult *hit) {
-    char action_buf[RUNEC_UI_CONTEXT_ACTIONS][32];
-    const char *actions[RUNEC_UI_CONTEXT_ACTIONS];
-    int ops[RUNEC_UI_CONTEXT_ACTIONS];
-    int count = 0;
-    if (hit->target_verb[0] && count < RUNEC_UI_CONTEXT_ACTIONS
-            && decoded_component_op_allowed(hit, 0)) {
-        copy_text(action_buf[count], sizeof(action_buf[count]), hit->target_verb);
-        actions[count] = action_buf[count];
-        ops[count] = 0;
-        count++;
-    }
-    for (int i = 0; i < hit->action_count && count < RUNEC_UI_CONTEXT_ACTIONS; i++) {
-        if (!hit->actions[i][0])
-            continue;
-        if (!decoded_component_op_allowed(hit, i))
-            continue;
-        copy_text(action_buf[count], sizeof(action_buf[count]), hit->actions[i]);
-        actions[count] = action_buf[count];
-        ops[count] = i;
-        count++;
-    }
-    if (count == 0 && hit->click_mask != 0
-            && decoded_component_op_allowed(hit, 0)) {
-        actions[count] = "Select";
-        ops[count] = 0;
-        count++;
-    }
-    if (count == 0)
-        return 0;
-    set_context(ui, mouse, decoded_hit_title(hit), actions, count);
-    for (int i = 0; i < count; i++)
-        set_context_action_op(ui, i, ops[i]);
-    set_context_source_component(ui, hit->component_id);
-    return 1;
-}
-
 int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h) {
     RuneCUiLayout layout;
     ui_layout(screen_w, screen_h, &layout);
-    apply_decoded_mounts(ui, screen_w, screen_h, &layout);
-    sync_decoded_component_overrides(ui);
     Vector2 mouse = GetMousePosition();
     float dt = GetFrameTime();
     clear_intent(ui);
@@ -2046,10 +1022,6 @@ int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h) {
         ui->last_intent.kind = RUNEC_UI_INTENT_SELECTED_TARGET_CANCEL;
         return 1;
     }
-    if (IsKeyPressed(KEY_ESCAPE) && close_modal_interfaces(ui)) {
-        return 1;
-    }
-
     if (ui->drag.active && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
         RuneCUiDragState drag = ui->drag;
         ui->drag.active = 0;
@@ -2057,7 +1029,7 @@ int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h) {
         ui->drag.source_slot = -1;
 
         if (drag.source_kind == RUNEC_UI_CONTEXT_INVENTORY) {
-            int target = ui_inventory_slot_at(ui, &layout, mouse);
+            int target = ui_inventory_slot_at(&layout, mouse);
             float dx = mouse.x - drag.start.x;
             float dy = mouse.y - drag.start.y;
             int moved = fabsf(dx) > 3.0f || fabsf(dy) > 3.0f;
@@ -2090,21 +1062,9 @@ int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h) {
         if (handle_context_click(ui, mouse))
             return 1;
 
-        RuneCUiHitResult modal_hit = {0};
-        if (decoded_modal_hit(ui, &layout, screen_w, screen_h, mouse,
-                              &modal_hit)) {
-            if (modal_hit.component_id != 0)
-                decoded_left_click(ui, &modal_hit, mouse);
-            return 1;
-        }
-
         for (int i = 0; i < RUNEC_UI_TAB_COUNT; i++) {
             if (CheckCollisionPointRec(mouse, layout.tab[i])) {
                 ui->active_tab = (RuneCUiTab)i;
-                runec_ui_open_subinterface(ui, RUNEC_UI_MOUNT_SIDE_CONTENT,
-                                           ui->active_tab,
-                                           RUNEC_UI_TOP_SIDE_CONTAINER,
-                                           decoded_group_for_tab(ui->active_tab));
                 ui->tab_press_timer[i] = OSRS_TAB_PRESS_SECONDS;
                 ui->last_intent.kind = RUNEC_UI_INTENT_TAB;
                 ui->last_intent.primary = i;
@@ -2153,12 +1113,6 @@ int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h) {
             return 1;
         }
 
-        RuneCUiHitResult decoded_hit = {0};
-        if (decoded_side_hit(ui, &layout, mouse, &decoded_hit)
-                && decoded_left_click(ui, &decoded_hit, mouse)) {
-            return 1;
-        }
-
         if (ui->active_tab == RUNEC_UI_TAB_COMBAT) {
             const RuneCUiCombatStyleOption *style =
                 combat_style_at(ui, &layout, mouse);
@@ -2187,7 +1141,7 @@ int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h) {
                 return 1;
             }
         } else if (ui->active_tab == RUNEC_UI_TAB_INVENTORY) {
-            int slot = ui_inventory_slot_at(ui, &layout, mouse);
+            int slot = ui_inventory_slot_at(&layout, mouse);
             if (slot >= 0) {
                 if (ui->selected_target.kind == RUNEC_UI_SELECTED_ITEM) {
                     ui->last_intent.kind = RUNEC_UI_INTENT_SELECTED_ITEM_ON_ITEM;
@@ -2220,7 +1174,7 @@ int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h) {
                 return 1;
             }
         } else if (ui->active_tab == RUNEC_UI_TAB_EQUIPMENT) {
-            int slot = ui_equipment_slot_at(ui, &layout, mouse);
+            int slot = ui_equipment_slot_at(&layout, mouse);
             if (slot >= 0) {
                 ui->drag.active = 1;
                 ui->drag.source_kind = RUNEC_UI_CONTEXT_EQUIPMENT;
@@ -2268,19 +1222,6 @@ int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h) {
             }
         }
 
-        if (decoded_hit.component_id != 0)
-            return 1;
-    }
-
-    if (IsMouseButtonPressed(MOUSE_BUTTON_MIDDLE)) {
-        RuneCUiHitResult modal_hit = {0};
-        if (decoded_modal_hit(ui, &layout, screen_w, screen_h, mouse,
-                              &modal_hit)) {
-            runec_ui_clear_selected_target(ui);
-            if (modal_hit.component_id != 0)
-                open_decoded_context(ui, mouse, &modal_hit);
-            return 1;
-        }
     }
 
     if (IsMouseButtonPressed(MOUSE_BUTTON_MIDDLE) && mouse_over_ui(&layout, mouse)) {
@@ -2305,7 +1246,7 @@ int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h) {
             }
         }
         if (ui->active_tab == RUNEC_UI_TAB_INVENTORY) {
-            int slot = ui_inventory_slot_at(ui, &layout, mouse);
+            int slot = ui_inventory_slot_at(&layout, mouse);
             if (slot >= 0) {
                 static const char *actions[] = {"Use", "Examine", "Drop"};
                 static const char *empty_actions[] = {"Cancel"};
@@ -2323,7 +1264,7 @@ int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h) {
             }
         }
         if (ui->active_tab == RUNEC_UI_TAB_EQUIPMENT) {
-            int slot = ui_equipment_slot_at(ui, &layout, mouse);
+            int slot = ui_equipment_slot_at(&layout, mouse);
             if (slot >= 0) {
                 static const char *actions[] = {"Remove", "Examine"};
                 set_context(ui, mouse, g_equipment_names[slot], actions, 2);
@@ -2355,21 +1296,11 @@ int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h) {
                 return 1;
             }
         }
-        RuneCUiHitResult hit = {0};
-        if (decoded_side_hit(ui, &layout, mouse, &hit)
-                && open_decoded_context(ui, mouse, &hit)) {
-            return 1;
-        }
         static const char *actions[] = {"Cancel"};
         set_context(ui, mouse, "RuneC", actions, 1);
         return 1;
     }
 
-    RuneCUiHitResult capture_hit = {0};
-    if (decoded_modal_hit(ui, &layout, screen_w, screen_h, mouse,
-                          &capture_hit)) {
-        return 1;
-    }
     if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT) && !ui->context_open)
         return 0;
     return mouse_over_ui(&layout, mouse);
@@ -2983,47 +1914,12 @@ static void draw_placeholder_tab(const RuneCUiState *ui, const RuneCUiLayout *la
                        12, OSRS_ORANGE);
 }
 
-static void draw_decoded_dynamic_tab_overlay(const RuneCUiState *ui,
-                                             const RuneCUiLayout *layout) {
-    switch (ui->active_tab) {
-    case RUNEC_UI_TAB_INVENTORY:
-        break;
-    case RUNEC_UI_TAB_EQUIPMENT:
-        break;
-    case RUNEC_UI_TAB_PRAYER:
-        draw_prayer(ui, layout);
-        break;
-    case RUNEC_UI_TAB_SPELLBOOK:
-        draw_spellbook(ui, layout);
-        break;
-    case RUNEC_UI_TAB_SKILLS:
-        draw_skills(ui, layout);
-        break;
-    case RUNEC_UI_TAB_COMBAT:
-        draw_combat(ui, layout);
-        break;
-    default:
-        break;
-    }
-}
-
 static void draw_side(RuneCUiState *ui, const RuneCUiLayout *layout) {
     draw_side_chrome(ui, layout);
 
     if (ui->active_tab == RUNEC_UI_TAB_COMBAT) {
         draw_combat(ui, layout);
         return;
-    }
-
-    if (ui->decoded_ui_enabled && ui->decoded_ui_ready) {
-        const char *group = open_group_for_side_content(ui);
-        RuneCUiComponentOverrides overrides = decoded_overrides(ui);
-        if (group && runec_ui_interfaces_draw_group_ex(
-                &ui->interfaces, &ui->assets, group, layout->side_content,
-                &overrides)) {
-            draw_decoded_dynamic_tab_overlay(ui, layout);
-            return;
-        }
     }
 
     switch (ui->active_tab) {
@@ -3102,76 +1998,19 @@ static void draw_selected_target(const RuneCUiState *ui) {
     draw_text_shadow(ui, text, box.x + 5, box.y + 4, 11, OSRS_YELLOW);
 }
 
-static Rectangle open_interface_mount_rect(const RuneCUiState *ui,
-                                           const RuneCUiLayout *layout,
-                                           const RuneCUiOpenInterface *open,
-                                           int screen_w,
-                                           int screen_h) {
-    Rectangle screen = {0, 0, (float)screen_w, (float)screen_h};
-    if (ui && open && open->target_component_id != 0) {
-        const char *top_group =
-            open_group_for_mount(ui, RUNEC_UI_MOUNT_SCREEN, RUNEC_UI_TAB_NONE);
-        Rectangle target = {0};
-        if (top_group && runec_ui_interfaces_component_rect_by_id(
-                &ui->interfaces, top_group, open->target_component_id, screen,
-                &target)) {
-            return target;
-        }
-    }
-
-    switch (open ? open->mount : RUNEC_UI_MOUNT_SCREEN) {
-    case RUNEC_UI_MOUNT_MAP:
-        return layout->map;
-    case RUNEC_UI_MOUNT_SIDE_CONTENT:
-        return layout->side_content;
-    case RUNEC_UI_MOUNT_OVERLAY:
-    case RUNEC_UI_MOUNT_MODAL:
-    case RUNEC_UI_MOUNT_SCREEN:
-    default:
-        return screen;
-    }
-}
-
-static void draw_open_overlay_interfaces(RuneCUiState *ui,
-                                         const RuneCUiLayout *layout,
-                                         int screen_w,
-                                         int screen_h) {
-    if (!ui || !ui->decoded_ui_enabled || !ui->decoded_ui_ready)
-        return;
-    RuneCUiComponentOverrides overrides = decoded_overrides(ui);
-    for (int i = 0; i < ui->open_interface_count; i++) {
-        RuneCUiOpenInterface *open = &ui->open_interfaces[i];
-        if (!open->active || !open->group[0])
-            continue;
-        if (open->mount != RUNEC_UI_MOUNT_OVERLAY
-                && open->mount != RUNEC_UI_MOUNT_MODAL)
-            continue;
-        Rectangle mount =
-            open_interface_mount_rect(ui, layout, open, screen_w, screen_h);
-        runec_ui_interfaces_draw_group_ex(&ui->interfaces, &ui->assets,
-                                          open->group, mount, &overrides);
-    }
-}
-
 void runec_ui_draw(RuneCUiState *ui, int screen_w, int screen_h) {
     RuneCUiLayout layout;
     ui_layout(screen_w, screen_h, &layout);
-    apply_decoded_mounts(ui, screen_w, screen_h, &layout);
-    sync_decoded_component_overrides(ui);
 
     draw_chat_panel_chrome(ui, &layout);
     draw_minimap(ui, &layout);
     draw_side(ui, &layout);
-    draw_open_overlay_interfaces(ui, &layout, screen_w, screen_h);
     draw_selected_target(ui);
     draw_context(ui);
 }
 
-Rectangle runec_ui_chat_panel_rect(const RuneCUiState *ui,
-                                   int screen_w, int screen_h) {
+Rectangle runec_ui_chat_panel_rect(int screen_w, int screen_h) {
     RuneCUiLayout layout;
     ui_layout(screen_w, screen_h, &layout);
-    if (ui)
-        apply_decoded_mounts(ui, screen_w, screen_h, &layout);
     return layout.chat;
 }

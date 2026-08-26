@@ -3,7 +3,6 @@
 
 #include "raylib.h"
 #include "ui_assets.h"
-#include "ui_interfaces.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -14,9 +13,6 @@
 #define RUNEC_UI_MINIMAP_DOTS 256
 #define RUNEC_UI_ITEM_ICON_CACHE 512
 #define RUNEC_UI_SKILL_COUNT 24
-#define RUNEC_UI_OPEN_INTERFACES 32
-#define RUNEC_UI_COMPONENT_OVERRIDES 256
-#define RUNEC_UI_ITEM_CONTAINER_OVERRIDES 8
 #define RUNEC_UI_COMBAT_STYLE_COUNT 4
 
 typedef enum RuneCUiTab {
@@ -58,9 +54,6 @@ typedef enum RuneCUiIntentKind {
     RUNEC_UI_INTENT_SELECTED_SPELL,
     RUNEC_UI_INTENT_SELECTED_ITEM_ON_ITEM,
     RUNEC_UI_INTENT_SELECTED_SPELL_ON_ITEM,
-    RUNEC_UI_INTENT_SELECTED_ITEM_ON_COMPONENT,
-    RUNEC_UI_INTENT_SELECTED_SPELL_ON_COMPONENT,
-    RUNEC_UI_INTENT_COMPONENT_ACTION,
     RUNEC_UI_INTENT_SELECTED_TARGET_CANCEL
 } RuneCUiIntentKind;
 
@@ -111,8 +104,7 @@ typedef enum RuneCUiContextSourceKind {
     RUNEC_UI_CONTEXT_INVENTORY,
     RUNEC_UI_CONTEXT_EQUIPMENT,
     RUNEC_UI_CONTEXT_PRAYER,
-    RUNEC_UI_CONTEXT_SPELL,
-    RUNEC_UI_CONTEXT_COMPONENT
+    RUNEC_UI_CONTEXT_SPELL
 } RuneCUiContextSourceKind;
 
 typedef enum RuneCUiSelectedTargetKind {
@@ -125,7 +117,6 @@ typedef struct RuneCUiSelectedTarget {
     RuneCUiSelectedTargetKind kind;
     int source_slot;
     uint32_t source_item_id;
-    uint32_t source_component_id;
     char label[48];
     char verb[24];
 } RuneCUiSelectedTarget;
@@ -136,22 +127,6 @@ typedef struct RuneCUiDragState {
     int source_slot;
     Vector2 start;
 } RuneCUiDragState;
-
-typedef enum RuneCUiOpenMount {
-    RUNEC_UI_MOUNT_SCREEN = 0,
-    RUNEC_UI_MOUNT_MAP,
-    RUNEC_UI_MOUNT_SIDE_CONTENT,
-    RUNEC_UI_MOUNT_OVERLAY,
-    RUNEC_UI_MOUNT_MODAL
-} RuneCUiOpenMount;
-
-typedef struct RuneCUiOpenInterface {
-    int active;
-    RuneCUiOpenMount mount;
-    RuneCUiTab tab;
-    uint32_t target_component_id;
-    char group[48];
-} RuneCUiOpenInterface;
 
 typedef struct RuneCUiState {
     RuneCUiTab active_tab;
@@ -181,18 +156,14 @@ typedef struct RuneCUiState {
     int skill_base[RUNEC_UI_SKILL_COUNT];
     int skill_total;
 
-    int magic_filter_open;
-
     int context_open;
     Vector2 context_pos;
     char context_title[48];
     char context_actions[RUNEC_UI_CONTEXT_ACTIONS][32];
-    int context_action_op[RUNEC_UI_CONTEXT_ACTIONS];
     int context_action_count;
     RuneCUiContextSourceKind context_source_kind;
     int context_source_slot;
     uint32_t context_source_item_id;
-    uint32_t context_source_component_id;
 
     RuneCUiSelectedTarget selected_target;
     RuneCUiDragState drag;
@@ -206,15 +177,6 @@ typedef struct RuneCUiState {
     int item_icon_count;
 
     RuneCUiAssets assets;
-    RuneCUiInterfaceStore interfaces;
-    int decoded_ui_enabled;
-    int decoded_ui_ready;
-    RuneCUiOpenInterface open_interfaces[RUNEC_UI_OPEN_INTERFACES];
-    int open_interface_count;
-    RuneCUiComponentOverride component_overrides[RUNEC_UI_COMPONENT_OVERRIDES];
-    int component_override_count;
-    RuneCUiItemContainerOverride item_container_overrides[RUNEC_UI_ITEM_CONTAINER_OVERRIDES];
-    int item_container_override_count;
 } RuneCUiState;
 
 void runec_ui_init(RuneCUiState *ui);
@@ -229,21 +191,9 @@ void runec_ui_set_item_icon(RuneCUiState *ui, uint32_t icon_item_id, Texture2D t
 void runec_ui_set_combat_weapon_name(RuneCUiState *ui, const char *name);
 void runec_ui_set_combat_style_profile(RuneCUiState *ui, int core_weapon_category);
 void runec_ui_clear_selected_target(RuneCUiState *ui);
-int runec_ui_set_component_text(RuneCUiState *ui, uint32_t component_id,
-                                const char *text);
-int runec_ui_set_component_hidden(RuneCUiState *ui, uint32_t component_id,
-                                  int hidden);
-int runec_ui_set_component_item(RuneCUiState *ui, uint32_t component_id,
-                                uint32_t item_id, uint32_t icon_item_id,
-                                int quantity, int selected);
-int runec_ui_open_top_interface(RuneCUiState *ui, const char *group);
-int runec_ui_open_subinterface(RuneCUiState *ui, RuneCUiOpenMount mount,
-                               RuneCUiTab tab, uint32_t target_component_id,
-                               const char *group);
 int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h);
 void runec_ui_draw(RuneCUiState *ui, int screen_w, int screen_h);
-Rectangle runec_ui_chat_panel_rect(const RuneCUiState *ui,
-                                   int screen_w, int screen_h);
+Rectangle runec_ui_chat_panel_rect(int screen_w, int screen_h);
 const char *runec_ui_tab_name(RuneCUiTab tab);
 
 #endif

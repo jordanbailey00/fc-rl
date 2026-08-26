@@ -13,7 +13,6 @@ set(FC_VIEWER_SOURCES
     src/fc_projectile_visual.c
     src/ui.c
     src/ui_assets.c
-    src/ui_interfaces.c
 )
 
 set(RAYLIB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/raylib" CACHE PATH "Raylib root")

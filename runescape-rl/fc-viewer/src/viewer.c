@@ -243,11 +243,6 @@ static const uint16_t NPC_ANIM_DEATH[] = {
 #define FC_REWARD_CONFIG_PATH_MAX 256
 #define FC_WORLD_ORIGIN_X 2368
 #define FC_WORLD_ORIGIN_Y 5056
-#define VIEWER_RUNEC_UI_COMPONENT_ID(group_id, file_id) \
-    ((((uint32_t)(group_id)) << 16) | ((uint32_t)(file_id) & 0xffffu))
-#define VIEWER_RUNEC_TOP_SIDE_CONTAINER \
-    VIEWER_RUNEC_UI_COMPONENT_ID(161u, 73u)
-
 typedef enum {
     HITSPLAT_DAMAGE = 0,
     HITSPLAT_HEAL = 1,
@@ -3264,18 +3259,9 @@ static void draw_scene(ViewerState* v) {
 /* UI drawing                                                                */
 /* ======================================================================== */
 
-static Rectangle runec_side_content_rect(const ViewerState* v) {
+static Rectangle runec_side_content_rect(void) {
     int screen_w = GetScreenWidth();
     int screen_h = GetScreenHeight();
-    if (v && v->ui.decoded_ui_enabled && v->ui.decoded_ui_ready) {
-        Rectangle screen = {0, 0, (float)screen_w, (float)screen_h};
-        Rectangle rect = {0};
-        if (runec_ui_interfaces_component_rect_by_id(
-                &v->ui.interfaces, "toplevel_osrs_stretch",
-                VIEWER_RUNEC_TOP_SIDE_CONTAINER, screen, &rect)) {
-            return rect;
-        }
-    }
 
     Rectangle side = {
         (float)screen_w - RUNEC_OSRS_SIDE_MENU_W,
@@ -3296,9 +3282,8 @@ static Rectangle runec_side_content_rect(const ViewerState* v) {
 #define RUNEC_CONSOLE_NPC_ROW_H 13
 #define RUNEC_CONSOLE_TPS_COLS 4
 
-static Rectangle runec_console_panel_rect(const ViewerState* v) {
-    return runec_ui_chat_panel_rect(v ? &v->ui : NULL,
-                                    GetScreenWidth(), GetScreenHeight());
+static Rectangle runec_console_panel_rect(void) {
+    return runec_ui_chat_panel_rect(GetScreenWidth(), GetScreenHeight());
 }
 
 static Rectangle runec_console_body_rect(Rectangle panel) {
@@ -3549,7 +3534,7 @@ static void draw_runec_console(ViewerState* v) {
     static const char* labels[RUNEC_CONSOLE_TAB_COUNT] = {
         "Controls", "Player", "Obs", "Mask", "Reward", "Log"
     };
-    Rectangle panel = runec_console_panel_rect(v);
+    Rectangle panel = runec_console_panel_rect();
     Rectangle body = runec_console_body_rect(panel);
     DrawRectangleRec(body, CLITERAL(Color){0, 0, 0, 76});
     if (v->console_tab == 0)
@@ -3581,7 +3566,7 @@ static void draw_runec_console(ViewerState* v) {
 
 static int process_runec_console_input(ViewerState* v) {
     if (!v) return 0;
-    Rectangle panel = runec_console_panel_rect(v);
+    Rectangle panel = runec_console_panel_rect();
     Vector2 mouse = GetMousePosition();
     if (!CheckCollisionPointRec(mouse, panel))
         return 0;
@@ -3790,7 +3775,7 @@ static void draw_runec_prayer_tab(ViewerState* v, Rectangle content) {
 }
 
 static void draw_runec_side_overrides(ViewerState* v) {
-    Rectangle content = runec_side_content_rect(v);
+    Rectangle content = runec_side_content_rect();
     if (v->ui.active_tab == RUNEC_UI_TAB_PRAYER)
         draw_runec_prayer_tab(v, content);
 }
@@ -3803,7 +3788,7 @@ static int process_runec_prayer_click(ViewerState* v) {
     if (!left_click && !right_click)
         return 0;
 
-    Rectangle content = runec_side_content_rect(v);
+    Rectangle content = runec_side_content_rect();
     Vector2 mouse = GetMousePosition();
     if (!CheckCollisionPointRec(mouse, content))
         return 0;

@@ -25,7 +25,6 @@ from .config import (
     INDEX_CLIENTSCRIPTS,
     INDEX_CONFIGS,
     INDEX_FRAMES,
-    INDEX_INTERFACES,
     INDEX_MAPS,
     INDEX_MODELS,
     INDEX_SKELETONS,
@@ -71,13 +70,6 @@ from .definitions import (
 )
 from .groups import split_group
 from .index import IndexManifest, parse_index_manifest
-from .interfaces import (
-    IF3_LISTENER_NAMES,
-    InterfaceDef,
-    decode_interface,
-    load_all_interface_groups,
-    load_interface_group,
-)
 from .locations import (
     LocationPlacement,
     iter_location_placements,
@@ -134,18 +126,15 @@ __all__ = [
     "CONFIG_VARP",
     "FrameBaseDef",
     "FrameDef",
-    "IF3_LISTENER_NAMES",
     "INDEX_CLIENTSCRIPTS",
     "INDEX_CONFIGS",
     "INDEX_FRAMES",
-    "INDEX_INTERFACES",
     "INDEX_MAPS",
     "INDEX_MODELS",
     "INDEX_SKELETONS",
     "INDEX_SPRITES",
     "INDEX_TEXTURES",
     "IndexManifest",
-    "InterfaceDef",
     "ItemDef",
     "LocationDef",
     "LocationPlacement",
@@ -166,7 +155,6 @@ __all__ = [
     "decode_frame",
     "decode_framebase",
     "decode_item_definition",
-    "decode_interface",
     "decode_legacy_frame_archive",
     "decode_legacy_framebase_archive",
     "decode_location_definition",
@@ -186,8 +174,6 @@ __all__ = [
     "hsl15_to_rgb",
     "iter_location_placements",
     "load_framebases",
-    "load_all_interface_groups",
-    "load_interface_group",
     "load_model",
     "load_model_bytes",
     "load_required_frames",

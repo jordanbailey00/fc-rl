@@ -778,6 +778,36 @@ The complete suite passes 163/163 tests, and decoded-interface startup was
 smoke-tested successfully. Throughput was 953,900 SPS and training uptime was
 100.651127 seconds.
 
+## Comparison 24: removed decoded-interface subsystem
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`ww4xmjoi`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/ww4xmjoi) (`splendid-dawn-1250`) |
+| Tag | `v4.5_refactor_decoded_ui_removed_100m` |
+| Git commit at run start | `ca77977a1` plus the documented uncommitted decoded-interface removal |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `446a78a42f8a88b9435a52169914a7ee724980170aff5e0e15010bc92959ab4b` |
+| Backend binary SHA-256 | `e0015300b9d84123fda37f2539db41155ff6020f262beb50674837cc8b0d88a9` |
+| Backend source SHA-256 | `f0a929522f88ee174c13762df2570fddbfeb1d0e23df0f67a1f40d0c6e2a72e3` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260826T035601Z-train-1474060.json` |
+
+Result: behavioral parity remains exact against baseline `m916qfsv` and the
+preceding decoded-state cleanup `r4hne4fg`. All 124 `env/*` metrics, agent
+steps, epoch, and all seven policy/value/entropy/KL/loss values are
+byte-for-byte equal. Each complete 150-field summary has 136 exact matches;
+the 14 differences are only timestamps, wall-clock performance, throughput,
+and CPU/GPU memory telemetry.
+
+The unused decoded-interface subsystem, its 266,898-byte asset, and its export
+pipeline were removed. This includes decoded rendering and hit testing,
+generic interface/modal/overlay management, override synchronization, and
+listener/trigger dispatch. The fixed RuneC UI and its future-facing
+non-functional controls remain. The change removes 3,611 net physical source
+lines (3,319 non-comment code lines), and the suite passes 163/163 tests. A
+real Raylib/OpenGL viewer startup and render smoke test also passed. Throughput
+was 899,453 SPS and training uptime was 128.337457 seconds.
+
 ## Reproduction command
 
 ```bash
