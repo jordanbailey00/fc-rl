@@ -16,10 +16,9 @@ runescape-rl/build/
 *.md
 !README.md
 !baseline.md
-!refactor.md
-!osrs_parity.md
 !sweep_top8.md
 !**/README.md
+!runescape-rl/docs/archive/fc_cleanup_and_parity_history.md
 
 # Stray wandb run files written to repo root, and locally-built ELF
 /config.yaml

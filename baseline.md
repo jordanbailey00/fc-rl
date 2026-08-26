@@ -1,10 +1,11 @@
 # 100M Refactor Training Baseline
 
-This is the pre-refactor behavioral baseline for the cleanup work tracked in
-`refactor.md`. After each behavior-preserving refactor, run the same dedicated
-100M configuration from a cold start and compare its final W&B summary with the
-values below. Deterministic core/replay tests remain the primary correctness
-guardrail; this training run is an additional end-to-end regression check.
+This is the pre-refactor behavioral baseline for the cleanup work now recorded
+in `runescape-rl/docs/archive/fc_cleanup_and_parity_history.md`. After each
+behavior-preserving refactor, the same dedicated 100M configuration was run
+from a cold start and its final W&B summary compared with the values below.
+Deterministic core/replay tests remained the primary correctness guardrail;
+this training run was an additional end-to-end regression check.
 
 ## Run identity
 
