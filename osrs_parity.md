@@ -10,7 +10,12 @@ Status: Implemented on `dev` after the documented review and approval.
 
 All findings B1-B7 and F1-F5 are implemented. The authoritative core now uses rectangular-exclusive melee reach, closest-point fixed-point LOS, sequential current occupancy, native size-aware leading-edge masks, live moving-target combat routes, move-near click routing, and native BFS expansion order. The viewer now samples centered terrain height, uses the native visual queue bound and resynchronization behavior, applies untargeted turn slowdown, faces healers toward authoritative heal targets, and submits movement/interaction requests through the core action lifecycle instead of writing player route or target fields.
 
-Because these mechanics intentionally change deterministic simulation behavior, `FC_STATE_HASH_VERSION` is now 3. Existing policy observation, action, and reward layouts are unchanged, but previous checkpoints should not be treated as a post-parity training baseline.
+These mechanics intentionally changed deterministic simulation behavior and
+raised `FC_STATE_HASH_VERSION` to 3. The later redundant-state cleanup tracked
+in `refactor.md` raised the diagnostic schema to version 4 without changing
+gameplay. Existing policy observation, action, and reward layouts remain
+unchanged, but pre-parity checkpoints should not be treated as a post-parity
+training baseline.
 
 Validation includes focused cases for every backend finding, the concrete Jad `(13,9) -> (14,10)` size-5 transition from this audit, visual queue/snap/turn behavior, heal-target identity, deterministic hash ownership, linked-versus-Puffer replay agreement, and the full repository test suite. An independent exhaustive check of every valid Fight Caves anchor, all eight directions, and actor sizes 1-5 found zero differences between the implemented step validator and the RSMod masks.
 

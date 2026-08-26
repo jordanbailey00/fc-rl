@@ -470,11 +470,6 @@ add_test(NAME phase4_zero_damage_reward
 set_tests_properties(phase4_zero_damage_reward PROPERTIES
     LABELS "phase4;guardrail")
 
-add_test(NAME phase4_safespot_reward_disabled
-    COMMAND phase2_guardrails_core safespot_reward_disabled)
-set_tests_properties(phase4_safespot_reward_disabled PROPERTIES
-    LABELS "phase4;guardrail")
-
 add_test(NAME revamp_npc_heal_penalty_actual_heal
     COMMAND phase2_guardrails_core npc_heal_penalty_actual_heal)
 set_tests_properties(revamp_npc_heal_penalty_actual_heal PROPERTIES

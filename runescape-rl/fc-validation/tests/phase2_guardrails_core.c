@@ -394,33 +394,6 @@ static int test_zero_damage_reward(void) {
     return fail(msg);
 }
 
-static int test_safespot_reward_disabled(void) {
-    FcState state;
-    FcRewardParams params;
-    FcRewardRuntime runtime;
-    FcRewardBreakdown breakdown;
-
-    make_open_manual_state(&state, 10, 10);
-    fc_npc_spawn(&state.npcs[0], NPC_TZ_KIH, 20, 10, 0);
-    state.npcs_remaining = 1;
-    state.safespot_attack_this_tick = 1;
-
-    memset(&params, 0, sizeof(params));
-    fc_reward_runtime_reset(&runtime);
-    breakdown = fc_reward_compute_breakdown(&state, &params, &runtime);
-
-    if (fabsf(breakdown.total) < 0.0001f) {
-        fc_destroy(&state);
-        return pass("direct safespot reward is disabled while LOS mechanics remain intact");
-    }
-
-    char msg[160];
-    snprintf(msg, sizeof(msg), "safespot reward still affects total: total=%.4f",
-             breakdown.total);
-    fc_destroy(&state);
-    return fail(msg);
-}
-
 static int test_npc_heal_penalty_actual_heal(void) {
     FcState state;
     FcRewardParams params;
@@ -3491,7 +3464,7 @@ static int test_osrs_bfs_expansion_order(void) {
 
 int main(int argc, char** argv) {
     if (argc != 2) {
-        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|safespot_reward_disabled|npc_heal_penalty_actual_heal|prayer_loss_penalty|correct_prayer_reward_all_npcs|no_attack_penalty_wave_scaled|player_death_progress_scaled|simple_reward_zeroed_channels|npc_kill_reward_eligibility|tz_kek_split_kill_rewards|wave_clear_reward_scaling|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|spawn_search_and_slot_allocation|special_tz_kih_prayer_drain|special_mejkot_heal_replaces_attack|special_adjacent_style_selection|special_hurkot_behavior|mechanics_observation_events|safespot_los|diagonal_corner_clipping|directional_movement_wall_boundaries|directional_movement_diagonal_and_sized|directional_movement_route_regression|npc_moves_when_attack_blocked|movement_cannot_enable_same_tick_attack_range|movement_cannot_enable_same_tick_attack_los|attack_suppresses_same_tick_movement_when_already_valid|movement_resumes_tick_after_attack|step1_movement_only_clears_stale_target|step1_projectile_survives_movement_cancel|step1_attack_move_out_of_range_clears_target|step1_directional_cancels_old_approach_route|step1_directional_beats_old_tile_route|step1_attack_approach_without_explicit_movement|step2_occupancy_marks_and_ignores_entities|step2_dynamic_footprint_static_and_occupied|step2_entity_wrapper_ignores_self_blocks_others|step2_dynamic_diagonal_blocks_occupied_corner|step2_start_reservation_blocks_swap_tile|player_directional_ignores_npc_occupancy|player_tile_route_accepts_npc_occupied_target|player_prebuilt_route_ignores_npc_and_keeps_static_collision|player_move_mask_ignores_npc_and_keeps_static_collision|player_combat_approach_ignores_npc_occupancy|step3_npc_blocked_by_other_npc|step3_large_npc_blocked_by_healer_footprint|step3_tz_kek_split_avoids_occupied_tiles|step4_ranged_npc_chases_player_bounds_not_los_tile|step4_large_npc_chase_checks_full_footprint|step4_npc_stays_when_current_position_can_attack|invalid_action_classes|hp_regeneration_interval>\n",
+        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|npc_heal_penalty_actual_heal|prayer_loss_penalty|correct_prayer_reward_all_npcs|no_attack_penalty_wave_scaled|player_death_progress_scaled|simple_reward_zeroed_channels|npc_kill_reward_eligibility|tz_kek_split_kill_rewards|wave_clear_reward_scaling|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|spawn_search_and_slot_allocation|special_tz_kih_prayer_drain|special_mejkot_heal_replaces_attack|special_adjacent_style_selection|special_hurkot_behavior|mechanics_observation_events|safespot_los|diagonal_corner_clipping|directional_movement_wall_boundaries|directional_movement_diagonal_and_sized|directional_movement_route_regression|npc_moves_when_attack_blocked|movement_cannot_enable_same_tick_attack_range|movement_cannot_enable_same_tick_attack_los|attack_suppresses_same_tick_movement_when_already_valid|movement_resumes_tick_after_attack|step1_movement_only_clears_stale_target|step1_projectile_survives_movement_cancel|step1_attack_move_out_of_range_clears_target|step1_directional_cancels_old_approach_route|step1_directional_beats_old_tile_route|step1_attack_approach_without_explicit_movement|step2_occupancy_marks_and_ignores_entities|step2_dynamic_footprint_static_and_occupied|step2_entity_wrapper_ignores_self_blocks_others|step2_dynamic_diagonal_blocks_occupied_corner|step2_start_reservation_blocks_swap_tile|player_directional_ignores_npc_occupancy|player_tile_route_accepts_npc_occupied_target|player_prebuilt_route_ignores_npc_and_keeps_static_collision|player_move_mask_ignores_npc_and_keeps_static_collision|player_combat_approach_ignores_npc_occupancy|step3_npc_blocked_by_other_npc|step3_large_npc_blocked_by_healer_footprint|step3_tz_kek_split_avoids_occupied_tiles|step4_ranged_npc_chases_player_bounds_not_los_tile|step4_large_npc_chase_checks_full_footprint|step4_npc_stays_when_current_position_can_attack|invalid_action_classes|hp_regeneration_interval>\n",
                 argv[0]);
         return 2;
     }
@@ -3501,7 +3474,6 @@ int main(int argc, char** argv) {
     if (strcmp(argv[1], "target_identity") == 0) return test_target_identity();
     if (strcmp(argv[1], "npc_type_obs_one_hot") == 0) return test_npc_type_obs_one_hot();
     if (strcmp(argv[1], "zero_damage_reward") == 0) return test_zero_damage_reward();
-    if (strcmp(argv[1], "safespot_reward_disabled") == 0) return test_safespot_reward_disabled();
     if (strcmp(argv[1], "npc_heal_penalty_actual_heal") == 0) return test_npc_heal_penalty_actual_heal();
     if (strcmp(argv[1], "prayer_loss_penalty") == 0) return test_prayer_loss_penalty();
     if (strcmp(argv[1], "correct_prayer_reward_all_npcs") == 0) return test_correct_prayer_reward_all_npcs();

@@ -32,7 +32,7 @@ FC_TEST_EXPORT const char* fc_training_contract_json(void) {
            "\"action_version\":\"fight_caves_multidiscrete_3_head_no_supplies_v3_prayer8_stationary_attack_tick\","
            "\"reward_version\":\"fight_caves_v4_progress_npc_heal_penalty_m0005_prayer_snapshot_flick_drain\","
            "\"prayer_timing_version\":\"fight_caves_prayer_timing_v1_tick_start_snapshot_flick_drain_jad_lock\","
-           "\"state_hash_version\":3,"
+           "\"state_hash_version\":4,"
            "\"active_loadout\":\"FC_LOADOUT_SOTA_TBOW\""
            "}";
 }

@@ -304,7 +304,6 @@ typedef struct {
     int attack_timer;       /* tick countdown to next attack */
     int attack_speed;       /* ticks between attacks */
     int attack_range;       /* tile distance for ranged/magic, 1 for melee */
-    int max_hit_tenths;     /* primary-style compatibility maximum */
 
     /* AI */
     int movement_speed;     /* 1 = walk, 2 = run */
@@ -517,8 +516,6 @@ typedef struct {
     int idle_this_tick;
     int food_used_this_tick;
     int prayer_potion_used_this_tick;
-    int pre_eat_hp;                 /* HP before eating (for reward threshold check) */
-    int pre_drink_prayer;           /* prayer before drinking (for reward threshold check) */
     int jad_heal_procs_this_tick;   /* number of Yt-HurKot heal procs that restored Jad HP */
     int npc_heal_procs_this_tick;   /* number of NPC heal procs that restored any NPC HP */
     int npc_heal_amount_this_tick;  /* total NPC HP restored this tick */
@@ -530,7 +527,6 @@ typedef struct {
     float progress_required_work_remaining;
     float progress_current_wave_progress;
     float progress_cave_progress;
-    float progress_delta_this_tick;
     int progress_ticks_since_positive;
 
     /* Episode-level analytics (cumulative, zeroed on fc_reset via memset) */
@@ -553,7 +549,6 @@ typedef struct {
     int ep_ketzek_melee_ticks;  /* ticks with any Ket-Zek at melee distance */
     int ep_attack_ready_ticks;  /* ticks where attack cooldown was ready */
     int ep_attack_attempt_ticks;/* ready ticks where a real attack fired */
-    int safespot_attack_this_tick; /* 1 if player attacked with no NPC adjacent */
     int ep_invalid_action_classes[FC_INVALID_ACTION_CLASS_COUNT];
     int ep_damage_to_npc_type[NPC_TYPE_COUNT];       /* player damage by NPC type */
     int ep_resolved_hits_to_npc_type[NPC_TYPE_COUNT];/* all resolved player hitsplats, including 0s */

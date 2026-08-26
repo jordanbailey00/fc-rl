@@ -53,7 +53,6 @@ static void clear_per_tick_flags(FcState* state) {
     state->correct_danger_prayer = 0;
     state->wrong_danger_prayer = 0;
     state->attack_attempt_this_tick = 0;
-    state->safespot_attack_this_tick = 0;
     state->invalid_action_this_tick = 0;
     for (int i = 0; i < FC_INVALID_ACTION_CLASS_COUNT; i++) {
         state->invalid_action_class_this_tick[i] = 0;
@@ -62,8 +61,6 @@ static void clear_per_tick_flags(FcState* state) {
     state->idle_this_tick = 0;
     state->food_used_this_tick = 0;
     state->prayer_potion_used_this_tick = 0;
-    state->pre_eat_hp = 0;
-    state->pre_drink_prayer = 0;
     state->jad_heal_procs_this_tick = 0;
     state->npc_heal_procs_this_tick = 0;
     state->npc_heal_amount_this_tick = 0;
@@ -193,8 +190,8 @@ static void apply_player_supplies(FcState* state, int eat_action,
             ? &player->food_timer : &player->combo_timer;
         int cooldown = eat_action == FC_EAT_SHARK
             ? FC_FOOD_COOLDOWN_TICKS : FC_COMBO_EAT_TICKS;
-        state->pre_eat_hp = player->current_hp;
-        state->ep_food_pre_hp_sum += state->pre_eat_hp;
+        int pre_eat_hp = player->current_hp;
+        state->ep_food_pre_hp_sum += pre_eat_hp;
         int hp_missing = player->max_hp - player->current_hp;
         if (heal > hp_missing) state->ep_food_overhealed++;
         state->ep_food_eaten++;
@@ -211,8 +208,8 @@ static void apply_player_supplies(FcState* state, int eat_action,
 
     if (drink_action == FC_DRINK_PRAYER_POT &&
         fc_drink_action_valid(state, drink_action)) {
-        state->pre_drink_prayer = player->current_prayer;
-        state->ep_pot_pre_prayer_sum += state->pre_drink_prayer;
+        int pre_drink_prayer = player->current_prayer;
+        state->ep_pot_pre_prayer_sum += pre_drink_prayer;
         int prayer_missing = player->max_prayer - player->current_prayer;
         state->ep_pots_used++;
         if (player->current_prayer > player->max_prayer / 5) {
@@ -300,17 +297,6 @@ static void launch_player_attack(FcState* state, FcNpc* target, int distance) {
         player->ammo_count--;
     }
     player->hit_landed_this_tick = 1;
-
-    int any_adjacent = 0;
-    for (int i = 0; i < FC_MAX_NPCS; i++) {
-        FcNpc* other = &state->npcs[i];
-        if (other->active && !other->is_dead &&
-            fc_distance_to_npc(player->x, player->y, other) <= 1) {
-            any_adjacent = 1;
-            break;
-        }
-    }
-    if (!any_adjacent) state->safespot_attack_this_tick = 1;
 }
 
 static void record_player_target_held(FcState* state, const FcNpc* target) {

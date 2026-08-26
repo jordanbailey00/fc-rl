@@ -141,7 +141,6 @@ static uint32_t fc_hash_npc(uint32_t hash, const FcNpc* npc) {
     FC_HASH_I32(npc->attack_timer);
     FC_HASH_I32(npc->attack_speed);
     FC_HASH_I32(npc->attack_range);
-    FC_HASH_I32(npc->max_hit_tenths);
     FC_HASH_I32(npc->movement_speed);
     FC_HASH_I32(npc->heal_timer);
     FC_HASH_I32(npc->heal_amount);
@@ -224,8 +223,6 @@ uint32_t fc_state_hash(const FcState* state) {
     FC_HASH_I32(state->idle_this_tick);
     FC_HASH_I32(state->food_used_this_tick);
     FC_HASH_I32(state->prayer_potion_used_this_tick);
-    FC_HASH_I32(state->pre_eat_hp);
-    FC_HASH_I32(state->pre_drink_prayer);
     FC_HASH_I32(state->jad_heal_procs_this_tick);
     FC_HASH_I32(state->npc_heal_procs_this_tick);
     FC_HASH_I32(state->npc_heal_amount_this_tick);
@@ -236,7 +233,6 @@ uint32_t fc_state_hash(const FcState* state) {
     FC_HASH_F32(state->progress_required_work_remaining);
     FC_HASH_F32(state->progress_current_wave_progress);
     FC_HASH_F32(state->progress_cave_progress);
-    FC_HASH_F32(state->progress_delta_this_tick);
     FC_HASH_I32(state->progress_ticks_since_positive);
 
     FC_HASH_I32(state->ep_ticks_pray_melee);
@@ -258,7 +254,6 @@ uint32_t fc_state_hash(const FcState* state) {
     FC_HASH_I32(state->ep_ketzek_melee_ticks);
     FC_HASH_I32(state->ep_attack_ready_ticks);
     FC_HASH_I32(state->ep_attack_attempt_ticks);
-    FC_HASH_I32(state->safespot_attack_this_tick);
     for (int i = 0; i < FC_INVALID_ACTION_CLASS_COUNT; ++i) {
         FC_HASH_I32(state->ep_invalid_action_classes[i]);
     }

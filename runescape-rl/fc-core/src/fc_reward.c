@@ -165,7 +165,6 @@ void fc_reward_sync_progress_state(
     state->progress_required_work_remaining = runtime->last_required_work_remaining;
     state->progress_current_wave_progress = runtime->last_current_wave_progress;
     state->progress_cave_progress = runtime->last_cave_progress;
-    state->progress_delta_this_tick = runtime->last_progress_delta;
     state->progress_ticks_since_positive = runtime->ticks_since_positive_progress;
 }
 

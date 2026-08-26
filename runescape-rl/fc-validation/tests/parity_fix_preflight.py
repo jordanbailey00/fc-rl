@@ -53,7 +53,7 @@ EXPECTED_CONTRACT = {
     "action_version": ACTION_VERSION,
     "reward_version": REWARD_VERSION,
     "prayer_timing_version": PRAYER_TIMING_VERSION,
-    "state_hash_version": 3,
+    "state_hash_version": 4,
     "active_loadout": ACTIVE_LOADOUT,
 }
 

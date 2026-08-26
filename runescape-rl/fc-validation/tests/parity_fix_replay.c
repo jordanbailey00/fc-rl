@@ -230,13 +230,16 @@ static void print_player(FILE* output, const FcPlayer* player) {
 static void print_npcs(FILE* output, const FcState* state) {
     for (int i = 0; i < FC_MAX_NPCS; i++) {
         const FcNpc* npc = &state->npcs[i];
+        const FcNpcStats* stats = fc_npc_get_stats(npc->npc_type);
+        int primary_max_hit = fc_npc_max_hit_tenths_for_style(
+            stats, stats->attack_style);
         fprintf(output,
                 "%s%d:[%d,%d,%d,%d,%d,%d/%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d]",
                 i == 0 ? "" : ",", i, npc->active, npc->npc_type,
                 npc->spawn_index, npc->x, npc->y, npc->current_hp,
                 npc->max_hp, npc->is_dead, npc->death_timer,
                 npc->attack_style, npc->attack_timer, npc->attack_speed,
-                npc->attack_range, npc->max_hit_tenths, npc->heal_timer,
+                npc->attack_range, primary_max_hit, npc->heal_timer,
                 npc->heal_target_idx, npc->num_pending_hits);
     }
 }

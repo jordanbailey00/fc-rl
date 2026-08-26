@@ -396,19 +396,39 @@ decreased by 9 LOC.
   preceding run `nffnh657` on all 124 `env/*` values and every non-performance
   summary value.
 
-### Defer state-field deletion until an intentional hash-contract change
+### Revisit unused hashed state fields
 
-The second pass also found fields that appear to have no live consumer beyond
-assignment, deterministic hashing, and tests: `pre_eat_hp`,
-`pre_drink_prayer`, `safespot_attack_this_tick`, and
-`progress_delta_this_tick`. `FcNpc.max_hit_tenths` is explicitly a compatibility
-field rather than the live combat authority.
+Status: implemented as an intentional state-hash contract migration from
+version 3 to version 4. Production code decreased by 25 LOC.
 
-These are not behavior-neutral deletions under the current guardrails because
-all are part of the versioned state hash. Revisit them together only during an
-intentional state-hash version change, after confirming that no external replay
-or diagnostic tooling consumes them. Do not mix their removal into the
-behavior-preserving refactors above.
+- Removed `pre_eat_hp` and `pre_drink_prayer` from `FcState`. Their only live
+  calculation now remains local to supply handling, while the existing
+  cumulative consumable analytics retain the same values.
+- Removed `progress_delta_this_tick`; the authoritative value remains in
+  `FcRewardRuntime`, and no observation, reward, metric, or viewer consumed the
+  state copy.
+- Removed `safespot_attack_this_tick` and its per-attack scan over every NPC.
+  No reward or observation consumed the flag. The test that only assigned this
+  dead field and asserted a zero reward was removed; actual LOS/safespot
+  mechanics and reward-channel tests remain.
+- Removed `FcNpc.max_hit_tenths`. Combat, observations, validation, replay
+  diagnostics, and the viewer now use the immutable style-specific NPC stats.
+  The debug overlay consequently reports the maximum for the NPC's current
+  attack style rather than a spawn-time compatibility value.
+- `FC_STATE_HASH_VERSION` is now 4, with an independent version-4 field oracle
+  and synthetic golden hash `0x569a1fb6`. Compiled-contract fixtures,
+  preflight, manifests, checkpoint validation, and evaluator expectations were
+  updated together. Version-3 checkpoint sidecars intentionally do not satisfy
+  the version-4 contract identity.
+- The version-4 trace contains the same 628 ticks as version 3 and is
+  byte-for-byte equal after normalizing the intentionally changed hash/version
+  fields. RNG, transitions, observations, masks, reward features, and scalar
+  rewards are unchanged. Its raw SHA-256 is
+  `e81867f5b0e9dd4c60917862030bb2daf438eff1b20b540d3019b7c1af70e628`.
+- All 164 repository tests and the viewer, standalone, CPU, and CUDA builds
+  pass. The 100M W&B regression `3zvy6nuq` exactly matches baseline `m916qfsv`
+  and preceding run `z8rraat7` on all 124 `env/*` values and every
+  non-performance summary value.
 
 ## Preserve these components
 
@@ -425,7 +445,7 @@ behavior-preserving refactors above.
 
 - Do not change gameplay rules, observations, action semantics, rewards,
   terminal behavior, state hashes, or checkpoint contracts as part of these
-  refactors.
+  refactors, except for the explicit versioned hash migration recorded above.
 - Separate deletion-only cleanup from structural refactors so behavioral drift
   is easy to isolate.
 - Run the complete core, training-contract, viewer, and replay validation suites

@@ -585,6 +585,34 @@ Production code decreased by 9 LOC. Throughput was 946,812 SPS and training
 uptime was 105.416005 seconds, comparable to the preceding full-utilization
 run's 953,842 SPS and 103.832579 seconds.
 
+## Comparison 17: removed unused hashed state fields
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`3zvy6nuq`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/3zvy6nuq) (`ruby-durian-1243`) |
+| Tag | `v4.5_refactor_hashed_state_fields_100m` |
+| Git commit at run start | `965c05321` plus the documented uncommitted state/hash refactor |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `446a78a42f8a88b9435a52169914a7ee724980170aff5e0e15010bc92959ab4b` |
+| Backend binary SHA-256 | `0483e5a17265fec97b090d7f613716de2115754e14091cb99b955505e971673c` |
+| Backend source SHA-256 | `3f171ba9e2b9c53ae11364df2fb15bc258dcca239126cf9901a5c4b8749ae3f8` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260826T001025Z-train-1347584.json` |
+
+Result: behavioral parity is exact against baseline `m916qfsv` and preceding
+comparison `z8rraat7`. All 124 `env/*` metrics, agent steps, epoch, and
+policy/value/entropy/KL/loss values are byte-for-byte equal. Against both runs,
+135 of 150 summary values match exactly; the 15 differences are only
+timestamps, wall-clock performance, throughput, and utilization telemetry.
+
+Four unused `FcState` fields and one redundant `FcNpc` field were removed, and
+the obsolete per-attack safespot scan disappeared with its dead output. This is
+an intentional diagnostic contract migration from state-hash version 3 to 4;
+observation, action, reward, and model shapes did not change. Production code
+decreased by 25 LOC. Throughput was 951,098 SPS and training uptime was
+102.968839 seconds, comparable to the preceding run's 946,812 SPS and
+105.416005 seconds.
+
 ## Reproduction command
 
 ```bash

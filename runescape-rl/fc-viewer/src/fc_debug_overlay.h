@@ -456,9 +456,10 @@ static void dbg_draw_entity_info(const FcState* state, Camera3D camera) {
                  style_str[n->attack_style]);
         fc_osrs_draw_text(buf, panel_x + 4, ny, 10, DBG_COL_LABEL); ny += lh;
 
+        const FcNpcStats* stats = fc_npc_get_stats(n->npc_type);
+        int max_hit = fc_npc_max_hit_hp_for_style(stats, n->attack_style);
         snprintf(buf, sizeof(buf), "AtkTmr:%d/%d  Range:%d  MaxHit:%d",
-                 n->attack_timer, n->attack_speed, n->attack_range,
-                 n->max_hit_tenths/10);
+                 n->attack_timer, n->attack_speed, n->attack_range, max_hit);
         fc_osrs_draw_text(buf, panel_x + 4, ny, 10, DBG_COL_LABEL); ny += lh;
 
         if (n->npc_type == NPC_YT_HURKOT) {

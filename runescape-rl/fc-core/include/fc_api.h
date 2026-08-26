@@ -97,9 +97,9 @@ int fc_is_terminal(const FcState* state);
 /* Determinism                                                               */
 /* ======================================================================== */
 
-/* Version 2 adds directional movement and projectile collision maps to the
+/* Version 4 removes redundant compatibility/temporary fields from the
  * complete core-owned fixed-width FcState serialization. */
-#define FC_STATE_HASH_VERSION 3u
+#define FC_STATE_HASH_VERSION 4u
 
 /*
  * Compute a deterministic hash of the game state.

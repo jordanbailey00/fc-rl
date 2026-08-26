@@ -230,16 +230,15 @@ static int test_npc_005(void) {
         int style;
         int speed;
         int range;
-        int primary_max_tenths;
     } expected[NPC_TYPE_COUNT] = {
-        [NPC_TZ_KIH] = {100, 1, ATTACK_MELEE, 4, 1, 40},
-        [NPC_TZ_KEK] = {200, 2, ATTACK_MELEE, 4, 1, 70},
-        [NPC_TZ_KEK_SM] = {100, 1, ATTACK_MELEE, 4, 1, 40},
-        [NPC_TOK_XIL] = {400, 3, ATTACK_RANGED, 4, 14, 130},
-        [NPC_YT_MEJKOT] = {800, 4, ATTACK_MELEE, 4, 1, 250},
-        [NPC_KET_ZEK] = {1600, 5, ATTACK_MAGIC, 4, 14, 520},
-        [NPC_TZTOK_JAD] = {2500, 5, ATTACK_MAGIC, 8, 14, 950},
-        [NPC_YT_HURKOT] = {600, 1, ATTACK_MELEE, 4, 1, 140},
+        [NPC_TZ_KIH] = {100, 1, ATTACK_MELEE, 4, 1},
+        [NPC_TZ_KEK] = {200, 2, ATTACK_MELEE, 4, 1},
+        [NPC_TZ_KEK_SM] = {100, 1, ATTACK_MELEE, 4, 1},
+        [NPC_TOK_XIL] = {400, 3, ATTACK_RANGED, 4, 14},
+        [NPC_YT_MEJKOT] = {800, 4, ATTACK_MELEE, 4, 1},
+        [NPC_KET_ZEK] = {1600, 5, ATTACK_MAGIC, 4, 14},
+        [NPC_TZTOK_JAD] = {2500, 5, ATTACK_MAGIC, 8, 14},
+        [NPC_YT_HURKOT] = {600, 1, ATTACK_MELEE, 4, 1},
     };
 
     for (int type = NPC_TZ_KIH; type < NPC_TYPE_COUNT; type++) {
@@ -253,51 +252,20 @@ static int test_npc_005(void) {
             npc.size != expected[type].size ||
             npc.attack_style != expected[type].style ||
             npc.attack_speed != expected[type].speed ||
-            npc.attack_range != expected[type].range ||
-            npc.max_hit_tenths != expected[type].primary_max_tenths) {
+            npc.attack_range != expected[type].range) {
             fprintf(stderr,
-                    "FAIL NPC-005: spawned NPC type %d disagrees with its table (hp=%d/%d size=%d style=%d speed=%d range=%d max=%d)\n",
+                    "FAIL NPC-005: spawned NPC type %d disagrees with its table (hp=%d/%d size=%d style=%d speed=%d range=%d)\n",
                     type, npc.current_hp, npc.max_hp, npc.size,
-                    npc.attack_style, npc.attack_speed, npc.attack_range,
-                    npc.max_hit_tenths);
+                    npc.attack_style, npc.attack_speed, npc.attack_range);
             return 1;
         }
     }
 
-    /* The compatibility maximum is state for display/observation consumers;
-     * changing it must not change combat's style-selected maximum. */
-    for (uint32_t seed = 1; seed <= 64; seed++) {
-        FcState state;
-        make_attack_state(&state, NPC_TOK_XIL, 20);
-        state.npcs[0].max_hit_tenths = 100000;
-        state.player.defence_level = 1;
-        state.player.magic_level = 1;
-        state.player.defence_ranged = -64;
-        fc_rng_seed(&state, seed);
-        fc_npc_tick(&state, 0);
-        if (state.player.num_pending_hits != 1 ||
-            state.player.pending_hits[0].attack_style != ATTACK_RANGED) {
-            fprintf(stderr,
-                    "FAIL NPC-005: Tok-Xil compatibility-field probe did not queue a ranged hit\n");
-            fc_destroy(&state);
-            return 1;
-        }
-        if (state.player.pending_hits[0].damage > 130) {
-            fprintf(stderr,
-                    "FAIL NPC-005: combat consumed compatibility max_hit_tenths (%d damage)\n",
-                    state.player.pending_hits[0].damage);
-            fc_destroy(&state);
-            return 1;
-        }
-        fc_destroy(&state);
-    }
-
-    /* Tz-Kih observation normalization also obtains its maximum from the
-     * style accessor, not from the mutable compatibility field. */
+    /* Tz-Kih observation normalization obtains its maximum from the
+     * authoritative style-specific stats. */
     FcState state;
     float obs[FC_OBS_SIZE];
     make_attack_state(&state, NPC_TZ_KIH, 11);
-    state.npcs[0].max_hit_tenths = 100000;
     state.npcs[0].prayer_drain_dealt_this_tick = 50;
     fc_write_obs(&state, obs);
     float normalized = obs[FC_OBS_NPC_START + FC_NPC_PRAYER_DRAIN_DEALT];

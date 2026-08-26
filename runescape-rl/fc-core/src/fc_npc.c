@@ -224,8 +224,6 @@ void fc_npc_spawn(FcNpc* npc, int npc_type, int x, int y, int spawn_index) {
     npc->attack_timer = stats->attack_speed;  /* first attack after full cooldown */
     npc->attack_speed = stats->attack_speed;
     npc->attack_range = stats->attack_range;
-    npc->max_hit_tenths =
-        fc_npc_max_hit_tenths_for_style(stats, stats->attack_style);
     npc->movement_speed = stats->movement_speed;
     npc->heal_timer = stats->heal_interval;  /* start at full cooldown */
     npc->heal_amount = stats->heal_amount;
