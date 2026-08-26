@@ -361,8 +361,9 @@ int fc_distance_between_areas(int src_x, int src_y, int src_size,
     return dx > dy ? dx : dy;
 }
 
-int fc_has_line_of_sight(int x0, int y0, int x1, int y1,
-                         const uint8_t los_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
+static int fc_has_line_of_sight(
+    int x0, int y0, int x1, int y1,
+    const uint8_t los_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
     if (x0 < 0 || y0 < 0 || x0 >= FC_ARENA_WIDTH || y0 >= FC_ARENA_HEIGHT ||
         x1 < 0 || y1 < 0 || x1 >= FC_ARENA_WIDTH || y1 >= FC_ARENA_HEIGHT) {
         return 0;

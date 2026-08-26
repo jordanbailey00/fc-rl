@@ -374,15 +374,27 @@ set. The two public headers decreased from 1,101 lines combined to 257.
 
 ### Narrow the public core surface
 
-Estimated reduction: only a few LOC, but it makes ownership clearer.
+Status: implemented. Three implementation-only functions no longer appear in
+public headers or the library's exported symbol table. Production code
+decreased by 9 LOC.
 
-- `fc_wave_get()` and `fc_wave_spawn_dir()` have no callers outside
-  `fc_wave.c`; make them private and remove them from `fc_wave.h`.
-- `fc_has_line_of_sight()` has no callers outside `fc_pathfinding.c`; expose
-  only the area-to-area LOS operation that consumers actually use.
-- Keep low-level math and pathfinding functions public when focused validation
-  tests intentionally exercise their contracts. Do not make functions private
-  solely to reduce the header count.
+- `fc_wave_get()` and `fc_wave_spawn_dir()` are now private to `fc_wave.c`.
+  `fc_wave.h` exposes wave spawning and advancement, but not the table lookup
+  used to implement spawning.
+- `fc_has_line_of_sight()` is now private to `fc_pathfinding.c`. Consumers use
+  the supported footprint-aware `fc_has_los_between_areas()` operation.
+- The spawn allocation test now asserts the authoritative wave-1/rotation-0
+  center expectation instead of deriving its expected value through the same
+  private lookup used by production. The alternate-ray fixture exercises the
+  public area LOS operation with 1x1 footprints.
+- Other low-level math and pathfinding declarations remain public because
+  focused validation tests intentionally exercise their contracts.
+- All 157 CTest tests and the viewer, standalone, CPU, and CUDA builds pass. The
+  deterministic 628-line trace is byte-for-byte unchanged at SHA-256
+  `74ec5a04a9625d31ab95febf1b655a61631229541c2149f3a280d21bea16023c`.
+- The 100M W&B regression `z8rraat7` exactly matches baseline `m916qfsv` and
+  preceding run `nffnh657` on all 124 `env/*` values and every non-performance
+  summary value.
 
 ### Defer state-field deletion until an intentional hash-contract change
 

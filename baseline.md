@@ -558,6 +558,33 @@ while total production source and build code decreased by 8 LOC. Throughput was
 956,771 SPS and 104.176655 seconds of comparison `1pmv1yzs` under full GPU
 utilization.
 
+## Comparison 16: narrowed public core API
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`z8rraat7`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/z8rraat7) (`copper-serenity-1242`) |
+| Tag | `v4.5_refactor_narrow_core_api_100m` |
+| Git commit at run start | `109a22c69` plus the documented uncommitted public-API refactor |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `dc1b01a9c97dd8beaa925773e8ae8843224dee5810e8885e935dd4c9dfb4208c` |
+| Backend binary SHA-256 | `f4b9222354f30f7bac13bde5adfba1d3fe2d16b5da40abdd26d667ea21bd8167` |
+| Backend source SHA-256 | `7a66a4d22ab950b9fec98d4c066956606da145a40309676c27455dcd6998b6af` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260825T225811Z-train-1303256.json` |
+
+Result: behavioral parity is exact against baseline `m916qfsv` and preceding
+comparison `nffnh657`. All 124 `env/*` metrics, agent steps, epoch, and
+policy/value/entropy/KL/loss values are byte-for-byte equal. Against both runs,
+136 of 150 summary values match exactly; the 14 differences are only
+timestamps, wall-clock performance, throughput, and utilization telemetry.
+
+Three implementation-only functions are now private to their owning modules
+and absent from the library's exported symbol table. Public behavior and test
+coverage are preserved through the supported wave and area-LOS operations.
+Production code decreased by 9 LOC. Throughput was 946,812 SPS and training
+uptime was 105.416005 seconds, comparable to the preceding full-utilization
+run's 953,842 SPS and 103.832579 seconds.
+
 ## Reproduction command
 
 ```bash

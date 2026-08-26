@@ -99,10 +99,6 @@ int fc_npc_step_toward_sized_dynamic(
 int fc_distance_between_areas(int src_x, int src_y, int src_size,
                               int dst_x, int dst_y, int dst_size);
 
-/* Native fixed-point directional projectile LOS check between two tiles. */
-int fc_has_line_of_sight(int x0, int y0, int x1, int y1,
-                         const uint8_t los_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
-
 /* Footprint-aware LOS using the closest coordinate from each rectangle, as in
  * the native line validator. */
 int fc_has_los_between_areas(

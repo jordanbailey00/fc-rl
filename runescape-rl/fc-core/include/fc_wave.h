@@ -20,12 +20,6 @@
 /* Spawn direction → arena coordinate mapping */
 void fc_spawn_position(int spawn_dir, int* x, int* y);
 
-/* Get the wave entry (NPC types + spawn directions) for wave_num (1-indexed) and rotation */
-const FcWaveEntry* fc_wave_get(int wave_num);
-
-/* Get spawn direction for a specific NPC in a wave/rotation */
-int fc_wave_spawn_dir(int wave_num, int rotation, int npc_index);
-
 /* Spawn all NPCs for the given wave using the state's rotation_id */
 void fc_wave_spawn(FcState* state, int wave_num);
 

@@ -2767,8 +2767,10 @@ static int test_spawn_search_and_slot_allocation(void) {
     state.npcs_remaining = 2;
     state.next_spawn_index = 2;
     state.rotation_id = 0;
-    fc_spawn_position(fc_wave_spawn_dir(1, state.rotation_id, 0),
-                      &preferred_x, &preferred_y);
+    /* Wave 1, rotation 0 is authoritatively expected to spawn at center. The
+     * assertion must not derive its expectation through the private lookup
+     * used by fc_wave_spawn(), or both could drift together unnoticed. */
+    fc_spawn_position(SPAWN_CENTER, &preferred_x, &preferred_y);
     state.walkable[preferred_x][preferred_y] = 0;
 
     fc_wave_spawn(&state, 1);
@@ -3355,7 +3357,8 @@ static int test_osrs_closest_point_area_los(void) {
         fc_destroy(&state);
         return fail("area LOS ignored the blocked canonical source point");
     }
-    if (!fc_has_line_of_sight(12, 10, 15, 11, state.los_flags)) {
+    if (!fc_has_los_between_areas(12, 10, 1, 15, 11, 1,
+                                  state.los_flags)) {
         fc_destroy(&state);
         return fail("LOS fixture did not retain its alternate clear perimeter ray");
     }

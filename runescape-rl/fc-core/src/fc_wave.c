@@ -1196,12 +1196,12 @@ void fc_spawn_position(int spawn_dir, int* x, int* y) {
 /* Wave table accessors                                                      */
 /* ======================================================================== */
 
-const FcWaveEntry* fc_wave_get(int wave_num) {
+static const FcWaveEntry* fc_wave_get(int wave_num) {
     if (wave_num < 1 || wave_num > FC_NUM_WAVES) return &WAVE_TABLE[0];
     return &WAVE_TABLE[wave_num - 1];
 }
 
-int fc_wave_spawn_dir(int wave_num, int rotation, int npc_index) {
+static int fc_wave_spawn_dir(int wave_num, int rotation, int npc_index) {
     if (wave_num < 1 || wave_num > FC_NUM_WAVES) return SPAWN_CENTER;
     if (rotation < 0 || rotation >= FC_NUM_ROTATIONS) return SPAWN_CENTER;
     if (npc_index < 0 || npc_index >= FC_MAX_SPAWNS_PER_WAVE) return SPAWN_CENTER;
