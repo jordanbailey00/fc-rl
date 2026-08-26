@@ -837,6 +837,36 @@ configuration, or policy-pipe behavior. The suite passes 163/163 tests, and a
 real Raylib/OpenGL viewer startup and render smoke test passed. Throughput was
 983,725 SPS and training uptime was 100.035228 seconds.
 
+## Comparison 26: removed duplicate numeric sprite aliases
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`atxm2i8l`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/atxm2i8l) (`proud-shape-1252`) |
+| Tag | `v4.5_refactor_duplicate_numeric_sprites_removed_100m` |
+| Git commit at run start | `2fbb18f3d` plus the documented uncommitted viewer-asset cleanup |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `446a78a42f8a88b9435a52169914a7ee724980170aff5e0e15010bc92959ab4b` |
+| Backend binary SHA-256 | `e0015300b9d84123fda37f2539db41155ff6020f262beb50674837cc8b0d88a9` |
+| Backend source SHA-256 | `f0a929522f88ee174c13762df2570fddbfeb1d0e23df0f67a1f40d0c6e2a72e3` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260826T175644Z-train-1512625.json` |
+
+Result: behavioral parity remains exact against baseline `m916qfsv` and the
+preceding comparison `p85aqzbd`. All 124 `env/*` metrics, agent steps, epoch,
+and all seven policy/value/entropy/KL/loss values are byte-for-byte equal.
+Each comparison has 135 of 150 summary fields equal; the 15 differences are
+only timestamps, wall-clock performance, throughput, and CPU/GPU utilization
+telemetry.
+
+Exactly 560 pure-numeric PNG aliases were removed after verifying that every
+file was byte-for-byte identical to a retained human-readable asset. The one
+unique pure-numeric asset, `2420.png`, and all eight numeric multi-frame click
+cross assets remain. The sprite exporter no longer regenerates single-frame
+pure-numeric aliases. This removes 448,932 asset bytes. The suite passes
+163/163 tests, exporter alias behavior was checked directly, and a real
+Raylib/OpenGL viewer startup loaded the retained assets successfully.
+Throughput was 992,154 SPS and training uptime was 97.769951 seconds.
+
 ## Reproduction command
 
 ```bash

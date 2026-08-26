@@ -368,8 +368,7 @@ def export_sprite(reader, output_dir: Path, sprite_id: int, names: list[str]) ->
     for idx, image in enumerate(images):
         stems: list[str] = []
         if len(images) == 1:
-            stems.extend(names)
-            stems.append(str(sprite_id))
+            stems.extend(name for name in names if name != str(sprite_id))
         else:
             stems.extend(f"{name}_{idx}" for name in names)
             stems.append(f"{sprite_id}_{idx}")
