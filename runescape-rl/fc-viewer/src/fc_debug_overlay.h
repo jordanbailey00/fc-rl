@@ -353,7 +353,6 @@ static void dbg_draw_prayer_window_indicator(Vector3 world_anchor,
  * content_height limits the log viewport; zero keeps the legacy 20 rows.
  * Returns end Y position. */
 static int dbg_draw_panel_tabs(const FcState* state,
-                                const FcRewardParams* reward_params,
                                 const FcRewardBreakdown* reward_breakdown,
                                 const FcRewardRuntime* reward_runtime,
                                 int reward_config_loaded,
@@ -614,8 +613,6 @@ static int dbg_draw_panel_tabs(const FcState* state,
         int total = g_dbg_log.count;
         int log_h = max_visible * entry_h;
         int scrollbar_w = 10;
-        int content_w = pw - 16 - scrollbar_w;
-
         if (total == 0) {
             fc_osrs_draw_text("No events yet", x, by, 8, DBG_COL_DIM);
             by += lh;

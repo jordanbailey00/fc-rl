@@ -89,19 +89,6 @@ static Rectangle open_interface_mount_rect(const RuneCUiState *ui,
                                            int screen_w,
                                            int screen_h);
 
-static const char *g_tab_icon[RUNEC_UI_TAB_COUNT] = {
-    "side_icon_combat",
-    "side_icon_stats",
-    "side_icon_quests",
-    "side_icon_inventory",
-    "side_icon_equipment",
-    "side_icon_prayer",
-    "side_icon_magic",
-    "side_icon_options",
-    "side_icon_clan",
-    "side_icon_friends",
-};
-
 static const char *g_prayer_names[25] = {
     "Thick Skin", "Burst of Strength", "Clarity of Thought", "Sharp Eye",
     "Mystic Will", "Rock Skin", "Superhuman Strength", "Improved Reflexes",
@@ -209,20 +196,6 @@ static const char *spell_name(int slot) {
     }
     return TextFormat("Spell %d", slot + 1);
 }
-
-static const char *g_skill_names[24] = {
-    "Attack", "Hitpoints", "Mining", "Strength", "Agility", "Smithing",
-    "Defence", "Herblore", "Fishing", "Ranged", "Thieving", "Cooking",
-    "Prayer", "Crafting", "Firemaking", "Magic", "Fletching", "Woodcutting",
-    "Runecraft", "Slayer", "Farming", "Construction", "Hunter", "Sailing",
-};
-
-static const int g_skill_icon_index[24] = {
-    0, 6, 12, 1, 7, 13,
-    2, 8, 14, 3, 9, 15,
-    4, 10, 16, 5, 11, 17,
-    18, 19, 20, 22, 21, 23,
-};
 
 static const char *g_equipment_names[RUNEC_UI_EQUIP_SLOT_COUNT] = {
     "Head", "Cape", "Neck", "Weapon", "Body", "Shield", "Ammo",

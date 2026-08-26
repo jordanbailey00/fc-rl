@@ -23,15 +23,4 @@ static inline bool fc_seek(FILE* f, long offset, int origin,
     return true;
 }
 
-static inline long fc_file_size(FILE* f, const char* path, const char* what) {
-    if (!fc_seek(f, 0, SEEK_END, path, what)) return -1;
-    long size = ftell(f);
-    if (size < 0) {
-        fprintf(stderr, "%s: ftell failed while loading %s\n", path, what);
-        return -1;
-    }
-    if (!fc_seek(f, 0, SEEK_SET, path, what)) return -1;
-    return size;
-}
-
 #endif /* FC_IO_H */

@@ -692,6 +692,62 @@ runtime self-test subgraph. No live rendering or gameplay path was changed.
 Production code decreased by 429 LOC. The complete suite passes 163/163 tests.
 Throughput was 954,976 SPS and training uptime was 103.612085 seconds.
 
+## Comparison 21: removed unused viewer state and unreachable action mode
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`zecd2zxw`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/zecd2zxw) (`stilted-wood-1247`) |
+| Tag | `v4.5_refactor_unused_viewer_state_100m` |
+| Git commit at run start | `5f2e2da83` plus the documented uncommitted viewer-state cleanup |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `446a78a42f8a88b9435a52169914a7ee724980170aff5e0e15010bc92959ab4b` |
+| Backend binary SHA-256 | `e0015300b9d84123fda37f2539db41155ff6020f262beb50674837cc8b0d88a9` |
+| Backend source SHA-256 | `f0a929522f88ee174c13762df2570fddbfeb1d0e23df0f67a1f40d0c6e2a72e3` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260826T025503Z-train-1438807.json` |
+
+Result: behavioral parity is exact against baseline `m916qfsv` and preceding
+comparison `c7i6etqu`. All 124 `env/*` metrics, agent steps, epoch, and all
+seven policy/value/entropy/KL/loss values are byte-for-byte equal. The current
+summary matches 135 of 150 baseline fields exactly; the 15 differences are
+only timestamps, wall-clock performance, throughput, and CPU/GPU utilization
+telemetry.
+
+Three unused static UI tables, one unused viewer-state field, four dead stores,
+one unused internal debug parameter, and the unreachable random-action mode
+were removed. No live viewer, gameplay, training, or policy-pipe behavior was
+changed. Production code decreased by 41 LOC. The complete suite passes 163/163
+tests. Throughput was 928,032 SPS and training uptime was 104.673579 seconds.
+
+## Comparison 22: removed unused inline viewer file-size helper
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`2bzeigyh`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/2bzeigyh) (`peach-donkey-1248`) |
+| Tag | `v4.5_refactor_unused_viewer_state_final_100m` |
+| Git commit at run start | `5f2e2da83` plus the complete documented uncommitted viewer-state cleanup |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `446a78a42f8a88b9435a52169914a7ee724980170aff5e0e15010bc92959ab4b` |
+| Backend binary SHA-256 | `e0015300b9d84123fda37f2539db41155ff6020f262beb50674837cc8b0d88a9` |
+| Backend source SHA-256 | `f0a929522f88ee174c13762df2570fddbfeb1d0e23df0f67a1f40d0c6e2a72e3` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260826T030154Z-train-1444589.json` |
+
+Result: behavioral parity remains exact against baseline `m916qfsv`, the
+preceding committed-state comparison `c7i6etqu`, and intermediate comparison
+`zecd2zxw`. All 124 `env/*` metrics, agent steps, epoch, and all seven
+policy/value/entropy/KL/loss values are byte-for-byte equal. The final summary
+matches 135 of 150 baseline fields exactly; the 15 differences are only
+timestamps, wall-clock performance, throughput, and CPU/GPU utilization
+telemetry.
+
+A focused Cppcheck pass found the unused inline `fc_file_size()` helper after
+Comparison 21; removing it deleted another 11 LOC, bringing this cleanup to 52
+net production LOC removed. No live behavior or backend input changed. The
+complete suite again passes 163/163 tests. Throughput was 639,593 SPS and
+training uptime was 139.876110 seconds; this timing-only slowdown occurred
+without any behavioral or learning-metric difference.
+
 ## Reproduction command
 
 ```bash

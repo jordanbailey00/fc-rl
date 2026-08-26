@@ -52,6 +52,14 @@ same helpers; these remain confirmed false positives. The 100M deterministic
 training comparison is recorded as Comparison 20 in `baseline.md` and matches
 the original baseline exactly on every behavioral and learning metric.
 
+The remaining analyzer-confirmed viewer data-flow cleanup was completed next:
+the three unused static UI tables, `ViewerState.debug_spawn`, four dead stores,
+the unused `reward_params` debug-panel argument, and the unreachable
+`auto_mode` random-action branch were removed. A focused follow-up Cppcheck
+pass also identified the unused inline `fc_file_size()` helper, which was
+removed. Comparisons 21 and 22 in `baseline.md` both match every behavioral and
+learning metric exactly; Comparison 22 covers the complete final cleanup.
+
 ## Tools built for this audit
 
 ### Static analysis tool

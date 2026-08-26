@@ -359,7 +359,6 @@ typedef struct {
     float tps;
     float tick_acc;
     int show_grid, show_collision;
-    int auto_mode;       /* 1 = random actions, 0 = human control */
     Camera3D camera;
     float cam_yaw, cam_pitch, cam_dist;
     int camera_locked;
@@ -445,7 +444,6 @@ typedef struct {
     int dbg_flags;       /* bitmask of DBG_* flags from fc_debug_overlay.h */
     /* Debug toggles */
     int godmode;        /* 1 = player can't die */
-    int debug_spawn;    /* NPC type to spawn (0 = off, 1-8 = type) */
     int policy_pipe;    /* 1 = read actions from stdin, write obs to stdout */
     int policy_episode_limit; /* 0 = unlimited auto-reset, >0 = stop after N episodes */
     int policy_episode_count; /* number of completed policy-pipe episodes */
@@ -1896,18 +1894,16 @@ static int visual_actor_world_point(ViewerState* v,
                                     float* x, float* y, float* z) {
     if (!v || !x || !y || !z) return 0;
     FcVisualPose pose;
-    int size;
     float height;
     if (kind == FC_VISUAL_TARGET_PLAYER) {
         if (!v->visual_scene.player.active) return 0;
         pose = fc_visual_scene_player_pose(&v->visual_scene);
-        size = 1;
         height = 1.5f;
     } else if (kind == FC_VISUAL_TARGET_NPC &&
                slot >= 0 && slot < FC_MAX_NPCS &&
                v->visual_scene.npcs[slot].active) {
         pose = fc_visual_scene_npc_pose(&v->visual_scene, slot);
-        size = v->visual_scene.npcs[slot].size;
+        int size = v->visual_scene.npcs[slot].size;
         height = 1.0f + (float)size * 0.3f;
     } else {
         return 0;
@@ -3256,7 +3252,7 @@ static void draw_scene(ViewerState* v) {
                           0.0f, scale, WHITE);
         } else {
             /* Fallback: letter if textures not loaded */
-            const char* icon_txt = "?";
+            const char* icon_txt;
             if (rendered_prayer == PRAYER_PROTECT_MELEE) icon_txt = "M";
             else if (rendered_prayer == PRAYER_PROTECT_RANGE) icon_txt = "R";
             else icon_txt = "W";
@@ -3517,7 +3513,7 @@ static void draw_runec_console_diagnostics(ViewerState* v, Rectangle body) {
     BeginScissorMode((int)body.x, (int)body.y,
                      (int)body.width, (int)body.height);
     int end_y = dbg_draw_panel_tabs(
-        &v->state, &v->reward_params,
+        &v->state,
         &v->reward_breakdown, &v->reward_runtime,
         v->reward_config_loaded, v->reward_config_path,
         (int)body.x, (int)body.x + 4, content_y,
@@ -3885,7 +3881,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     load_fc_ui_item_icons(&v);
-    v.paused = 1; v.tps = NORMAL_TPS; v.auto_mode = 0;
+    v.paused = 1; v.tps = NORMAL_TPS;
     v.active_loadout = FC_ACTIVE_LOADOUT;
     v.attack_target = -1;
     v.cam_yaw = 0; v.cam_pitch = 0.8f; v.cam_dist = 30;
@@ -4086,7 +4082,6 @@ int main(int argc, char** argv) {
     /* Policy pipe: write initial obs so Python can send first action */
     if (v.policy_pipe) {
         v.paused = 0;
-        v.auto_mode = 0;
         fprintf(stderr, "[policy-pipe] Mode active. Reading actions from stdin.\n");
         write_obs_to_pipe(&v);
     }
@@ -4126,8 +4121,6 @@ int main(int argc, char** argv) {
         }
 
         /* Toggle keys */
-        /* Auto mode removed — was too easy to accidentally toggle with 'A' key.
-         * Use --auto command line flag if needed for testing. */
         if (IsKeyPressed(KEY_G)) v.show_grid = !v.show_grid;
         if (IsKeyPressed(KEY_C)) v.show_collision = !v.show_collision;
         /* O: cycle debug overlay modes. O=all on/off, Shift+O=cycle sub-modes */
@@ -4200,7 +4193,7 @@ int main(int argc, char** argv) {
         /* Capture clicks and key presses EVERY frame (60fps).
          * These set routes/targets/buffers on the player struct.
          * The tick loop reads them when the next tick fires. */
-        if (!v.auto_mode && !v.policy_pipe && v.state.terminal == TERMINAL_NONE) {
+        if (!v.policy_pipe && v.state.terminal == TERMINAL_NONE) {
             process_human_clicks(&v, ui_capture);
             process_human_keys(&v);
         }
@@ -4215,10 +4208,6 @@ int main(int argc, char** argv) {
                 }
             } else if (v.test_mode && build_test_actions(&v)) {
                 /* Test mode provided actions */
-            } else if (v.auto_mode) {
-                for (int h = 0; h < FC_NUM_ACTION_HEADS; h++)
-                    v.actions[h] = GetRandomValue(0, FC_ACTION_DIMS[h]-1);
-                if (GetRandomValue(0,2) == 0) v.actions[0] = 0;
             } else {
                 build_human_actions(&v);
                 used_human_actions = 1;
@@ -4694,7 +4683,7 @@ int main(int argc, char** argv) {
                 fc_visual_scene_player_pose(&v.visual_scene);
             const PlayerVisualProfile* profile =
                 player_visual_profile(v.active_loadout);
-            uint16_t pose_seq = profile->idle_anim;
+            uint16_t pose_seq;
             switch (player_pose.locomotion) {
                 case FC_VISUAL_LOCOMOTION_TURN:
                     pose_seq = profile->turn_anim;
