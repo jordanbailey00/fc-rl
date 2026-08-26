@@ -80,7 +80,8 @@ static void fc_animated_atlas_load_anims(FcAnimatedAtlas* atlas,
             atlas->anim_count, path);
 }
 
-int fc_animated_atlas_load(FcAnimatedAtlas* atlas, const char* atlas_path) {
+int fc_animated_atlas_load(FcAnimatedAtlas* atlas, const char* atlas_path,
+                           int enable_animation) {
     FcAnimatedAtlas loaded = {0};
     FILE* file;
     uint32_t magic = 0;
@@ -136,19 +137,22 @@ int fc_animated_atlas_load(FcAnimatedAtlas* atlas, const char* atlas_path) {
     SetTextureFilter(loaded.texture, TEXTURE_FILTER_POINT);
     loaded.width = (int)width;
     loaded.height = (int)height;
-    loaded.base_pixels = malloc(pixel_size);
-    loaded.pixels = malloc(pixel_size);
-    if (loaded.base_pixels && loaded.pixels) {
-        memcpy(loaded.base_pixels, source_pixels, pixel_size);
-        memcpy(loaded.pixels, source_pixels, pixel_size);
-    } else {
-        free(loaded.base_pixels);
-        free(loaded.pixels);
-        loaded.base_pixels = NULL;
-        loaded.pixels = NULL;
+    if (enable_animation) {
+        loaded.base_pixels = malloc(pixel_size);
+        loaded.pixels = malloc(pixel_size);
+        if (loaded.base_pixels && loaded.pixels) {
+            memcpy(loaded.base_pixels, source_pixels, pixel_size);
+            memcpy(loaded.pixels, source_pixels, pixel_size);
+        } else {
+            free(loaded.base_pixels);
+            free(loaded.pixels);
+            loaded.base_pixels = NULL;
+            loaded.pixels = NULL;
+        }
     }
     free(source_pixels);
-    fc_animated_atlas_load_anims(&loaded, atlas_path);
+    if (enable_animation)
+        fc_animated_atlas_load_anims(&loaded, atlas_path);
     *atlas = loaded;
     fprintf(stderr, "animated atlas: %ux%u loaded from %s\n",
             width, height, atlas_path);

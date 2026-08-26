@@ -400,7 +400,12 @@ def export_fc_projectile_models(cache_dir: Path, spotanims_bin: Path, output: Pa
         models.append(model)
         print(f"spotanim {gfx_id}: model {spot.model_id} -> {model.model_id}")
 
-    write_models_binary(output, models, tex_colors=tex_colors, atlas=atlas)
+    write_models_binary(
+        output, models, tex_colors=tex_colors, atlas=atlas, write_atlas=False
+    )
+    obsolete_atlas = output.with_suffix(".atlas")
+    if obsolete_atlas.exists():
+        obsolete_atlas.unlink()
 
 
 def read_object_animation_ids(oanim_path: Path) -> set[int]:

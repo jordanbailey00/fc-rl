@@ -366,6 +366,7 @@ typedef struct {
     FcMinimapScene minimap_scene;
     ObjectMesh* objects;
     ObjectAnimSet* object_anims;
+    FcAnimatedAtlas shared_model_atlas;
     NpcModelSet* object_anim_models;
     ObjectAnimRuntime* object_anim_runtimes;
     int object_anim_runtime_count;
@@ -3745,8 +3746,11 @@ int main(int argc, char** argv) {
         v.object_anims = object_anims_load("fightcaves.oanim");
     if (v.object_anims)
         object_anims_offset(v.object_anims, FC_WORLD_ORIGIN_X, FC_WORLD_ORIGIN_Y);
+    if (!fc_animated_atlas_load(&v.shared_model_atlas, "fightcaves.atlas", 0))
+        fprintf(stderr, "warning: shared model atlas not found\n");
     if (fc_asset_exists("fightcaves.object_anim.models"))
-        v.object_anim_models = fc_npc_models_load("fightcaves.object_anim.models");
+        v.object_anim_models = fc_npc_models_load(
+            "fightcaves.object_anim.models", v.shared_model_atlas.texture);
     if (v.object_anims && v.object_anims->count > 0) {
         v.object_anim_runtimes = (ObjectAnimRuntime*)calloc(
             (size_t)v.object_anims->count, sizeof(*v.object_anim_runtimes));
@@ -3758,14 +3762,14 @@ int main(int argc, char** argv) {
     /* Load NPC models */
     {
         if (fc_asset_exists("fc_npcs.models"))
-            v.npc_models = fc_npc_models_load("fc_npcs.models");
+            v.npc_models = fc_npc_models_load("fc_npcs.models", (Texture2D){0});
         if (!v.npc_models) fprintf(stderr, "warning: NPC models not found\n");
     }
 
     /* Load player model */
     {
         if (fc_asset_exists("fc_player.models"))
-            v.player_model = fc_npc_models_load("fc_player.models");
+            v.player_model = fc_npc_models_load("fc_player.models", (Texture2D){0});
     }
 
     /* Load animations (combined NPC + player) */
@@ -3794,7 +3798,8 @@ int main(int argc, char** argv) {
     /* Load projectile models */
     {
         if (fc_asset_exists("fc_projectiles.models"))
-            v.projectile_models = fc_npc_models_load("fc_projectiles.models");
+            v.projectile_models = fc_npc_models_load(
+                "fc_projectiles.models", v.shared_model_atlas.texture);
     }
 
     /* Load spotanim metadata for projectile model/scale lookup */
@@ -4433,14 +4438,6 @@ int main(int argc, char** argv) {
             }
             if (v.objects)
                 fc_animated_atlas_update(&v.objects->atlas, dt);
-            if (v.object_anim_models)
-                fc_animated_atlas_update(&v.object_anim_models->atlas, dt);
-            if (v.projectile_models)
-                fc_animated_atlas_update(&v.projectile_models->atlas, visual_dt);
-            if (v.npc_models)
-                fc_animated_atlas_update(&v.npc_models->atlas, visual_dt);
-            if (v.player_model)
-                fc_animated_atlas_update(&v.player_model->atlas, visual_dt);
             for (int i = 0; i < MAX_PROJECTILES; i++) {
                 if (v.projectiles[i].active) {
                     if (update_visual_projectile(&v, &v.projectiles[i], dt)) {
@@ -4709,6 +4706,7 @@ skip_player_anim_update:
     if (v.player_model) fc_npc_models_unload(v.player_model);
     if (v.npc_models) fc_npc_models_unload(v.npc_models);
     if (v.object_anim_models) fc_npc_models_unload(v.object_anim_models);
+    fc_animated_atlas_unload(&v.shared_model_atlas);
     if (v.object_anims) object_anims_free(v.object_anims);
     objects_free(v.objects);
     fc_minimap_scene_free(&v.minimap_scene);

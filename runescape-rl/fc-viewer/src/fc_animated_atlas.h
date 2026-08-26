@@ -27,7 +27,8 @@ typedef struct {
     float anim_ticks;
 } FcAnimatedAtlas;
 
-int fc_animated_atlas_load(FcAnimatedAtlas* atlas, const char* atlas_path);
+int fc_animated_atlas_load(FcAnimatedAtlas* atlas, const char* atlas_path,
+                           int enable_animation);
 void fc_animated_atlas_update(FcAnimatedAtlas* atlas, float dt);
 void fc_animated_atlas_unload(FcAnimatedAtlas* atlas);
 

@@ -4,7 +4,6 @@
 #ifndef FC_MODELS_H
 #define FC_MODELS_H
 
-#include "fc_animated_atlas.h"
 #include "fc_assets.h"
 #include "fc_io.h"
 #include "raylib.h"
@@ -43,7 +42,6 @@ typedef struct {
 typedef struct {
     ModelEntry *entries;
     int *index_by_id;
-    FcAnimatedAtlas atlas;
     int count;
     int index_limit;
     int has_textures;
@@ -177,7 +175,8 @@ static void models_recompute_texture_uvs_from_vertices(ModelEntry *entry,
                      mesh->vertexCount * 2 * sizeof(float), 0);
 }
 
-static ModelSet *models_load_filtered(const char *path, const uint32_t *ids, int id_count) {
+static ModelSet *models_load_filtered(const char *path, const uint32_t *ids,
+                                      int id_count, Texture2D atlas_texture) {
     FILE *f = fc_asset_fopen(path, "rb");
     if (!f) { fprintf(stderr, "models: can't open %s\n", path); return NULL; }
 
@@ -220,15 +219,12 @@ static ModelSet *models_load_filtered(const char *path, const uint32_t *ids, int
     set->count = (int)count;
     set->has_textures = has_tex;
 
-    if (has_tex) {
-        char atlas_path[1024];
-        strncpy(atlas_path, path, sizeof(atlas_path) - 1);
-        atlas_path[sizeof(atlas_path) - 1] = '\0';
-        char *dot = strrchr(atlas_path, '.');
-        if (dot) strcpy(dot, ".atlas");
-        if (!fc_animated_atlas_load(&set->atlas, atlas_path)) {
-            fprintf(stderr, "models atlas: can't open %s\n", atlas_path);
-        }
+    if (has_tex && atlas_texture.id == 0) {
+        fprintf(stderr, "models: shared atlas unavailable for %s\n", path);
+        free(offsets);
+        fc_asset_close(f);
+        models_free(set);
+        return NULL;
     }
 
     long model_file_end = 0;
@@ -427,9 +423,9 @@ static ModelSet *models_load_filtered(const char *path, const uint32_t *ids, int
         }
 
         Model ray_model = LoadModelFromMesh(mesh);
-        if (has_tex && set->atlas.texture.id > 0)
+        if (has_tex)
             ray_model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture =
-                set->atlas.texture;
+                atlas_texture;
 
         set->entries[m] = (ModelEntry){
             .model_id = mid, .model = ray_model, .loaded = 1,
@@ -453,8 +449,8 @@ static ModelSet *models_load_filtered(const char *path, const uint32_t *ids, int
     return set;
 }
 
-static ModelSet *models_load(const char *path) {
-    return models_load_filtered(path, NULL, 0);
+static ModelSet *models_load(const char *path, Texture2D atlas_texture) {
+    return models_load_filtered(path, NULL, 0, atlas_texture);
 }
 
 static void models_free(ModelSet *set) {
@@ -471,7 +467,6 @@ static void models_free(ModelSet *set) {
             free(set->entries[i].face_uvs);
         }
     }
-    fc_animated_atlas_unload(&set->atlas);
     free(set->entries);
     free(set->index_by_id);
     free(set);

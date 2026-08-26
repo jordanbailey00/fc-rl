@@ -194,7 +194,7 @@ static ObjectMesh* objects_load(const char* path) {
             strncat(atlas_path, ".atlas", sizeof(atlas_path) - strlen(atlas_path) - 1);
         }
 
-        if (fc_animated_atlas_load(&om->atlas, atlas_path)) {
+        if (fc_animated_atlas_load(&om->atlas, atlas_path, 1)) {
             /* assign atlas as diffuse map for the model's material */
             om->model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture =
                 om->atlas.texture;

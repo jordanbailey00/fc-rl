@@ -1481,16 +1481,19 @@ def _build_and_write(
 
     anim_path = args.output.with_suffix(".oanim")
     anim_models_path = args.output.with_suffix(".object_anim.models")
+    obsolete_anim_atlas = anim_models_path.with_suffix(".atlas")
+    if obsolete_anim_atlas.exists():
+        obsolete_anim_atlas.unlink()
     if animated_rows and animated_models:
         write_object_anim_binary(anim_path, animated_rows)
         write_models_binary(anim_models_path, animated_models,
                             tex_colors=tex_colors, atlas=atlas,
-                            atlas_path=anim_models_path.with_suffix(".atlas"))
+                            write_atlas=False)
         print(f"wrote {len(animated_rows)} animated object rows to {anim_path}")
         print(f"wrote {len(animated_models)} animated object model variants to "
               f"{anim_models_path}")
     else:
-        for stale in (anim_path, anim_models_path, anim_models_path.with_suffix(".atlas")):
+        for stale in (anim_path, anim_models_path):
             if stale.exists():
                 stale.unlink()
 

@@ -42,8 +42,9 @@ static NpcModelEntry* fc_npc_model_find(NpcModelSet* set, uint32_t model_id) {
     return model_find(set, model_id);
 }
 
-static NpcModelSet* fc_npc_models_load(const char* path) {
-    return models_load(path);
+static NpcModelSet* fc_npc_models_load(const char* path,
+                                       Texture2D atlas_texture) {
+    return models_load(path, atlas_texture);
 }
 
 static void fc_npc_models_unload(NpcModelSet* set) {
