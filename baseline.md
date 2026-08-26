@@ -808,6 +808,35 @@ lines (3,319 non-comment code lines), and the suite passes 163/163 tests. A
 real Raylib/OpenGL viewer startup and render smoke test also passed. Throughput
 was 899,453 SPS and training uptime was 128.337457 seconds.
 
+## Comparison 25: removed AgentTest action injector
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`p85aqzbd`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/p85aqzbd) (`solar-flower-1251`) |
+| Tag | `v4.5_refactor_agent_test_removed_100m` |
+| Git commit at run start | `adc821530` plus the documented uncommitted viewer-only cleanup |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `446a78a42f8a88b9435a52169914a7ee724980170aff5e0e15010bc92959ab4b` |
+| Backend binary SHA-256 | `e0015300b9d84123fda37f2539db41155ff6020f262beb50674837cc8b0d88a9` |
+| Backend source SHA-256 | `f0a929522f88ee174c13762df2570fddbfeb1d0e23df0f67a1f40d0c6e2a72e3` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260826T174657Z-train-1507976.json` |
+
+Result: behavioral parity remains exact against baseline `m916qfsv` and the
+preceding comparison `ww4xmjoi`. All 124 `env/*` metrics, agent steps, epoch,
+and all seven policy/value/entropy/KL/loss values are byte-for-byte equal.
+Each comparison has 135 of 150 summary fields equal; the 15 differences are
+only timestamps, wall-clock performance, throughput, and CPU/GPU utilization
+telemetry.
+
+The embedded AgentTest action injector, its hidden `T`-key mode, scripted
+action table, tick state, input override, and overlay were removed. Human
+controls and policy-pipe input are now the viewer's only action sources. The
+change removes 156 physical source lines and does not touch core, training,
+configuration, or policy-pipe behavior. The suite passes 163/163 tests, and a
+real Raylib/OpenGL viewer startup and render smoke test passed. Throughput was
+983,725 SPS and training uptime was 100.035228 seconds.
+
 ## Reproduction command
 
 ```bash

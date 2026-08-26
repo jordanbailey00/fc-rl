@@ -431,10 +431,6 @@ typedef struct {
     Texture2D tex_pray_melee_on, tex_pray_melee_off;
     Texture2D tex_pray_range_on, tex_pray_range_off;
     Texture2D tex_pray_magic_on, tex_pray_magic_off;
-    /* Agent action test mode (Phase 9a verification) */
-    int test_mode;       /* 1 = running scripted agent tests */
-    int test_id;         /* current test index */
-    int test_tick;       /* ticks elapsed in current test */
     /* Debug overlay (Phase 9c) — toggled with O key */
     int dbg_flags;       /* bitmask of DBG_* flags from fc_debug_overlay.h */
     /* Debug toggles */
@@ -2315,66 +2311,6 @@ static void process_human_clicks(ViewerState* v, int ui_capture) {
     }
 }
 
-/* Agent test data (defined here so key handler can reference it) */
-typedef struct {
-    const char* name;
-    const char* desc;
-    int duration;
-    int actions[7];
-} AgentTest;
-
-static const AgentTest AGENT_TESTS[] = {
-    /* --- Movement tests (PASSED) ---
-    { "Walk North",     "Head 0 = 1 (walk N, 3 ticks)",        3,  {1, 0,0,0,0, 0,0} },
-    { "Walk East",      "Head 0 = 3 (walk E, 3 ticks)",        3,  {3, 0,0,0,0, 0,0} },
-    { "Walk South",     "Head 0 = 5 (walk S, 3 ticks)",        3,  {5, 0,0,0,0, 0,0} },
-    { "Walk West",      "Head 0 = 7 (walk W, 3 ticks)",        3,  {7, 0,0,0,0, 0,0} },
-    { "Walk NE",        "Head 0 = 2 (walk NE, 3 ticks)",       3,  {2, 0,0,0,0, 0,0} },
-    { "Walk SE",        "Head 0 = 4 (walk SE, 3 ticks)",       3,  {4, 0,0,0,0, 0,0} },
-    { "Walk SW",        "Head 0 = 6 (walk SW, 3 ticks)",       3,  {6, 0,0,0,0, 0,0} },
-    { "Walk NW",        "Head 0 = 8 (walk NW, 3 ticks)",       3,  {8, 0,0,0,0, 0,0} },
-    { "Run North",      "Head 0 = 9 (run N, 3 ticks = 6 tiles)",  3,  {9, 0,0,0,0, 0,0} },
-    { "Run SE",         "Head 0 = 12 (run SE, 3 ticks = 6 tiles)", 3,  {12,0,0,0,0, 0,0} },
-    { "Walk-to-tile",   "Heads 5+6 = (26,31) -> tile (25,30)",  10, {0, 0,0,0,0, 26,31} },
-    { "Walk-to-tile 2", "Heads 5+6 = (36,36) -> tile (35,35)",  10, {0, 0,0,0,0, 36,36} },
-    */
-
-    /* --- Combat tests (PASSED) ---
-    { "Attack slot 1",  "Head 1=1: target closest NPC, auto-approach+attack", 15, {0, 1,0,0,0, 0,0} },
-    { "Switch to slot 2","Head 1=2: retarget to 2nd closest NPC",             10, {0, 2,0,0,0, 0,0} },
-    { "Attack + walk",  "Head 1=1 + walk S: attack while moving south",       10, {5, 1,0,0,0, 0,0} },
-    */
-
-    /* --- Prayer tests (PASSED) ---
-    { "Prot Magic",     "Head 2=2: activate Protect from Magic",               3, {0, 0,2,0,0, 0,0} },
-    { "Prot Range",     "Head 2=3: switch to Protect from Range",              3, {0, 0,3,0,0, 0,0} },
-    { "Prot Melee",     "Head 2=4: switch to Protect from Melee",              3, {0, 0,4,0,0, 0,0} },
-    { "Prayer off",     "Head 2=1: deactivate prayer",                         3, {0, 0,1,0,0, 0,0} },
-    */
-
-    /* --- Consumable tests (PASSED) ---
-    { "Eat shark",      "Head 3=1: eat shark, watch HP heal +20",              5, {0, 0,0,1,0, 0,0} },
-    { "Eat cooldown",   "Head 3=1: try eat again (3-tick cooldown, may fail)", 2, {0, 0,0,1,0, 0,0} },
-    { "Drink ppot",     "Head 4=1: drink prayer pot, watch prayer restore",    5, {0, 0,0,0,1, 0,0} },
-    { "Drink cooldown", "Head 4=1: try drink again (2-tick cooldown)",         2, {0, 0,0,0,1, 0,0} },
-    { "Eat + drink",    "Head 3=1 + 4=1: both same tick (separate cooldowns)", 5, {0, 0,0,1,1, 0,0} },
-    */
-
-    /* --- Combined tests (PASSED) ---
-    { "Run+eat+pray",   "Run N + eat shark + prot magic (all same tick)",      5, {9, 0,2,1,0, 0,0} },
-    { "Attack+pray+pot","Attack slot 1 + prot range + drink ppot",            10, {0, 1,3,0,1, 0,0} },
-    { "WalkTile+attack","Walk to (30,30) + attack slot 1 (walk cancels)",      8, {0, 1,0,0,0, 31,31} },
-    */
-
-    /* --- Debug overlay tests (9c-A: Collision/LOS/Path/Range) --- */
-    /* Press O to toggle overlays ON before starting these tests */
-    { "Collision",      "Press O first! Green=walkable, red=blocked tiles",     5, {0, 0,0,0,0, 0,0} },
-    { "LOS rays",       "Green lines=LOS clear, red=blocked. Walk near NPCs",  8, {5, 0,0,0,0, 0,0} },
-    { "Path viz",       "Walk to tile (30,25) — yellow path shows route",       10,{0, 0,0,0,0, 31,26} },
-    { "Attack range",   "Blue ring = current player weapon range",               5, {0, 0,0,0,0, 0,0} },
-};
-#define NUM_AGENT_TESTS (int)(sizeof(AGENT_TESTS)/sizeof(AGENT_TESTS[0]))
-
 /* Called EVERY FRAME for key presses. Buffers actions for next tick. */
 static void process_human_keys(ViewerState* v) {
     FcPlayer* p = &v->state.player;
@@ -2385,28 +2321,6 @@ static void process_human_keys(ViewerState* v) {
     if (IsKeyPressed(KEY_P))     v->pending_drink = FC_DRINK_PRAYER_POT;
     if (IsKeyPressed(KEY_X))
         fc_request_set_running(&v->state, !p->is_running);
-
-    /* T: agent action test mode — start or advance to next test */
-    if (IsKeyPressed(KEY_T)) {
-        if (!v->test_mode) {
-            /* Start test mode from current test_id */
-            v->test_mode = 1;
-            v->test_tick = 0;
-            v->paused = 0;
-            fprintf(stderr, "TEST MODE: starting test %d/%d\n", v->test_id + 1, NUM_AGENT_TESTS);
-        } else if (v->test_tick >= AGENT_TESTS[v->test_id].duration) {
-            /* Current test done — advance to next */
-            v->test_id++;
-            v->test_tick = 0;
-            if (v->test_id >= NUM_AGENT_TESTS) {
-                v->test_mode = 0;
-                fprintf(stderr, "TEST MODE: all tests complete\n");
-            } else {
-                v->paused = 0;
-                fprintf(stderr, "TEST MODE: starting test %d/%d\n", v->test_id + 1, NUM_AGENT_TESTS);
-            }
-        }
-    }
 
     /* --- Debug toggles (testing only) --- */
     /* F9: toggle godmode (player can't die) */
@@ -2472,73 +2386,6 @@ static void build_human_actions(ViewerState* v) {
     v->pending_attack_npc = -1;
     v->pending_tile_x = -1;
     v->pending_tile_y = -1;
-}
-
-/* ======================================================================== */
-/* Agent action test mode (Phase 9a verification)                           */
-/* ======================================================================== */
-
-/* Build actions for current test. Returns 1 if test is active, 0 if done. */
-static int build_test_actions(ViewerState* v) {
-    if (!v->test_mode) return 0;
-    if (v->test_id >= NUM_AGENT_TESTS) {
-        v->test_mode = 0;
-        return 0;
-    }
-
-    const AgentTest* t = &AGENT_TESTS[v->test_id];
-
-    if (v->test_tick >= t->duration) {
-        /* Test finished — pause and wait for user to advance */
-        v->paused = 1;
-        return 0;
-    }
-
-    /* Send the test actions */
-    memset(v->actions, 0, sizeof(v->actions));
-    for (int i = 0; i < 7; i++) {
-        v->actions[i] = t->actions[i];
-    }
-
-    /* For walk-to-tile tests, only send the coordinates on the first tick
-     * (the route persists, subsequent ticks just let it play out) */
-    if (v->test_tick > 0 && (t->actions[5] > 0 || t->actions[6] > 0)) {
-        v->actions[5] = 0;
-        v->actions[6] = 0;
-    }
-
-    v->test_tick++;
-    return 1;
-}
-
-/* Draw test overlay showing what's being tested */
-static void draw_test_overlay(ViewerState* v) {
-    if (!v->test_mode && v->test_id == 0) return;
-    if (v->test_id >= NUM_AGENT_TESTS) return;
-
-    const AgentTest* t = &AGENT_TESTS[v->test_id];
-
-    int bx = 10, bw = 460, bh = 60;
-    int by = GetScreenHeight() - bh - 10;
-    DrawRectangle(bx, by, bw, bh, CLITERAL(Color){0,0,0,200});
-    DrawRectangleLinesEx((Rectangle){(float)bx,(float)by,(float)bw,(float)bh}, 2,
-                         COL_TEXT_YELLOW);
-
-    char buf[128];
-    snprintf(buf, sizeof(buf), "TEST %d/%d: %s", v->test_id + 1, NUM_AGENT_TESTS, t->name);
-    fc_osrs_draw_text(buf, bx + 8, by + 6, 16, COL_TEXT_YELLOW);
-    fc_osrs_draw_text(t->desc, bx + 8, by + 26, 12, COL_TEXT_WHITE);
-
-    if (v->paused && v->test_tick >= t->duration) {
-        snprintf(buf, sizeof(buf), "DONE — press T for next test   (tick %d/%d)",
-                 v->test_tick, t->duration);
-        fc_osrs_draw_text(buf, bx + 8, by + 42, 11, COL_TEXT_GREEN);
-    } else {
-        snprintf(buf, sizeof(buf), "Running tick %d/%d   Player: (%d,%d)",
-                 v->test_tick, t->duration,
-                 v->state.player.x, v->state.player.y);
-        fc_osrs_draw_text(buf, bx + 8, by + 42, 11, COL_TEXT_DIM);
-    }
 }
 
 /* ======================================================================== */
@@ -4188,8 +4035,6 @@ int main(int argc, char** argv) {
                     fprintf(stderr, "[policy-pipe] EOF on stdin, stopping.\n");
                     break;
                 }
-            } else if (v.test_mode && build_test_actions(&v)) {
-                /* Test mode provided actions */
             } else {
                 build_human_actions(&v);
                 used_human_actions = 1;
@@ -4840,7 +4685,6 @@ skip_player_anim_update:
         runec_ui_draw(&v.ui, GetScreenWidth(), GetScreenHeight());
         draw_runec_side_overrides(&v);
         draw_runec_console(&v);
-        draw_test_overlay(&v);
         draw_click_cross(&v);
 
         EndDrawing();
