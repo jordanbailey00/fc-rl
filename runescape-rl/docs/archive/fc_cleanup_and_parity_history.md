@@ -253,3 +253,59 @@ The strict compiler, reachability, analyzer, sanitizer, and Valgrind setup was
 used as an explicit audit—not as a requirement for every implementation. Any
 future on-demand static-analysis test and all other remaining cleanup,
 documentation, parity, training, or release work is tracked in `TODO.md`.
+
+## Completed policy-contract decisions
+
+The observation and action-mask audit concluded that the abstract Fight Caves
+task intentionally exposes committed incoming-attack style, remaining hit
+ticks, the open Prayer-action window, and Prayer-deadline urgency. These facts
+substitute for audiovisual cues that a human OSRS player receives. They were
+retained as a task-definition choice rather than classified as reward leakage.
+
+The native Puffer action mask and its policy-visible copy were also retained.
+The live model input is 319 floats: 285 normalized policy features followed by
+the 34 legality bits for its movement, attack, and Prayer heads. Puffer receives
+the same 34 bits through its native mask channel for enforcement. This
+duplication is checkpoint-visible and deliberate; the 20 raw reward features
+and the unused core action heads are not model inputs.
+
+## Completed v4.5 selection and promotion
+
+The corrected Stage 2 sweep ran 130 cold-start trials for 750 million agent
+steps each while holding the environment, observations, actions, rewards,
+loadout, seed, and fixed trainer settings constant. It swept value/optimizer,
+architecture, and agent-count settings against final Jad completion. The full
+ranking and behavioral analysis is preserved in the root `sweep_top8.md`.
+
+Run `1nvvx5qu` was selected as the robust 512-hidden, three-layer, 4,096-agent
+recipe. Standalone run `8oivozuq` reproduced its final evaluation exactly:
+94.7886% Jad completion, 95.9390% wave-63 reach, and 877.679 average damage
+taken. Run `i215ulj4` then evaluated that recipe on the approved OSRS-parity
+backend with the previous correct-danger-Prayer reward and finished at 88.0188%
+Jad completion. The otherwise comparable `txqsiahp` set that Prayer reward to
+zero and improved final Jad completion to 92.7431% and wave-63 reach to
+94.1206%. Its configuration became the live `config/fight_caves.ini` baseline.
+
+## Final viewer ownership and warning cleanup
+
+- Commit `fc3263ee0` converted the remaining implementation-heavy animation,
+  model, NPC-model, object, spot-animation, terrain, and debug-overlay headers
+  into conventional compiled `.c/.h` modules with one implementation owner.
+- Commit `78be0715c` removed the unexplained global
+  `-Wno-unused-but-set-variable` training suppression after local, CPU, and CUDA
+  builds passed without it. The same commit extracted owned actor-animation and
+  combat-presentation sub-state, kept `viewer.c` as the coordinator, and split
+  `ui.c` input handling into private region-specific helpers without dividing
+  the cohesive UI subsystem.
+- W&B regression run `a8e5si2y` used the fixed 100M refactor configuration and
+  matched original baseline `m916qfsv` exactly on all 124 environment metrics
+  and all seven policy/value/loss values. Only performance and host telemetry
+  differed. The complete evidence remains in the root `baseline.md`.
+
+## Documentation consolidation
+
+On 2026-08-27 the root README, active TODO, run history, sweep history,
+validation-tool reference, and contract comments were reconciled with the live
+v4.5 repository. Completed TODO entries were removed from the working list and
+archived here. Ignored local analysis documents remain non-authoritative; a
+clean clone uses the tracked documentation index and current source contracts.

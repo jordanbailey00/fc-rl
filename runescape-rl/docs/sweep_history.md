@@ -1,5 +1,34 @@
 # Sweep History
 
+This is a chronological evidence archive. Terms such as "current backend" and
+"SOTA" inside older sections describe the repository at the time of that
+sweep. The live baseline is documented in the root README and the top of
+`run_history.md`.
+
+## v4.5 value/architecture/agent-count sweep (2026-08-20, completed — 130 runs)
+
+The corrected Protein sweep ran 130 trials for 750 million agent steps,
+maximizing final `jad_kill_rate`. It held the Fight Caves environment, loadout,
+seed, observations, actions, rewards, and fixed trainer settings constant and
+swept only:
+
+- `train.vf_coef`
+- `train.vf_clip_coef`
+- `train.max_grad_norm`
+- `train.beta1`
+- `policy.hidden_size`
+- `policy.num_layers`
+- `vec.total_agents`
+
+The finalists converged strongly on three recurrent layers, 512 hidden units,
+and 4,096 agents. `1nvvx5qu` was selected as the balanced recipe because it
+finished at 94.79% Jad completion with the strongest final-quarter consistency
+floor. Standalone run `8oivozuq` reproduced its complete final environment
+summary exactly and retained a replayable checkpoint.
+
+The full eight-run configuration, behavior, learning-curve, and W&B-link
+analysis is preserved in [`../../sweep_top8.md`](../../sweep_top8.md).
+
 ## v38 Loadout Sweep (2026-06-22, completed - 9 runs, current backend)
 
 ### Overview

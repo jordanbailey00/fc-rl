@@ -1,7 +1,8 @@
 # RL Configuration History
 
-Tracks every training config change with results and reasoning.
-Current config is at the top. Older runs below.
+Tracks training configuration changes with results and reasoning. The live
+baseline is at the top; older sections preserve the terminology and conclusions
+that were current when those experiments ran.
 
 ## Section template (followed by entries from v28 onward; older entries
 may vary but cover the same content when data is available)
@@ -45,10 +46,87 @@ attribution-matrix style used from v28.5 onward.
 
 ---
 
-## v4_simple_reward current baseline - source recipe `mmyxbyn4`, confirmation `l9o32hhz` (2026-07-27)
+## v4.5 current baseline — selected `1nvvx5qu`, promoted `txqsiahp` (2026-08-23)
 
-`v4_simple_reward` is the canonical Fight Caves baseline from this point
-forward. It promotes the trainer recipe from W&B run `mmyxbyn4`, the
+The live configuration is `runescape-rl/config/fight_caves.ini`, SHA-256
+`33bca87ccde19636c3b742b7e292732978307f648a8e80f6849f1d8d1612c9b6`.
+It uses the approved OSRS-parity backend, no food or Prayer potions, the SOTA
+Twisted bow/Masori loadout, observation contract v8, the three-head stationary
+attack action contract v3, reward contract v4, and native trainer seed 73.
+
+### Selection and reproduction
+
+The corrected 130-run Stage 2 sweep held the environment, rewards,
+observations, actions, loadout, seed, and fixed trainer settings constant while
+sweeping value/optimizer settings, hidden size, recurrent layer count, and
+agent count. `1nvvx5qu` was chosen over the highest terminal-score candidate
+because its 512-hidden, three-layer, 4,096-agent policy had the strongest
+final-quarter consistency floor. The complete top-eight analysis is in the
+root `sweep_top8.md`.
+
+Standalone run `8oivozuq` reproduced `1nvvx5qu` exactly on every final
+environment metric. It therefore established that the selected sweep recipe
+could be regenerated outside sweep mode with a replayable checkpoint.
+
+### Current backend and reward promotion
+
+`i215ulj4` applied the selected recipe to the approved OSRS movement,
+collision, line-of-sight, pathfinding, combat-ordering, and encounter backend.
+It retained the previous `w_correct_danger_prayer=0.005`. Run `txqsiahp`
+changed only that configurable reward weight to zero; the Jad-specific correct
+Prayer weight was already zero. The zero-Prayer-reward run improved final Jad
+completion by 4.724 percentage points and wave-63 reach by 4.213 points without
+rewarding correct Prayer or blocked hits.
+
+### Exact active trainer settings
+
+| Category | Values |
+| --- | --- |
+| Budget | 750,000,000 agent steps; no LR annealing |
+| Vectorization | 4,096 agents, 2 buffers, 16 threads |
+| Policy | MinGRU, 512 hidden, 3 layers, expansion 1 |
+| PPO | `lr=0.00207567504650331`, `gamma=0.9991261141073255`, `gae_lambda=0.9`, `horizon=256`, `minibatch=32768` |
+| Replay/value | `replay_ratio=2.055184291514704`, `vf_coef=0.9336215311545304`, `vf_clip=0.16791546282962394` |
+| Optimizer | `max_grad_norm=0.1418276517190492`, `beta1=0.9832670364021693`, `beta2=0.9995810484472892`, `eps=1e-10` |
+| V-trace/PER | `rho=2.0`, `c=0.9746667741536915`, `alpha=0.9110743956381228`, `beta0=0.2258134371255269` |
+| Policy contract | 319 inputs = 285 policy features + 34 visible mask bits; action dimensions `[17, 9, 8]` |
+
+The active reward weights are documented in the root README and defined in the
+live INI. In particular, both correct-Prayer rewards are zero.
+
+### Verified run sequence
+
+These are final W&B summaries, not peak values:
+
+| Run | Role | Agent steps | Jad kill | Wave 63 | Damage taken | SPS |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| [`hevp6ehc`](https://wandb.ai/jbailey8531-oakton-college/fight+caves+rl/runs/hevp6ehc) | v4 simple-reward/new-backend comparison | 1,499,463,680 | 93.11% | 93.91% | 920.4 | 1,672,498 |
+| [`z5vbs56z`](https://wandb.ai/jbailey8531-oakton-college/fight+caves+rl/runs/z5vbs56z) | later v4 new-backend comparison | 1,499,463,680 | 90.16% | 91.17% | 986.8 | 1,567,444 |
+| [`88l9p7ie`](https://wandb.ai/jbailey8531-oakton-college/fight+caves+rl/runs/88l9p7ie) | corrected movement baseline | 1,499,463,680 | 90.08% | 91.34% | 967.4 | 1,538,435 |
+| [`1nvvx5qu`](https://wandb.ai/jbailey8531-oakton-college/fight+caves+rl/runs/1nvvx5qu) | selected Stage 2 sweep run | 749,731,840 | 94.79% | 95.94% | 877.7 | 948,405 |
+| [`8oivozuq`](https://wandb.ai/jbailey8531-oakton-college/fight+caves+rl/runs/8oivozuq) | exact standalone reproduction | 749,731,840 | 94.79% | 95.94% | 877.7 | 914,429 |
+| [`i215ulj4`](https://wandb.ai/jbailey8531-oakton-college/fight+caves+rl/runs/i215ulj4) | OSRS-parity backend, old Prayer reward | 749,731,840 | 88.02% | 89.91% | 973.5 | 871,112 |
+| [`txqsiahp`](https://wandb.ai/jbailey8531-oakton-college/fight+caves+rl/runs/txqsiahp) | live baseline, Prayer reward zero | 749,731,840 | **92.74%** | **94.12%** | 978.0 | 990,867 |
+
+### Artifacts and interpretation
+
+- `runescape-rl/config/experiments/fight_caves_v45_1nvvx5qu_retrain_750m.ini`
+  preserves the sweep winner's standalone reproduction config.
+- `runescape-rl/config/fight_caves.ini` is the current `txqsiahp` config.
+- Checkpoints are stored under the compiled contract directory recorded by each
+  run manifest; evaluator preflight rejects mismatched contracts or parameter
+  counts.
+- `1nvvx5qu` and `8oivozuq` are trainer-recipe evidence on the earlier backend.
+  `txqsiahp` is the deployment baseline for the live backend. Their raw rates
+  should not be treated as a single-variable backend comparison.
+
+---
+
+## v4_simple_reward former baseline - source recipe `mmyxbyn4`, confirmation `l9o32hhz` (2026-07-27)
+
+`v4_simple_reward` was the canonical Fight Caves baseline at this point in the
+project and is now superseded by the v4.5 section above. It promoted the
+trainer recipe from W&B run `mmyxbyn4`, the
 highest-peak run in the 140-trial v3 Stage 1 Protein sweep, and uses a fixed
 1.5B-step training budget with the current 60-second natural HP regeneration
 mechanic.

@@ -25,10 +25,10 @@
  * SINGLE SOURCE OF TRUTH for all buffer layouts. Python reads these constants
  * (via codegen or manual sync) — it never redefines them.
  *
- * All observations are float32, normalized to [0,1] via divisor tables.
- * All actions are int32 per head.
- * Reward features are float32, packed AFTER policy observations in the same buffer
- * but logically separable — the policy should NOT consume reward features by default.
+ * All observations are float32, normalized to [0,1]. All actions are int32 per
+ * head. The canonical core buffer contains policy observations followed by raw
+ * reward features. The Puffer adapter exposes its own checkpoint-compatible
+ * model input, documented below; reward features are not model inputs.
  */
 
 /* ======================================================================== */
@@ -36,16 +36,21 @@
 /* ======================================================================== */
 
 /*
- * The observation buffer is split into three contiguous regions:
+ * The optional complete core buffer is split into three contiguous regions:
  *
  *   [0 .. FC_POLICY_OBS_SIZE-1]                          policy observations
  *   [FC_POLICY_OBS_SIZE .. FC_POLICY_OBS_SIZE+FC_REWARD_FEATURES-1]  reward features
  *   [FC_TOTAL_OBS .. FC_TOTAL_OBS+FC_ACTION_MASK_SIZE-1] action mask
  *
- * The trainer receives the full buffer (FC_TOTAL_OBS + FC_ACTION_MASK_SIZE floats).
- * The policy receives only the first FC_POLICY_OBS_SIZE floats.
- * The trainer may read reward features for shaping/logging, but they are NOT
- * part of the default policy input.
+ * Core callers may use policy observations plus raw reward features
+ * (FC_TOTAL_OBS), then append the seven-head core mask for a 474-float
+ * diagnostic buffer (FC_OBS_SIZE).
+ *
+ * Puffer does not receive that diagnostic layout. Its model input is 319
+ * floats: FC_POLICY_OBS_SIZE (285) followed by FC_PUFFER_MASK_SIZE (34) mask
+ * bits for the no-supplies policy heads. Those same 34 bits are also supplied
+ * through PufferLib's native action-mask channel. The 20 reward features and
+ * the masks for core-only action heads are not exposed to the model.
  */
 
 /* --- Player features (22 floats) --- */
@@ -357,20 +362,17 @@ static const int FC_PUFFER_ACTION_DIMS[FC_PUFFER_NUM_ATNS] = FC_PUFFER_ACT_SIZES
 #define FC_MASK_TARGET_Y_START   (FC_MASK_TARGET_X_START + FC_MOVE_TARGET_X_DIM) /* 104 */
 
 /* ======================================================================== */
-/* Full buffer size (what PufferLib vecenv allocates per env)                 */
+/* Optional complete core diagnostic buffer size                             */
 /* ======================================================================== */
 
 /*
  * Total floats in the full FC backend buffer:
  *   FC_POLICY_OBS_SIZE (285) + FC_REWARD_FEATURES (20) + FC_ACTION_MASK_SIZE (169) = 474
  *
- * The PufferLib adapter does NOT expose this full buffer directly. It exposes
- * FC_PUFFER_OBS_SIZE, defined above from the Puffer policy-head contract.
- *
- * Python trainer slices:
- *   policy_obs   = obs[:FC_POLICY_OBS_SIZE]
- *   reward_feat  = full_obs[FC_REWARD_START:FC_REWARD_START + FC_REWARD_FEATURES]
- *   action_mask  = full_obs[FC_TOTAL_OBS:FC_TOTAL_OBS + FC_ACTION_MASK_SIZE]
+ * The PufferLib adapter does not allocate or expose this layout. It allocates
+ * FC_PUFFER_OBS_SIZE (319), copies the no-supplies mask into the model input at
+ * FC_POLICY_OBS_SIZE, and publishes the same flags through the native mask
+ * pointer. Reward computation reads authoritative state through fc_reward.
  */
 #define FC_OBS_SIZE             (FC_TOTAL_OBS + FC_ACTION_MASK_SIZE)  /* 474 */
 

@@ -60,7 +60,9 @@ The phase ordering in `fc_tick.c` is a behavioral contract. A change to prayer t
 - Before adding a helper, search `fc_combat`, `fc_pathfinding`, `fc_npc`, `fc_wave`, `fc_prayer`, and `fc_state` for the existing concept.
 - Remove superseded helpers and call paths in the same patch.
 - Do not move implementation into headers merely for convenience. Header-only logic is appropriate only for small, stable, performance-relevant helpers with no duplicate definition risk.
-- If adding a new core source file, update both the normal CMake build and the training amalgamation/build path. Do not create two implementations to satisfy the two build modes.
+- If adding a new core source file, add it to `core_sources.txt`, which is
+  consumed by both CMake and every training build mode. Do not create a second
+  implementation for the adapter.
 
 ## Tests
 

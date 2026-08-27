@@ -2,270 +2,222 @@
 
 # Fight Caves RL
 
-Training a reinforcement learning agent to complete the Old School RuneScape Fight Caves — a 63-wave PvM gauntlet ending in a boss fight against TzTok-Jad.
+Fight Caves RL is a deterministic C simulation of Old School RuneScape's
+63-wave Fight Caves, a PufferLib PPO training integration, and a Raylib viewer
+for human play and checkpoint replay.
 
-**Goals:**
-- Build a deterministic, high-performance Fight Caves simulation in C
-- Train a PPO agent from scratch to clear all 63 waves and defeat Jad
-- Achieve this without human demonstrations or hardcoded strategies
+The project trains from scratch without demonstrations or a scripted policy.
+The live task uses the SOTA Twisted bow/Masori loadout, no food, no Prayer
+potions, and three policy action heads: movement, target selection, and Prayer.
 
-**Current results (v35.1 — `gacjanj0` / sweet-plant-580):**
-- Agent reaches wave 63 (Jad) on **~99% of episodes** from cold start
-- Learned safespotting, prayer switching, kiting, and resource management
-- **Jad kill rate: 94.9% peak, sustained 90%+ band between 1.1B–1.6B steps** — the agent
-  reliably wins the Fight Caves from a cold-start PPO run
-- v35.1 reproduces hparams from `a3mi6u2g`, the top pick of the v34 long Protein sweep
-  (200 trials over PPO/optimizer/policy knobs on v32.0 baseline)
-- Cold-start training: ~26 min for 3B steps on RTX 5070 Ti (~1.9M SPS)
+## Current baseline
 
-**Recent diagnostics:**
-- **v35 (`8z4lqldl`)** — same SOTA config with corrected Jad healer respawn behavior;
-  peak `jad_kill_rate=96.5%`, best saved checkpoint `90.6%`
-- **v36 (`jta3lkgx`)** — no-consumables diagnostic with `initial_sharks=0` and
-  `initial_prayer_doses=0`; same action heads/masks, peak `jad_kill_rate=80.8%`,
-  best saved checkpoint `69.1%`
+The promoted baseline is W&B run
+[`txqsiahp`](https://wandb.ai/jbailey8531-oakton-college/fight+caves+rl/runs/txqsiahp).
+It uses the current OSRS-parity backend and the exact trainer recipe selected by
+sweep run `1nvvx5qu`, with both correct-Prayer reward weights set to zero.
 
-![Agent Demo](runescape-rl/assets/demo.gif)
+| Property | Live value |
+| --- | --- |
+| Config | [`runescape-rl/config/fight_caves.ini`](runescape-rl/config/fight_caves.ini) |
+| Training budget | 750 million agent steps |
+| Policy | 3-layer MinGRU, 512 hidden units |
+| Vectorization | 4,096 agents, 2 buffers, 16 threads |
+| Policy input | 319 floats: 285 policy features plus 34 policy-visible legality bits |
+| Policy actions | `[17, 9, 8]`: movement, attack target, Prayer |
+| Final Jad kill rate | 92.74% |
+| Final wave-63 reach rate | 94.12% |
+| Final average damage taken | 978.0 |
 
----
+The key recent comparisons are final post-training evaluations:
 
-## Getting Started
+| Run | Role | Steps | Jad kill | Wave 63 | Damage taken |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `1nvvx5qu` | selected Stage 2 sweep recipe | 750M | 94.79% | 95.94% | 877.7 |
+| `8oivozuq` | exact standalone reproduction | 750M | 94.79% | 95.94% | 877.7 |
+| `i215ulj4` | current parity backend, old Prayer reward | 750M | 88.02% | 89.91% | 973.5 |
+| `txqsiahp` | current baseline, Prayer reward zero | 750M | 92.74% | 94.12% | 978.0 |
 
-### Requirements
+The exact 130-run sweep analysis is in
+[`sweep_top8.md`](sweep_top8.md). Historical runs and configuration changes are
+preserved in
+[`run_history.md`](runescape-rl/docs/run_history.md); old labels such as
+"current" describe their point in history, not the live repository.
 
-- Linux (tested on Ubuntu 24.04)
-- Python 3.12+
-- NVIDIA GPU with CUDA 12.8+ and cuDNN 9+
-- CMake 3.20+
-- GCC/G++
-- Raylib 5.5 (vendored in `fc-viewer/raylib/`)
+## Architecture
 
-### Clone & Setup
+```mermaid
+flowchart LR
+    Core[fc-core<br/>C simulation and contracts]
+    Training[fc-training<br/>Puffer adapter]
+    Puffer[PufferLib<br/>PPO and MinGRU]
+    Viewer[fc-viewer<br/>play and policy replay]
+    Raylib[Raylib<br/>OSRS-style presentation]
+    Validation[fc-validation<br/>behavioral guardrails]
 
-```bash
-git clone https://github.com/jordanbailey00/fight-caves-rl.git
-cd fight-caves-rl/runescape-rl
-
-# Create virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
-pip install torch numpy wandb pybind11 rich rich-argparse
+    Core --> Training --> Puffer
+    Core --> Viewer --> Raylib
+    Core --> Validation
+    Training --> Validation
 ```
 
-### Play (Viewer)
+- `fc-core` owns all authoritative gameplay: ticks, combat, Prayer, movement,
+  pathfinding, collision, line of sight, NPC behavior, waves, observations,
+  rewards, masks, and render events. It is deterministic and allocates no heap
+  memory in the tick hot path.
+- `fc-training` is a thin PufferLib adapter. It links the normal `fc_core`
+  library and contains no renderer or Raylib dependency.
+- `fc-viewer` uses the same core for human play and policy replay. Its actor,
+  combat-presentation, animation, minimap, asset, UI, and debug modules own
+  presentation only.
+- `fc-validation` contains focused contract, parity, determinism, movement,
+  combat, reward, replay, and integration guardrails.
+- `tools/validation` owns run manifests, compiled-contract checks, checkpoint
+  compatibility, and source-level configuration guardrails.
 
-Build and launch the interactive Raylib viewer:
+The simulator and viewer use only files in this repository at runtime. The
+collision, movement, and line-of-sight maps are required and fail closed when
+missing. Viewer models, animations, sprites, terrain, objects, projectiles, and
+the minimap are cache-derived assets under `runescape-rl/fc-viewer/assets`.
+
+## Requirements and setup
+
+- Linux; the active development environment is Ubuntu 24.04.
+- Python 3.12 or another version supported by the vendored PufferLib 4 tree.
+- CMake 3.20+, GCC/G++, and a standard OpenGL/X11 development environment.
+- An NVIDIA GPU and compatible CUDA/cuDNN/PyTorch stack for GPU training.
+- Raylib 5.5 headers and static library, already vendored under
+  `runescape-rl/fc-viewer/raylib`.
+
+From the checkout root:
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
-./build/fc-viewer/fc_viewer
+python3 -m venv runescape-rl/.venv
+runescape-rl/.venv/bin/python -m pip install --upgrade pip
+runescape-rl/.venv/bin/python -m pip install -e ./pufferlib_4
 ```
 
-From the repo root checkout, the viewer path is:
+### Build and test
+
+```bash
+cmake -S runescape-rl -B runescape-rl/build -DCMAKE_BUILD_TYPE=Release
+cmake --build runescape-rl/build -j
+ctest --test-dir runescape-rl/build --output-on-failure
+```
+
+### Play
 
 ```bash
 ./runescape-rl/build/fc-viewer/fc_viewer
 ```
 
-The viewer uses the same `fc-core` backend as training, with cache-derived Fight Caves terrain,
-objects, models, animations, spotanims, projectile visuals, sprites, minimap, and OSRS-style side
-tabs.
+The console area contains NPC targeting, wave selection, TPS presets, debug,
+and viewer-only god-mode controls. The friends tab contains the Player, Obs,
+Mask, Reward, and Log diagnostics. Debug rendering can show collision, routes,
+line of sight, attack range, occupied footprints, and Prayer-lock windows;
+none of these overlays changes core gameplay.
+
+Useful playable controls:
+
+- Left click an arena tile or minimap location to route; click an NPC to attack.
+- `1`, `2`, `3` toggle Protect from Melee, Missiles, or Magic.
+- `X` toggles running; `Space` pauses; `Right Arrow` advances one tick.
+- `R` resets; `F1` through `F8` spawn debug NPC types; `F9` toggles viewer god mode.
+- `D` or `O` toggles diagnostics; `Shift+O` cycles overlay groups.
+- `G` toggles the tile grid; `C` toggles collision.
+- `4` and `5` select camera presets; `L` toggles camera follow.
+- Right-drag orbits, the scroll wheel zooms, and `Q` or `Esc` quits.
 
 ![NPC tracking, wave selector, and TPS controls](runescape-rl/assets/readme/viewer-npc-controls.png)
 
-The clan chat tab is repurposed for viewer controls: clickable NPC targets, a wave selector, and
-manual TPS presets. The friends tab holds the debug dashboard when `D`/`O` is enabled, while the
-normal prayer tab remains clickable for Protect from Melee, Missiles, and Magic.
-
-<p>
-  <img src="runescape-rl/assets/readme/viewer-debug-overview.png" alt="Debug overlay showing reachable tiles, blocked tiles, NPC LOS, and player range" width="49%">
-  <img src="runescape-rl/assets/readme/viewer-debug-los.png" alt="Debug overlay closeup with blocked terrain, LOS, and ranged perimeter" width="49%">
-</p>
-
-Debug rendering can show walkable tiles in green, blocked tiles in red, NPC line-of-sight rays, path
-routes, and the player ranged perimeter. These overlays are visual diagnostics only; gameplay still
-comes from `fc-core`.
-
-<p>
-  <img src="runescape-rl/assets/readme/viewer-player.png" alt="Player diagnostic panel" width="24%">
-  <img src="runescape-rl/assets/readme/viewer-obs.png" alt="Observation diagnostic panel" width="24%">
-  <img src="runescape-rl/assets/readme/viewer-reward.png" alt="Reward diagnostic panel" width="24%">
-  <img src="runescape-rl/assets/readme/viewer-log.png" alt="Event log diagnostic panel" width="24%">
-</p>
-
-The side diagnostics expose player state, observation slots, masks, policy reward components, and an
-event log so policy behavior can be inspected while playing or replaying a checkpoint.
-
-Hotkeys:
-- Left click arena/minimap — route movement; click an NPC or target row to attack
-- `1` / `2` / `3` — toggle Protect from Melee / Missiles / Magic
-- `F` — eat shark; `P` — drink prayer potion; `X` — toggle run
-- `Space` — pause/resume; `Right Arrow` — single tick; `R` — reset episode
-- `D` or `O` — toggle debug overlay and open the friends diagnostics tab
-- `Shift+O` — cycle debug overlay groups
-- `G` — grid; `C` — collision overlay
-- `4` / `5` — camera presets; `L` — lock/unlock camera follow
-- Right-drag — orbit camera; scroll — zoom; `Q` / `Esc` — quit
-
 ### Train
 
-Run a full training session (cold start, ~26 min for 3B steps on RTX 5070 Ti):
+W&B is enabled by default. From `runescape-rl`:
 
 ```bash
-FORCE_BACKEND_REBUILD=1 bash train.sh
+cd runescape-rl
+./train.sh train \
+  --config config/fight_caves.ini \
+  --tag v4.5_current_baseline
 ```
 
-`train.sh` handles venv activation, config sync, backend compilation, and launch. Training logs to W&B by default.
+`train.sh` selects Python, synchronizes the chosen INI into the sibling
+PufferLib tree, rebuilds the backend when its source stamp changes, validates
+the compiled policy contract, selects a contract-specific checkpoint
+directory, writes a reproducibility manifest, and launches PufferLib.
 
-Key flags:
-```bash
-bash train.sh --no-wandb                                # disable W&B logging
-bash train.sh sweep                                      # run Protein hparam sweep
-WANDB_TAG=v30.0 bash train.sh                            # tag the run in W&B
-CONFIG_PATH=/path/to/custom.ini bash train.sh            # override config
-LOAD_MODEL_PATH=/path/to/checkpoint.bin bash train.sh    # warm-start
-```
-
-### Evaluate a Checkpoint
-
-Watch a trained policy play in the viewer:
+Useful variants:
 
 ```bash
-source .venv/bin/activate
-python3 fc-viewer/eval_viewer.py --ckpt /path/to/checkpoint.bin
+./train.sh train --config config/fight_caves.ini --no-wandb
+LOAD_MODEL_PATH=/absolute/path/checkpoint.bin ./train.sh train --config config/fight_caves.ini --tag warm_start
+./train.sh sweep --config config/experiments/example.ini --tag example --wandb-group example
 ```
 
----
+### Replay a checkpoint
 
-## Commands
+The evaluator validates the active config, compiled backend, checkpoint
+sidecar, model dimensions, and parameter count before launching the viewer:
 
-| Command | Description |
-|---------|-------------|
-| `bash train.sh` | Train with current config (cold start) |
-| `bash train.sh sweep` | Run Protein hyperparameter sweep |
-| `bash train.sh --no-wandb` | Train without W&B logging |
-| `LOAD_MODEL_PATH=<path> bash train.sh` | Warm-start from checkpoint |
-| `./build/fc-viewer/fc_viewer` | Launch playable viewer |
-| `python3 fc-viewer/eval_viewer.py --ckpt <path>` | Replay trained policy |
-| `bash analyze_run.sh <run_id>` | Quick W&B run analysis |
-
----
-
-## Architecture
-
-<!-- TODO: Simple block diagram showing fc-core -> fc-training -> PufferLib and fc-core -> fc-viewer -> Raylib -->
-
-```
-runescape-rl/
-├── fc-core/           Deterministic C game simulation
-│   ├── include/       Headers (types, contracts, combat, reward, API)
-│   └── src/           Implementation (tick, state, combat, NPC, wave, prayer)
-├── fc-training/      PufferLib 4.0 adapter (binding.c, fight_caves.h)
-├── fc-viewer/          Raylib 3D viewer + eval tooling
-│   ├── src/           Viewer, debug overlay, asset loaders
-│   └── assets/        Collision map, prayer/item sprites
-├── config/            Training config (fight_caves.ini)
-└── docs/              Run history, RL config reference, design doc
+```bash
+cd runescape-rl
+python3 fc-viewer/eval_viewer.py --ckpt /absolute/path/checkpoint.bin
 ```
 
-**Backend (`fc-core/`):** Pure C, zero allocations per tick. Deterministic game simulation — combat, pathfinding, prayer, waves, NPC AI. Both the viewer and trainer call into the same `fc_step()` function.
+Use `--episodes 1` to exit after one episode and `--speed 1`, `2`, `4`, or `10`
+to select the initial replay multiplier. Without `--episodes`, replay continues
+across episodes until the window is closed.
 
-**Training (`fc-training/`):** PufferLib 4.0 wrapper. Compiles the C backend into a shared library with CUDA-accelerated vectorized environments. The canonical 4096-agent b5 baseline runs at roughly 1.2M steps/sec on the current test machine.
+## Live contracts and rewards
 
-**Viewer (`fc-viewer/`):** Raylib-based 3D viewer for human play and policy replay. Debug overlay shows reward breakdown, NPC stats, prayer state, threat context.
+The authoritative observation, action, reward-feature, and mask dimensions are
+in
+[`fc_contracts.h`](runescape-rl/fc-core/include/fc_contracts.h). The Puffer
+adapter writes 285 normalized policy features followed by the first 34 legality
+bits into the model input and also supplies those same legality bits through
+PufferLib's native mask channel. The model does not receive the 20 raw reward
+features.
 
-**Training stack:** PPO with MinGRU policy (3-layer, 256 hidden). W&B integration for logging and sweep analysis.
+The live nonzero reward configuration is:
 
----
+| Channel | Weight or schedule |
+| --- | ---: |
+| Net cave/wave progress | `0.001` |
+| Damage taken | `-0.25` |
+| Cave completion | `+1.0` |
+| Player death | `-1.0` |
+| Prayer points lost | `-0.02` |
+| Invalid action | `-0.1` |
+| Per-tick cost | `-0.0001` |
+| NPC healing | `-0.005` |
+| No progress after 800 / 1,600 / 2,400 ticks | `-0.001 / -0.005 / -0.02` |
+| No attack after 50 ticks | base `-0.005`, wave scale `0.05` |
 
-## RL Config
+Damage dealt, NPC/wave/Jad kills, correct Prayer, unnecessary Prayer, Jad-only
+healing, and the old wave-stall channels are zero. The scalar reward is clipped
+to `[-1, 1]` by the trainer contract.
 
-The live config is `v1.0`, derived from W&B run `b5m07qqr` and selected by the
-July 2026 48-run Protein sweep plus two-new-seed finalist confirmation. It keeps the
-current no-supplies Fight Caves task unchanged and promotes only the selected
-trainer hyperparameters. Historical INIs were retired after their exact values,
-run IDs, results, and recovery hashes were recorded in
-[`run_history.md`](runescape-rl/docs/run_history.md).
+## Documentation
 
-| Category | Key params |
-|----------|-----------|
-| **Loadout** | SOTA Twisted Bow / fortified Masori profile (`FC_LOADOUT_SOTA_TBOW`) |
-| **Supplies/actions** | zero sharks, zero prayer-potion doses, three heads: movement, attack, prayer |
-| **Progress/outcomes** | `w_progress=0.001`, `w_cave_complete=1.0`, `w_player_death=-1.0` |
-| **Damage/prayer** | `w_damage_taken=-0.25`; shared all-NPC correct-block reward `w_correct_danger_prayer=0.005` includes Jad; `w_prayer_lost=-0.02` |
-| **Pressure** | `w_tick_penalty=-0.0001`; staged no-progress penalties after 800/1600/2400 ticks; wave-scaled no-attack penalty after 50 ticks |
-| **Disabled channels** | damage-dealt, NPC/wave/Jad kill, additional Jad-only prayer bonus, healer, unnecessary-prayer, and old wave-stall shaping are zero |
-| **Reward contract** | scalar reward clamped to `[-1, 1]` per environment step |
-| **v1.0 trainer** | `lr=0.0012501122`, `entropy=0.0126193685`, `gamma=0.9977806603`, `gae_lambda=0.9944084419`, `replay_ratio=1.1570637170` |
-| **Fixed optimizer** | `clip=0.178306`, `vf_coef=1`, `vf_clip=0.151240`, `max_grad_norm=0.25`, `prio_alpha=0.968236` |
-| **Schedule** | horizon 256, minibatch 4096, default budget 750M, LR annealing off |
-| **Policy/vector** | 3-layer 256-hidden MinGRU (676,608 weights with the 307-float Puffer input), 4096 agents, 2 buffers, 16 threads |
-| **Seed** | top-level native trainer seed 73; episode RNG derives from env slot/episode count |
+- [`TODO.md`](TODO.md) contains unfinished work only.
+- [`docs/README.md`](runescape-rl/docs/README.md) identifies current sources of
+  truth and historical records.
+- [`run_history.md`](runescape-rl/docs/run_history.md) preserves training-run
+  provenance.
+- [`sweep_history.md`](runescape-rl/docs/sweep_history.md) and
+  [`sweep_top8.md`](sweep_top8.md) preserve sweep evidence.
+- [`baseline.md`](baseline.md) records the fixed 100M behavior-preservation
+  series used during the refactor program.
+- [`fc_cleanup_and_parity_history.md`](runescape-rl/docs/archive/fc_cleanup_and_parity_history.md)
+  archives completed parity, refactor, dead-code, and documentation decisions.
 
-Full config: [`runescape-rl/config/fight_caves.ini`](runescape-rl/config/fight_caves.ini).
+## Remaining work
 
-Each `train.sh` launch writes a run manifest under `pufferlib_4/logs/fight_caves/manifests/`.
-The manifest records the git commit, dirty-tree status, active loadout, backend build stamp, config
-hashes, resolved supplies, PPO run settings, observation/action/reward versions, and the PufferLib
-reward clipping contract.
-
----
-
-## Results
-
-### Current SOTA: v35.1 (`gacjanj0` / sweet-plant-580)
-
-v35.1 reproduces the hparams from `a3mi6u2g`, the top pick from the v34 long Protein sweep
-(200 trials over PPO/optimizer/policy knobs on the v32.0 reward baseline). Cold-start reproduction beat the original sweep result.
-
-| Metric | v32.0 (prior SOTA) | v34 sweep best (`a3mi6u2g`) | **v35.1 (current SOTA, `gacjanj0`)** |
-|---|---:|---:|---:|
-| peak `jad_kill_rate` | 0.810 | 0.886 | **0.949** |
-| peak step | 1.98B | 2.03B | **1.215B** |
-| top-10 cluster | — | 0.85–0.89 | **0.90–0.95** (steps 1.10B–1.62B) |
-| peak `wave_reached` (avg over rollouts) | 62.7 | 63.0 | **62.92** |
-| training time | 26 min | ~26 min | ~26 min (3B steps) |
-| throughput | 1.92M SPS | ~1.9M SPS | ~1.9M SPS |
-
-The v35.1 config holds the v32.0 reward shaping unchanged and swaps in only the PPO/optimizer/policy hparams the sweep found:
-`lr=9e-4` (3x the v32 default), `gamma=0.9963`, `ent_coef=0.024`, `vf_coef=1.0`, `replay_ratio=1.57`, `prio_alpha=0.97`, 3-layer MinGRU.
-
-### Key Milestones
-
-- **v21.2** — First cold start to reach wave 60 (range-7 weapon, no LOS)
-- **v22.1** — First Jad kills (1.5%, warm-started), introduced TBow combat model
-- **v25.9** — First cold start under TBow+LOS to reach wave 60+
-- **v28.4** — 20–50% Jad kill rate at 3.5B budget
-- **v28.8** — 59.1% peak Jad kill rate (prior reward-shape SOTA)
-- **v29.1** — `prio_alpha=0` ablation: 33% compute reduction at same-or-better deployment quality
-- **v30.0** — v28.8 baseline with dead `*_full_waste_penalty` keys removed; verified byte-identical
-- **v32.0** — Added `shape_jad_heal_penalty=-0.3`: peak jad kill 0.810 (+15.4% over obs.1 prior SOTA)
-- **v34 sweep** — 200-trial Protein sweep on v32.0 baseline; identified PPO/optimizer recipe that lifted peak by another ~8.5%
-- **v35.1** — Cold-start reproduction of v34's top pick (`a3mi6u2g`); **peak jad kill rate 94.9% — current SOTA**
-- **v36** — No-consumables diagnostic (`jta3lkgx`): `initial_sharks=0`, `initial_prayer_doses=0`, old 5-head policy; peak Jad kill rate 80.8%
-
-### Hparam Recipe (from the v34 sweep)
-
-Across the top 7 stable runs in the sweep, several knobs pinned at the same values (likely correct defaults — drop from future sweeps): `hidden_size=256`, `total_agents=4096`, `horizon=256`, `minibatch_size=4096`. The variable knobs Protein wanted to push:
-
-| Hparam | v32.0 baseline | Top picks |
-|---|---:|---:|
-| `learning_rate` | 3e-4 | **9e-4** (6 of 7), 7.75e-4 (1 of 7) — pinned at sweep upper bound |
-| `gamma` | 0.999 | 0.9900–0.9963 — all picks **below** v32 |
-| `replay_ratio` | 1.0 | 1.44–1.60 — well above default |
-| `ent_coef` | 0.01 | 0.0153–0.0300 |
-| `num_layers` | 2 | 3 (5 of 7), 2 (2 of 7) — 3-layer dominates |
-
----
-
-## Project Status
-
-The Fight Caves agent now clears Jad at ~95% peak. Active focus is post-sweep analysis: identify whether the late-training degradation (peak at 1.2B, drop to ~0.62 by 3B with lr=9e-4) is fixable with a lr schedule or an earlier-stop policy, and run a follow-up sweep with the pinned knobs dropped.
-
----
+The current priorities are real run-energy mechanics, the remaining verified
+encounter-parity differences, recurrent-state/evaluation hygiene, a
+learning-rate schedule experiment, multi-seed confirmation, explicit trainer
+reference tests, and clean-clone/PufferLib PR packaging. See
+[`TODO.md`](TODO.md) for the authoritative list.
 
 ## License
 

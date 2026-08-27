@@ -8,6 +8,11 @@ per-run configuration table were swept.
 
 The W&B runs share the tag `v4.5_sweep_top8_review`.
 
+This is sweep evidence, not a snapshot of the live backend. The current INI
+inherits the trainer recipe selected here, but later OSRS-parity backend work
+and the zero correct-Prayer reward were evaluated separately in `i215ulj4` and
+`txqsiahp`. See `runescape-rl/docs/run_history.md` for that promotion sequence.
+
 ## Main conclusion
 
 The configurations are not wildly different. The sweep narrowed strongly on
@@ -194,7 +199,7 @@ is the fraction of wave-63 episodes that did not end in a Jad kill.
 ### `1nvvx5qu` - strongest all-around candidate
 
 - W&B: <https://wandb.ai/jbailey8531-oakton-college/fight+caves+rl/runs/1nvvx5qu>
-- Role: current recommended default.
+- Role: selected trainer recipe inherited by the live baseline.
 - Behavior: best normalized correct-prayer count, low damage, good target
   availability, and no late-training collapse.
 - Strength: highest final-quarter consistency floor.
