@@ -1001,13 +1001,7 @@ static int grid_index_at(const RuneCUiLayout *layout, Vector2 mouse,
     return -1;
 }
 
-int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h) {
-    RuneCUiLayout layout;
-    ui_layout(screen_w, screen_h, &layout);
-    Vector2 mouse = GetMousePosition();
-    float dt = GetFrameTime();
-    clear_intent(ui);
-
+static void update_tab_press_timers(RuneCUiState *ui, float dt) {
     for (int i = 0; i < RUNEC_UI_TAB_COUNT; i++) {
         if (ui->tab_press_timer[i] <= 0.0f)
             continue;
@@ -1015,291 +1009,370 @@ int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h) {
         if (ui->tab_press_timer[i] < 0.0f)
             ui->tab_press_timer[i] = 0.0f;
     }
+}
 
-    if (ui->selected_target.kind != RUNEC_UI_SELECTED_NONE
-            && IsKeyPressed(KEY_ESCAPE)) {
-        runec_ui_clear_selected_target(ui);
-        ui->last_intent.kind = RUNEC_UI_INTENT_SELECTED_TARGET_CANCEL;
+static int handle_selected_target_cancel(RuneCUiState *ui) {
+    if (ui->selected_target.kind == RUNEC_UI_SELECTED_NONE ||
+        !IsKeyPressed(KEY_ESCAPE))
+        return 0;
+    runec_ui_clear_selected_target(ui);
+    ui->last_intent.kind = RUNEC_UI_INTENT_SELECTED_TARGET_CANCEL;
+    return 1;
+}
+
+static int handle_drag_release(RuneCUiState *ui,
+                               const RuneCUiLayout *layout,
+                               Vector2 mouse) {
+    if (!ui->drag.active || !IsMouseButtonReleased(MOUSE_BUTTON_LEFT))
+        return 0;
+
+    RuneCUiDragState drag = ui->drag;
+    ui->drag.active = 0;
+    ui->drag.source_kind = RUNEC_UI_CONTEXT_NONE;
+    ui->drag.source_slot = -1;
+
+    if (drag.source_kind == RUNEC_UI_CONTEXT_INVENTORY) {
+        int target = ui_inventory_slot_at(layout, mouse);
+        float dx = mouse.x - drag.start.x;
+        float dy = mouse.y - drag.start.y;
+        int moved = fabsf(dx) > 3.0f || fabsf(dy) > 3.0f;
+        if (target >= 0 && moved) {
+            ui->last_intent.kind = RUNEC_UI_INTENT_INVENTORY_DRAG;
+            ui->last_intent.primary = drag.source_slot;
+            ui->last_intent.secondary = target;
+            ui->last_intent.position = mouse;
+            return 1;
+        }
+        int previous = ui->selected_inventory_slot;
+        ui->selected_inventory_slot = drag.source_slot;
+        ui->last_intent.kind = RUNEC_UI_INTENT_INVENTORY_SLOT;
+        ui->last_intent.primary = drag.source_slot;
+        ui->last_intent.secondary = previous;
+        ui->last_intent.position = mouse;
         return 1;
     }
-    if (ui->drag.active && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
-        RuneCUiDragState drag = ui->drag;
-        ui->drag.active = 0;
-        ui->drag.source_kind = RUNEC_UI_CONTEXT_NONE;
-        ui->drag.source_slot = -1;
 
-        if (drag.source_kind == RUNEC_UI_CONTEXT_INVENTORY) {
-            int target = ui_inventory_slot_at(&layout, mouse);
-            float dx = mouse.x - drag.start.x;
-            float dy = mouse.y - drag.start.y;
-            int moved = fabsf(dx) > 3.0f || fabsf(dy) > 3.0f;
-            if (target >= 0 && moved) {
-                ui->last_intent.kind = RUNEC_UI_INTENT_INVENTORY_DRAG;
-                ui->last_intent.primary = drag.source_slot;
-                ui->last_intent.secondary = target;
-                ui->last_intent.position = mouse;
-                return 1;
-            }
-            int previous = ui->selected_inventory_slot;
-            ui->selected_inventory_slot = drag.source_slot;
-            ui->last_intent.kind = RUNEC_UI_INTENT_INVENTORY_SLOT;
-            ui->last_intent.primary = drag.source_slot;
-            ui->last_intent.secondary = previous;
-            ui->last_intent.position = mouse;
-            return 1;
-        }
-
-        if (drag.source_kind == RUNEC_UI_CONTEXT_EQUIPMENT) {
-            ui->selected_equipment_slot = drag.source_slot;
-            ui->last_intent.kind = RUNEC_UI_INTENT_EQUIPMENT_SLOT;
-            ui->last_intent.primary = drag.source_slot;
-            ui->last_intent.position = mouse;
-            return 1;
-        }
-    }
-
-    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        if (handle_context_click(ui, mouse))
-            return 1;
-
-        for (int i = 0; i < RUNEC_UI_TAB_COUNT; i++) {
-            if (CheckCollisionPointRec(mouse, layout.tab[i])) {
-                ui->active_tab = (RuneCUiTab)i;
-                ui->tab_press_timer[i] = OSRS_TAB_PRESS_SECONDS;
-                ui->last_intent.kind = RUNEC_UI_INTENT_TAB;
-                ui->last_intent.primary = i;
-                ui->last_intent.position = mouse;
-                return 1;
-            }
-        }
-
-        if (CheckCollisionPointRec(mouse, layout.run_orb)) {
-            ui->last_intent.kind = RUNEC_UI_INTENT_RUN_TOGGLE;
-            ui->last_intent.position = mouse;
-            return 1;
-        }
-
-        if (CheckCollisionPointRec(mouse, layout.prayer_orb)) {
-            ui->last_intent.kind = RUNEC_UI_INTENT_QUICK_PRAYER_TOGGLE;
-            ui->last_intent.primary = 1;
-            ui->last_intent.position = mouse;
-            copy_text(ui->last_intent.text, sizeof(ui->last_intent.text),
-                      "Quick-prayer");
-            return 1;
-        }
-
-        if (CheckCollisionPointRec(mouse, layout.spec_orb)) {
-            ui->special_attack_enabled = !ui->special_attack_enabled;
-            ui->last_intent.kind = RUNEC_UI_INTENT_SPECIAL_ATTACK;
-            ui->last_intent.primary = ui->special_attack_enabled;
-            ui->last_intent.secondary = ui->special_attack_energy;
-            ui->last_intent.position = mouse;
-            return 1;
-        }
-
-        Vector2 minimap_center = {
-            layout.minimap.x + layout.minimap.width * 0.5f,
-            layout.minimap.y + layout.minimap.height * 0.5f,
-        };
-        float minimap_dx = mouse.x - minimap_center.x;
-        float minimap_dy = mouse.y - minimap_center.y;
-        if (CheckCollisionPointRec(mouse, layout.minimap) &&
-            minimap_dx * minimap_dx + minimap_dy * minimap_dy <=
-                75.0f * 75.0f) {
-            ui->last_intent.kind = RUNEC_UI_INTENT_MINIMAP_CLICK;
-            ui->last_intent.primary = (int)(mouse.x - layout.minimap.x);
-            ui->last_intent.secondary = (int)(mouse.y - layout.minimap.y);
-            ui->last_intent.position = mouse;
-            return 1;
-        }
-
-        if (ui->active_tab == RUNEC_UI_TAB_COMBAT) {
-            const RuneCUiCombatStyleOption *style =
-                combat_style_at(ui, &layout, mouse);
-            if (style) {
-                ui->selected_combat_style = style->style_index;
-                ui->last_intent.kind = RUNEC_UI_INTENT_COMBAT_STYLE;
-                ui->last_intent.primary = style->style_index;
-                ui->last_intent.position = mouse;
-                copy_text(ui->last_intent.text, sizeof(ui->last_intent.text),
-                          style->label);
-                return 1;
-            }
-            if (CheckCollisionPointRec(mouse, side_ref_rect(&layout, RUNEC_OSRS_COMBAT_RETALIATE))) {
-                ui->auto_retaliate = !ui->auto_retaliate;
-                ui->last_intent.kind = RUNEC_UI_INTENT_AUTO_RETALIATE;
-                ui->last_intent.primary = ui->auto_retaliate;
-                ui->last_intent.position = mouse;
-                return 1;
-            }
-            if (CheckCollisionPointRec(mouse, side_ref_rect(&layout, RUNEC_OSRS_COMBAT_SPECIAL_BAR))) {
-                ui->special_attack_enabled = !ui->special_attack_enabled;
-                ui->last_intent.kind = RUNEC_UI_INTENT_SPECIAL_ATTACK;
-                ui->last_intent.primary = ui->special_attack_enabled;
-                ui->last_intent.secondary = ui->special_attack_energy;
-                ui->last_intent.position = mouse;
-                return 1;
-            }
-        } else if (ui->active_tab == RUNEC_UI_TAB_INVENTORY) {
-            int slot = ui_inventory_slot_at(&layout, mouse);
-            if (slot >= 0) {
-                if (ui->selected_target.kind == RUNEC_UI_SELECTED_ITEM) {
-                    ui->last_intent.kind = RUNEC_UI_INTENT_SELECTED_ITEM_ON_ITEM;
-                    ui->last_intent.primary = ui->selected_target.source_slot;
-                    ui->last_intent.secondary = slot;
-                    ui->last_intent.position = mouse;
-                    snprintf(ui->last_intent.text, sizeof(ui->last_intent.text),
-                             "%s -> %s", ui->selected_target.label,
-                             ui->inventory[slot].enabled
-                                ? ui->inventory[slot].label : "slot");
-                    runec_ui_clear_selected_target(ui);
-                    return 1;
-                }
-                if (ui->selected_target.kind == RUNEC_UI_SELECTED_SPELL) {
-                    ui->last_intent.kind = RUNEC_UI_INTENT_SELECTED_SPELL_ON_ITEM;
-                    ui->last_intent.primary = ui->selected_target.source_slot;
-                    ui->last_intent.secondary = slot;
-                    ui->last_intent.position = mouse;
-                    snprintf(ui->last_intent.text, sizeof(ui->last_intent.text),
-                             "%s -> %s", ui->selected_target.label,
-                             ui->inventory[slot].enabled
-                                ? ui->inventory[slot].label : "slot");
-                    runec_ui_clear_selected_target(ui);
-                    return 1;
-                }
-                ui->drag.active = 1;
-                ui->drag.source_kind = RUNEC_UI_CONTEXT_INVENTORY;
-                ui->drag.source_slot = slot;
-                ui->drag.start = mouse;
-                return 1;
-            }
-        } else if (ui->active_tab == RUNEC_UI_TAB_EQUIPMENT) {
-            int slot = ui_equipment_slot_at(&layout, mouse);
-            if (slot >= 0) {
-                ui->drag.active = 1;
-                ui->drag.source_kind = RUNEC_UI_CONTEXT_EQUIPMENT;
-                ui->drag.source_slot = slot;
-                ui->drag.start = mouse;
-                return 1;
-            }
-        } else if (ui->active_tab == RUNEC_UI_TAB_PRAYER) {
-            int slot = grid_index_at(&layout, mouse, 25, 5, 8, 8, 36, 36, 34, 34);
-            if (slot >= 0) {
-                ui->last_intent.kind = RUNEC_UI_INTENT_PRAYER_SLOT;
-                ui->last_intent.primary = slot;
-                ui->last_intent.position = mouse;
-                copy_text(ui->last_intent.text, sizeof(ui->last_intent.text),
-                          g_prayer_names[slot]);
-                return 1;
-            }
-        } else if (ui->active_tab == RUNEC_UI_TAB_SPELLBOOK) {
-            int slot = grid_index_at(&layout, mouse, RUNEC_UI_SPELL_COUNT,
-                                     RUNEC_UI_SPELL_COLS, RUNEC_UI_SPELL_X0,
-                                     RUNEC_UI_SPELL_Y0, RUNEC_UI_SPELL_STEP_X,
-                                     RUNEC_UI_SPELL_STEP_Y,
-                                     RUNEC_UI_SPELL_ICON_SIZE,
-                                     RUNEC_UI_SPELL_ICON_SIZE);
-            if (slot >= 0) {
-                set_selected_spell_target(ui, slot, spell_name(slot));
-                ui->last_intent.kind = RUNEC_UI_INTENT_SELECTED_SPELL;
-                ui->last_intent.primary = slot;
-                ui->last_intent.position = mouse;
-                copy_text(ui->last_intent.text, sizeof(ui->last_intent.text),
-                          spell_name(slot));
-                return 1;
-            }
-        } else if (ui->active_tab == RUNEC_UI_TAB_SKILLS) {
-            int slot = skill_slot_at(&layout, mouse);
-            if (slot >= 0) {
-                ui->last_intent.kind = RUNEC_UI_INTENT_SKILL_SLOT;
-                ui->last_intent.primary = slot;
-                ui->last_intent.position = mouse;
-                copy_text(ui->last_intent.text, sizeof(ui->last_intent.text),
-                          slot < (int)(sizeof(RUNEC_OSRS_SKILLS) / sizeof(RUNEC_OSRS_SKILLS[0]))
-                              ? RUNEC_OSRS_SKILLS[slot].name
-                              : "Total level");
-                return 1;
-            }
-        }
-
-    }
-
-    if (IsMouseButtonPressed(MOUSE_BUTTON_MIDDLE) && mouse_over_ui(&layout, mouse)) {
-        runec_ui_clear_selected_target(ui);
-        if (ui->active_tab == RUNEC_UI_TAB_COMBAT) {
-            const RuneCUiCombatStyleOption *style =
-                combat_style_at(ui, &layout, mouse);
-            if (style) {
-                static const char *actions[] = {"Select", "Examine"};
-                set_context(ui, mouse, style->label, actions, 2);
-                return 1;
-            }
-            if (CheckCollisionPointRec(mouse, side_ref_rect(&layout, RUNEC_OSRS_COMBAT_RETALIATE))) {
-                static const char *actions[] = {"Toggle", "Examine"};
-                set_context(ui, mouse, "Auto Retaliate", actions, 2);
-                return 1;
-            }
-            if (CheckCollisionPointRec(mouse, side_ref_rect(&layout, RUNEC_OSRS_COMBAT_SPECIAL_BAR))) {
-                static const char *actions[] = {"Use", "Examine"};
-                set_context(ui, mouse, "Special Attack", actions, 2);
-                return 1;
-            }
-        }
-        if (ui->active_tab == RUNEC_UI_TAB_INVENTORY) {
-            int slot = ui_inventory_slot_at(&layout, mouse);
-            if (slot >= 0) {
-                static const char *actions[] = {"Use", "Examine", "Drop"};
-                static const char *empty_actions[] = {"Cancel"};
-                const char *title = ui->inventory[slot].enabled
-                    ? ui->inventory[slot].label
-                    : "Empty inventory slot";
-                if (ui->inventory[slot].enabled) {
-                    set_context(ui, mouse, title, actions, 3);
-                    set_context_source(ui, RUNEC_UI_CONTEXT_INVENTORY, slot,
-                                       ui->inventory[slot].item_id);
-                } else {
-                    set_context(ui, mouse, title, empty_actions, 1);
-                }
-                return 1;
-            }
-        }
-        if (ui->active_tab == RUNEC_UI_TAB_EQUIPMENT) {
-            int slot = ui_equipment_slot_at(&layout, mouse);
-            if (slot >= 0) {
-                static const char *actions[] = {"Remove", "Examine"};
-                set_context(ui, mouse, g_equipment_names[slot], actions, 2);
-                set_context_source(ui, RUNEC_UI_CONTEXT_EQUIPMENT, slot,
-                                   ui->equipment[slot].item_id);
-                return 1;
-            }
-        }
-        if (ui->active_tab == RUNEC_UI_TAB_PRAYER) {
-            int slot = grid_index_at(&layout, mouse, 25, 5, 8, 8, 36, 36, 34, 34);
-            if (slot >= 0) {
-                static const char *actions[] = {"Activate", "Quick-prayer", "Examine"};
-                set_context(ui, mouse, g_prayer_names[slot], actions, 3);
-                set_context_source(ui, RUNEC_UI_CONTEXT_PRAYER, slot, 0);
-                return 1;
-            }
-        }
-        if (ui->active_tab == RUNEC_UI_TAB_SPELLBOOK) {
-            int slot = grid_index_at(&layout, mouse, RUNEC_UI_SPELL_COUNT,
-                                     RUNEC_UI_SPELL_COLS, RUNEC_UI_SPELL_X0,
-                                     RUNEC_UI_SPELL_Y0, RUNEC_UI_SPELL_STEP_X,
-                                     RUNEC_UI_SPELL_STEP_Y,
-                                     RUNEC_UI_SPELL_ICON_SIZE,
-                                     RUNEC_UI_SPELL_ICON_SIZE);
-            if (slot >= 0) {
-                static const char *actions[] = {"Cast", "Autocast", "Examine"};
-                set_context(ui, mouse, spell_name(slot), actions, 3);
-                set_context_source(ui, RUNEC_UI_CONTEXT_SPELL, slot, 0);
-                return 1;
-            }
-        }
-        static const char *actions[] = {"Cancel"};
-        set_context(ui, mouse, "RuneC", actions, 1);
+    if (drag.source_kind == RUNEC_UI_CONTEXT_EQUIPMENT) {
+        ui->selected_equipment_slot = drag.source_slot;
+        ui->last_intent.kind = RUNEC_UI_INTENT_EQUIPMENT_SLOT;
+        ui->last_intent.primary = drag.source_slot;
+        ui->last_intent.position = mouse;
         return 1;
     }
+    return 0;
+}
+
+static int handle_tab_click(RuneCUiState *ui,
+                            const RuneCUiLayout *layout,
+                            Vector2 mouse) {
+    for (int i = 0; i < RUNEC_UI_TAB_COUNT; i++) {
+        if (!CheckCollisionPointRec(mouse, layout->tab[i]))
+            continue;
+        ui->active_tab = (RuneCUiTab)i;
+        ui->tab_press_timer[i] = OSRS_TAB_PRESS_SECONDS;
+        ui->last_intent.kind = RUNEC_UI_INTENT_TAB;
+        ui->last_intent.primary = i;
+        ui->last_intent.position = mouse;
+        return 1;
+    }
+    return 0;
+}
+
+static int handle_orb_or_minimap_click(RuneCUiState *ui,
+                                       const RuneCUiLayout *layout,
+                                       Vector2 mouse) {
+    if (CheckCollisionPointRec(mouse, layout->run_orb)) {
+        ui->last_intent.kind = RUNEC_UI_INTENT_RUN_TOGGLE;
+        ui->last_intent.position = mouse;
+        return 1;
+    }
+    if (CheckCollisionPointRec(mouse, layout->prayer_orb)) {
+        ui->last_intent.kind = RUNEC_UI_INTENT_QUICK_PRAYER_TOGGLE;
+        ui->last_intent.primary = 1;
+        ui->last_intent.position = mouse;
+        copy_text(ui->last_intent.text, sizeof(ui->last_intent.text),
+                  "Quick-prayer");
+        return 1;
+    }
+    if (CheckCollisionPointRec(mouse, layout->spec_orb)) {
+        ui->special_attack_enabled = !ui->special_attack_enabled;
+        ui->last_intent.kind = RUNEC_UI_INTENT_SPECIAL_ATTACK;
+        ui->last_intent.primary = ui->special_attack_enabled;
+        ui->last_intent.secondary = ui->special_attack_energy;
+        ui->last_intent.position = mouse;
+        return 1;
+    }
+
+    Vector2 center = {
+        layout->minimap.x + layout->minimap.width * 0.5f,
+        layout->minimap.y + layout->minimap.height * 0.5f,
+    };
+    float dx = mouse.x - center.x;
+    float dy = mouse.y - center.y;
+    if (!CheckCollisionPointRec(mouse, layout->minimap) ||
+        dx * dx + dy * dy > 75.0f * 75.0f)
+        return 0;
+    ui->last_intent.kind = RUNEC_UI_INTENT_MINIMAP_CLICK;
+    ui->last_intent.primary = (int)(mouse.x - layout->minimap.x);
+    ui->last_intent.secondary = (int)(mouse.y - layout->minimap.y);
+    ui->last_intent.position = mouse;
+    return 1;
+}
+
+static int handle_combat_click(RuneCUiState *ui,
+                               const RuneCUiLayout *layout,
+                               Vector2 mouse) {
+    const RuneCUiCombatStyleOption *style =
+        combat_style_at(ui, layout, mouse);
+    if (style) {
+        ui->selected_combat_style = style->style_index;
+        ui->last_intent.kind = RUNEC_UI_INTENT_COMBAT_STYLE;
+        ui->last_intent.primary = style->style_index;
+        ui->last_intent.position = mouse;
+        copy_text(ui->last_intent.text, sizeof(ui->last_intent.text),
+                  style->label);
+        return 1;
+    }
+    if (CheckCollisionPointRec(mouse,
+            side_ref_rect(layout, RUNEC_OSRS_COMBAT_RETALIATE))) {
+        ui->auto_retaliate = !ui->auto_retaliate;
+        ui->last_intent.kind = RUNEC_UI_INTENT_AUTO_RETALIATE;
+        ui->last_intent.primary = ui->auto_retaliate;
+        ui->last_intent.position = mouse;
+        return 1;
+    }
+    if (CheckCollisionPointRec(mouse,
+            side_ref_rect(layout, RUNEC_OSRS_COMBAT_SPECIAL_BAR))) {
+        ui->special_attack_enabled = !ui->special_attack_enabled;
+        ui->last_intent.kind = RUNEC_UI_INTENT_SPECIAL_ATTACK;
+        ui->last_intent.primary = ui->special_attack_enabled;
+        ui->last_intent.secondary = ui->special_attack_energy;
+        ui->last_intent.position = mouse;
+        return 1;
+    }
+    return 0;
+}
+
+static int handle_inventory_click(RuneCUiState *ui,
+                                  const RuneCUiLayout *layout,
+                                  Vector2 mouse) {
+    int slot = ui_inventory_slot_at(layout, mouse);
+    if (slot < 0)
+        return 0;
+    if (ui->selected_target.kind == RUNEC_UI_SELECTED_ITEM ||
+        ui->selected_target.kind == RUNEC_UI_SELECTED_SPELL) {
+        ui->last_intent.kind = ui->selected_target.kind == RUNEC_UI_SELECTED_ITEM
+            ? RUNEC_UI_INTENT_SELECTED_ITEM_ON_ITEM
+            : RUNEC_UI_INTENT_SELECTED_SPELL_ON_ITEM;
+        ui->last_intent.primary = ui->selected_target.source_slot;
+        ui->last_intent.secondary = slot;
+        ui->last_intent.position = mouse;
+        snprintf(ui->last_intent.text, sizeof(ui->last_intent.text),
+                 "%s -> %s", ui->selected_target.label,
+                 ui->inventory[slot].enabled
+                    ? ui->inventory[slot].label : "slot");
+        runec_ui_clear_selected_target(ui);
+        return 1;
+    }
+    ui->drag.active = 1;
+    ui->drag.source_kind = RUNEC_UI_CONTEXT_INVENTORY;
+    ui->drag.source_slot = slot;
+    ui->drag.start = mouse;
+    return 1;
+}
+
+static int handle_equipment_click(RuneCUiState *ui,
+                                  const RuneCUiLayout *layout,
+                                  Vector2 mouse) {
+    int slot = ui_equipment_slot_at(layout, mouse);
+    if (slot < 0)
+        return 0;
+    ui->drag.active = 1;
+    ui->drag.source_kind = RUNEC_UI_CONTEXT_EQUIPMENT;
+    ui->drag.source_slot = slot;
+    ui->drag.start = mouse;
+    return 1;
+}
+
+static int handle_prayer_click(RuneCUiState *ui,
+                               const RuneCUiLayout *layout,
+                               Vector2 mouse) {
+    int slot = grid_index_at(layout, mouse, 25, 5, 8, 8, 36, 36, 34, 34);
+    if (slot < 0)
+        return 0;
+    ui->last_intent.kind = RUNEC_UI_INTENT_PRAYER_SLOT;
+    ui->last_intent.primary = slot;
+    ui->last_intent.position = mouse;
+    copy_text(ui->last_intent.text, sizeof(ui->last_intent.text),
+              g_prayer_names[slot]);
+    return 1;
+}
+
+static int handle_spellbook_click(RuneCUiState *ui,
+                                  const RuneCUiLayout *layout,
+                                  Vector2 mouse) {
+    int slot = grid_index_at(layout, mouse, RUNEC_UI_SPELL_COUNT,
+        RUNEC_UI_SPELL_COLS, RUNEC_UI_SPELL_X0, RUNEC_UI_SPELL_Y0,
+        RUNEC_UI_SPELL_STEP_X, RUNEC_UI_SPELL_STEP_Y,
+        RUNEC_UI_SPELL_ICON_SIZE, RUNEC_UI_SPELL_ICON_SIZE);
+    if (slot < 0)
+        return 0;
+    set_selected_spell_target(ui, slot, spell_name(slot));
+    ui->last_intent.kind = RUNEC_UI_INTENT_SELECTED_SPELL;
+    ui->last_intent.primary = slot;
+    ui->last_intent.position = mouse;
+    copy_text(ui->last_intent.text, sizeof(ui->last_intent.text),
+              spell_name(slot));
+    return 1;
+}
+
+static int handle_skills_click(RuneCUiState *ui,
+                               const RuneCUiLayout *layout,
+                               Vector2 mouse) {
+    int slot = skill_slot_at(layout, mouse);
+    if (slot < 0)
+        return 0;
+    ui->last_intent.kind = RUNEC_UI_INTENT_SKILL_SLOT;
+    ui->last_intent.primary = slot;
+    ui->last_intent.position = mouse;
+    copy_text(ui->last_intent.text, sizeof(ui->last_intent.text),
+              slot < (int)(sizeof(RUNEC_OSRS_SKILLS) /
+                           sizeof(RUNEC_OSRS_SKILLS[0]))
+                ? RUNEC_OSRS_SKILLS[slot].name : "Total level");
+    return 1;
+}
+
+static int handle_active_tab_click(RuneCUiState *ui,
+                                   const RuneCUiLayout *layout,
+                                   Vector2 mouse) {
+    switch (ui->active_tab) {
+    case RUNEC_UI_TAB_COMBAT:
+        return handle_combat_click(ui, layout, mouse);
+    case RUNEC_UI_TAB_INVENTORY:
+        return handle_inventory_click(ui, layout, mouse);
+    case RUNEC_UI_TAB_EQUIPMENT:
+        return handle_equipment_click(ui, layout, mouse);
+    case RUNEC_UI_TAB_PRAYER:
+        return handle_prayer_click(ui, layout, mouse);
+    case RUNEC_UI_TAB_SPELLBOOK:
+        return handle_spellbook_click(ui, layout, mouse);
+    case RUNEC_UI_TAB_SKILLS:
+        return handle_skills_click(ui, layout, mouse);
+    default:
+        return 0;
+    }
+}
+
+static int handle_primary_click(RuneCUiState *ui,
+                                const RuneCUiLayout *layout,
+                                Vector2 mouse) {
+    if (!IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+        return 0;
+    if (handle_context_click(ui, mouse) || handle_tab_click(ui, layout, mouse) ||
+        handle_orb_or_minimap_click(ui, layout, mouse) ||
+        handle_active_tab_click(ui, layout, mouse))
+        return 1;
+    return 0;
+}
+
+static int handle_context_menu_open(RuneCUiState *ui,
+                                    const RuneCUiLayout *layout,
+                                    Vector2 mouse) {
+    if (!IsMouseButtonPressed(MOUSE_BUTTON_MIDDLE) ||
+        !mouse_over_ui(layout, mouse))
+        return 0;
+    runec_ui_clear_selected_target(ui);
+
+    if (ui->active_tab == RUNEC_UI_TAB_COMBAT) {
+        const RuneCUiCombatStyleOption *style =
+            combat_style_at(ui, layout, mouse);
+        if (style) {
+            static const char *actions[] = {"Select", "Examine"};
+            set_context(ui, mouse, style->label, actions, 2);
+            return 1;
+        }
+        if (CheckCollisionPointRec(mouse,
+                side_ref_rect(layout, RUNEC_OSRS_COMBAT_RETALIATE))) {
+            static const char *actions[] = {"Toggle", "Examine"};
+            set_context(ui, mouse, "Auto Retaliate", actions, 2);
+            return 1;
+        }
+        if (CheckCollisionPointRec(mouse,
+                side_ref_rect(layout, RUNEC_OSRS_COMBAT_SPECIAL_BAR))) {
+            static const char *actions[] = {"Use", "Examine"};
+            set_context(ui, mouse, "Special Attack", actions, 2);
+            return 1;
+        }
+    }
+    if (ui->active_tab == RUNEC_UI_TAB_INVENTORY) {
+        int slot = ui_inventory_slot_at(layout, mouse);
+        if (slot >= 0) {
+            static const char *actions[] = {"Use", "Examine", "Drop"};
+            static const char *empty_actions[] = {"Cancel"};
+            const char *title = ui->inventory[slot].enabled
+                ? ui->inventory[slot].label : "Empty inventory slot";
+            if (ui->inventory[slot].enabled) {
+                set_context(ui, mouse, title, actions, 3);
+                set_context_source(ui, RUNEC_UI_CONTEXT_INVENTORY, slot,
+                                   ui->inventory[slot].item_id);
+            } else {
+                set_context(ui, mouse, title, empty_actions, 1);
+            }
+            return 1;
+        }
+    }
+    if (ui->active_tab == RUNEC_UI_TAB_EQUIPMENT) {
+        int slot = ui_equipment_slot_at(layout, mouse);
+        if (slot >= 0) {
+            static const char *actions[] = {"Remove", "Examine"};
+            set_context(ui, mouse, g_equipment_names[slot], actions, 2);
+            set_context_source(ui, RUNEC_UI_CONTEXT_EQUIPMENT, slot,
+                               ui->equipment[slot].item_id);
+            return 1;
+        }
+    }
+    if (ui->active_tab == RUNEC_UI_TAB_PRAYER) {
+        int slot = grid_index_at(layout, mouse, 25, 5,
+                                 8, 8, 36, 36, 34, 34);
+        if (slot >= 0) {
+            static const char *actions[] = {
+                "Activate", "Quick-prayer", "Examine"
+            };
+            set_context(ui, mouse, g_prayer_names[slot], actions, 3);
+            set_context_source(ui, RUNEC_UI_CONTEXT_PRAYER, slot, 0);
+            return 1;
+        }
+    }
+    if (ui->active_tab == RUNEC_UI_TAB_SPELLBOOK) {
+        int slot = grid_index_at(layout, mouse, RUNEC_UI_SPELL_COUNT,
+            RUNEC_UI_SPELL_COLS, RUNEC_UI_SPELL_X0, RUNEC_UI_SPELL_Y0,
+            RUNEC_UI_SPELL_STEP_X, RUNEC_UI_SPELL_STEP_Y,
+            RUNEC_UI_SPELL_ICON_SIZE, RUNEC_UI_SPELL_ICON_SIZE);
+        if (slot >= 0) {
+            static const char *actions[] = {"Cast", "Autocast", "Examine"};
+            set_context(ui, mouse, spell_name(slot), actions, 3);
+            set_context_source(ui, RUNEC_UI_CONTEXT_SPELL, slot, 0);
+            return 1;
+        }
+    }
+
+    static const char *actions[] = {"Cancel"};
+    set_context(ui, mouse, "RuneC", actions, 1);
+    return 1;
+}
+
+int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h) {
+    RuneCUiLayout layout;
+    ui_layout(screen_w, screen_h, &layout);
+    Vector2 mouse = GetMousePosition();
+    clear_intent(ui);
+    update_tab_press_timers(ui, GetFrameTime());
+
+    if (handle_selected_target_cancel(ui) ||
+        handle_drag_release(ui, &layout, mouse) ||
+        handle_primary_click(ui, &layout, mouse) ||
+        handle_context_menu_open(ui, &layout, mouse))
+        return 1;
 
     if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT) && !ui->context_open)
         return 0;

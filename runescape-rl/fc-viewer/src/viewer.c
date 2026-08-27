@@ -19,7 +19,6 @@
  */
 
 #include "raylib.h"
-#include "raymath.h"
 #include "rlgl.h"
 #include "fc_types.h"
 #include "fc_contracts.h"
@@ -34,13 +33,14 @@
 #include "fc_objects_loader.h"
 #include "fc_npc_models.h"
 #include "fc_anim_loader.h"
-#include "fc_spotanims.h"
 #include "fc_asset_raylib.h"
 #include "fc_actor_visual.h"
+#include "fc_actor_animation.h"
 #include "fc_click_feedback.h"
+#include "fc_combat_presentation.h"
 #include "fc_minimap.h"
+#include "fc_model_animation.h"
 #include "fc_osrs_text.h"
-#include "fc_projectile_visual.h"
 #include "fc_debug_overlay.h"
 #include "ui.h"
 #include "ui_reference.h"
@@ -57,163 +57,7 @@
 #define MIN_TPS         0.25f
 #define HALF_TPS        0.50f
 #define NORMAL_TPS      (5.0f / 3.0f)
-#define MAX_HITSPLATS   32
-#define OSRS_HITSPLAT_SECONDS  1.0f  /* b237 regular hitmark stickTime=50 */
-#define OSRS_HEALTHBAR_SECONDS 6.0f  /* b237 health_30 stickTime=300 */
 #define POLICY_REPLAY_BASE_TPS NORMAL_TPS
-
-/* Player animation sequence IDs (from OSRS cache/reference data). */
-#define PLAYER_ANIM_HUMAN_IDLE 808
-#define PLAYER_ANIM_HUMAN_WALK 819
-#define PLAYER_ANIM_HUMAN_WALK_BACK 820
-#define PLAYER_ANIM_HUMAN_WALK_RIGHT 821
-#define PLAYER_ANIM_HUMAN_WALK_LEFT 822
-#define PLAYER_ANIM_HUMAN_TURN 823
-#define PLAYER_ANIM_HUMAN_RUN  824
-#define PLAYER_ANIM_BOW_ATTACK 426
-#define PLAYER_ANIM_XBOW_IDLE  4591
-#define PLAYER_ANIM_XBOW_WALK  4226
-#define PLAYER_ANIM_XBOW_RUN   4228
-#define PLAYER_ANIM_XBOW_ATTACK 7552
-#define PLAYER_ANIM_BLOWPIPE_ATTACK 5061
-#define PLAYER_ANIM_EAT    829   /* human_eat */
-#define PLAYER_ANIM_DEATH  836   /* human_death */
-
-typedef struct {
-    uint16_t idle_anim;
-    uint16_t walk_anim;
-    uint16_t walk_back_anim;
-    uint16_t walk_left_anim;
-    uint16_t walk_right_anim;
-    uint16_t turn_anim;
-    uint16_t run_anim;
-    uint16_t attack_anim;
-    uint32_t projectile_travel_spot;
-    uint32_t projectile_launch_spot;
-    uint32_t projectile_impact_spot;
-    Color projectile_color;
-    float projectile_radius;
-    float projectile_start_height;
-    float projectile_end_height;
-    float projectile_launch_delay_client_ticks;
-    float projectile_angle;
-    float projectile_length_adjustment;
-    float projectile_progress;
-    float projectile_step_multiplier;
-} PlayerVisualProfile;
-
-/* Visuals are keyed by loadout because FC_WEAPON_GENERIC_RANGED includes
- * bows, crossbows, and the blowpipe. IDs come from RuneC's RSMod-enriched
- * combat visual table and the matching OSRS cache spotanim definitions. */
-static const PlayerVisualProfile PLAYER_VISUALS[FC_NUM_LOADOUTS] = {
-    [FC_LOADOUT_BLACK_DHIDE_RCB] = {
-        PLAYER_ANIM_XBOW_IDLE, PLAYER_ANIM_XBOW_WALK,
-        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
-        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
-        PLAYER_ANIM_XBOW_RUN, PLAYER_ANIM_XBOW_ATTACK,
-        27, 0, 0, {200, 200, 50, 255}, 0.12f,
-        155.0f, 146.0f, 41.0f, 5.0f, 5.0f, 11.0f, 5.0f,
-    },
-    [FC_LOADOUT_SOTA_TBOW] = {
-        PLAYER_ANIM_HUMAN_IDLE, PLAYER_ANIM_HUMAN_WALK,
-        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
-        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
-        PLAYER_ANIM_HUMAN_RUN, PLAYER_ANIM_BOW_ATTACK,
-        1120, 1116, 0, {190, 120, 55, 255}, 0.13f,
-        163.0f, 146.0f, 41.0f, 15.0f, 5.0f, 11.0f, 5.0f,
-    },
-    [FC_LOADOUT_LOW_DEF_RCB] = {
-        PLAYER_ANIM_XBOW_IDLE, PLAYER_ANIM_XBOW_WALK,
-        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
-        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
-        PLAYER_ANIM_XBOW_RUN, PLAYER_ANIM_XBOW_ATTACK,
-        27, 0, 0, {200, 200, 50, 255}, 0.12f,
-        155.0f, 146.0f, 41.0f, 5.0f, 5.0f, 11.0f, 5.0f,
-    },
-    [FC_LOADOUT_RCB_PURE] = {
-        PLAYER_ANIM_XBOW_IDLE, PLAYER_ANIM_XBOW_WALK,
-        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
-        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
-        PLAYER_ANIM_XBOW_RUN, PLAYER_ANIM_XBOW_ATTACK,
-        27, 0, 0, {200, 200, 50, 255}, 0.12f,
-        155.0f, 146.0f, 41.0f, 5.0f, 5.0f, 11.0f, 5.0f,
-    },
-    [FC_LOADOUT_MSBI_PURE] = {
-        PLAYER_ANIM_HUMAN_IDLE, PLAYER_ANIM_HUMAN_WALK,
-        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
-        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
-        PLAYER_ANIM_HUMAN_RUN, PLAYER_ANIM_BOW_ATTACK,
-        15, 24, 0, {145, 155, 165, 255}, 0.10f,
-        163.0f, 146.0f, 41.0f, 15.0f, 5.0f, 11.0f, 5.0f,
-    },
-    [FC_LOADOUT_BLOWPIPE_PURE] = {
-        PLAYER_ANIM_HUMAN_IDLE, PLAYER_ANIM_HUMAN_WALK,
-        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
-        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
-        PLAYER_ANIM_HUMAN_RUN, PLAYER_ANIM_BLOWPIPE_ATTACK,
-        230, 236, 0, {115, 175, 85, 255}, 0.09f,
-        163.0f, 146.0f, 32.0f, 15.0f, 0.0f, 11.0f, 5.0f,
-    },
-    [FC_LOADOUT_ACB_ARMADYL] = {
-        PLAYER_ANIM_XBOW_IDLE, PLAYER_ANIM_XBOW_WALK,
-        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
-        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
-        PLAYER_ANIM_XBOW_RUN, PLAYER_ANIM_XBOW_ATTACK,
-        1468, 0, 0, {165, 210, 240, 255}, 0.12f,
-        155.0f, 146.0f, 41.0f, 5.0f, 5.0f, 11.0f, 5.0f,
-    },
-    [FC_LOADOUT_BOWFA_CRYSTAL] = {
-        PLAYER_ANIM_HUMAN_IDLE, PLAYER_ANIM_HUMAN_WALK,
-        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
-        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
-        PLAYER_ANIM_HUMAN_RUN, PLAYER_ANIM_BOW_ATTACK,
-        1922, 1923, 0, {120, 235, 225, 255}, 0.13f,
-        163.0f, 146.0f, 41.0f, 15.0f, 5.0f, 11.0f, 5.0f,
-    },
-    [FC_LOADOUT_TBOW_MASORI] = {
-        PLAYER_ANIM_HUMAN_IDLE, PLAYER_ANIM_HUMAN_WALK,
-        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
-        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
-        PLAYER_ANIM_HUMAN_RUN, PLAYER_ANIM_BOW_ATTACK,
-        1120, 1116, 0, {190, 120, 55, 255}, 0.13f,
-        163.0f, 146.0f, 41.0f, 15.0f, 5.0f, 11.0f, 5.0f,
-    },
-};
-
-static const PlayerVisualProfile* player_visual_profile(int loadout) {
-    if (loadout < 0 || loadout >= FC_NUM_LOADOUTS)
-        loadout = FC_ACTIVE_LOADOUT;
-    return &PLAYER_VISUALS[loadout];
-}
-
-/* NPC animation sequence IDs (from osrs-dumps seq.sym) */
-/* NPC animation IDs — Jad uses lordmagmus anims (same model as FC Jad in cache) */
-static const uint16_t NPC_ANIM_IDLE[] = {
-    0, 2618, 2624, 2624, 2631, 2636, 2642, 2650, 2636  /* indexed by NPC type 0-8 */
-};
-static const uint16_t NPC_ANIM_WALK[] = {
-    0, 2619, 2623, 2623, 2632, 2634, 2643, 2651, 2634
-};
-static const uint16_t NPC_ANIM_ATTACK[] = {
-    0, 2621, 2625, 2625, 2628, 2637, 2644, 2655, 2637
-};
-static const uint16_t NPC_ANIM_DEATH[] = {
-    0, 2620, 2627, 2627, 2630, 2638, 2646, 2654, 2638
-};
-#define JAD_ANIM_RANGED 2652
-#define JAD_ANIM_MELEE  2655
-#define JAD_ANIM_MAGIC  2656
-
-/* Projectile spotanim IDs for model lookup */
-#define PROJ_JAD_MAGIC_LAUNCH   439
-#define PROJ_TOK_XIL_SPINE      443
-#define PROJ_TOK_XIL_IMPACT     444
-#define PROJ_KET_ZEK_FIRE       445
-#define PROJ_KET_ZEK_IMPACT     446
-#define PROJ_JAD_MAGIC_TRAVEL   448
-#define PROJ_JAD_MAGIC_IMPACT   157
-#define PROJ_JAD_RANGED_IMPACT  451
-#define PROJ_SPOTANIM_MODEL_BASE 0xA2000000u
 
 #define FC_UI_ITEM_VIAL          229u
 #define FC_UI_ITEM_SHARK         385u
@@ -244,85 +88,6 @@ static const uint16_t NPC_ANIM_DEATH[] = {
 #define FC_REWARD_CONFIG_PATH_MAX 256
 #define FC_WORLD_ORIGIN_X 2368
 #define FC_WORLD_ORIGIN_Y 5056
-typedef enum {
-    HITSPLAT_DAMAGE = 0,
-    HITSPLAT_HEAL = 1,
-    HITSPLAT_PRAYER_DRAIN = 2,
-} HitsplatKind;
-
-/* Hitsplat/status splat rendered as a 2D overlay. */
-typedef struct {
-    int active;
-    float world_x, world_y, world_z;  /* 3D position (entity center) */
-    int actor_kind;        /* FcVisualTargetKind; keeps splat on moving actor */
-    int actor_slot;
-    int overlay_slot;      /* native four-splat screen-space layout */
-    int damage;           /* damage in tenths (0 = miss) */
-    int kind;             /* HitsplatKind */
-    float seconds_left;
-} Hitsplat;
-
-/* Visual projectile — travels from source to destination over tick duration */
-#define MAX_PROJECTILES 16
-typedef struct {
-    int active;
-    float src_x, src_y, src_z;
-    float dst_x, dst_y, dst_z;
-    float x, y, z;
-    float velocity_x, velocity_y, velocity_z;
-    float total_time;
-    float elapsed;
-    float launch_delay;
-    int launched;
-    FcVisualTargetKind source_kind;
-    int source_slot;
-    float source_y_offset;
-    FcVisualTargetKind target_kind;
-    int target_slot;
-    float target_y_offset;
-    int track_target;
-    int attack_style;
-    int launch_tick;
-    int has_deferred_hitsplat;
-    FcVisualTargetKind hitsplat_actor_kind;
-    int hitsplat_actor_slot;
-    float hitsplat_world_x, hitsplat_world_y, hitsplat_world_z;
-    int hitsplat_damage;
-    Color color;
-    float radius;
-    uint32_t spot_id;            /* travel spotanim ID (0 = no travel visual) */
-    uint32_t launch_spot_id;
-    uint32_t impact_spot_id;
-    float projectile_angle;
-    float projectile_progress;
-    AnimModelState* anim_state;
-    uint16_t anim_seq;
-    int anim_frame;
-    float anim_timer;
-} VisualProjectile;
-
-#define MAX_VISUAL_EFFECTS 32
-typedef struct {
-    int active;
-    float x, y, z;
-    float total_time;
-    float elapsed;
-    Color color;
-    float radius;
-    uint32_t spot_id;
-    float yaw_degrees;
-    int attached;
-    FcVisualTargetKind attached_kind;
-    int attached_slot;
-    float attached_y_offset;
-    FcVisualTargetKind face_kind;
-    int face_slot;
-    AnimModelState* anim_state;
-    uint16_t anim_seq;
-    int anim_frame;
-    float anim_timer;
-} VisualEffect;
-
 typedef struct {
     AnimModelState* anim_state;
     uint16_t anim_seq;
@@ -347,7 +112,8 @@ static const Color NPC_COLORS[] = {
 typedef struct {
     FcState state;
     FcRenderEvents render_events;
-    FcVisualScene visual_scene;
+    FcActorAnimation actor_animation;
+    FcCombatPresentation* combat_presentation;
     RuneCUiState ui;
     FcRenderEntity entities[FC_MAX_RENDER_ENTITIES];
     int entity_count;
@@ -373,41 +139,8 @@ typedef struct {
     int object_anim_runtime_count;
     NpcModelSet* npc_models;
     NpcModelSet* player_model;
-    NpcModelSet* projectile_models;
-    SpotAnimSet* spotanims;
     /* Animation cache (shared by player + all NPCs) */
     AnimCache* anim_cache;
-    /* Player animation state */
-    AnimModelState* player_anim_state;
-    uint16_t player_anim_seq;
-    int player_anim_frame;
-    float player_anim_timer;
-    uint16_t player_pose_anim_seq;
-    int player_pose_anim_frame;
-    float player_pose_anim_timer;
-    uint16_t player_action_anim_seq;
-    int player_action_anim_frame;
-    float player_action_anim_timer;
-    uint16_t player_visual_lock_seq;
-    float player_visual_lock_timer;
-    int player_attack_visual_target_idx;
-    float prayer_flick_visual_timer;
-    /* Per-NPC animation state */
-    AnimModelState* npc_anim_states[FC_MAX_NPCS];
-    uint16_t npc_anim_seq[FC_MAX_NPCS];
-    int npc_anim_frame[FC_MAX_NPCS];
-    float npc_anim_timer[FC_MAX_NPCS];
-    uint16_t npc_action_anim_seq[FC_MAX_NPCS];
-    int npc_action_anim_frame[FC_MAX_NPCS];
-    float npc_action_anim_timer[FC_MAX_NPCS];
-    int npc_attack_visual_style[FC_MAX_NPCS];
-    float npc_attack_visual_timer[FC_MAX_NPCS];
-    float npc_prayer_indicator_timer[FC_MAX_NPCS];
-    int npc_prayer_lock_tick[FC_MAX_NPCS];
-    /* Hitsplats */
-    Hitsplat hitsplats[MAX_HITSPLATS];
-    float player_healthbar_timer;
-    float npc_healthbar_timer[FC_MAX_NPCS];
     /* Buffered key inputs (captured every frame, consumed on tick) */
     int pending_prayer, pending_eat, pending_drink;
     int pending_attack_npc;
@@ -417,15 +150,8 @@ typedef struct {
     int console_wave_dropdown_open;
     int console_scroll[4];        /* player/obs/mask/reward vertical offsets */
     int console_content_height[4];
-    /* Visual projectiles in flight */
-    VisualProjectile projectiles[MAX_PROJECTILES];
-    VisualEffect effects[MAX_VISUAL_EFFECTS];
     /* Prayer overhead icon textures */
     Texture2D pray_melee_tex, pray_missiles_tex, pray_magic_tex;
-    /* Cache-authored OSRS actor overhead sprites. */
-    Texture2D hitsplat_zero_tex, hitsplat_damage_tex;
-    Texture2D hitsplat_heal_tex, hitsplat_prayer_drain_tex;
-    Texture2D healthbar_full_tex, healthbar_empty_tex;
     Texture2D click_cross_tex[FC_CLICK_CROSS_FRAME_COUNT * 2];
     int active_loadout; /* index into FC_LOADOUTS[] */
     int combat_style;   /* 0=accurate, 1=rapid, 2=long range */
@@ -455,17 +181,11 @@ typedef struct {
     int obs_ablate_npc_distance;
     int obs_ablate_incoming_aggregates;
     int obs_ablate_npc_valid;
-    /* Previous authoritative NPC snapshots feed the presentation-only actor
-     * path queue after each simulator tick. */
-    float prev_npc_x[FC_MAX_NPCS];
-    float prev_npc_y[FC_MAX_NPCS];
-    int prev_npc_active[FC_MAX_NPCS];  /* was this NPC active last tick? */
 } ViewerState;
 
 /* Forward declarations */
 static void draw_tex_fit(Texture2D tex, int dx, int dy, int dw, int dh,
                          Color tint);
-static int viewer_render_prayer(const ViewerState* v);
 
 static void viewer_trace_log_to_stderr(int log_level, const char* text,
                                        va_list args) {
@@ -625,7 +345,8 @@ static void sync_fc_ui_status(ViewerState* v) {
     v->ui.hitpoints_max = p->max_hp > 0 ? (p->max_hp + 9) / 10 : 0;
     v->ui.prayer_points = p->current_prayer > 0 ? (p->current_prayer + 9) / 10 : 0;
     v->ui.prayer_points_max = p->max_prayer > 0 ? (p->max_prayer + 9) / 10 : 0;
-    v->ui.active_prayers = fc_ui_active_prayer_bits(viewer_render_prayer(v));
+    v->ui.active_prayers = fc_ui_active_prayer_bits(
+        fc_actor_animation_render_prayer(&v->actor_animation, &v->state));
     v->ui.run_energy = p->run_energy / 100;
     if (v->ui.run_energy < 0) v->ui.run_energy = 0;
     if (v->ui.run_energy > 100) v->ui.run_energy = 100;
@@ -660,10 +381,11 @@ static void sync_fc_ui_status(ViewerState* v) {
 static void sync_fc_ui_minimap(ViewerState* v) {
     if (!v) return;
     FcPlayer* p = &v->state.player;
-    FcVisualPose player_pose = fc_visual_scene_player_pose(&v->visual_scene);
-    float player_x = v->visual_scene.player.active
+    FcVisualPose player_pose =
+        fc_visual_scene_player_pose(&v->actor_animation.scene);
+    float player_x = v->actor_animation.scene.player.active
         ? player_pose.x : (float)p->x + 0.5f;
-    float player_y = v->visual_scene.player.active
+    float player_y = v->actor_animation.scene.player.active
         ? player_pose.y : (float)p->y + 0.5f;
     Color pixels[FC_MINIMAP_DISPLAY_SIZE * FC_MINIMAP_DISPLAY_SIZE];
     fc_minimap_render(&v->minimap_scene, player_x, player_y, v->cam_yaw,
@@ -694,10 +416,11 @@ static void sync_fc_ui_minimap(ViewerState* v) {
     for (int i = 0; i < FC_MAX_NPCS; i++) {
         FcNpc* n = &v->state.npcs[i];
         if (!n->active || n->is_dead) continue;
-        FcVisualPose npc_pose = fc_visual_scene_npc_pose(&v->visual_scene, i);
-        float npc_x = v->visual_scene.npcs[i].active
+        FcVisualPose npc_pose =
+            fc_visual_scene_npc_pose(&v->actor_animation.scene, i);
+        float npc_x = v->actor_animation.scene.npcs[i].active
             ? npc_pose.x : (float)n->x + (float)n->size * 0.5f;
-        float npc_y = v->visual_scene.npcs[i].active
+        float npc_y = v->actor_animation.scene.npcs[i].active
             ? npc_pose.y : (float)n->y + (float)n->size * 0.5f;
         Vector2 offset = fc_minimap_rotate_offset(
             npc_x - player_x, npc_y - player_y, v->cam_yaw);
@@ -771,10 +494,10 @@ static void handle_runec_ui_intent(ViewerState* v) {
             break;
         case RUNEC_UI_INTENT_MINIMAP_CLICK: {
             FcVisualPose player_pose =
-                fc_visual_scene_player_pose(&v->visual_scene);
-            float player_x = v->visual_scene.player.active
+                fc_visual_scene_player_pose(&v->actor_animation.scene);
+            float player_x = v->actor_animation.scene.player.active
                 ? player_pose.x : (float)p->x + 0.5f;
-            float player_y = v->visual_scene.player.active
+            float player_y = v->actor_animation.scene.player.active
                 ? player_pose.y : (float)p->y + 0.5f;
             int tile_x = -1;
             int tile_y = -1;
@@ -790,545 +513,6 @@ static void handle_runec_ui_intent(ViewerState* v) {
         default:
             break;
     }
-}
-
-/* Helpers */
-static uint32_t viewer_player_model_id(const ViewerState* v) {
-    int loadout = v ? v->active_loadout : FC_ACTIVE_LOADOUT;
-    if (loadout < 0) loadout = 0;
-    if (loadout >= FC_NUM_LOADOUTS) loadout = FC_ACTIVE_LOADOUT;
-    return FC_LOADOUTS[loadout].player_model_id;
-}
-
-static NpcModelEntry* viewer_player_model_entry(ViewerState* v) {
-    if (!v || !v->player_model) return NULL;
-    NpcModelEntry* entry = fc_npc_model_find(v->player_model,
-                                             viewer_player_model_id(v));
-    if (!entry && v->player_model->count > 0)
-        entry = &v->player_model->entries[0];
-    return (entry && entry->loaded) ? entry : NULL;
-}
-
-static void apply_anim_frame_to_entry(NpcModelEntry* entry,
-                                      AnimModelState* state,
-                                      const AnimFrameData* frame_data,
-                                      const AnimFrameBase* fb) {
-    if (!entry || !entry->loaded || !state || !frame_data || !fb) return;
-    anim_apply_frame(state, entry->base_verts, frame_data, fb);
-    models_recompute_texture_uvs_from_vertices(entry, state->verts);
-
-    float* mesh_verts = entry->model.meshes[0].vertices;
-    anim_update_mesh(mesh_verts, state, entry->face_indices, entry->face_count);
-
-    int evc = entry->face_count * 3;
-    for (int vi = 0; vi < evc; vi++) {
-        mesh_verts[vi*3+0] /=  128.0f;
-        mesh_verts[vi*3+1] /=  128.0f;
-        mesh_verts[vi*3+2] /= -128.0f;
-    }
-
-    UpdateMeshBuffer(entry->model.meshes[0], 0, mesh_verts,
-                     evc * 3 * sizeof(float), 0);
-}
-
-static void upload_anim_state_to_entry(NpcModelEntry* entry,
-                                       AnimModelState* state) {
-    if (!entry || !entry->loaded || !state) return;
-    models_recompute_texture_uvs_from_vertices(entry, state->verts);
-
-    float* mesh_verts = entry->model.meshes[0].vertices;
-    anim_update_mesh(mesh_verts, state, entry->face_indices, entry->face_count);
-
-    int evc = entry->face_count * 3;
-    for (int vi = 0; vi < evc; vi++) {
-        mesh_verts[vi*3+0] /=  128.0f;
-        mesh_verts[vi*3+1] /=  128.0f;
-        mesh_verts[vi*3+2] /= -128.0f;
-    }
-
-    UpdateMeshBuffer(entry->model.meshes[0], 0, mesh_verts,
-                     evc * 3 * sizeof(float), 0);
-}
-
-static AnimSequence* advance_anim_track(AnimCache* cache,
-                                        uint16_t desired_seq,
-                                        uint16_t* current_seq,
-                                        int* frame_index,
-                                        float* frame_timer,
-                                        float dt) {
-    if (!cache || desired_seq == 0 || !current_seq ||
-        !frame_index || !frame_timer)
-        return NULL;
-
-    AnimSequence* seq = anim_get_sequence(cache, desired_seq);
-    if (!seq || seq->frame_count == 0) return NULL;
-
-    if (*current_seq != desired_seq) {
-        *current_seq = desired_seq;
-        *frame_index = 0;
-        *frame_timer = (float)seq->frames[0].delay * 0.02f;
-        if (*frame_timer < 0.016f) *frame_timer = 0.016f;
-    }
-    if (*frame_index < 0 || *frame_index >= seq->frame_count)
-        *frame_index = 0;
-
-    *frame_timer -= dt;
-    while (*frame_timer <= 0.0f) {
-        *frame_index += 1;
-        if (*frame_index >= seq->frame_count) {
-            if (seq->frame_step > 0 && seq->frame_step <= seq->frame_count)
-                *frame_index -= seq->frame_step;
-            else
-                *frame_index = 0;
-        }
-        float frame_delay = (float)seq->frames[*frame_index].delay * 0.02f;
-        if (frame_delay < 0.016f) frame_delay = 0.016f;
-        *frame_timer += frame_delay;
-    }
-
-    return seq;
-}
-
-static float anim_frame_duration_seconds(const AnimSequence* seq,
-                                         int frame_index) {
-    if (!seq || frame_index < 0 || frame_index >= seq->frame_count)
-        return 0.016f;
-    float duration = (float)seq->frames[frame_index].delay * 0.02f;
-    return duration < 0.016f ? 0.016f : duration;
-}
-
-static float anim_track_duration_seconds(const AnimSequence* seq) {
-    if (!seq || seq->frame_count == 0) return 0.0f;
-    float duration = 0.0f;
-    for (int i = 0; i < seq->frame_count; i++)
-        duration += anim_frame_duration_seconds(seq, i);
-    return duration;
-}
-
-/* Movement direction changes do not restart the client movement cycle. Map
- * the elapsed phase into the newly selected locomotion sequence so rapid
- * forward/side/back changes cannot pin the legs to frame zero. */
-static void retarget_anim_track_preserving_phase(
-    AnimCache* cache, uint16_t desired_seq, uint16_t* current_seq,
-    int* frame_index, float* frame_timer) {
-    if (!cache || desired_seq == 0 || !current_seq || !frame_index ||
-        !frame_timer || *current_seq == 0 || *current_seq == desired_seq)
-        return;
-
-    AnimSequence* old_seq = anim_get_sequence(cache, *current_seq);
-    AnimSequence* new_seq = anim_get_sequence(cache, desired_seq);
-    if (!old_seq || old_seq->frame_count == 0 ||
-        !new_seq || new_seq->frame_count == 0)
-        return;
-
-    int old_frame = *frame_index;
-    if (old_frame < 0 || old_frame >= old_seq->frame_count)
-        old_frame = 0;
-    float old_total = anim_track_duration_seconds(old_seq);
-    float new_total = anim_track_duration_seconds(new_seq);
-    if (old_total <= 0.0f || new_total <= 0.0f) return;
-
-    float old_elapsed = 0.0f;
-    for (int i = 0; i < old_frame; i++)
-        old_elapsed += anim_frame_duration_seconds(old_seq, i);
-    float old_frame_duration = anim_frame_duration_seconds(old_seq, old_frame);
-    float old_remaining = *frame_timer;
-    if (old_remaining < 0.0f) old_remaining = 0.0f;
-    if (old_remaining > old_frame_duration) old_remaining = old_frame_duration;
-    old_elapsed += old_frame_duration - old_remaining;
-
-    float target_elapsed = fmodf(old_elapsed, old_total) / old_total * new_total;
-    float elapsed_before_frame = 0.0f;
-    int new_frame = 0;
-    for (; new_frame < new_seq->frame_count - 1; new_frame++) {
-        float duration = anim_frame_duration_seconds(new_seq, new_frame);
-        if (target_elapsed < elapsed_before_frame + duration) break;
-        elapsed_before_frame += duration;
-    }
-
-    float new_frame_duration = anim_frame_duration_seconds(new_seq, new_frame);
-    *current_seq = desired_seq;
-    *frame_index = new_frame;
-    *frame_timer = elapsed_before_frame + new_frame_duration - target_elapsed;
-    if (*frame_timer < 0.001f) *frame_timer = 0.001f;
-}
-
-static int player_profile_is_movement_sequence(
-    const PlayerVisualProfile* profile, uint16_t sequence_id) {
-    if (!profile || sequence_id == 0) return 0;
-    return sequence_id == profile->walk_anim ||
-           sequence_id == profile->walk_back_anim ||
-           sequence_id == profile->walk_left_anim ||
-           sequence_id == profile->walk_right_anim ||
-           sequence_id == profile->run_anim;
-}
-
-static AnimSequence* advance_anim_track_once(AnimCache* cache,
-                                             uint16_t desired_seq,
-                                             uint16_t* current_seq,
-                                             int* frame_index,
-                                             float* frame_timer,
-                                             float dt) {
-    if (!cache || desired_seq == 0 || !current_seq ||
-        !frame_index || !frame_timer)
-        return NULL;
-
-    AnimSequence* seq = anim_get_sequence(cache, desired_seq);
-    if (!seq || seq->frame_count == 0) return NULL;
-
-    if (*current_seq != desired_seq) {
-        *current_seq = desired_seq;
-        *frame_index = 0;
-        *frame_timer = (float)seq->frames[0].delay * 0.02f;
-        if (*frame_timer < 0.016f) *frame_timer = 0.016f;
-    }
-    if (*frame_index < 0 || *frame_index >= seq->frame_count)
-        *frame_index = 0;
-
-    *frame_timer -= dt;
-    while (*frame_timer <= 0.0f && *frame_index < seq->frame_count - 1) {
-        *frame_index += 1;
-        float frame_delay = (float)seq->frames[*frame_index].delay * 0.02f;
-        if (frame_delay < 0.016f) frame_delay = 0.016f;
-        *frame_timer += frame_delay;
-    }
-    if (*frame_timer <= 0.0f)
-        *frame_timer = 0.016f;
-
-    return seq;
-}
-
-static float anim_sequence_duration_seconds(const AnimSequence* seq) {
-    if (!seq || seq->frame_count == 0) return 0.45f;
-    float total = 0.0f;
-    for (int i = 0; i < seq->frame_count; i++) {
-        float frame_delay = (float)seq->frames[i].delay * 0.02f;
-        if (frame_delay < 0.016f) frame_delay = 0.016f;
-        total += frame_delay;
-    }
-    if (total < 0.35f) total = 0.35f;
-    return total;
-}
-
-static float anim_sequence_duration_client_cycles(const AnimSequence* seq) {
-    if (!seq || seq->frame_count == 0) return 0.0f;
-    float total = 0.0f;
-    for (int i = 0; i < seq->frame_count; i++)
-        total += seq->frames[i].delay > 0 ? seq->frames[i].delay : 1;
-    return total;
-}
-
-static void update_entry_animation(NpcModelEntry* entry,
-                                   AnimCache* cache,
-                                   AnimModelState** state,
-                                   uint16_t* current_seq,
-                                   int* frame_index,
-                                   float* frame_timer,
-                                   int animation_id,
-                                   float dt,
-                                   float phase_ticks) {
-    if (!entry || !entry->loaded || !cache || animation_id < 0 ||
-        !entry->vertex_skins || !state || !current_seq ||
-        !frame_index || !frame_timer)
-        return;
-
-    AnimSequence* seq = anim_get_sequence(cache, (uint16_t)animation_id);
-    if (!seq || seq->frame_count == 0) return;
-
-    if (!*state || (*state)->vert_count != entry->base_vert_count) {
-        if (*state) anim_model_state_free(*state);
-        *state = anim_model_state_create(entry->vertex_skins,
-                                         entry->base_vert_count);
-        *current_seq = (uint16_t)animation_id;
-        *frame_index = (int)phase_ticks % seq->frame_count;
-        if (*frame_index < 0) *frame_index = 0;
-        *frame_timer = (float)seq->frames[*frame_index].delay * 0.02f;
-        if (*frame_timer < 0.016f) *frame_timer = 0.016f;
-    }
-
-    if (*current_seq != (uint16_t)animation_id) {
-        *current_seq = (uint16_t)animation_id;
-        *frame_index = 0;
-        *frame_timer = (float)seq->frames[0].delay * 0.02f;
-        if (*frame_timer < 0.016f) *frame_timer = 0.016f;
-    }
-
-    *frame_timer -= dt;
-    while (*frame_timer <= 0.0f) {
-        *frame_index = (*frame_index + 1) % seq->frame_count;
-        float frame_delay = (float)seq->frames[*frame_index].delay * 0.02f;
-        if (frame_delay < 0.016f) frame_delay = 0.016f;
-        *frame_timer += frame_delay;
-    }
-
-    AnimFrameData* fd = &seq->frames[*frame_index].frame;
-    AnimFrameBase* fb = anim_get_framebase(cache, fd->framebase_id);
-    if (fb) apply_anim_frame_to_entry(entry, *state, fd, fb);
-}
-
-static void free_projectile(VisualProjectile* vp) {
-    if (!vp) return;
-    if (vp->anim_state) {
-        anim_model_state_free(vp->anim_state);
-        vp->anim_state = NULL;
-    }
-    memset(vp, 0, sizeof(*vp));
-}
-
-static void free_effect(VisualEffect* fx) {
-    if (!fx) return;
-    if (fx->anim_state) {
-        anim_model_state_free(fx->anim_state);
-        fx->anim_state = NULL;
-    }
-    memset(fx, 0, sizeof(*fx));
-}
-
-static int player_visual_lock_active(const ViewerState* v);
-
-static void clear_visuals(ViewerState* v) {
-    if (!v) return;
-    for (int i = 0; i < MAX_PROJECTILES; i++)
-        free_projectile(&v->projectiles[i]);
-    for (int i = 0; i < MAX_VISUAL_EFFECTS; i++)
-        free_effect(&v->effects[i]);
-}
-
-static void reset_visual_actor_scene(ViewerState* v) {
-    if (!v) return;
-    fc_visual_scene_init(&v->visual_scene);
-    fc_visual_scene_reset_player(&v->visual_scene,
-                                 v->state.player.x, v->state.player.y, 1,
-                                 v->state.player.facing_angle);
-    for (int i = 0; i < FC_MAX_NPCS; i++) {
-        FcNpc* npc = &v->state.npcs[i];
-        if (npc->active || npc->died_this_tick) {
-            fc_visual_scene_reset_npc(&v->visual_scene, i,
-                                      npc->x, npc->y, npc->size,
-                                      0.0f);
-        }
-    }
-}
-
-static void ingest_visual_actor_tick(ViewerState* v) {
-    if (!v) return;
-    FcVisualActor* player = &v->visual_scene.player;
-    if (!player->active) {
-        fc_visual_scene_reset_player(&v->visual_scene,
-                                     v->render_events.player_move_start_x,
-                                     v->render_events.player_move_start_y,
-                                     1, v->state.player.facing_angle);
-    }
-
-    int waypoint_count = v->render_events.player_move_waypoint_count;
-    int running = waypoint_count > 1;
-    for (int i = 0; i < waypoint_count; i++) {
-        fc_visual_actor_enqueue_tile(
-            player,
-            v->render_events.player_move_waypoint_x[i],
-            v->render_events.player_move_waypoint_y[i],
-            running);
-    }
-    if (waypoint_count == 0 &&
-        (player->server_tile_x != v->state.player.x ||
-         player->server_tile_y != v->state.player.y)) {
-        fc_visual_actor_enqueue_transition(
-            player, player->server_tile_x, player->server_tile_y,
-            v->state.player.x, v->state.player.y,
-            v->state.player.is_running);
-    }
-
-    for (int i = 0; i < FC_MAX_NPCS; i++) {
-        FcNpc* npc = &v->state.npcs[i];
-        FcVisualActor* visual = &v->visual_scene.npcs[i];
-        if (npc->active && !v->prev_npc_active[i]) {
-            fc_visual_scene_reset_npc(&v->visual_scene, i,
-                                      npc->x, npc->y, npc->size, 0.0f);
-        } else if ((npc->active || npc->died_this_tick) && visual->active) {
-            fc_visual_actor_enqueue_transition(
-                visual, (int)v->prev_npc_x[i], (int)v->prev_npc_y[i],
-                npc->x, npc->y, 0);
-        } else if (!npc->active && !npc->died_this_tick) {
-            fc_visual_scene_deactivate_npc(&v->visual_scene, i);
-        }
-    }
-}
-
-static void update_visual_actor_targets(ViewerState* v) {
-    if (!v) return;
-    int target = player_visual_lock_active(v)
-        ? v->player_attack_visual_target_idx
-        : v->state.player.attack_target_idx;
-    if (target >= 0 && target < FC_MAX_NPCS &&
-        v->visual_scene.npcs[target].active) {
-        fc_visual_actor_set_target(&v->visual_scene.player,
-                                   FC_VISUAL_TARGET_NPC, target);
-    } else {
-        fc_visual_actor_set_target(&v->visual_scene.player,
-                                   FC_VISUAL_TARGET_NONE, -1);
-    }
-
-    for (int i = 0; i < FC_MAX_NPCS; i++) {
-        FcVisualActor* actor = &v->visual_scene.npcs[i];
-        if (actor->active && v->state.npcs[i].active) {
-            int heal_target = v->state.npcs[i].heal_target_idx;
-            if (heal_target >= 0 && heal_target < FC_MAX_NPCS &&
-                heal_target != i && v->visual_scene.npcs[heal_target].active) {
-                fc_visual_actor_set_target(actor, FC_VISUAL_TARGET_NPC,
-                                           heal_target);
-            } else if (heal_target == i) {
-                fc_visual_actor_set_target(actor, FC_VISUAL_TARGET_NONE, -1);
-            } else {
-                fc_visual_actor_set_target(actor, FC_VISUAL_TARGET_PLAYER, 0);
-            }
-        } else {
-            fc_visual_actor_set_target(actor, FC_VISUAL_TARGET_NONE, -1);
-        }
-    }
-}
-
-static void recreate_player_anim_state(ViewerState* v, NpcModelEntry* pm) {
-    if (!v || !pm || !pm->loaded || !pm->vertex_skins) return;
-    if (v->player_anim_state &&
-        v->player_anim_state->vert_count == pm->base_vert_count)
-        return;
-    if (v->player_anim_state)
-        anim_model_state_free(v->player_anim_state);
-    v->player_anim_state = anim_model_state_create(pm->vertex_skins,
-                                                   pm->base_vert_count);
-    const PlayerVisualProfile* profile = player_visual_profile(v->active_loadout);
-    v->player_anim_seq = profile->idle_anim;
-    v->player_anim_frame = 0;
-    v->player_anim_timer = 0.0f;
-    v->player_pose_anim_seq = profile->idle_anim;
-    v->player_pose_anim_frame = 0;
-    v->player_pose_anim_timer = 0.0f;
-    v->player_action_anim_seq = 0;
-    v->player_action_anim_frame = 0;
-    v->player_action_anim_timer = 0.0f;
-    v->player_visual_lock_seq = 0;
-    v->player_visual_lock_timer = 0.0f;
-    v->player_attack_visual_target_idx = -1;
-    fprintf(stderr, "Player animation state created (%d base verts, model %u)\n",
-            pm->base_vert_count, pm->model_id);
-}
-
-static NpcModelEntry* projectile_model_for_spot(ViewerState* v,
-                                                uint32_t spot_id,
-                                                const SpotAnimDef** out_spot) {
-    const SpotAnimDef* spot = (spot_id > 0 && v && v->spotanims)
-        ? spotanim_find(v->spotanims, (int)spot_id) : NULL;
-    if (out_spot) *out_spot = spot;
-    if (!v || spot_id == 0 || !v->projectile_models) return NULL;
-
-    NpcModelEntry* pm = fc_npc_model_find(v->projectile_models,
-                                          PROJ_SPOTANIM_MODEL_BASE + spot_id);
-    if (!pm && spot && spot->model_id >= 0)
-        pm = fc_npc_model_find(v->projectile_models, (uint32_t)spot->model_id);
-    if (!pm)
-        pm = fc_npc_model_find(v->projectile_models, spot_id);
-    return (pm && pm->loaded) ? pm : NULL;
-}
-
-static float projectile_effect_duration(ViewerState* v, uint32_t spot_id,
-                                        float retain_client_cycles) {
-    float animation_client_cycles = 0.0f;
-    const SpotAnimDef* spot = (v && v->spotanims && spot_id > 0)
-        ? spotanim_find(v->spotanims, (int)spot_id) : NULL;
-    if (spot && spot->animation_id >= 0 && v->anim_cache) {
-        AnimSequence* seq = anim_get_sequence(
-            v->anim_cache, (uint16_t)spot->animation_id);
-        animation_client_cycles = anim_sequence_duration_client_cycles(seq);
-    }
-    return fc_projectile_effect_duration_seconds(
-        animation_client_cycles, retain_client_cycles,
-        v && v->tps > 0.0f ? v->tps : (float)POLICY_REPLAY_BASE_TPS);
-}
-
-static uint16_t npc_attack_animation_id(int npc_type, int attack_style) {
-    if (npc_type == NPC_TZTOK_JAD) {
-        if (attack_style == ATTACK_MAGIC) return JAD_ANIM_MAGIC;
-        if (attack_style == ATTACK_RANGED) return JAD_ANIM_RANGED;
-        if (attack_style == ATTACK_MELEE) return JAD_ANIM_MELEE;
-    }
-    if (npc_type > 0 && npc_type < 9)
-        return NPC_ANIM_ATTACK[npc_type];
-    return 0;
-}
-
-static void mark_npc_attack_visual(ViewerState* v, int npc_idx,
-                                   int attack_style) {
-    if (!v || npc_idx < 0 || npc_idx >= FC_MAX_NPCS ||
-        attack_style == ATTACK_NONE)
-        return;
-    v->npc_attack_visual_style[npc_idx] = attack_style;
-    v->npc_attack_visual_timer[npc_idx] = 1.15f;
-    v->npc_prayer_indicator_timer[npc_idx] = 0.30f;
-}
-
-static float policy_replay_time_scale(const ViewerState* v) {
-    if (!v || v->tps <= 0.0f) return 1.0f;
-    float scale = v->tps / (float)POLICY_REPLAY_BASE_TPS;
-    if (scale < 0.05f) scale = 0.05f;
-    if (scale > 36.0f) scale = 36.0f;
-    return scale;
-}
-
-static float policy_replay_anim_dt(const ViewerState* v, float dt) {
-    return dt * policy_replay_time_scale(v);
-}
-
-static float policy_replay_duration(const ViewerState* v, float seconds) {
-    float scale = policy_replay_time_scale(v);
-    seconds /= scale;
-    if (seconds < 0.05f) seconds = 0.05f;
-    return seconds;
-}
-
-static void mark_player_attack_visual(ViewerState* v) {
-    if (!v || !v->render_events.player_attack_fired) return;
-    const PlayerVisualProfile* profile = player_visual_profile(v->active_loadout);
-    AnimSequence* seq = v->anim_cache
-        ? anim_get_sequence(v->anim_cache, profile->attack_anim) : NULL;
-    v->player_visual_lock_seq = profile->attack_anim;
-    v->player_visual_lock_timer = policy_replay_duration(
-        v, anim_sequence_duration_seconds(seq));
-    v->player_attack_visual_target_idx =
-        v->render_events.player_attack_target_npc_slot;
-    v->player_action_anim_seq = 0;
-    v->player_action_anim_frame = 0;
-    v->player_action_anim_timer = 0.0f;
-}
-
-static int player_visual_lock_active(const ViewerState* v) {
-    return v && v->player_visual_lock_seq != 0 &&
-           v->player_visual_lock_timer > 0.0f;
-}
-
-static uint16_t player_visual_action_sequence(const ViewerState* v) {
-    if (!v) return 0;
-    if (v->state.terminal == TERMINAL_PLAYER_DEATH) return PLAYER_ANIM_DEATH;
-    if (v->state.player.food_eaten_this_tick) return PLAYER_ANIM_EAT;
-    if (player_visual_lock_active(v)) return v->player_visual_lock_seq;
-    return 0;
-}
-
-static int visual_sequence_blocks_movement(const ViewerState* v,
-                                           uint16_t sequence_id) {
-    if (!v || !v->anim_cache || sequence_id == 0) return 0;
-    AnimSequence* sequence = anim_get_sequence(v->anim_cache, sequence_id);
-    return sequence && sequence->postanim_move == 0;
-}
-
-static int viewer_render_prayer(const ViewerState* v) {
-    if (!v || v->prayer_flick_visual_timer > 0.0f)
-        return PRAYER_NONE;
-    return v->state.player.prayer;
-}
-
-static void mark_prayer_flick_visual(ViewerState* v) {
-    if (!v || !v->render_events.prayer_flick_performed) return;
-    v->prayer_flick_visual_timer = policy_replay_duration(v, 0.10f);
 }
 
 static void text_s(const char* t, int x, int y, int sz, Color c) {
@@ -1716,11 +900,9 @@ static void reset_ep(ViewerState* v) {
     v->episode_count++;
     v->attack_target = -1;
     memset(v->actions, 0, sizeof(v->actions));
-    memset(v->hitsplats, 0, sizeof(v->hitsplats));
-    v->player_healthbar_timer = 0.0f;
-    memset(v->npc_healthbar_timer, 0, sizeof(v->npc_healthbar_timer));
-    clear_visuals(v);
-    reset_visual_actor_scene(v);
+    fc_combat_presentation_reset(v->combat_presentation);
+    fc_actor_animation_reset(&v->actor_animation, &v->state,
+                             v->player_model, v->active_loadout);
     v->pending_prayer = 0;
     v->pending_eat = 0;
     v->pending_drink = 0;
@@ -1729,38 +911,6 @@ static void reset_ep(ViewerState* v) {
     v->pending_tile_y = -1;
     fc_click_feedback_reset(&v->click_feedback);
     dbg_log_clear();
-    /* Initialize prev positions */
-    v->player_pose_anim_seq =
-        player_visual_profile(v->active_loadout)->idle_anim;
-    v->player_pose_anim_frame = 0;
-    v->player_pose_anim_timer = 0.0f;
-    v->player_action_anim_seq = 0;
-    v->player_action_anim_frame = 0;
-    v->player_action_anim_timer = 0.0f;
-    v->player_visual_lock_seq = 0;
-    v->player_visual_lock_timer = 0.0f;
-    v->player_attack_visual_target_idx = -1;
-    v->prayer_flick_visual_timer = 0.0f;
-    /* Reset NPC animation states */
-    for (int i = 0; i < FC_MAX_NPCS; i++) {
-        v->prev_npc_x[i] = (float)v->state.npcs[i].x;
-        v->prev_npc_y[i] = (float)v->state.npcs[i].y;
-        v->prev_npc_active[i] = v->state.npcs[i].active;
-        if (v->npc_anim_states[i]) {
-            anim_model_state_free(v->npc_anim_states[i]);
-            v->npc_anim_states[i] = NULL;
-        }
-        v->npc_anim_seq[i] = 0;
-        v->npc_anim_frame[i] = 0;
-        v->npc_anim_timer[i] = 0;
-        v->npc_action_anim_seq[i] = 0;
-        v->npc_action_anim_frame[i] = 0;
-        v->npc_action_anim_timer[i] = 0.0f;
-        v->npc_attack_visual_style[i] = ATTACK_NONE;
-        v->npc_attack_visual_timer[i] = 0.0f;
-        v->npc_prayer_indicator_timer[i] = 0.0f;
-        v->npc_prayer_lock_tick[i] = -1;
-    }
 }
 
 static void viewer_jump_to_wave(ViewerState* v, int wave) {
@@ -1783,430 +933,13 @@ static void viewer_jump_to_wave(ViewerState* v, int wave) {
     fc_reward_runtime_begin_episode(&v->reward_runtime, &v->state);
     fc_fill_render_entities(&v->state, v->entities, &v->entity_count);
     fc_fill_render_events(&v->state, &v->render_events);
-    memset(v->hitsplats, 0, sizeof(v->hitsplats));
-    v->player_healthbar_timer = 0.0f;
-    memset(v->npc_healthbar_timer, 0, sizeof(v->npc_healthbar_timer));
-    clear_visuals(v);
-    reset_visual_actor_scene(v);
+    fc_combat_presentation_reset(v->combat_presentation);
+    fc_actor_animation_reset(&v->actor_animation, &v->state,
+                             v->player_model, v->active_loadout);
     v->attack_target = -1;
     fc_click_feedback_reset(&v->click_feedback);
     dbg_log_clear();
-    v->player_pose_anim_seq =
-        player_visual_profile(v->active_loadout)->idle_anim;
-    v->player_pose_anim_frame = 0;
-    v->player_pose_anim_timer = 0.0f;
-    v->player_action_anim_seq = 0;
-    v->player_action_anim_frame = 0;
-    v->player_action_anim_timer = 0.0f;
-    v->player_visual_lock_seq = 0;
-    v->player_visual_lock_timer = 0.0f;
-    v->player_attack_visual_target_idx = -1;
-    v->prayer_flick_visual_timer = 0.0f;
-
-    for (int i = 0; i < FC_MAX_NPCS; i++) {
-        v->prev_npc_x[i] = (float)v->state.npcs[i].x;
-        v->prev_npc_y[i] = (float)v->state.npcs[i].y;
-        v->prev_npc_active[i] = v->state.npcs[i].active;
-        if (v->npc_anim_states[i]) {
-            anim_model_state_free(v->npc_anim_states[i]);
-            v->npc_anim_states[i] = NULL;
-        }
-        v->npc_anim_seq[i] = 0;
-        v->npc_anim_frame[i] = 0;
-        v->npc_anim_timer[i] = 0.0f;
-        v->npc_action_anim_seq[i] = 0;
-        v->npc_action_anim_frame[i] = 0;
-        v->npc_action_anim_timer[i] = 0.0f;
-        v->npc_attack_visual_style[i] = ATTACK_NONE;
-        v->npc_attack_visual_timer[i] = 0.0f;
-        v->npc_prayer_indicator_timer[i] = 0.0f;
-        v->npc_prayer_lock_tick[i] = -1;
-    }
 }
-
-static float ground_y(ViewerState* v, int tile_x, int tile_y);
-static float ground_y_smooth(ViewerState* v, float tile_x, float tile_y);
-
-static VisualEffect* spawn_spot_effect(ViewerState* v, uint32_t spot_id,
-                                       float x, float y, float z,
-                                       float duration, Color col, float radius,
-                                       float yaw_degrees) {
-    if (!v || spot_id == 0) return NULL;
-    for (int i = 0; i < MAX_VISUAL_EFFECTS; i++) {
-        if (!v->effects[i].active) {
-            VisualEffect* fx = &v->effects[i];
-            memset(fx, 0, sizeof(*fx));
-            fx->active = 1;
-            fx->x = x; fx->y = y; fx->z = z;
-            fx->total_time = duration;
-            fx->elapsed = 0.0f;
-            fx->color = col;
-            fx->radius = radius;
-            fx->spot_id = spot_id;
-            fx->yaw_degrees = yaw_degrees;
-            return fx;
-        }
-    }
-    return NULL;
-}
-
-static VisualProjectile* spawn_projectile(ViewerState* v,
-                                          float sx, float sy, float sz,
-                                          float dx, float dy, float dz,
-                                          float travel_secs, Color col,
-                                          float radius, uint32_t spot_id,
-                                          uint32_t launch_spot_id,
-                                          uint32_t impact_spot_id) {
-    if (!v || (spot_id == 0 && launch_spot_id == 0 && impact_spot_id == 0))
-        return NULL;
-    for (int i = 0; i < MAX_PROJECTILES; i++) {
-        if (!v->projectiles[i].active) {
-            VisualProjectile* vp = &v->projectiles[i];
-            free_projectile(vp);
-            vp->active = 1;
-            vp->src_x = sx; vp->src_y = sy; vp->src_z = sz;
-            vp->dst_x = dx; vp->dst_y = dy; vp->dst_z = dz;
-            vp->x = sx; vp->y = sy; vp->z = sz;
-            vp->total_time = travel_secs; vp->elapsed = 0;
-            vp->color = col; vp->radius = radius;
-            vp->spot_id = spot_id;
-            vp->launch_spot_id = launch_spot_id;
-            vp->impact_spot_id = impact_spot_id;
-            return vp;
-        }
-    }
-    return NULL;
-}
-
-static int visual_actor_world_point(ViewerState* v,
-                                    FcVisualTargetKind kind, int slot,
-                                    float* x, float* y, float* z) {
-    if (!v || !x || !y || !z) return 0;
-    FcVisualPose pose;
-    float height;
-    if (kind == FC_VISUAL_TARGET_PLAYER) {
-        if (!v->visual_scene.player.active) return 0;
-        pose = fc_visual_scene_player_pose(&v->visual_scene);
-        height = 1.5f;
-    } else if (kind == FC_VISUAL_TARGET_NPC &&
-               slot >= 0 && slot < FC_MAX_NPCS &&
-               v->visual_scene.npcs[slot].active) {
-        pose = fc_visual_scene_npc_pose(&v->visual_scene, slot);
-        int size = v->visual_scene.npcs[slot].size;
-        height = 1.0f + (float)size * 0.3f;
-    } else {
-        return 0;
-    }
-    *x = pose.x;
-    *z = -pose.y;
-    *y = ground_y_smooth(v, pose.x, pose.y) + height;
-    return 1;
-}
-
-static int projectile_tile_distance(int source_x, int source_y,
-                                    int target_x, int target_y) {
-    int dx = abs(target_x - source_x);
-    int dy = abs(target_y - source_y);
-    return dx > dy ? dx : dy;
-}
-
-static void configure_projectile_tracking(
-    ViewerState* v, VisualProjectile* vp,
-    FcVisualTargetKind source_kind, int source_slot,
-    FcVisualTargetKind target_kind, int target_slot,
-    int attack_style,
-    float launch_delay_client_ticks, float end_time_client_ticks,
-    float angle, float progress, int track_target) {
-    if (!v || !vp) return;
-    vp->source_kind = source_kind;
-    vp->source_slot = source_slot;
-    vp->target_kind = target_kind;
-    vp->target_slot = target_slot;
-    vp->track_target = track_target;
-    vp->attack_style = attack_style;
-    vp->launch_tick = v->state.tick;
-    vp->projectile_angle = angle >= 0.0f ? angle : 15.0f;
-    vp->projectile_progress = progress >= 0.0f ? progress : 0.0f;
-    /* RuneC's launch and endpoint metadata is already the client-authoritative
-     * visual clock. Preserve those client cycles instead of compressing the
-     * path into the simulator's coarser whole-tick pending-hit countdown. */
-    FcProjectileTiming timing = {0};
-    if (fc_projectile_timing_from_client_cycles(
-            launch_delay_client_ticks, end_time_client_ticks,
-            v->tps, &timing)) {
-        vp->launch_delay = timing.launch_delay;
-        vp->total_time = timing.total_duration;
-    } else {
-        vp->launch_delay = 0.0f;
-    }
-
-    {
-        float resolved_x, resolved_y, resolved_z;
-        if (visual_actor_world_point(v, source_kind, source_slot,
-                                     &resolved_x, &resolved_y, &resolved_z)) {
-            vp->source_y_offset = vp->src_y - resolved_y;
-            vp->src_x = resolved_x;
-            vp->src_y = resolved_y + vp->source_y_offset;
-            vp->src_z = resolved_z;
-        }
-        if (track_target &&
-            visual_actor_world_point(v, target_kind, target_slot,
-                                     &resolved_x, &resolved_y, &resolved_z)) {
-            vp->target_y_offset = vp->dst_y - resolved_y;
-            vp->dst_x = resolved_x;
-            vp->dst_y = resolved_y + vp->target_y_offset;
-            vp->dst_z = resolved_z;
-        }
-    }
-    vp->x = vp->src_x;
-    vp->y = vp->src_y;
-    vp->z = vp->src_z;
-
-    if (vp->launch_spot_id != 0) {
-        float launch_retain = launch_delay_client_ticks > 30.0f
-            ? launch_delay_client_ticks : 30.0f;
-        float launch_duration = projectile_effect_duration(
-            v, vp->launch_spot_id, launch_retain);
-        float launch_yaw = atan2f(vp->dst_x - vp->src_x,
-                                  vp->dst_z - vp->src_z) * RAD2DEG;
-        VisualEffect* launch = spawn_spot_effect(
-            v, vp->launch_spot_id,
-            vp->src_x, vp->src_y, vp->src_z,
-            launch_duration, vp->color, vp->radius * 1.4f, launch_yaw);
-        if (launch) {
-            launch->attached = 1;
-            launch->attached_kind = source_kind;
-            launch->attached_slot = source_slot;
-            launch->face_kind = target_kind;
-            launch->face_slot = target_slot;
-            {
-                float x, y, z;
-                if (visual_actor_world_point(v, source_kind, source_slot,
-                                             &x, &y, &z))
-                    launch->attached_y_offset = launch->y - y;
-            }
-        }
-    }
-}
-
-static void refresh_projectile_actor_points(ViewerState* v,
-                                            VisualProjectile* vp,
-                                            int refresh_source) {
-    float x, y, z;
-    if (refresh_source && visual_actor_world_point(
-            v, vp->source_kind, vp->source_slot, &x, &y, &z)) {
-        vp->src_x = x;
-        vp->src_y = y + vp->source_y_offset;
-        vp->src_z = z;
-    }
-    if (vp->track_target && visual_actor_world_point(
-            v, vp->target_kind, vp->target_slot, &x, &y, &z)) {
-        vp->dst_x = x;
-        vp->dst_y = y + vp->target_y_offset;
-        vp->dst_z = z;
-    }
-}
-
-static int update_visual_projectile(ViewerState* v, VisualProjectile* vp,
-                                    float dt) {
-    if (!v || !vp || !vp->active || dt <= 0.0f) return 0;
-    float start_elapsed = vp->elapsed;
-    float end_elapsed = start_elapsed + dt;
-    if (end_elapsed > vp->total_time) end_elapsed = vp->total_time;
-
-    refresh_projectile_actor_points(v, vp, !vp->launched);
-    if (end_elapsed < vp->launch_delay) {
-        vp->x = vp->src_x;
-        vp->y = vp->src_y;
-        vp->z = vp->src_z;
-        vp->elapsed = end_elapsed;
-        return 0;
-    }
-
-    if (!vp->launched) {
-        vp->launched = 1;
-    }
-
-    float flight_duration = vp->total_time - vp->launch_delay;
-    if (flight_duration < 0.001f) flight_duration = 0.001f;
-    FcProjectilePath path = {
-        .source_x = vp->src_x,
-        .source_y = vp->src_y,
-        .source_z = vp->src_z,
-        .target_x = vp->dst_x,
-        .target_y = vp->dst_y,
-        .target_z = vp->dst_z,
-        .duration = flight_duration,
-        .angle = vp->projectile_angle,
-        .progress = vp->projectile_progress / 128.0f,
-    };
-    FcProjectileSample sample = {0};
-    if (fc_projectile_path_sample(
-            &path, end_elapsed - vp->launch_delay, &sample)) {
-        vp->x = sample.x;
-        vp->y = sample.y;
-        vp->z = sample.z;
-        vp->velocity_x = sample.velocity_x;
-        vp->velocity_y = sample.velocity_y;
-        vp->velocity_z = sample.velocity_z;
-    }
-
-    vp->elapsed = end_elapsed;
-    if (vp->elapsed >= vp->total_time) {
-        vp->x = vp->dst_x;
-        vp->y = vp->dst_y;
-        vp->z = vp->dst_z;
-        return 1;
-    }
-    return 0;
-}
-
-static void show_actor_healthbar(ViewerState* v, FcVisualTargetKind actor_kind,
-                                 int actor_slot) {
-    if (!v) return;
-    if (actor_kind == FC_VISUAL_TARGET_PLAYER) {
-        v->player_healthbar_timer = OSRS_HEALTHBAR_SECONDS;
-    } else if (actor_kind == FC_VISUAL_TARGET_NPC &&
-               actor_slot >= 0 && actor_slot < FC_MAX_NPCS) {
-        v->npc_healthbar_timer[actor_slot] = OSRS_HEALTHBAR_SECONDS;
-    }
-}
-
-static int next_hitsplat_overlay_slot(const ViewerState* v,
-                                      FcVisualTargetKind actor_kind,
-                                      int actor_slot) {
-    unsigned int used = 0;
-    if (!v) return 0;
-    for (int i = 0; i < MAX_HITSPLATS; i++) {
-        const Hitsplat* hit = &v->hitsplats[i];
-        if (hit->active && hit->actor_kind == actor_kind &&
-            hit->actor_slot == actor_slot &&
-            hit->overlay_slot >= 0 && hit->overlay_slot < 4) {
-            used |= 1u << hit->overlay_slot;
-        }
-    }
-    for (int slot = 0; slot < 4; slot++) {
-        if ((used & (1u << slot)) == 0) return slot;
-    }
-    return 0;
-}
-
-static void spawn_status_splat(ViewerState* v,
-                               FcVisualTargetKind actor_kind, int actor_slot,
-                               float wx, float wy, float wz,
-                               int amount_tenths, int kind) {
-    for (int i = 0; i < MAX_HITSPLATS; i++) {
-        if (!v->hitsplats[i].active) {
-            int overlay_slot = next_hitsplat_overlay_slot(
-                v, actor_kind, actor_slot);
-            v->hitsplats[i].active = 1;
-            v->hitsplats[i].world_x = wx;
-            v->hitsplats[i].world_y = wy;
-            v->hitsplats[i].world_z = wz;
-            v->hitsplats[i].actor_kind = actor_kind;
-            v->hitsplats[i].actor_slot = actor_slot;
-            v->hitsplats[i].overlay_slot = overlay_slot;
-            v->hitsplats[i].damage = amount_tenths;
-            v->hitsplats[i].kind = kind;
-            v->hitsplats[i].seconds_left = OSRS_HITSPLAT_SECONDS;
-            if (kind != HITSPLAT_PRAYER_DRAIN)
-                show_actor_healthbar(v, actor_kind, actor_slot);
-            return;
-        }
-    }
-}
-
-static void spawn_hitsplat(ViewerState* v,
-                           FcVisualTargetKind actor_kind, int actor_slot,
-                           float wx, float wy, float wz, int damage_tenths) {
-    spawn_status_splat(v, actor_kind, actor_slot, wx, wy, wz,
-                       damage_tenths, HITSPLAT_DAMAGE);
-}
-
-/* Associate a resolved ranged/magic hit with the oldest matching projectile.
- * Combat damage remains authoritative at the simulation tick boundary; only
- * the visible splat is retained until the client-side projectile arrives. */
-static int defer_hitsplat_to_projectile(
-    ViewerState* v, const FcRenderHit* hit,
-    FcVisualTargetKind actor_kind, int actor_slot,
-    float wx, float wy, float wz) {
-    if (!v || !hit || hit->attack_style == ATTACK_MELEE) return 0;
-
-    FcVisualTargetKind source_kind;
-    FcVisualTargetKind target_kind;
-    int source_slot;
-    int target_slot;
-    if (hit->target_entity_type == ENTITY_PLAYER) {
-        if (hit->source_npc_slot < 0) return 0;
-        source_kind = FC_VISUAL_TARGET_NPC;
-        source_slot = hit->source_npc_slot;
-        target_kind = FC_VISUAL_TARGET_PLAYER;
-        target_slot = 0;
-    } else if (hit->target_entity_type == ENTITY_NPC) {
-        if (hit->target_npc_slot < 0) return 0;
-        source_kind = FC_VISUAL_TARGET_PLAYER;
-        source_slot = 0;
-        target_kind = FC_VISUAL_TARGET_NPC;
-        target_slot = hit->target_npc_slot;
-    } else {
-        return 0;
-    }
-
-    VisualProjectile* match = NULL;
-    for (int i = 0; i < MAX_PROJECTILES; i++) {
-        VisualProjectile* vp = &v->projectiles[i];
-        if (!vp->active || vp->has_deferred_hitsplat ||
-            vp->launch_tick >= v->state.tick ||
-            vp->source_kind != source_kind || vp->source_slot != source_slot ||
-            vp->target_kind != target_kind || vp->target_slot != target_slot ||
-            vp->attack_style != hit->attack_style) {
-            continue;
-        }
-        if (!match || vp->elapsed > match->elapsed) match = vp;
-    }
-    if (!match) return 0;
-
-    match->has_deferred_hitsplat = 1;
-    match->hitsplat_actor_kind = actor_kind;
-    match->hitsplat_actor_slot = actor_slot;
-    match->hitsplat_world_x = wx;
-    match->hitsplat_world_y = wy;
-    match->hitsplat_world_z = wz;
-    match->hitsplat_damage = hit->damage;
-    return 1;
-}
-
-/* Core damage is authoritative when the hit resolves, while a ranged or
- * magic projectile can still have a short amount of client-side travel left.
- * Reconstruct the actor's pre-impact HP until those retained splats land so
- * the health bar, hitsplat, and death animation change together. */
-static int deferred_projectile_damage_for_actor(
-    const ViewerState* v, FcVisualTargetKind actor_kind, int actor_slot) {
-    if (!v) return 0;
-
-    int damage = 0;
-    for (int i = 0; i < MAX_PROJECTILES; i++) {
-        const VisualProjectile* projectile = &v->projectiles[i];
-        if (!projectile->active || !projectile->has_deferred_hitsplat ||
-            projectile->hitsplat_actor_kind != actor_kind ||
-            projectile->hitsplat_actor_slot != actor_slot) {
-            continue;
-        }
-        damage += projectile->hitsplat_damage;
-    }
-    return damage;
-}
-
-static int npc_death_waiting_for_projectile(const ViewerState* v,
-                                             int npc_slot) {
-    if (!v || npc_slot < 0 || npc_slot >= FC_MAX_NPCS ||
-        !v->state.npcs[npc_slot].is_dead) {
-        return 0;
-    }
-    return deferred_projectile_damage_for_actor(
-               v, FC_VISUAL_TARGET_NPC, npc_slot) > 0;
-}
-
 /* Terrain loader — the terrain mesh is the floor heightmap.
  * The red/black lava pattern comes from the objects mesh (fightcaves.objects),
  * not the terrain. The terrain is just the ground surface.
@@ -2467,8 +1200,8 @@ static EntityRenderPose entity_render_pose(const ViewerState* v,
     EntityRenderPose pose = {0};
     if (!v || !e) return pose;
     FcVisualPose visual = e->entity_type == ENTITY_PLAYER
-        ? fc_visual_scene_player_pose(&v->visual_scene)
-        : fc_visual_scene_npc_pose(&v->visual_scene, e->npc_slot);
+        ? fc_visual_scene_player_pose(&v->actor_animation.scene)
+        : fc_visual_scene_npc_pose(&v->actor_animation.scene, e->npc_slot);
     pose.x = visual.x;
     pose.y = visual.y;
     pose.face_angle = visual.yaw_degrees;
@@ -2515,7 +1248,8 @@ static void draw_click_route_2d(ViewerState* v) {
         return;
     }
 
-    FcVisualPose player = fc_visual_scene_player_pose(&v->visual_scene);
+    FcVisualPose player =
+        fc_visual_scene_player_pose(&v->actor_animation.scene);
     Vector2 previous = click_route_point_to_screen(v, player.x, player.y);
     Color line = {255, 220, 30, 210};
     Color point = {255, 245, 120, 240};
@@ -2563,9 +1297,8 @@ static void draw_npc_prayer_window_indicators(ViewerState* v) {
         int npc_idx = entity->npc_slot;
         if (entity->entity_type != ENTITY_NPC || entity->is_dead ||
             npc_idx < 0 || npc_idx >= FC_MAX_NPCS ||
-            (v->npc_prayer_indicator_timer[npc_idx] <= 0.0f &&
-             (v->npc_prayer_lock_tick[npc_idx] < 0 ||
-              v->state.tick >= v->npc_prayer_lock_tick[npc_idx]))) {
+            !fc_actor_animation_prayer_window_active(
+                &v->actor_animation, npc_idx, v->state.tick)) {
             continue;
         }
 
@@ -2577,167 +1310,6 @@ static void draw_npc_prayer_window_indicators(ViewerState* v) {
             -pose.y
         };
         dbg_draw_prayer_window_indicator(anchor, v->camera);
-    }
-}
-
-static const FcRenderEntity* find_render_actor(const ViewerState* v,
-                                                int actor_kind,
-                                                int actor_slot) {
-    if (!v) return NULL;
-    for (int i = 0; i < v->entity_count; i++) {
-        const FcRenderEntity* entity = &v->entities[i];
-        if (actor_kind == FC_VISUAL_TARGET_PLAYER &&
-            entity->entity_type == ENTITY_PLAYER) {
-            return entity;
-        }
-        if (actor_kind == FC_VISUAL_TARGET_NPC &&
-            entity->entity_type == ENTITY_NPC &&
-            entity->npc_slot == actor_slot) {
-            return entity;
-        }
-    }
-    return NULL;
-}
-
-static float render_entity_model_top(ViewerState* v,
-                                     const FcRenderEntity* entity) {
-    Model* model = NULL;
-    if (!v || !entity) return 2.0f;
-    if (entity->entity_type == ENTITY_PLAYER) {
-        NpcModelEntry* entry = viewer_player_model_entry(v);
-        if (entry && entry->loaded) model = &entry->model;
-    } else {
-        uint32_t model_id = fc_npc_type_to_model_id(entity->npc_type);
-        NpcModelEntry* entry = v->npc_models
-            ? fc_npc_model_find(v->npc_models, model_id) : NULL;
-        if (entry && entry->loaded) model = &entry->model;
-    }
-    if (model) {
-        BoundingBox bounds = GetModelBoundingBox(*model);
-        if (bounds.max.y > 0.1f && bounds.max.y < 20.0f)
-            return bounds.max.y;
-    }
-    if (entity->entity_type == ENTITY_PLAYER) return 2.0f;
-    return 1.3f + (float)entity->size * 0.5f;
-}
-
-static Vector3 render_entity_overlay_anchor(ViewerState* v,
-                                             const FcRenderEntity* entity,
-                                             float height_fraction,
-                                             float extra_height) {
-    EntityRenderPose pose = entity_render_pose(v, entity);
-    float ground = ground_y_smooth(v, pose.x, pose.y);
-    float top = render_entity_model_top(v, entity);
-    return (Vector3){
-        pose.x,
-        ground + top * height_fraction + extra_height,
-        -pose.y
-    };
-}
-
-static void draw_osrs_healthbars(ViewerState* v) {
-    if (!v) return;
-    for (int i = 0; i < v->entity_count; i++) {
-        const FcRenderEntity* entity = &v->entities[i];
-        float timer = 0.0f;
-        if (entity->entity_type == ENTITY_PLAYER) {
-            timer = v->player_healthbar_timer;
-        } else if (entity->npc_slot >= 0 &&
-                   entity->npc_slot < FC_MAX_NPCS) {
-            timer = v->npc_healthbar_timer[entity->npc_slot];
-        }
-        if (timer <= 0.0f || entity->max_hp <= 0) continue;
-
-        Vector3 anchor = render_entity_overlay_anchor(v, entity, 1.0f, 0.12f);
-        Vector2 screen = GetWorldToScreen(anchor, v->camera);
-        if (screen.x < -40.0f || screen.x > (float)GetScreenWidth() + 40.0f ||
-            screen.y < -20.0f || screen.y > (float)GetScreenHeight() + 20.0f) {
-            continue;
-        }
-
-        FcVisualTargetKind actor_kind = entity->entity_type == ENTITY_PLAYER
-            ? FC_VISUAL_TARGET_PLAYER : FC_VISUAL_TARGET_NPC;
-        int actor_slot = entity->entity_type == ENTITY_PLAYER
-            ? 0 : entity->npc_slot;
-        int visible_hp = entity->current_hp +
-            deferred_projectile_damage_for_actor(v, actor_kind, actor_slot);
-        if (visible_hp > entity->max_hp) visible_hp = entity->max_hp;
-        int fill = visible_hp * 30 / entity->max_hp;
-        if (fill < 0) fill = 0;
-        if (fill > 30) fill = 30;
-        int x = (int)roundf(screen.x) - 15;
-        int y = (int)roundf(screen.y) - 3;
-
-        if (v->healthbar_empty_tex.id > 0 &&
-            v->healthbar_full_tex.id > 0) {
-            DrawTexture(v->healthbar_empty_tex, x, y, WHITE);
-            if (fill > 0) {
-                Rectangle src = {0.0f, 0.0f, (float)fill, 5.0f};
-                DrawTextureRec(v->healthbar_full_tex, src,
-                               (Vector2){(float)x, (float)y}, WHITE);
-            }
-        } else {
-            DrawRectangle(x, y, 30, 5, RED);
-            DrawRectangle(x, y, fill, 5, GREEN);
-        }
-    }
-}
-
-static Texture2D osrs_hitsplat_texture(const ViewerState* v,
-                                       const Hitsplat* hit) {
-    Texture2D empty = {0};
-    if (!v || !hit) return empty;
-    if (hit->kind == HITSPLAT_HEAL) return v->hitsplat_heal_tex;
-    if (hit->kind == HITSPLAT_PRAYER_DRAIN)
-        return v->hitsplat_prayer_drain_tex;
-    return hit->damage > 0 ? v->hitsplat_damage_tex : v->hitsplat_zero_tex;
-}
-
-static void draw_osrs_hitsplats(ViewerState* v) {
-    static const int slot_x[4] = {0, 0, -15, 15};
-    static const int slot_y[4] = {0, -20, -10, -10};
-    if (!v) return;
-
-    for (int i = 0; i < MAX_HITSPLATS; i++) {
-        const Hitsplat* hit = &v->hitsplats[i];
-        if (!hit->active) continue;
-
-        Vector3 world = {hit->world_x, hit->world_y, hit->world_z};
-        const FcRenderEntity* entity = find_render_actor(
-            v, hit->actor_kind, hit->actor_slot);
-        if (entity)
-            world = render_entity_overlay_anchor(v, entity, 0.5f, 0.0f);
-        Vector2 screen = GetWorldToScreen(world, v->camera);
-        if (screen.x < -50.0f || screen.x > (float)GetScreenWidth() + 50.0f ||
-            screen.y < -50.0f || screen.y > (float)GetScreenHeight() + 50.0f) {
-            continue;
-        }
-
-        int slot = hit->overlay_slot;
-        if (slot < 0 || slot >= 4) slot = 0;
-        int center_x = (int)roundf(screen.x) + slot_x[slot];
-        int center_y = (int)roundf(screen.y) + slot_y[slot];
-        Texture2D texture = osrs_hitsplat_texture(v, hit);
-        if (texture.id > 0)
-            DrawTexture(texture, center_x - 12, center_y - 12, WHITE);
-
-        int value = hit->kind == HITSPLAT_DAMAGE
-            ? hit->damage / 10
-            : (hit->damage + 9) / 10;
-        char text[16];
-        snprintf(text, sizeof(text), "%d", value);
-
-        /* Native clients use plain11 and draw the shadow one pixel down/right.
-         * RuneScape Small is the repo's point-filtered plain11-compatible font. */
-        const float font_size = 12.0f;
-        Font font = runec_ui_font_for_size(&v->ui.assets, font_size);
-        Vector2 measured = MeasureTextEx(font, text, font_size, 0.0f);
-        float text_x = floorf((float)center_x - 1.0f - measured.x * 0.5f);
-        float text_y = floorf((float)center_y - 6.0f);
-        DrawTextEx(font, text, (Vector2){text_x + 1.0f, text_y + 1.0f},
-                   font_size, 0.0f, BLACK);
-        DrawTextEx(font, text, (Vector2){text_x, text_y},
-                   font_size, 0.0f, WHITE);
     }
 }
 
@@ -2767,10 +1339,10 @@ static void draw_animated_objects(ViewerState* v) {
 
         if (row->animation_id >= 0 && v->anim_cache) {
             ObjectAnimRuntime* rt = &v->object_anim_runtimes[i];
-            update_entry_animation(entry, v->anim_cache, &rt->anim_state,
-                                   &rt->anim_seq, &rt->anim_frame,
-                                   &rt->anim_timer, row->animation_id, dt,
-                                   row->phase_ticks);
+            fc_model_animation_update(entry, v->anim_cache, &rt->anim_state,
+                                      &rt->anim_seq, &rt->anim_frame,
+                                      &rt->anim_timer, row->animation_id, dt,
+                                      row->phase_ticks);
         }
 
         DrawModelEx(entry->model,
@@ -2788,7 +1360,8 @@ static void draw_actor_footprint(ViewerState* v,
     }
     if (entity->is_dead &&
         (entity->entity_type != ENTITY_NPC ||
-         !npc_death_waiting_for_projectile(v, entity->npc_slot))) {
+         !fc_combat_presentation_npc_death_deferred(
+             v->combat_presentation, &v->state, entity->npc_slot))) {
         return;
     }
 
@@ -2887,7 +1460,8 @@ static void draw_scene(ViewerState* v) {
             draw_actor_footprint(v, e);
 
             /* Player model or fallback cylinder */
-            NpcModelEntry* pm = viewer_player_model_entry(v);
+            NpcModelEntry* pm = fc_actor_player_model_entry(
+                v->player_model, v->active_loadout);
             if (pm && pm->loaded) {
                 Vector3 pos = {ex, gy, ey};
                 float face_angle = pose.face_angle;
@@ -2913,11 +1487,11 @@ static void draw_scene(ViewerState* v) {
                 Vector3 pos = {ex, gy, ey};
                 float face_angle = pose.face_angle;
                 if (e->npc_slot >= 0 && e->npc_slot < FC_MAX_NPCS &&
-                    v->npc_anim_states[e->npc_slot]) {
+                    v->actor_animation.npc_states[e->npc_slot]) {
                     /* Same-type NPCs share an asset mesh. Upload this actor's
                      * transformed vertices immediately before its draw call. */
-                    upload_anim_state_to_entry(
-                        nme, v->npc_anim_states[e->npc_slot]);
+                    fc_actor_animation_upload_npc(
+                        &v->actor_animation, e->npc_slot, nme);
                 }
                 rlDisableBackfaceCulling();
                 DrawModelEx(nme->model, pos, (Vector3){0,1,0}, face_angle, (Vector3){1,1,1}, WHITE);
@@ -2928,7 +1502,8 @@ static void draw_scene(ViewerState* v) {
                 float h = 1.0f + (float)e->size * 0.5f;
                 Color col = (e->npc_type > 0 && e->npc_type < 9) ? NPC_COLORS[e->npc_type] : GRAY;
                 if (e->died_this_tick &&
-                    !npc_death_waiting_for_projectile(v, e->npc_slot)) {
+                    !fc_combat_presentation_npc_death_deferred(
+                        v->combat_presentation, &v->state, e->npc_slot)) {
                     h *= 0.3f;
                     col.a = 100;
                 }
@@ -2939,118 +1514,35 @@ static void draw_scene(ViewerState* v) {
         }
     }
 
-    /* Draw active visual projectiles — use cache-backed spotanim models when present. */
-    for (int pi = 0; pi < MAX_PROJECTILES; pi++) {
-        VisualProjectile* vp = &v->projectiles[pi];
-        if (!vp->active) continue;
-        if (vp->spot_id == 0) continue;
-        if (!vp->launched) continue;
-        float px = vp->x;
-        float py = vp->y;
-        float pz = vp->z;
-
-        const SpotAnimDef* spot = NULL;
-        NpcModelEntry* pm = projectile_model_for_spot(v, vp->spot_id, &spot);
-        if (pm && pm->loaded) {
-            /* Rotate projectile to face travel direction */
-            float horizontal_speed = sqrtf(
-                vp->velocity_x * vp->velocity_x +
-                vp->velocity_z * vp->velocity_z);
-            float angle = atan2f(vp->velocity_x, vp->velocity_z) * RAD2DEG;
-            /* Cache spotanim meshes carry their intended model orientation.
-             * RuneC only applies trajectory pitch to raw projectile models. */
-            float pitch = spot ? 0.0f
-                : atan2f(vp->velocity_y, horizontal_speed);
-            float scale_xy = (spot && spot->resize_xy > 0)
-                ? (float)spot->resize_xy / 128.0f : 1.0f;
-            float scale_z = (spot && spot->resize_z > 0)
-                ? (float)spot->resize_z / 128.0f : 1.0f;
-            if (spot) angle += (float)spot->rotation;
-            if (spot && spot->animation_id >= 0) {
-                update_entry_animation(pm, v->anim_cache, &vp->anim_state,
-                                       &vp->anim_seq, &vp->anim_frame,
-                                       &vp->anim_timer, spot->animation_id,
-                                       policy_replay_anim_dt(v, GetFrameTime()),
-                                       0.0f);
-            }
-            Quaternion yaw_rotation = QuaternionFromAxisAngle(
-                (Vector3){0, 1, 0}, angle * DEG2RAD);
-            Quaternion pitch_rotation = QuaternionFromAxisAngle(
-                (Vector3){1, 0, 0}, -pitch);
-            Quaternion rotation = QuaternionMultiply(yaw_rotation,
-                                                     pitch_rotation);
-            Vector3 rotation_axis = {0, 1, 0};
-            float rotation_angle = 0.0f;
-            QuaternionToAxisAngle(rotation, &rotation_axis, &rotation_angle);
-            rlDisableBackfaceCulling();
-            DrawModelEx(pm->model, (Vector3){px, py, pz},
-                        rotation_axis,
-                        rotation_angle * RAD2DEG,
-                        (Vector3){scale_xy, scale_z, scale_xy}, WHITE);
-            rlEnableBackfaceCulling();
-        } else if (vp->radius > 0.0f) {
-            DrawSphere((Vector3){px, py, pz}, vp->radius, vp->color);
-        }
-    }
-
-    for (int ei = 0; ei < MAX_VISUAL_EFFECTS; ei++) {
-        VisualEffect* fx = &v->effects[ei];
-        if (!fx->active) continue;
-        float effect_x = fx->x;
-        float effect_y = fx->y;
-        float effect_z = fx->z;
-        if (fx->attached) {
-            float x, y, z;
-            if (visual_actor_world_point(v, fx->attached_kind,
-                                         fx->attached_slot, &x, &y, &z)) {
-                effect_x = x;
-                effect_y = y + fx->attached_y_offset;
-                effect_z = z;
-            }
-        }
-        float effect_yaw = fx->yaw_degrees;
-        if (fx->face_kind != FC_VISUAL_TARGET_NONE) {
-            float target_x, target_y, target_z;
-            if (visual_actor_world_point(v, fx->face_kind, fx->face_slot,
-                                         &target_x, &target_y, &target_z)) {
-                (void)target_y;
-                effect_yaw = atan2f(target_x - effect_x,
-                                    target_z - effect_z) * RAD2DEG;
-            }
-        }
-        const SpotAnimDef* spot = NULL;
-        NpcModelEntry* pm = projectile_model_for_spot(v, fx->spot_id, &spot);
-        if (pm && pm->loaded) {
-            float scale_xy = (spot && spot->resize_xy > 0)
-                ? (float)spot->resize_xy / 128.0f : 1.0f;
-            float scale_z = (spot && spot->resize_z > 0)
-                ? (float)spot->resize_z / 128.0f : 1.0f;
-            if (spot && spot->animation_id >= 0) {
-                update_entry_animation(pm, v->anim_cache, &fx->anim_state,
-                                       &fx->anim_seq, &fx->anim_frame,
-                                       &fx->anim_timer, spot->animation_id,
-                                       policy_replay_anim_dt(v, GetFrameTime()),
-                                       0.0f);
-            }
-            rlDisableBackfaceCulling();
-            DrawModelEx(pm->model, (Vector3){effect_x, effect_y, effect_z},
-                        (Vector3){0,1,0},
-                        effect_yaw + (spot ? (float)spot->rotation : 0.0f),
-                        (Vector3){scale_xy, scale_z, scale_xy}, WHITE);
-            rlEnableBackfaceCulling();
-        } else {
-            DrawSphere((Vector3){effect_x, effect_y, effect_z},
-                       fx->radius, fx->color);
-        }
-    }
-
+    FcCombatPresentationContext combat_context = {
+        .state = &v->state,
+        .events = &v->render_events,
+        .scene = &v->actor_animation.scene,
+        .terrain = v->terrain,
+        .anim_cache = v->anim_cache,
+        .player_profile = fc_player_visual_profile(v->active_loadout),
+        .tps = v->tps,
+    };
+    fc_combat_presentation_draw_world(v->combat_presentation,
+                                      &combat_context, GetFrameTime());
     /* Debug overlays — 3D collision tiles (before EndMode3D) */
     if (v->dbg_flags) debug_overlay_3d(&v->state, v->dbg_flags);
 
     EndMode3D();
 
+    FcCombatPresentationDrawContext combat_draw_context = {
+        .presentation = combat_context,
+        .entities = v->entities,
+        .entity_count = v->entity_count,
+        .player_models = v->player_model,
+        .npc_models = v->npc_models,
+        .active_loadout = v->active_loadout,
+        .ui_assets = &v->ui.assets,
+        .camera = v->camera,
+    };
     /* Native client actor overheads are fixed-size screen-space sprites. */
-    draw_osrs_healthbars(v);
+    fc_combat_presentation_draw_healthbars(v->combat_presentation,
+                                            &combat_draw_context);
 
     /* Debug overlays — 2D screen-space (LOS, path, range — after EndMode3D) */
     if (v->dbg_flags) {
@@ -3063,10 +1555,12 @@ static void draw_scene(ViewerState* v) {
 
     draw_click_route_2d(v);
 
-    draw_osrs_hitsplats(v);
+    fc_combat_presentation_draw_hitsplats(v->combat_presentation,
+                                          &combat_draw_context);
 
     /* Prayer overhead icon — 2D projected from player head position */
-    int rendered_prayer = viewer_render_prayer(v);
+    int rendered_prayer = fc_actor_animation_render_prayer(
+        &v->actor_animation, &v->state);
     if (v->entity_count > 0 && rendered_prayer != PRAYER_NONE) {
         EntityRenderPose pose = entity_render_pose(v, &v->entities[0]);
         float p_gy = ground_y_smooth(v, pose.x, pose.y);
@@ -3538,7 +2032,8 @@ static void draw_runec_prayer_tab(ViewerState* v, Rectangle content) {
     DrawRectangleRec(content, COL_PANEL);
 
     FcPlayer* p = &v->state.player;
-    int rendered_prayer = viewer_render_prayer(v);
+    int rendered_prayer = fc_actor_animation_render_prayer(
+        &v->actor_animation, &v->state);
     int x = (int)content.x + 8;
     int by = (int)content.y + 8;
     int right = (int)(content.x + content.width) - 4;
@@ -3702,6 +2197,7 @@ int main(int argc, char** argv) {
 
     ViewerState v; memset(&v, 0, sizeof(v));
     fc_init(&v.state);
+    fc_actor_animation_init(&v.actor_animation);
     runec_ui_init(&v.ui);
     if (!fc_osrs_text_init()) {
         fprintf(stderr,
@@ -3773,41 +2269,14 @@ int main(int argc, char** argv) {
             v.player_model = fc_npc_models_load("fc_player.models", (Texture2D){0});
     }
 
-    /* Load animations (combined NPC + player) */
-    {
-        if (fc_asset_exists("fc_all.anims"))
-            v.anim_cache = anim_cache_load("fc_all.anims");
-        if (v.anim_cache)
-            recreate_player_anim_state(&v, viewer_player_model_entry(&v));
-        /* Create NPC animation states */
-        if (v.anim_cache && v.npc_models) {
-            for (int i = 0; i < v.npc_models->count; i++) {
-                NpcModelEntry* nm = &v.npc_models->entries[i];
-                if (nm->loaded && nm->vertex_skins) {
-                    /* Find which NPC type this model corresponds to */
-                    for (int t = 1; t <= 8; t++) {
-                        if (fc_npc_type_to_model_id(t) == nm->model_id) {
-                            /* Store anim state indexed by model entry, not NPC type */
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /* Load projectile models */
-    {
-        if (fc_asset_exists("fc_projectiles.models"))
-            v.projectile_models = fc_npc_models_load(
-                "fc_projectiles.models", v.shared_model_atlas.texture);
-    }
-
-    /* Load spotanim metadata for projectile model/scale lookup */
-    {
-        if (fc_asset_exists("fc_spotanims.bin"))
-            v.spotanims = spotanims_load("fc_spotanims.bin");
-    }
+    /* Load the animation cache shared by actor and combat presentation. */
+    if (fc_asset_exists("fc_all.anims"))
+        v.anim_cache = anim_cache_load("fc_all.anims");
+    v.combat_presentation = fc_combat_presentation_create(
+        v.shared_model_atlas.texture);
+    if (!v.combat_presentation)
+        fprintf(stderr, "warning: combat presentation disabled: "
+                        "initialization failed\n");
 
     /* Load prayer overhead icon textures */
     {
@@ -3820,37 +2289,6 @@ int main(int argc, char** argv) {
             fprintf(stderr, "warning: prayer icons not found under asset root %s\n",
                     fc_asset_root());
         }
-    }
-
-    /* Load the exact b237 cache sprites selected by the regular Fight Caves
-     * hitmark and default 30-segment headbar definitions. */
-    {
-        v.hitsplat_zero_tex = fc_load_texture_asset(
-            "data/sprites/ui/hitsplat_zero.png");
-        v.hitsplat_damage_tex = fc_load_texture_asset(
-            "data/sprites/ui/hitsplat_damage.png");
-        v.hitsplat_heal_tex = fc_load_texture_asset(
-            "data/sprites/ui/hitsplat_heal.png");
-        v.hitsplat_prayer_drain_tex = fc_load_texture_asset(
-            "data/sprites/ui/hitsplat_prayer_drain.png");
-        v.healthbar_full_tex = fc_load_texture_asset(
-            "data/sprites/ui/healthbar_full_30.png");
-        v.healthbar_empty_tex = fc_load_texture_asset(
-            "data/sprites/ui/healthbar_empty_30.png");
-        Texture2D* overhead_textures[] = {
-            &v.hitsplat_zero_tex, &v.hitsplat_damage_tex,
-            &v.hitsplat_heal_tex, &v.hitsplat_prayer_drain_tex,
-            &v.healthbar_full_tex, &v.healthbar_empty_tex,
-        };
-        int loaded = 0;
-        for (int i = 0; i < (int)(sizeof(overhead_textures) /
-                                  sizeof(overhead_textures[0])); i++) {
-            if (overhead_textures[i]->id > 0) {
-                SetTextureFilter(*overhead_textures[i], TEXTURE_FILTER_POINT);
-                loaded++;
-            }
-        }
-        fprintf(stderr, "Actor overhead sprites loaded: %d/6\n", loaded);
     }
 
     /* Native b237 click crosses: frames 0-3 are movement (yellow), frames
@@ -4027,12 +2465,8 @@ int main(int argc, char** argv) {
                 used_human_actions = 1;
             }
 
-            /* Save previous NPC positions by stable array index. */
-            for (int ni = 0; ni < FC_MAX_NPCS; ni++) {
-                v.prev_npc_x[ni] = (float)v.state.npcs[ni].x;
-                v.prev_npc_y[ni] = (float)v.state.npcs[ni].y;
-                v.prev_npc_active[ni] = v.state.npcs[ni].active;
-            }
+            fc_actor_animation_capture_tick_start(&v.actor_animation,
+                                                  &v.state);
 
             /* Step simulation */
             fc_step(&v.state, v.actions);
@@ -4049,11 +2483,12 @@ int main(int argc, char** argv) {
                 v.state.terminal = TERMINAL_NONE;
             }
             fc_fill_render_events(&v.state, &v.render_events);
-            ingest_visual_actor_tick(&v);
+            fc_actor_animation_ingest_tick(&v.actor_animation, &v.state,
+                                           &v.render_events);
             update_reward_breakdown(&v);
-            if (v.render_events.player_attack_fired)
-                mark_player_attack_visual(&v);
-            mark_prayer_flick_visual(&v);
+            fc_actor_animation_ingest_events(
+                &v.actor_animation, &v.render_events, v.anim_cache,
+                v.active_loadout, v.tps);
 
             /* Debug event log — record events from this tick */
             dbg_log_tick(&v.state);
@@ -4061,274 +2496,28 @@ int main(int argc, char** argv) {
             /* Snap prev positions for newly spawned NPCs so they don't fly.
              * An NPC that wasn't active last tick but is now = new spawn. */
             for (int ni = 0; ni < FC_MAX_NPCS; ni++) {
-                if (v.state.npcs[ni].active && !v.prev_npc_active[ni]) {
-                    v.prev_npc_x[ni] = (float)v.state.npcs[ni].x;
-                    v.prev_npc_y[ni] = (float)v.state.npcs[ni].y;
-                    v.npc_healthbar_timer[ni] = 0.0f;
+                if (v.state.npcs[ni].active &&
+                    !fc_actor_animation_previous_npc_active(
+                        &v.actor_animation, ni)) {
+                    fc_combat_presentation_clear_npc_healthbar(
+                        v.combat_presentation, ni);
                 }
             }
 
             fc_fill_render_entities(&v.state, v.entities, &v.entity_count);
             v.last_hash = fc_state_hash(&v.state);
 
-            /* Generate hitsplats and projectiles from per-tick events */
-            {
-                float vis_px = (float)v.state.player.x;
-                float vis_py = (float)v.state.player.y;
-                int vis_tile_x = (int)floorf(vis_px);
-                int vis_tile_y = (int)floorf(vis_py);
-                if (vis_tile_x < 0) vis_tile_x = 0;
-                if (vis_tile_y < 0) vis_tile_y = 0;
-                if (vis_tile_x >= FC_ARENA_WIDTH) vis_tile_x = FC_ARENA_WIDTH - 1;
-                if (vis_tile_y >= FC_ARENA_HEIGHT) vis_tile_y = FC_ARENA_HEIGHT - 1;
-                float gy_p = ground_y(&v, vis_tile_x, vis_tile_y);
-                float p3x = vis_px + 0.5f;
-                float p3z = -(vis_py + 0.5f);
-                if (v.state.tz_kih_prayer_drain_this_tick > 0) {
-                    spawn_status_splat(&v, FC_VISUAL_TARGET_PLAYER, 0,
-                                       p3x + 0.3f, gy_p + 3.0f, p3z,
-                                       v.state.tz_kih_prayer_drain_this_tick,
-                                       HITSPLAT_PRAYER_DRAIN);
-                }
-
-                /* Player ranged visuals use the authoritative stationary
-                 * attack event and the active loadout's OSRS visual profile. */
-                if (v.render_events.player_attack_fired) {
-                    const PlayerVisualProfile* profile =
-                        player_visual_profile(v.active_loadout);
-                    int sx = v.render_events.player_attack_source_x;
-                    int sy = v.render_events.player_attack_source_y;
-                    int tx = v.render_events.player_attack_target_x;
-                    int ty = v.render_events.player_attack_target_y;
-                    int target_size = v.render_events.player_attack_target_size;
-                    float src_x = (float)sx + 0.5f;
-                    float src_y = ground_y(&v, sx, sy) +
-                                  profile->projectile_start_height / 128.0f;
-                    float src_z = -((float)sy + 0.5f);
-                    float dst_x = (float)tx + (float)target_size * 0.5f;
-                    float dst_y = ground_y(&v, tx, ty) +
-                                  profile->projectile_end_height / 128.0f;
-                    float dst_z = -((float)ty + (float)target_size * 0.5f);
-                    int projectile_distance = projectile_tile_distance(
-                        sx, sy, tx, ty);
-                    float profile_end_time = fc_projectile_profile_end_cycle(
-                        profile->projectile_launch_delay_client_ticks,
-                        profile->projectile_length_adjustment,
-                        profile->projectile_step_multiplier,
-                        projectile_distance);
-                    VisualProjectile* vp = spawn_projectile(
-                        &v, src_x, src_y, src_z, dst_x, dst_y, dst_z,
-                        0.1f, profile->projectile_color,
-                        profile->projectile_radius,
-                        profile->projectile_travel_spot,
-                        profile->projectile_launch_spot,
-                        profile->projectile_impact_spot);
-                    configure_projectile_tracking(
-                        &v, vp,
-                        FC_VISUAL_TARGET_PLAYER, 0,
-                        FC_VISUAL_TARGET_NPC,
-                        v.render_events.player_attack_target_npc_slot,
-                        ATTACK_RANGED,
-                        profile->projectile_launch_delay_client_ticks,
-                        profile_end_time,
-                        profile->projectile_angle,
-                        profile->projectile_progress, 1);
-                }
-
-                /* Hit-resolution events preserve zero-damage misses/blocks and
-                 * multiple same-tick impacts without inspecting hit queues. */
-                for (int hi = 0; hi < v.render_events.hit_count; hi++) {
-                    const FcRenderHit* hit = &v.render_events.hits[hi];
-                    if (hit->target_entity_type == ENTITY_PLAYER) {
-                        if (!defer_hitsplat_to_projectile(
-                                &v, hit, FC_VISUAL_TARGET_PLAYER, 0,
-                                p3x, gy_p + 2.5f, p3z)) {
-                            spawn_hitsplat(&v, FC_VISUAL_TARGET_PLAYER, 0,
-                                           p3x, gy_p + 2.5f, p3z,
-                                           hit->damage);
-                        }
-                        continue;
-                    }
-                    if (hit->target_entity_type != ENTITY_NPC ||
-                        hit->target_npc_slot < 0 ||
-                        hit->target_npc_slot >= FC_MAX_NPCS) {
-                        continue;
-                    }
-                    FcNpc* target = &v.state.npcs[hit->target_npc_slot];
-                    float gy_n = ground_y(&v, target->x, target->y);
-                    float nx = (float)target->x + (float)target->size * 0.5f;
-                    float nz = -((float)target->y +
-                                 (float)target->size * 0.5f);
-                    float nh = gy_n + 1.0f + (float)target->size * 0.5f;
-                    if (!defer_hitsplat_to_projectile(
-                            &v, hit, FC_VISUAL_TARGET_NPC,
-                            hit->target_npc_slot, nx, nh, nz)) {
-                        spawn_hitsplat(&v, FC_VISUAL_TARGET_NPC,
-                                       hit->target_npc_slot,
-                                       nx, nh, nz, hit->damage);
-                    }
-                }
-
-                /* NPC healing remains a final-state per-tick presentation
-                 * value; unlike attacks and hits, it is not reconstructed. */
-                for (int i = 0; i < FC_MAX_NPCS; i++) {
-                    FcNpc* n = &v.state.npcs[i];
-                    if (n->healing_received_this_tick > 0) {
-                        float gy_n = ground_y(&v, n->x, n->y);
-                        float nx = (float)n->x + (float)n->size*0.5f;
-                        float nz = -((float)n->y + (float)n->size*0.5f);
-                        float nh = gy_n + 1.4f + (float)n->size*0.5f;
-                        spawn_status_splat(&v, FC_VISUAL_TARGET_NPC, i,
-                                           nx, nh, nz,
-                                           n->healing_received_this_tick,
-                                           HITSPLAT_HEAL);
-                    }
-                }
-
-                /* NPC launches are reported directly by the AI transition, so
-                 * animations and projectiles no longer depend on queue diffs. */
-                for (int ai = 0; ai < v.render_events.npc_attack_count; ai++) {
-                    const FcRenderNpcAttack* attack =
-                        &v.render_events.npc_attacks[ai];
-                    int npc_idx = attack->npc_slot;
-                    if (npc_idx < 0 || npc_idx >= FC_MAX_NPCS) continue;
-                    mark_npc_attack_visual(&v, npc_idx,
-                                           attack->attack_style);
-                    v.npc_prayer_lock_tick[npc_idx] =
-                        attack->prayer_lock_tick;
-                    if (!attack->hit_queued ||
-                        attack->attack_style == ATTACK_MELEE) {
-                        continue;
-                    }
-
-                    int sx_tile = attack->source_x;
-                    int sy_tile = attack->source_y;
-                    if (attack->source_size > 1) {
-                        if (attack->target_x < attack->source_x)
-                            sx_tile = attack->source_x;
-                        else if (attack->target_x >=
-                                 attack->source_x + attack->source_size)
-                            sx_tile = attack->source_x +
-                                      attack->source_size - 1;
-                        else
-                            sx_tile = attack->target_x;
-                        if (attack->target_y < attack->source_y)
-                            sy_tile = attack->source_y;
-                        else if (attack->target_y >=
-                                 attack->source_y + attack->source_size)
-                            sy_tile = attack->source_y +
-                                      attack->source_size - 1;
-                        else
-                            sy_tile = attack->target_y;
-                    }
-                    float src_ground = ground_y(&v, sx_tile, sy_tile);
-                    float s3x = (float)sx_tile + 0.5f;
-                    float s3y = src_ground + 1.0f +
-                                (float)attack->source_size * 0.3f;
-                    float s3z = -((float)sy_tile + 0.5f);
-                    float target_ground = ground_y(
-                        &v, attack->target_x, attack->target_y);
-                    float target_x = (float)attack->target_x + 0.5f;
-                    float target_y = target_ground + 1.5f;
-                    float target_z = -((float)attack->target_y + 0.5f);
-                    Color pc = (attack->attack_style == ATTACK_MAGIC)
-                        ? CLITERAL(Color){255, 104, 36, 235}
-                        : CLITERAL(Color){218, 178, 92, 235};
-                    float rad = (attack->npc_type == NPC_TZTOK_JAD)
-                        ? 0.3f : 0.15f;
-                    uint32_t travel_spot = 0;
-                    uint32_t launch_spot = 0;
-                    uint32_t impact_spot = 0;
-                    float profile_start_height = -1.0f;
-                    float profile_end_height = -1.0f;
-                    float profile_start_time = 0.0f;
-                    float profile_angle = -1.0f;
-                    float profile_length_adjustment = 0.0f;
-                    float profile_progress = -1.0f;
-                    float profile_step_multiplier = 0.0f;
-                    float fixed_profile_end_time = -1.0f;
-                    int track_target = 1;
-                    if (attack->npc_type == NPC_TOK_XIL) {
-                        travel_spot = PROJ_TOK_XIL_SPINE;
-                        impact_spot = PROJ_TOK_XIL_IMPACT;
-                        profile_start_height = 296.0f;
-                        profile_end_height = 40.0f;
-                        profile_start_time = 32.0f;
-                        profile_angle = 16.0f;
-                        profile_progress = 0.0f;
-                        profile_step_multiplier = 5.0f;
-                    } else if (attack->npc_type == NPC_KET_ZEK) {
-                        travel_spot = PROJ_KET_ZEK_FIRE;
-                        impact_spot = PROJ_KET_ZEK_IMPACT;
-                        profile_start_height = 192.0f;
-                        profile_end_height = 40.0f;
-                        profile_start_time = 28.0f;
-                        profile_angle = 16.0f;
-                        profile_length_adjustment = 8.0f;
-                        profile_progress = 0.0f;
-                        profile_step_multiplier = 8.0f;
-                    } else if (attack->npc_type == NPC_TZTOK_JAD &&
-                               attack->attack_style == ATTACK_MAGIC) {
-                        launch_spot = PROJ_JAD_MAGIC_LAUNCH;
-                        travel_spot = PROJ_JAD_MAGIC_TRAVEL;
-                        impact_spot = PROJ_JAD_MAGIC_IMPACT;
-                        profile_start_height = 172.0f;
-                        profile_end_height = 124.0f;
-                        profile_start_time = 41.0f;
-                        profile_angle = 16.0f;
-                        profile_progress = 64.0f;
-                        profile_step_multiplier = 5.0f;
-                    } else if (attack->npc_type == NPC_TZTOK_JAD &&
-                               attack->attack_style == ATTACK_RANGED) {
-                        /* RuneC models Jad ranged as a delayed impact on the
-                         * attacked tile, not as a homing travel projectile. */
-                        impact_spot = PROJ_JAD_RANGED_IMPACT;
-                        profile_start_height = 768.0f;
-                        profile_end_height = 52.0f;
-                        profile_angle = 0.0f;
-                        profile_progress = 0.0f;
-                        fixed_profile_end_time = 60.0f;
-                        track_target = 0;
-                    }
-                    if (profile_start_height >= 0.0f)
-                        s3y = src_ground + profile_start_height / 128.0f;
-                    if (profile_end_height >= 0.0f)
-                        target_y = target_ground +
-                                   profile_end_height / 128.0f;
-                    int projectile_distance = projectile_tile_distance(
-                        sx_tile, sy_tile,
-                        attack->target_x, attack->target_y);
-                    float profile_end_time = fixed_profile_end_time >= 0.0f
-                        ? fixed_profile_end_time
-                        : fc_projectile_profile_end_cycle(
-                            profile_start_time, profile_length_adjustment,
-                            profile_step_multiplier, projectile_distance);
-                    VisualProjectile* vp =
-                        spawn_projectile(&v, s3x, s3y, s3z,
-                                         target_x, target_y, target_z,
-                                         0.1f, pc, rad, travel_spot,
-                                         launch_spot, impact_spot);
-                    configure_projectile_tracking(
-                        &v, vp,
-                        FC_VISUAL_TARGET_NPC, npc_idx,
-                        FC_VISUAL_TARGET_PLAYER, 0,
-                        attack->attack_style,
-                        profile_start_time, profile_end_time,
-                        profile_angle, profile_progress, track_target);
-                }
-
-                /* End delayed indicators at the lock boundary reported by the
-                 * launch event; immediate attacks retain only the short pulse. */
-                for (int ni = 0; ni < FC_MAX_NPCS; ni++) {
-                    if (v.npc_prayer_lock_tick[ni] >= 0 &&
-                        v.state.tick >= v.npc_prayer_lock_tick[ni]) {
-                        v.npc_prayer_indicator_timer[ni] = 0.0f;
-                        v.npc_prayer_lock_tick[ni] = -1;
-                    }
-                }
-
-            }
-
+            FcCombatPresentationContext combat_context = {
+                .state = &v.state,
+                .events = &v.render_events,
+                .scene = &v.actor_animation.scene,
+                .terrain = v.terrain,
+                .anim_cache = v.anim_cache,
+                .player_profile = fc_player_visual_profile(v.active_loadout),
+                .tps = v.tps,
+            };
+            fc_combat_presentation_ingest_tick(v.combat_presentation,
+                                                &combat_context);
             /* Sync viewer attack_target with player's backend target */
             v.attack_target = v.state.player.attack_target_idx;
             /* Auto-clear if target NPC died */
@@ -4364,298 +2553,37 @@ int main(int argc, char** argv) {
             break;
         }
 
-        /* OSRS overhead lifetimes are measured in 20 ms client cycles. */
-        float overhead_dt = GetFrameTime();
-        fc_click_feedback_update(&v.click_feedback, overhead_dt);
-        for (int i = 0; i < MAX_HITSPLATS; i++) {
-            if (v.hitsplats[i].active) {
-                v.hitsplats[i].seconds_left -= overhead_dt;
-                if (v.hitsplats[i].seconds_left <= 0.0f)
-                    v.hitsplats[i].active = 0;
-            }
-        }
-        if (v.player_healthbar_timer > 0.0f) {
-            v.player_healthbar_timer -= overhead_dt;
-            if (v.player_healthbar_timer < 0.0f)
-                v.player_healthbar_timer = 0.0f;
-        }
+        float frame_dt = GetFrameTime();
+        fc_click_feedback_update(&v.click_feedback, frame_dt);
+        FcCombatPresentationContext combat_context = {
+            .state = &v.state,
+            .events = &v.render_events,
+            .scene = &v.actor_animation.scene,
+            .terrain = v.terrain,
+            .anim_cache = v.anim_cache,
+            .player_profile = fc_player_visual_profile(v.active_loadout),
+            .tps = v.tps,
+        };
+        unsigned char deferred_deaths[FC_MAX_NPCS];
+        fc_combat_presentation_deferred_deaths(
+            v.combat_presentation, &v.state, deferred_deaths);
+        fc_actor_animation_update_scene(
+            &v.actor_animation, &v.state, v.anim_cache, v.tps, frame_dt,
+            !v.paused || v.policy_pipe, deferred_deaths);
+        if (v.objects)
+            fc_animated_atlas_update(&v.objects->atlas, frame_dt);
+        fc_combat_presentation_update(v.combat_presentation,
+                                      &combat_context, frame_dt);
+        fc_combat_presentation_deferred_deaths(
+            v.combat_presentation, &v.state, deferred_deaths);
         for (int i = 0; i < FC_MAX_NPCS; i++) {
-            if (v.npc_healthbar_timer[i] > 0.0f) {
-                v.npc_healthbar_timer[i] -= overhead_dt;
-                if (v.npc_healthbar_timer[i] < 0.0f)
-                    v.npc_healthbar_timer[i] = 0.0f;
-            }
+            if (!v.state.npcs[i].active && !v.state.npcs[i].died_this_tick)
+                fc_combat_presentation_clear_npc_healthbar(
+                    v.combat_presentation, i);
         }
-
-        /* Update visual projectiles */
-        {
-            float dt = GetFrameTime();
-            float visual_dt = policy_replay_anim_dt(&v, dt);
-            update_visual_actor_targets(&v);
-            fc_visual_actor_set_movement_blocked(
-                &v.visual_scene.player,
-                visual_sequence_blocks_movement(
-                    &v, player_visual_action_sequence(&v)));
-            for (int i = 0; i < FC_MAX_NPCS; i++) {
-                uint16_t action_seq = 0;
-                if ((v.state.npcs[i].is_dead ||
-                     v.state.npcs[i].died_this_tick) &&
-                    !npc_death_waiting_for_projectile(&v, i)) {
-                    int type = v.state.npcs[i].npc_type;
-                    if (type > 0 && type < 9) action_seq = NPC_ANIM_DEATH[type];
-                } else if (v.npc_attack_visual_timer[i] > 0.0f) {
-                    action_seq = npc_attack_animation_id(
-                        v.state.npcs[i].npc_type,
-                        v.npc_attack_visual_style[i]);
-                }
-                fc_visual_actor_set_movement_blocked(
-                    &v.visual_scene.npcs[i],
-                    visual_sequence_blocks_movement(&v, action_seq));
-            }
-            if (!v.paused || v.policy_pipe)
-                fc_visual_scene_update(&v.visual_scene, visual_dt);
-            if (v.player_visual_lock_timer > 0.0f) {
-                v.player_visual_lock_timer -= dt;
-                if (v.player_visual_lock_timer <= 0.0f) {
-                    v.player_visual_lock_timer = 0.0f;
-                    v.player_visual_lock_seq = 0;
-                    v.player_attack_visual_target_idx = -1;
-                    v.player_action_anim_seq = 0;
-                    v.player_action_anim_frame = 0;
-                    v.player_action_anim_timer = 0.0f;
-                }
-            }
-            if (v.prayer_flick_visual_timer > 0.0f) {
-                v.prayer_flick_visual_timer -= dt;
-                if (v.prayer_flick_visual_timer < 0.0f)
-                    v.prayer_flick_visual_timer = 0.0f;
-            }
-            for (int i = 0; i < FC_MAX_NPCS; i++) {
-                if (v.npc_prayer_indicator_timer[i] > 0.0f) {
-                    v.npc_prayer_indicator_timer[i] -= dt;
-                    if (v.npc_prayer_indicator_timer[i] < 0.0f)
-                        v.npc_prayer_indicator_timer[i] = 0.0f;
-                }
-            }
-            if (v.objects)
-                fc_animated_atlas_update(&v.objects->atlas, dt);
-            for (int i = 0; i < MAX_PROJECTILES; i++) {
-                if (v.projectiles[i].active) {
-                    if (update_visual_projectile(&v, &v.projectiles[i], dt)) {
-                        /* The client retains an impact for at most three game
-                         * ticks, but a shorter spotanim ends after one pass. */
-                        float effect_secs = projectile_effect_duration(
-                            &v, v.projectiles[i].impact_spot_id, 90.0f);
-                        spawn_spot_effect(&v, v.projectiles[i].impact_spot_id,
-                                          v.projectiles[i].x,
-                                          v.projectiles[i].y,
-                                          v.projectiles[i].z,
-                                          effect_secs, v.projectiles[i].color,
-                                          v.projectiles[i].radius * 1.4f,
-                                          0.0f);
-                        if (v.projectiles[i].has_deferred_hitsplat) {
-                            spawn_hitsplat(
-                                &v,
-                                v.projectiles[i].hitsplat_actor_kind,
-                                v.projectiles[i].hitsplat_actor_slot,
-                                v.projectiles[i].hitsplat_world_x,
-                                v.projectiles[i].hitsplat_world_y,
-                                v.projectiles[i].hitsplat_world_z,
-                                v.projectiles[i].hitsplat_damage);
-                        }
-                        free_projectile(&v.projectiles[i]);
-                    }
-                }
-            }
-            for (int i = 0; i < MAX_VISUAL_EFFECTS; i++) {
-                if (v.effects[i].active) {
-                    v.effects[i].elapsed += dt;
-                    if (v.effects[i].elapsed >= v.effects[i].total_time)
-                        free_effect(&v.effects[i]);
-                }
-            }
-        }
-
-        /* Update player animation */
-        if (v.anim_cache && v.player_model && v.player_model->count > 0) {
-            NpcModelEntry* pm = viewer_player_model_entry(&v);
-            float dt = GetFrameTime();
-            float anim_dt = policy_replay_anim_dt(&v, dt);
-            recreate_player_anim_state(&v, pm);
-            if (!v.player_anim_state || !pm) goto skip_player_anim_update;
-
-            int visual_locked = player_visual_lock_active(&v);
-            FcVisualPose player_pose =
-                fc_visual_scene_player_pose(&v.visual_scene);
-            const PlayerVisualProfile* profile =
-                player_visual_profile(v.active_loadout);
-            uint16_t pose_seq;
-            switch (player_pose.locomotion) {
-                case FC_VISUAL_LOCOMOTION_TURN:
-                    pose_seq = profile->turn_anim;
-                    break;
-                case FC_VISUAL_LOCOMOTION_WALK_BACK:
-                    pose_seq = profile->walk_back_anim;
-                    break;
-                case FC_VISUAL_LOCOMOTION_WALK_LEFT:
-                    pose_seq = profile->walk_left_anim;
-                    break;
-                case FC_VISUAL_LOCOMOTION_WALK_RIGHT:
-                    pose_seq = profile->walk_right_anim;
-                    break;
-                case FC_VISUAL_LOCOMOTION_RUN:
-                    pose_seq = profile->run_anim;
-                    break;
-                case FC_VISUAL_LOCOMOTION_WALK_FORWARD:
-                    pose_seq = profile->walk_anim;
-                    break;
-                default:
-                    pose_seq = profile->idle_anim;
-                    break;
-            }
-
-            /* OSRS applies movement pose and action sequence independently.
-             * In policy replay, movement and attack can be valid on the same
-             * tick, so attack visuals are driven by the actual attack event. */
-            uint16_t action_seq = player_visual_action_sequence(&v);
-
-            if (pose_seq != v.player_pose_anim_seq &&
-                player_profile_is_movement_sequence(
-                    profile, v.player_pose_anim_seq) &&
-                player_profile_is_movement_sequence(profile, pose_seq)) {
-                retarget_anim_track_preserving_phase(
-                    v.anim_cache, pose_seq,
-                    &v.player_pose_anim_seq, &v.player_pose_anim_frame,
-                    &v.player_pose_anim_timer);
-            }
-
-            AnimSequence* pose = advance_anim_track(
-                v.anim_cache, pose_seq,
-                &v.player_pose_anim_seq, &v.player_pose_anim_frame,
-                &v.player_pose_anim_timer, anim_dt);
-            AnimSequence* action = NULL;
-            if (action_seq != 0) {
-                action = visual_locked
-                    ? advance_anim_track_once(
-                        v.anim_cache, action_seq,
-                        &v.player_action_anim_seq,
-                        &v.player_action_anim_frame,
-                        &v.player_action_anim_timer, anim_dt)
-                    : advance_anim_track(
-                        v.anim_cache, action_seq,
-                        &v.player_action_anim_seq,
-                        &v.player_action_anim_frame,
-                        &v.player_action_anim_timer, anim_dt);
-            } else {
-                v.player_action_anim_seq = 0;
-                v.player_action_anim_frame = 0;
-                v.player_action_anim_timer = 0.0f;
-            }
-
-            v.player_anim_seq = action ? action_seq : pose_seq;
-            v.player_anim_frame = action
-                ? v.player_action_anim_frame : v.player_pose_anim_frame;
-
-            if (anim_mix_pose_action(
-                    v.anim_cache, v.player_anim_state, pm->base_verts,
-                    pose, v.player_pose_anim_frame,
-                    action, v.player_action_anim_frame)) {
-                upload_anim_state_to_entry(pm, v.player_anim_state);
-            }
-        }
-skip_player_anim_update:
-
-        /* Update NPC animations */
-        if (v.anim_cache && v.npc_models) {
-            float dt = GetFrameTime();
-            float anim_dt = policy_replay_anim_dt(&v, dt);
-            for (int ni = 0; ni < FC_MAX_NPCS; ni++) {
-                FcNpc* n = &v.state.npcs[ni];
-                if (!n->active && !n->died_this_tick) {
-                    /* NPC gone — free anim state */
-                    if (v.npc_anim_states[ni]) {
-                        anim_model_state_free(v.npc_anim_states[ni]);
-                        v.npc_anim_states[ni] = NULL;
-                    }
-                    v.npc_attack_visual_style[ni] = ATTACK_NONE;
-                    v.npc_attack_visual_timer[ni] = 0.0f;
-                    v.npc_prayer_indicator_timer[ni] = 0.0f;
-                    v.npc_prayer_lock_tick[ni] = -1;
-                    v.npc_healthbar_timer[ni] = 0.0f;
-                    continue;
-                }
-
-                /* Find model entry for this NPC type */
-                uint32_t mid = fc_npc_type_to_model_id(n->npc_type);
-                NpcModelEntry* nme = fc_npc_model_find(v.npc_models, mid);
-                if (!nme || !nme->loaded || !nme->vertex_skins) continue;
-
-                /* Recreate anim state if this slot now holds a different model size. */
-                if (!v.npc_anim_states[ni] ||
-                    v.npc_anim_states[ni]->vert_count != nme->base_vert_count) {
-                    if (v.npc_anim_states[ni]) {
-                        anim_model_state_free(v.npc_anim_states[ni]);
-                    }
-                    v.npc_anim_states[ni] = anim_model_state_create(
-                        nme->vertex_skins, nme->base_vert_count);
-                    v.npc_anim_seq[ni] = (n->npc_type > 0 && n->npc_type < 9)
-                        ? NPC_ANIM_IDLE[n->npc_type] : 0;
-                    v.npc_anim_frame[ni] = 0;
-                    v.npc_anim_timer[ni] = 0;
-                    v.npc_action_anim_seq[ni] = 0;
-                    v.npc_action_anim_frame[ni] = 0;
-                    v.npc_action_anim_timer[ni] = 0.0f;
-                }
-
-                /* NPC pose and action are independent client animation tracks. */
-                uint16_t pose_seq = (n->npc_type > 0 && n->npc_type < 9)
-                    ? NPC_ANIM_IDLE[n->npc_type] : 0;
-                int npc_moved = v.visual_scene.npcs[ni].moving;
-                if (npc_moved && n->npc_type > 0 && n->npc_type < 9)
-                    pose_seq = NPC_ANIM_WALK[n->npc_type];
-
-                uint16_t action_seq = 0;
-                if ((n->is_dead || n->died_this_tick) &&
-                    !npc_death_waiting_for_projectile(&v, ni)) {
-                    action_seq = (n->npc_type > 0 && n->npc_type < 9)
-                        ? NPC_ANIM_DEATH[n->npc_type] : 0;
-                } else if (v.npc_attack_visual_timer[ni] > 0.0f) {
-                    action_seq = npc_attack_animation_id(
-                        n->npc_type, v.npc_attack_visual_style[ni]);
-                }
-
-                AnimSequence* pose = advance_anim_track(
-                    v.anim_cache, pose_seq,
-                    &v.npc_anim_seq[ni], &v.npc_anim_frame[ni],
-                    &v.npc_anim_timer[ni], anim_dt);
-                AnimSequence* action = NULL;
-                if (action_seq != 0) {
-                    action = advance_anim_track_once(
-                        v.anim_cache, action_seq,
-                        &v.npc_action_anim_seq[ni],
-                        &v.npc_action_anim_frame[ni],
-                        &v.npc_action_anim_timer[ni], anim_dt);
-                } else {
-                    v.npc_action_anim_seq[ni] = 0;
-                    v.npc_action_anim_frame[ni] = 0;
-                    v.npc_action_anim_timer[ni] = 0.0f;
-                }
-
-                anim_mix_pose_action(
-                    v.anim_cache, v.npc_anim_states[ni], nme->base_verts,
-                    pose, v.npc_anim_frame[ni],
-                    action, v.npc_action_anim_frame[ni]);
-
-                if (v.npc_attack_visual_timer[ni] > 0.0f) {
-                    v.npc_attack_visual_timer[ni] -= anim_dt;
-                    if (v.npc_attack_visual_timer[ni] <= 0.0f) {
-                        v.npc_attack_visual_timer[ni] = 0.0f;
-                        v.npc_attack_visual_style[ni] = ATTACK_NONE;
-                    }
-                }
-            }
-        }
-
+        fc_actor_animation_update_models(
+            &v.actor_animation, &v.state, v.player_model, v.npc_models,
+            v.anim_cache, v.active_loadout, v.tps, frame_dt, deferred_deaths);
         /* Draw */
         BeginDrawing();
         ClearBackground(COL_BG);
@@ -4672,13 +2600,6 @@ skip_player_anim_update:
     if (v.pray_melee_tex.id > 0) UnloadTexture(v.pray_melee_tex);
     if (v.pray_missiles_tex.id > 0) UnloadTexture(v.pray_missiles_tex);
     if (v.pray_magic_tex.id > 0) UnloadTexture(v.pray_magic_tex);
-    if (v.hitsplat_zero_tex.id > 0) UnloadTexture(v.hitsplat_zero_tex);
-    if (v.hitsplat_damage_tex.id > 0) UnloadTexture(v.hitsplat_damage_tex);
-    if (v.hitsplat_heal_tex.id > 0) UnloadTexture(v.hitsplat_heal_tex);
-    if (v.hitsplat_prayer_drain_tex.id > 0)
-        UnloadTexture(v.hitsplat_prayer_drain_tex);
-    if (v.healthbar_full_tex.id > 0) UnloadTexture(v.healthbar_full_tex);
-    if (v.healthbar_empty_tex.id > 0) UnloadTexture(v.healthbar_empty_tex);
     for (int i = 0; i < FC_CLICK_CROSS_FRAME_COUNT * 2; i++) {
         if (v.click_cross_tex[i].id > 0)
             UnloadTexture(v.click_cross_tex[i]);
@@ -4689,10 +2610,8 @@ skip_player_anim_update:
     if (v.tex_pray_range_off.id > 0) UnloadTexture(v.tex_pray_range_off);
     if (v.tex_pray_magic_on.id > 0) UnloadTexture(v.tex_pray_magic_on);
     if (v.tex_pray_magic_off.id > 0) UnloadTexture(v.tex_pray_magic_off);
-    clear_visuals(&v);
-    for (int i = 0; i < FC_MAX_NPCS; i++) {
-        if (v.npc_anim_states[i]) anim_model_state_free(v.npc_anim_states[i]);
-    }
+    fc_combat_presentation_destroy(v.combat_presentation);
+    fc_actor_animation_shutdown(&v.actor_animation);
     if (v.object_anim_runtimes) {
         for (int i = 0; i < v.object_anim_runtime_count; i++) {
             if (v.object_anim_runtimes[i].anim_state)
@@ -4700,10 +2619,7 @@ skip_player_anim_update:
         }
         free(v.object_anim_runtimes);
     }
-    if (v.player_anim_state) anim_model_state_free(v.player_anim_state);
     if (v.anim_cache) anim_cache_free(v.anim_cache);
-    if (v.spotanims) spotanims_free(v.spotanims);
-    if (v.projectile_models) fc_npc_models_unload(v.projectile_models);
     if (v.player_model) fc_npc_models_unload(v.player_model);
     if (v.npc_models) fc_npc_models_unload(v.npc_models);
     if (v.object_anim_models) fc_npc_models_unload(v.object_anim_models);

@@ -899,6 +899,37 @@ tests, the asset builder parses successfully, and a real Raylib/OpenGL viewer
 startup loaded the canonical assets. Throughput was 972,741 SPS and training
 uptime was 98.521417 seconds.
 
+## Comparison 28: viewer ownership split and warning cleanup
+
+| Field | Post-refactor result |
+| --- | --- |
+| W&B run | [`a8e5si2y`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/a8e5si2y) (`silver-resonance-1254`) |
+| Tag | `v4.5_refactor_viewer_ownership_warning_cleanup_100m` |
+| Git commit at run start | `fc3263ee0` plus the documented uncommitted refactor |
+| Realized agent steps | `99,614,720` |
+| Epoch | `95` |
+| Contract checkpoint identity | `446a78a42f8a88b9435a52169914a7ee724980170aff5e0e15010bc92959ab4b` |
+| Backend binary SHA-256 | `ae1afb20fc01a46c721e5cd3bc983fcc6093f35eda439bf82d7d91afe391457a` |
+| Backend source SHA-256 | `77ec6c2bdf30be211cbaa8e9af053fb4d5d351c1f39bd72320577e2bba85f296` |
+| Manifest | `pufferlib_4/logs/fight_caves/manifests/20260827T035222Z-train-1672984.json` |
+
+Result: behavioral parity is exact against the original baseline `m916qfsv`.
+All 124 `env/*` metrics, agent steps, epoch, and all seven
+policy/value/entropy/KL/loss values are byte-for-byte equal. The current
+summary matches 136 of 150 baseline fields exactly; the 14 differences are
+only timestamps, wall-clock performance, throughput, and CPU/GPU utilization
+telemetry. Throughput was 917,588 SPS and training uptime was 107.441611
+seconds.
+
+The production training build no longer suppresses
+`-Wunused-but-set-variable`; local, CPU, and CUDA `sm_120` builds all pass
+unsuppressed. Viewer actor animation, combat presentation, and shared model
+animation now have explicit resource owners, while `viewer.c` remains their
+orchestrator. The large UI input handler was decomposed into private
+region-specific handlers without changing its public interface. No gameplay,
+observation, reward, action, or experiment configuration changed. The full
+suite passes 163/163 tests.
+
 ## Reproduction command
 
 ```bash

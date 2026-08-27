@@ -163,17 +163,19 @@ possible future asset files and export pipelines. It is not a cleanup target.
   document the warning it was meant to silence. It currently applies to the C
   core/adapter/standalone compilations, not NVCC or the C++ binding build.
   Unsuppressed local, CPU, and CUDA builds now pass without this warning.
-- [ ] Remove `-Wno-unused-but-set-variable` from the production build after
-  approval. No narrower placement is currently warranted because none of the
-  three supported build modes needs the suppression.
+- [x] Remove `-Wno-unused-but-set-variable` from the production build. No
+  narrower placement is warranted because none of the three supported build
+  modes needs the suppression.
 - [x] Investigate further decomposition of `viewer.c` and `ui.c`. The strongest
   viewer ownership boundaries are combat presentation/projectile lifecycle,
   actor animation lifecycle, and viewer-console controls. `ui.c` remains a
   cohesive UI subsystem; split its input handling into private per-region
   helpers before considering separate input/draw translation units.
-- [ ] Extract viewer combat-presentation and actor-animation lifecycle modules
-  using owned sub-state, then consider extracting viewer-console controls. Do
-  not pass the entire `ViewerState` into new modules merely to reduce file size.
+- [x] Extract viewer combat-presentation and actor-animation lifecycle modules
+  using owned sub-state, without passing the entire `ViewerState`. Keep console
+  controls in the orchestrator because their broad viewer-state coordination
+  does not form a narrower owned subsystem. Split `ui.c` input handling into
+  private per-region helpers while retaining its cohesive UI ownership.
 - [x] The latest strict-warning, Cppcheck, and exhaustive redundant-condition
   audit found no additional high-confidence dead production logic or
   redundant branches requiring removal.

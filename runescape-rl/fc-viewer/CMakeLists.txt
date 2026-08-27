@@ -8,9 +8,12 @@ set(FC_VIEWER_SOURCES
     src/fc_asset_raylib.c
     src/fc_assets.c
     src/fc_actor_visual.c
+    src/fc_actor_animation.c
     src/fc_click_feedback.c
+    src/fc_combat_presentation.c
     src/fc_debug_overlay.c
     src/fc_minimap.c
+    src/fc_model_animation.c
     src/fc_models.c
     src/fc_npc_models.c
     src/fc_objects_loader.c

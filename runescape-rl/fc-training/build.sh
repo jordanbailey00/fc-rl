@@ -87,7 +87,7 @@ BINDING_SRC="$SRC_DIR/binding.c"
 cd "$PUFFERLIB_DIR"
 
 # Compiler settings
-CLANG_WARN=(-Wall -Werror=return-type -Wno-unused-but-set-variable)
+CLANG_WARN=(-Wall -Werror=return-type)
 FC_CORE_INCLUDE="$REPO_DIR/fc-core/include"
 FC_CORE_SOURCE_LIST="$REPO_DIR/fc-core/core_sources.txt"
 
