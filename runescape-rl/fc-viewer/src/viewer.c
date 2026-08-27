@@ -29,6 +29,7 @@
 #include "fc_pathfinding.h"
 #include "fc_reward.h"
 #include "fc_wave.h"
+#include "fc_assets.h"
 #include "fc_terrain_loader.h"
 #include "fc_objects_loader.h"
 #include "fc_npc_models.h"
@@ -4710,7 +4711,7 @@ skip_player_anim_update:
     if (v.object_anims) object_anims_free(v.object_anims);
     objects_free(v.objects);
     fc_minimap_scene_free(&v.minimap_scene);
-    if (v.terrain && v.terrain->loaded) { UnloadModel(v.terrain->model); free(v.terrain->heightmap); free(v.terrain); }
+    terrain_free(v.terrain);
     fc_osrs_text_shutdown();
     runec_ui_shutdown(&v.ui);
     CloseWindow();

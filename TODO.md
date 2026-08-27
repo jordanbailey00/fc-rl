@@ -149,25 +149,31 @@ deferred work is tracked only here.
 The legacy `MINA`/animation-v1 asset reader is intentionally retained for
 possible future asset files and export pipelines. It is not a cleanup target.
 
-- [ ] Convert implementation-heavy viewer headers such as
-  `fc_anim_loader.h`, `fc_models.h`, and `fc_objects_loader.h` into normal
-  `.c/.h` modules where that produces clear ownership and one compiled
-  implementation. This is a build/API-structure improvement, not an expected
-  gameplay or major LOC change.
+- [x] Convert the implementation-heavy viewer headers for animation loading,
+  models, NPC models, objects, spot animations, terrain, and the debug overlay
+  into conventional `.c/.h` modules with one compiled implementation each.
+  Tiny inline I/O helpers and data-only headers remain headers intentionally.
 - [ ] Add the strict compiler, first-party static-analysis, and linker
   reachability checks as an explicitly invoked audit test under
   `fc-validation`. Do not put it in the normal per-change test path or run it
   automatically for every implementation.
-- [ ] Determine why `fc-training/build.sh` globally passes
+- [x] Determine why `fc-training/build.sh` globally passes
   `-Wno-unused-but-set-variable` before changing it. History shows that it was
   introduced when the host compiler changed from Clang to GCC, but does not
   document the warning it was meant to silence. It currently applies to the C
-  core/adapter/standalone compilations, not NVCC or the C++ binding build. Keep
-  the on-demand audit unsuppressed and do not remove the production suppression
-  until the supported local, CPU, and CUDA builds prove it is unnecessary.
-- [ ] Continue decomposing `viewer.c` and `ui.c` only when a cohesive lifecycle
-  or ownership boundary is identified. Do not split them merely to reduce file
-  size.
+  core/adapter/standalone compilations, not NVCC or the C++ binding build.
+  Unsuppressed local, CPU, and CUDA builds now pass without this warning.
+- [ ] Remove `-Wno-unused-but-set-variable` from the production build after
+  approval. No narrower placement is currently warranted because none of the
+  three supported build modes needs the suppression.
+- [x] Investigate further decomposition of `viewer.c` and `ui.c`. The strongest
+  viewer ownership boundaries are combat presentation/projectile lifecycle,
+  actor animation lifecycle, and viewer-console controls. `ui.c` remains a
+  cohesive UI subsystem; split its input handling into private per-region
+  helpers before considering separate input/draw translation units.
+- [ ] Extract viewer combat-presentation and actor-animation lifecycle modules
+  using owned sub-state, then consider extracting viewer-console controls. Do
+  not pass the entire `ViewerState` into new modules merely to reduce file size.
 - [x] The latest strict-warning, Cppcheck, and exhaustive redundant-condition
   audit found no additional high-confidence dead production logic or
   redundant branches requiring removal.

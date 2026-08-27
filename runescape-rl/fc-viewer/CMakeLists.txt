@@ -3,14 +3,21 @@
 
 set(FC_VIEWER_SOURCES
     src/viewer.c
+    src/fc_anim_loader.c
     src/fc_animated_atlas.c
     src/fc_asset_raylib.c
     src/fc_assets.c
     src/fc_actor_visual.c
     src/fc_click_feedback.c
+    src/fc_debug_overlay.c
     src/fc_minimap.c
+    src/fc_models.c
+    src/fc_npc_models.c
+    src/fc_objects_loader.c
     src/fc_osrs_text.c
     src/fc_projectile_visual.c
+    src/fc_spotanims.c
+    src/fc_terrain_loader.c
     src/ui.c
     src/ui_assets.c
 )
@@ -104,6 +111,7 @@ add_test(NAME test_projectile_visual COMMAND test_projectile_visual)
 
 add_executable(test_anim_mixer
     tests/test_anim_mixer.c
+    src/fc_anim_loader.c
     src/fc_assets.c
 )
 target_include_directories(test_anim_mixer PRIVATE
