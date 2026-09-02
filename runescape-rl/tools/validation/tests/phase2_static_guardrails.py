@@ -238,15 +238,23 @@ def env_log_key_budget() -> int:
     failures: list[str] = []
 
     explicit_keys = len(re.findall(r'dict_set\(out,\s*"', text))
-    npc_loop_keys = 5 * (9 - 1)  # five per-NPC-type metrics for NPC types 1..8
-    reward_total_keys = 18       # FC_CH_COUNT minus skipped legacy damage_dealt reward log
+    npc_loop_keys = 9 - 1        # damage for NPC types 1..8
     puffer_added_keys = 1        # static_vec_log appends "n" after my_log
-    total = explicit_keys + npc_loop_keys + reward_total_keys + puffer_added_keys
+    total = explicit_keys + npc_loop_keys + puffer_added_keys
 
-    if "rwd_keys_fires" in text:
-        failures.append("reward fire-count exports are enabled; this exceeds the log budget")
-    if total > 128:
-        failures.append(f"estimated env log keys={total}, expected <=128")
+    removed_verbose_exports = (
+        "npc_resolved_hit_keys",
+        "npc_damaging_hit_keys",
+        "npc_attack_cycle_keys",
+        "npc_target_tick_keys",
+        "rwd_keys_total",
+        "rwd_keys_fires",
+    )
+    for export in removed_verbose_exports:
+        if export in text:
+            failures.append(f"verbose env-log export remains enabled: {export}")
+    if total > 64:
+        failures.append(f"estimated env log keys={total}, expected <=64")
 
     if failures:
         print("FAIL: Fight Caves env logs exceed PufferLib fixed Dict budget:")
@@ -254,7 +262,7 @@ def env_log_key_budget() -> int:
             print(f"  {failure}")
         return 1
 
-    print(f"PASS: Fight Caves env log key budget is {total}/128")
+    print(f"PASS: Fight Caves env log key budget is {total}/64")
     return 0
 
 
@@ -285,8 +293,8 @@ def native_action_mask_contract() -> int:
             "PrecisionTensor action_mask",
             "PrecisionTensor mb_action_mask",
             "env.action_mask.data",
-            "mask_slice.data, mask_stride",
-            ".action_mask = has_action_mask ? graph.mb_action_mask.data : nullptr",
+            "mask_b.data, mask_stride_b",
+            ".action_mask = has_mask ? graph.mb_action_mask.data : nullptr",
             "rollouts.action_mask.data, src.action_mask.data",
         ],
         "manifest": [
