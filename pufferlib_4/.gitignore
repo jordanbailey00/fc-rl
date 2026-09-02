@@ -2,13 +2,10 @@
 c_*.c
 pufferlib/extensions.c
 pufferlib/puffernet.c
-src/libstatic*
-
 logs/
 
 # Build dir
 build/
-build_web/
 
 # hipified cuda extensions dir [HIP/ROCM]
 pufferlib/extensions/hip/
@@ -175,3 +172,5 @@ pufferlib/ocean/impulse_wars/benchmark/
 resources/drive/data/*
 resources/drive/binaries/*
 
+vendor/nle/
+vendor/fast-nle/

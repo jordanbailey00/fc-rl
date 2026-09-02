@@ -11,7 +11,7 @@ typedef struct {
 } Arena;
 
 Arena* make_allocator(size_t total_size) {
-    void* buffer = calloc(1, total_size + sizeof(Arena));
+    void* buffer = (void*)calloc(1, total_size + sizeof(Arena));
     Arena* allocator = (Arena*)buffer;
     allocator->data = (void*)((char*)buffer + sizeof(Arena));
     allocator->capacity = total_size;
@@ -36,25 +36,28 @@ struct Weights {
     int idx;
 };
 
-void _load_weights(const char* filename, float* weights, size_t num_weights) {
+Weights* load_weights(const char* filename) {
     FILE* file = fopen(filename, "rb");
     if (!file) {
         perror("Error opening file");
+        return NULL;
     }
     fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
     rewind(file);
-    size_t read_size = fread(weights, sizeof(float), num_weights, file);
+    size_t num_weights = file_size / sizeof(float);
+    // +7 ensures get_weights_aligned never reads past the buffer: the native
+    // backend uses 16-byte alignment with bf16 params (2 bytes), so each tensor
+    // starts at an 8-float boundary. After the last tensor, up to 7 extra floats
+    // may be addressed before the next 8-aligned boundary.
+    Weights* weights = (Weights*)calloc(1, sizeof(Weights) + (num_weights + 7)*sizeof(float));
+    weights->data = (float*)(weights + 1);
+    size_t read_size = fread(weights->data, sizeof(float), num_weights, file);
     fclose(file);
     if (read_size != num_weights) {
         perror("Error reading file");
     }
-}
-
-Weights* load_weights(const char* filename, size_t num_weights) {
-    Weights* weights = calloc(1, sizeof(Weights) + num_weights*sizeof(float));
-    weights->data = (float*)(weights + 1);
-    _load_weights(filename, weights->data, num_weights);
-    weights->size = num_weights;
+    weights->size = num_weights + 7;
     weights->idx = 0;
     return weights;
 }
@@ -62,6 +65,16 @@ Weights* load_weights(const char* filename, size_t num_weights) {
 float* get_weights(Weights* weights, int num_weights) {
     float* data = &weights->data[weights->idx];
     weights->idx += num_weights;
+    assert(weights->idx <= weights->size);
+    return data;
+}
+
+// Advances index to next 8-float (16-byte) boundary after reading, matching
+// the native backend's Allocator which aligns to 16 bytes with bf16 params.
+float* get_weights_aligned(Weights* weights, int num_weights) {
+    float* data = &weights->data[weights->idx];
+    weights->idx += num_weights;
+    weights->idx = (weights->idx + 7) & ~7;
     assert(weights->idx <= weights->size);
     return data;
 }
@@ -296,19 +309,57 @@ void _cat_dim1(float* x, float* y, float* output, int batch_size, int x_size, in
     }
 }
 
-void _argmax_multidiscrete(float* input, int* output, int batch_size, int logit_sizes[], int num_actions) {
-    int in_adr = 0;
+double _randn(double mean, double std) {
+    static int has_spare = 0;
+    static double spare;
+
+    if (has_spare) {
+        has_spare = 0;
+        return mean + std * spare;
+    }
+
+    has_spare = 1;
+    double u, v, s;
+    do {
+        u = 2.0 * rand() / RAND_MAX - 1.0;
+        v = 2.0 * rand() / RAND_MAX - 1.0;
+        s = u * u + v * v;
+    } while (s >= 1.0 || s == 0.0);
+
+    s = sqrt(-2.0 * log(s) / s);
+    spare = v * s;
+    return mean + std * (u * s);
+}
+
+void _gaussian_sample(float* input, float* log_std, float* output, int batch_size, int num_actions) {
     for (int b = 0; b < batch_size; b++) {
+        // +1 skips the value head fused into the decoder output
+        int in_adr = b * (num_actions + 1);
+        for (int a = 0; a < num_actions; a++) {
+            int out_adr = b * num_actions + a;
+            float mean = input[in_adr + a];
+            float std = expf(log_std[a]);
+            output[out_adr] = (float)_randn(mean, std);
+        }
+    }
+}
+
+void _argmax_multidiscrete(float* input, float* output, int batch_size, int logit_sizes[], int num_actions) {
+    int atn_sum = 0;
+    for (int a = 0; a < num_actions; a++) atn_sum += logit_sizes[a];
+    for (int b = 0; b < batch_size; b++) {
+        // +1 skips the value head fused into the decoder output
+        int in_adr = b * (atn_sum + 1);
         for (int a = 0; a < num_actions; a++) {
             int out_adr = b*num_actions + a;
             float max_logit = input[in_adr];
-            output[out_adr] = 0;
+            output[out_adr] = 0.0f;
             int num_action_types = logit_sizes[a];
             for (int i = 1; i < num_action_types; i++) {
                 float out = input[in_adr + i];
                 if (out > max_logit) {
                     max_logit = out;
-                    output[out_adr] = i;
+                    output[out_adr] = (float)i;
                 }
             }
             in_adr += num_action_types;
@@ -316,9 +367,12 @@ void _argmax_multidiscrete(float* input, int* output, int batch_size, int logit_
     }
 }
 
-void _softmax_multidiscrete(float* input, int* output, int batch_size, int logit_sizes[], int num_actions) {
-    int in_adr = 0;
+void _softmax_multidiscrete(float* input, float* output, int batch_size, int logit_sizes[], int num_actions) {
+    int atn_sum = 0;
+    for (int a = 0; a < num_actions; a++) atn_sum += logit_sizes[a];
     for (int b = 0; b < batch_size; b++) {
+        // +1 skips the value head fused into the decoder output
+        int in_adr = b * (atn_sum + 1);
         for (int a = 0; a < num_actions; a++) {
             int out_adr = b*num_actions + a;
             float logit_exp_sum = 0;
@@ -328,11 +382,11 @@ void _softmax_multidiscrete(float* input, int* output, int batch_size, int logit
             }
             float prob = rand() / (float)RAND_MAX;
             float logit_prob = 0;
-            output[out_adr] = 0;
+            output[out_adr] = 0.0f;
             for (int i = 0; i < num_action_types; i++) {
                 logit_prob += expf(input[in_adr + i]) / logit_exp_sum;
                 if (prob < logit_prob) {
-                    output[out_adr] = i;
+                    output[out_adr] = (float)i;
                     break;
                 }
             }
@@ -357,8 +411,8 @@ void _max_dim1(float* input, float* output, int batch_size, int seq_len, int fea
 }
 
 // User API. Provided to help organize layers
-typedef struct Linear Linear;
-struct Linear {
+typedef struct Affine Affine;
+struct Affine {
     float* output;
     float* weights;
     float* bias;
@@ -367,10 +421,10 @@ struct Linear {
     int output_dim;
 };
 
-Linear* make_linear(Weights* weights, int batch_size, int input_dim, int output_dim) {
+Affine* make_affine(Weights* weights, int batch_size, int input_dim, int output_dim) {
     size_t buffer_size = batch_size*output_dim*sizeof(float);
-    Linear* layer = calloc(1, sizeof(Linear) + buffer_size);
-    *layer = (Linear){
+    Affine* layer = (Affine*)calloc(1, sizeof(Affine) + buffer_size);
+    *layer = (Affine){
         .output = (float*)(layer + 1),
         .weights = get_weights(weights, output_dim*input_dim),
         .bias = get_weights(weights, output_dim),
@@ -381,14 +435,47 @@ Linear* make_linear(Weights* weights, int batch_size, int input_dim, int output_
     return layer;
 }
 
-void linear(Linear* layer, float* input) {
+void affine(Affine* layer, float* input) {
     _linear(input, layer->weights, layer->bias, layer->output,
         layer->batch_size, layer->input_dim, layer->output_dim);
 }
 
-void linear_accumulate(Linear* layer, float* input) {
+void affine_accumulate(Affine* layer, float* input) {
     _linear_accumulate(input, layer->weights, layer->bias, layer->output,
         layer->batch_size, layer->input_dim, layer->output_dim);
+}
+
+typedef struct Linear Linear;
+struct Linear {
+    float* output;
+    float* weights;
+    int batch_size;
+    int input_dim;
+    int output_dim;
+};
+
+Linear* make_linear(Weights* weights, int batch_size, int input_dim, int output_dim) {
+    size_t buffer_size = batch_size*output_dim*sizeof(float);
+    Linear* layer = (Linear*)calloc(1, sizeof(Linear) + buffer_size);
+    *layer = (Linear){
+        .output = (float*)(layer + 1),
+        .weights = get_weights_aligned(weights, output_dim*input_dim),
+        .batch_size = batch_size,
+        .input_dim = input_dim,
+        .output_dim = output_dim,
+    };
+    return layer;
+}
+
+void linear(Linear* layer, float* input) {
+    for (int b = 0; b < layer->batch_size; b++) {
+        for (int o = 0; o < layer->output_dim; o++) {
+            float sum = 0.0f;
+            for (int i = 0; i < layer->input_dim; i++)
+                sum += input[b*layer->input_dim + i] * layer->weights[o*layer->input_dim + i];
+            layer->output[b*layer->output_dim + o] = sum;
+        }
+    }
 }
 
 typedef struct ReLU ReLU;
@@ -400,7 +487,7 @@ struct ReLU {
 
 ReLU* make_relu(int batch_size, int input_dim) {
     size_t buffer_size = batch_size*input_dim*sizeof(float);
-    ReLU* layer = calloc(1, sizeof(ReLU) + buffer_size);
+    ReLU* layer = (ReLU*)calloc(1, sizeof(ReLU) + buffer_size);
     *layer = (ReLU){
         .output = (float*)(layer + 1),
         .batch_size = batch_size,
@@ -422,7 +509,7 @@ struct GELU {
 
 GELU* make_gelu(int batch_size, int input_dim) {
     size_t buffer_size = batch_size*input_dim*sizeof(float);
-    GELU* layer = calloc(1, sizeof(GELU) + buffer_size);
+    GELU* layer = (GELU*)calloc(1, sizeof(GELU) + buffer_size);
     *layer = (GELU){
         .output = (float*)(layer + 1),
         .batch_size = batch_size,
@@ -445,7 +532,7 @@ struct MaxDim1 {
 
 MaxDim1* make_max_dim1(int batch_size, int seq_len, int feature_dim) {
     size_t buffer_size = batch_size*feature_dim*sizeof(float);
-    MaxDim1* layer = calloc(1, sizeof(MaxDim1) + buffer_size);
+    MaxDim1* layer = (MaxDim1*)calloc(1, sizeof(MaxDim1) + buffer_size);
     *layer = (MaxDim1){
         .output = (float*)(layer + 1),
         .batch_size = batch_size,
@@ -477,7 +564,7 @@ Conv2D* make_conv2d(Weights* weights, int batch_size, int in_width, int in_heigh
         int in_channels, int out_channels, int kernel_size, int stride) {
     size_t buffer_size = batch_size*out_channels*in_height*in_width*sizeof(float);
     int num_weights = out_channels*in_channels*kernel_size*kernel_size;
-    Conv2D* layer = calloc(1, sizeof(Conv2D) + buffer_size);
+    Conv2D* layer = (Conv2D*)calloc(1, sizeof(Conv2D) + buffer_size);
     *layer = (Conv2D){
         .output = (float*)(layer + 1),
         .weights = get_weights(weights, num_weights),
@@ -519,7 +606,7 @@ Conv3D* make_conv3d(Weights* weights, int batch_size, int in_width, int in_heigh
     
     size_t buffer_size = batch_size*out_channels*in_depth*in_height*in_width*sizeof(float);
     int num_weights = out_channels*in_channels*kernel_size*kernel_size*kernel_size;
-    Conv3D* layer = calloc(1, sizeof(Conv3D) + buffer_size);
+    Conv3D* layer = (Conv3D*)calloc(1, sizeof(Conv3D) + buffer_size);
     *layer = (Conv3D){
         .output = (float*)(layer + 1),
         .weights = get_weights(weights, num_weights),
@@ -558,7 +645,7 @@ struct LSTM {
 
 LSTM* make_lstm(Weights* weights, int batch_size, int input_size, int hidden_size) {
     int state_size = batch_size*hidden_size;
-    LSTM* layer = calloc(1, sizeof(LSTM) + 6*state_size*sizeof(float));
+    LSTM* layer = (LSTM*)calloc(1, sizeof(LSTM) + 6*state_size*sizeof(float));
     float* buffer = (float*)(layer + 1);
     *layer = (LSTM){
         .state_h = buffer,
@@ -619,7 +706,7 @@ struct LayerNorm {
 
 LayerNorm* make_layernorm(Weights* weights, int batch_size, int input_dim) {
     size_t output_size = batch_size*input_dim*sizeof(float);
-    LayerNorm* layer = calloc(1, sizeof(LayerNorm) + output_size);
+    LayerNorm* layer = (LayerNorm*)calloc(1, sizeof(LayerNorm) + output_size);
     *layer = (LayerNorm){
         .output = (float*)(layer + 1),
         .weights = get_weights(weights, input_dim),
@@ -645,7 +732,7 @@ struct OneHot {
 
 OneHot* make_one_hot(int batch_size, int input_size, int num_classes) {
     size_t buffer_size = batch_size*input_size*num_classes*sizeof(int);
-    OneHot* layer = calloc(1, sizeof(OneHot) + buffer_size);
+    OneHot* layer = (OneHot*)calloc(1, sizeof(OneHot) + buffer_size);
     *layer = (OneHot){
         .output = (int*)(layer + 1),
         .batch_size = batch_size,
@@ -669,7 +756,7 @@ struct CatDim1 {
 
 CatDim1* make_cat_dim1(int batch_size, int x_size, int y_size) {
     size_t buffer_size = batch_size*(x_size + y_size)*sizeof(float);
-    CatDim1* layer = calloc(1, sizeof(CatDim1) + buffer_size);
+    CatDim1* layer = (CatDim1*)calloc(1, sizeof(CatDim1) + buffer_size);
     *layer = (CatDim1){
         .output = (float*)(layer + 1),
         .batch_size = batch_size,
@@ -691,18 +778,18 @@ struct Multidiscrete {
 };
 
 Multidiscrete* make_multidiscrete(int batch_size, int logit_sizes[], int num_actions) {
-    Multidiscrete* layer = calloc(1, sizeof(Multidiscrete));
+    Multidiscrete* layer = (Multidiscrete*)calloc(1, sizeof(Multidiscrete));
     layer->batch_size = batch_size;
     layer->num_actions = num_actions;
     memcpy(layer->logit_sizes, logit_sizes, num_actions*sizeof(int));
     return layer;
 }
 
-void argmax_multidiscrete(Multidiscrete* layer, float* input, int* output) {
+void argmax_multidiscrete(Multidiscrete* layer, float* input, float* output) {
     _argmax_multidiscrete(input, output, layer->batch_size, layer->logit_sizes, layer->num_actions);
 }
 
-void softmax_multidiscrete(Multidiscrete* layer, float* input, int* output) {
+void softmax_multidiscrete(Multidiscrete* layer, float* input, float* output) {
     _softmax_multidiscrete(input, output, layer->batch_size, layer->logit_sizes, layer->num_actions);
 }
 
@@ -712,21 +799,21 @@ typedef struct Default Default;
 struct Default {
     int num_agents;
     float* obs;
-    Linear* encoder;
+    Affine* encoder;
     ReLU* relu1;
-    Linear* actor;
-    Linear* value_fn;
+    Affine* actor;
+    Affine* value_fn;
     Multidiscrete* multidiscrete;
 };
 
 Default* make_default(Weights* weights, int num_agents, int input_dim, int hidden_dim, int action_dim) {
-    Default* net = calloc(1, sizeof(Default));
+    Default* net = (Default*)calloc(1, sizeof(Default));
     net->num_agents = num_agents;
     net->obs = (float*)calloc(num_agents*input_dim, sizeof(float));
-    net->encoder = make_linear(weights, num_agents, input_dim, hidden_dim);
+    net->encoder = make_affine(weights, num_agents, input_dim, hidden_dim);
     net->relu1 = make_relu(num_agents, hidden_dim);
-    net->actor = make_linear(weights, num_agents, hidden_dim, action_dim);
-    net->value_fn = make_linear(weights, num_agents, hidden_dim, 1);
+    net->actor = make_affine(weights, num_agents, hidden_dim, action_dim);
+    net->value_fn = make_affine(weights, num_agents, hidden_dim, 1);
     int logit_sizes[1] = {action_dim};
     net->multidiscrete = make_multidiscrete(num_agents, logit_sizes, 1);
     return net;
@@ -742,11 +829,11 @@ void free_default(Default* net) {
     free(net);
 }
 
-void forward_default(Default* net, float* observations, int* actions) {
-    linear(net->encoder, observations);
+void forward_default(Default* net, float* observations, float* actions) {
+    affine(net->encoder, observations);
     relu(net->relu1, net->encoder->output);
-    linear(net->actor, net->relu1->output);
-    linear(net->value_fn, net->relu1->output);
+    affine(net->actor, net->relu1->output);
+    affine(net->value_fn, net->relu1->output);
     softmax_multidiscrete(net->multidiscrete, net->actor->output, actions);
 }
 
@@ -754,26 +841,26 @@ typedef struct LinearLSTM LinearLSTM;
 struct LinearLSTM {
     int num_agents;
     float* obs;
-    Linear* encoder;
+    Affine* encoder;
     GELU* gelu1;
     LSTM* lstm;
-    Linear* actor;
-    Linear* value_fn;
+    Affine* actor;
+    Affine* value_fn;
     Multidiscrete* multidiscrete;
 };
 
 LinearLSTM* make_linearlstm(Weights* weights, int num_agents, int input_dim, int logit_sizes[], int num_actions) {
-    LinearLSTM* net = calloc(1, sizeof(LinearLSTM));
+    LinearLSTM* net = (LinearLSTM*)calloc(1, sizeof(LinearLSTM));
     net->num_agents = num_agents;
-    net->obs = calloc(num_agents*input_dim, sizeof(float));
-    net->encoder = make_linear(weights, num_agents, input_dim, 128);
+    net->obs = (float*)calloc(num_agents*input_dim, sizeof(float));
+    net->encoder = make_affine(weights, num_agents, input_dim, 128);
     net->gelu1 = make_gelu(num_agents, 128);
     int atn_sum = 0;
     for (int i = 0; i < num_actions; i++) {
         atn_sum += logit_sizes[i];
     }
-    net->actor = make_linear(weights, num_agents, 128, atn_sum);
-    net->value_fn = make_linear(weights, num_agents, 128, 1);
+    net->actor = make_affine(weights, num_agents, 128, atn_sum);
+    net->value_fn = make_affine(weights, num_agents, 128, 1);
     net->lstm = make_lstm(weights, num_agents, 128, 128);
     net->multidiscrete = make_multidiscrete(num_agents, logit_sizes, num_actions);
     return net;
@@ -790,12 +877,12 @@ void free_linearlstm(LinearLSTM* net) {
     free(net);
 }
 
-void forward_linearlstm(LinearLSTM* net, float* observations, int* actions) {
-    linear(net->encoder, observations);
+void forward_linearlstm(LinearLSTM* net, float* observations, float* actions) {
+    affine(net->encoder, observations);
     gelu(net->gelu1, net->encoder->output);
     lstm(net->lstm, net->gelu1->output);
-    linear(net->actor, net->lstm->state_h);
-    linear(net->value_fn, net->lstm->state_h);
+    affine(net->actor, net->lstm->state_h);
+    affine(net->value_fn, net->lstm->state_h);
     softmax_multidiscrete(net->multidiscrete, net->actor->output, actions);
 }
 
@@ -806,26 +893,26 @@ typedef struct ConvLSTM ConvLSTM; struct ConvLSTM {
     ReLU* relu1;
     Conv2D* conv2;
     ReLU* relu2;
-    Linear* linear;
+    Affine* linear;
     LSTM* lstm;
-    Linear* actor;
-    Linear* value_fn;
+    Affine* actor;
+    Affine* value_fn;
     Multidiscrete* multidiscrete;
 };
 
 ConvLSTM* make_convlstm(Weights* weights, int num_agents, int input_dim,
         int input_channels, int cnn_channels, int hidden_dim, int action_dim) {
-    ConvLSTM* net = calloc(1, sizeof(ConvLSTM));
+    ConvLSTM* net = (ConvLSTM*)calloc(1, sizeof(ConvLSTM));
     net->num_agents = num_agents;
-    net->obs = calloc(num_agents*input_dim*input_dim*input_channels, sizeof(float));
+    net->obs = (float*)calloc(num_agents*input_dim*input_dim*input_channels, sizeof(float));
     net->conv1 = make_conv2d(weights, num_agents, input_dim,
         input_dim, input_channels, cnn_channels, 5, 3);
     net->relu1 = make_relu(num_agents, hidden_dim*3*3);
     net->conv2 = make_conv2d(weights, num_agents, 3, 3, cnn_channels, cnn_channels, 3, 1);
     net->relu2 = make_relu(num_agents, hidden_dim);
-    net->linear = make_linear(weights, num_agents, cnn_channels, hidden_dim);
-    net->actor = make_linear(weights, num_agents, hidden_dim, action_dim);
-    net->value_fn = make_linear(weights, num_agents, hidden_dim, 1);
+    net->linear = make_affine(weights, num_agents, cnn_channels, hidden_dim);
+    net->actor = make_affine(weights, num_agents, hidden_dim, action_dim);
+    net->value_fn = make_affine(weights, num_agents, hidden_dim, 1);
     net->lstm = make_lstm(weights, num_agents, hidden_dim, hidden_dim);
     int logit_sizes[1] = {action_dim};
     net->multidiscrete = make_multidiscrete(num_agents, logit_sizes, 1);
@@ -846,14 +933,157 @@ void free_convlstm(ConvLSTM* net) {
     free(net);
 }
 
-void forward_convlstm(ConvLSTM* net, float* observations, int* actions) {
+void forward_convlstm(ConvLSTM* net, float* observations, float* actions) {
     conv2d(net->conv1, observations);
     relu(net->relu1, net->conv1->output);
     conv2d(net->conv2, net->relu1->output);
     relu(net->relu2, net->conv2->output);
-    linear(net->linear, net->relu2->output);
+    affine(net->linear, net->relu2->output);
     lstm(net->lstm, net->linear->output);
-    linear(net->actor, net->lstm->state_h);
-    linear(net->value_fn, net->lstm->state_h);
+    affine(net->actor, net->lstm->state_h);
+    affine(net->value_fn, net->lstm->state_h);
     softmax_multidiscrete(net->multidiscrete, net->actor->output, actions);
+}
+
+// MinGRU: inference-only single-step recurrent layer (no parallel scan).
+// Matches the fused gate + highway connection in models.cu mingru_gate kernel.
+// Each layer has a bias-free projection (hidden -> 3*hidden).
+// State layout: (num_layers, batch_size, hidden_size).
+typedef struct MinGRU MinGRU;
+struct MinGRU {
+    float* state;    // (num_layers, batch_size, hidden_size) - persists across steps
+    float* output;   // (batch_size, hidden_size)
+    Linear** proj;   // [num_layers], each projects hidden -> 3*hidden
+    int batch_size;
+    int hidden_size;
+    int num_layers;
+};
+
+MinGRU* make_mingru(Weights* weights, int batch_size, int hidden_size, int num_layers) {
+    MinGRU* layer = (MinGRU*)calloc(1, sizeof(MinGRU));
+    layer->state = (float*)calloc(num_layers * batch_size * hidden_size, sizeof(float));
+    layer->output = (float*)calloc(batch_size * hidden_size, sizeof(float));
+    layer->proj = (Linear**)calloc(num_layers, sizeof(Linear*));
+    layer->batch_size  = batch_size;
+    layer->hidden_size = hidden_size;
+    layer->num_layers  = num_layers;
+    for (int l = 0; l < num_layers; l++) {
+        layer->proj[l] = make_linear(weights, batch_size, hidden_size, 3 * hidden_size);
+    }
+    return layer;
+}
+
+void mingru(MinGRU* layer, float* input) {
+    int B = layer->batch_size;
+    int H = layer->hidden_size;
+    float* x = input;
+    for (int l = 0; l < layer->num_layers; l++) {
+        float* state_l = layer->state + l * B * H;
+        linear(layer->proj[l], x);
+        float* combined = layer->proj[l]->output;
+        for (int b = 0; b < B; b++) {
+            float* cb = combined + b * 3 * H;
+            float* sb = state_l + b * H;
+            float* xb = x + b * H;
+            float* ob = layer->output + b * H;
+            for (int h = 0; h < H; h++) {
+                float hidden     = cb[h];
+                float gate       = cb[H + h];
+                float hw         = cb[2*H + h];
+                float s          = sb[h];
+                float gate_s     = _sigmoid(gate);
+                float h_tilde    = (hidden >= 0.0f) ? hidden + 0.5f : _sigmoid(hidden);
+                float mingru_out = s + gate_s * (h_tilde - s);
+                float hw_s       = _sigmoid(hw);
+                ob[h] = hw_s * mingru_out + (1.0f - hw_s) * xb[h];
+                sb[h] = mingru_out;
+            }
+        }
+        x = layer->output;
+    }
+}
+
+void free_mingru(MinGRU* layer) {
+    for (int l = 0; l < layer->num_layers; l++) free(layer->proj[l]);
+    free(layer->state);
+    free(layer->output);
+    free(layer->proj);
+    free(layer);
+}
+
+// PufferNet: default policy matching the native backend Policy in models.cu.
+// Architecture: Linear encoder -> N x MinGRU -> Linear decoder (fused value).
+// Weight file order (matches policy_weights_create reg_params call order):
+//   encoder weight (hidden_dim x input_dim)
+//   decoder weight ((atn_sum+1) x hidden_dim, last output is value)
+//   decoder logstd (1 x num_actions) IF continuous
+//   mingru weights[0..num_layers-1] (3*hidden_dim x hidden_dim each)
+typedef struct PufferNet PufferNet;
+struct PufferNet {
+    int num_agents;
+    float* obs;
+    Linear* encoder;
+    MinGRU* mingru;
+    Linear* decoder;   // output_dim = atn_sum+1; last element is value
+    float* log_std;
+    int is_continuous;
+    int num_actions;
+    Multidiscrete* multidiscrete;
+};
+
+PufferNet* make_puffernet(Weights* weights, int num_agents, int input_dim,
+        int hidden_dim, int num_layers, int logit_sizes[], int num_actions) {
+    PufferNet* net = (PufferNet*)calloc(1, sizeof(PufferNet));
+    net->num_agents = num_agents;
+    net->obs = (float*)calloc(num_agents * input_dim, sizeof(float));
+    int atn_sum = 0;
+    int is_continuous = 1;
+    for (int i = 0; i < num_actions; i++) {
+        atn_sum += logit_sizes[i];
+        if (logit_sizes[i] != 1) is_continuous = 0;
+    }
+    net->is_continuous = is_continuous;
+    net->num_actions = num_actions;
+
+    net->encoder = make_linear(weights, num_agents, input_dim, hidden_dim);
+    net->decoder = make_linear(weights, num_agents, hidden_dim, atn_sum + 1);
+    if (net->is_continuous) {
+        net->log_std = get_weights_aligned(weights, num_actions);
+    }
+    net->mingru  = make_mingru(weights, num_agents, hidden_dim, num_layers);
+    if (!net->is_continuous) {
+        net->multidiscrete = make_multidiscrete(num_agents, logit_sizes, num_actions);
+    }
+    return net;
+}
+
+void _gaussian_mean(float* input, float* output, int batch_size, int num_actions) {
+    for (int b = 0; b < batch_size; b++) {
+        // +1 skips the value head fused into the decoder output
+        int in_adr = b * (num_actions + 1);
+        for (int a = 0; a < num_actions; a++)
+            output[b * num_actions + a] = input[in_adr + a];
+    }
+}
+
+void forward_puffernet(PufferNet* net, float* observations, float* actions) {
+    linear(net->encoder, observations);
+    mingru(net->mingru, net->encoder->output);
+    linear(net->decoder, net->mingru->output);
+    if (net->is_continuous) {
+        _gaussian_mean(net->decoder->output, actions, net->num_agents, net->num_actions);
+    } else {
+        softmax_multidiscrete(net->multidiscrete, net->decoder->output, actions);
+    }
+}
+
+void free_puffernet(PufferNet* net) {
+    free(net->obs);
+    free(net->encoder);
+    free(net->decoder);
+    free_mingru(net->mingru);
+    if (net->multidiscrete) {
+        free(net->multidiscrete);
+    }
+    free(net);
 }

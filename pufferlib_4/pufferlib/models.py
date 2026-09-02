@@ -5,32 +5,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class Policy(nn.Module):
-    def __init__(self, encoder, decoder, network, mask_offset=None, mask_act_sizes=None):
+    def __init__(self, encoder, decoder, network):
         super().__init__()
         self.encoder = encoder
         self.decoder = decoder
         self.network = network
-        self.mask_offset = mask_offset
-        self.mask_act_sizes = tuple(mask_act_sizes) if mask_act_sizes is not None else None
 
     def initial_state(self, batch_size, device):
         return self.network.initial_state(batch_size, device)
-
-    def _apply_mask(self, logits, x):
-        if self.mask_offset is None or self.mask_act_sizes is None:
-            return logits
-        flat = x.reshape(-1, x.shape[-1]).float()
-        mask = flat[:, self.mask_offset:self.mask_offset + sum(self.mask_act_sizes)]
-        head_masks = mask.split(self.mask_act_sizes, dim=1)
-        if isinstance(logits, (list, tuple)):
-            return tuple(l + (h - 1.0) * 1e9 for l, h in zip(logits, head_masks))
-        return logits + (head_masks[0] - 1.0) * 1e9
 
     def forward_eval(self, x, state):
         h = self.encoder(x)
         h, state = self.network.forward_eval(h, state)
         logits, values = self.decoder(h)
-        logits = self._apply_mask(logits, x)
         return logits, values, state
 
     def forward(self, x):
@@ -38,7 +25,6 @@ class Policy(nn.Module):
         h = self.encoder(x.reshape(B*TT, *x.shape[2:]))
         h = self.network.forward_train(h.reshape(B, TT, -1))
         logits, values = self.decoder(h.reshape(B*TT, -1))
-        logits = self._apply_mask(logits, x)
         return logits, values.reshape(B, TT)
 
 class DefaultEncoder(nn.Module):
@@ -48,6 +34,28 @@ class DefaultEncoder(nn.Module):
 
     def forward(self, observations):
         return self.encoder(observations.view(observations.shape[0], -1).float())
+
+class MinimalEntityEncoder(nn.Module):
+    def __init__(self, obs_size, hidden_size=128):
+        super().__init__()
+        self.self_obs_size = 2
+        self.point_obs_size = 4
+        self.num_points = 16
+        self.hidden_size = hidden_size
+
+        self.encoder = nn.Sequential(
+            nn.Linear(self.self_obs_size + self.point_obs_size, 16),
+            nn.ReLU(),
+            nn.Linear(16, hidden_size),
+        )
+
+    def forward(self, observations):
+        self_obs = observations[:, :self.self_obs_size].unsqueeze(1).expand(
+            observations.shape[0], self.num_points, self.self_obs_size)
+        point_obs = observations[:, self.self_obs_size:].reshape(
+            observations.shape[0], self.num_points, self.point_obs_size)
+        cat = torch.cat([self_obs, point_obs], dim=-1)
+        return self.encoder(cat).max(dim=1)[0]
 
 class DefaultDecoder(nn.Module):
     def __init__(self, nvec, hidden_size=128):

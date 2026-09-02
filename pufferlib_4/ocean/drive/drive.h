@@ -50,7 +50,7 @@
 #define VISION_RANGE 21
 
 // Observation Space
-#define MAX_ROAD_SEGMENT_OBSERVATIONS 200
+#define MAX_ROAD_SEGMENT_OBSERVATIONS 75
 
 #define PARTNER_FEATURES 7
 #define EGO_FEATURES 7
@@ -755,7 +755,9 @@ int collision_check(Drive* env, int agent_idx) {
 
 // Agent Selection
 int valid_active_agent(Drive* env, int agent_idx) {
+    if (agent_idx < 0 || agent_idx >= env->num_entities) return 0;
     Entity* e = &env->entities[agent_idx];
+    if (e->type != VEHICLE || e->traj_valid[0] != 1) return 0;
     float cos_heading = cosf(e->traj_heading[0]);
     float sin_heading = sinf(e->traj_heading[0]);
     float goal_x = e->goal_position_x - e->traj_x[0];
@@ -1087,6 +1089,7 @@ void c_reset(Drive* env) {
         env->entities[agent_idx].reached_goal = 0;
         env->entities[agent_idx].collided_before_goal = 0;
         env->entities[agent_idx].reached_goal_this_episode = 0;
+
         collision_check(env, agent_idx);
     }
     compute_observations(env);

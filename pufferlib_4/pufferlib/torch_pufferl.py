@@ -99,6 +99,11 @@ _TORCH_TO_CTYPE = {
     torch.float32: ctypes.c_float,
 }
 
+def _actions_for_vec_step(action):
+    if action.dim() == 1:
+        action = action.unsqueeze(-1)
+    return action.to(dtype=torch.float32).contiguous()
+
 def _cpu_tensor(ptr, shape, dtype):
     '''Zero-copy CPU tensor from a raw pointer via ctypes.'''
     ctype = _TORCH_TO_CTYPE[dtype]
@@ -227,7 +232,7 @@ class PuffeRL:
                 self.values[t] = value.flatten()
 
             prof.mark(2)
-            actions_flat = (action.T if action.dim() > 1 else action.unsqueeze(-1)).to(dtype=torch.float32).contiguous()
+            actions_flat = _actions_for_vec_step(action)
             if self.gpu:
                 actions_flat = actions_flat.cuda()
                 self._vec.gpu_step(actions_flat.data_ptr())
@@ -477,14 +482,7 @@ def load_policy(args, vec):
     network = network_cls(**policy_kwargs)
     encoder = encoder_cls(vec.obs_size, policy_kwargs['hidden_size'])
     decoder = decoder_cls(vec.act_sizes, policy_kwargs['hidden_size'])
-
-    mask_act_sizes = tuple(int(s) for s in vec.act_sizes)
-    mask_offset = vec.obs_size - sum(mask_act_sizes)
-    policy = pufferlib.models.Policy(
-        encoder, decoder, network,
-        mask_offset=mask_offset,
-        mask_act_sizes=mask_act_sizes,
-    )
+    policy = pufferlib.models.Policy(encoder, decoder, network)
 
     device = 'cuda' if _C.gpu else 'cpu'
     policy = policy.to(device)

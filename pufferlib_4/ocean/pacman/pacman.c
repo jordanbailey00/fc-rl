@@ -4,9 +4,9 @@
 
 void demo() {
     // printf("OBSERVATIONS_COUNT: %d\n", OBSERVATIONS_COUNT);
-    Weights* weights = load_weights("resources/pacman/pacman_weights.bin", 170117);
+    Weights* weights = load_weights("resources/pacman/pacman_weights.bin");
     int logit_sizes[1] = {4};
-    LinearLSTM* net = make_linearlstm(weights, 1, OBSERVATIONS_COUNT, logit_sizes, 1);
+    PufferNet* net = make_puffernet(weights, 1, OBSERVATIONS_COUNT, 256, 6, logit_sizes, 1);
 
     PacmanEnv env = {
         .randomize_starting_position = false,
@@ -35,11 +35,11 @@ void demo() {
         }
 
         if (!human_control) {
-            forward_linearlstm(net, env.observations, env.actions);
+            forward_puffernet(net, env.observations, env.actions);
         }
 
         c_step(&env);
-        if (env.terminals[0]) {
+        if (env.terminals[0] > 0.5f) {
             c_reset(&env);
         }
 
@@ -47,32 +47,13 @@ void demo() {
             c_render(&env);
         }
     }
-    free_linearlstm(net);
+    free_puffernet(net);
     free(weights);
     free_allocated(&env);
     close_client(client);
 }
 
-void performance_test() {
-    long test_time = 10;
-    PacmanEnv env = {};
-    allocate(&env);
-    c_reset(&env);
-
-    long start = time(NULL);
-    int i = 0;
-    while (time(NULL) - start < test_time) {
-        env.actions[0] = rand() % 4;
-        c_step(&env);
-        i++;
-    }
-    long end = time(NULL);
-    printf("SPS: %ld\n", i / (end - start));
-    free_allocated(&env);
-}
-
 int main() {
-    //performance_test();
     demo();
     return 0;
 }

@@ -52,12 +52,9 @@ fi
 
 # Linux/mac
 PLATFORM="$(uname -s)"
-CC="${CC:-$(command -v ccache >/dev/null && echo 'ccache clang' || echo 'clang')}"
-CXX="${CXX:-g++}"
-CC_BASENAME="$(printf '%s\n' "$CC" | awk '{print $NF}')"
-
 if [ "$PLATFORM" = "Linux" ]; then
     RAYLIB_NAME='raylib-5.5_linux_amd64'
+    OMP_LIB=-lomp5
     SANITIZE_FLAGS=(-fsanitize=address,undefined,bounds,pointer-overflow,leak -fno-omit-frame-pointer)
     STANDALONE_LDFLAGS=(-lGL)
     SHARED_LDFLAGS=(-Bsymbolic-functions)
@@ -69,30 +66,15 @@ else
     SHARED_LDFLAGS=(-framework Cocoa -framework OpenGL -framework IOKit -undefined dynamic_lookup)
 fi
 
-if [ "$PLATFORM" = "Linux" ]; then
-    case "$CC_BASENAME" in
-        gcc|cc|g++) OMP_LIB=-lgomp ;;
-        *) OMP_LIB=-lomp5 ;;
-    esac
-fi
-
-if [[ "$CC_BASENAME" == clang* ]]; then
-    COMPILER_WARN=(
-        -Wall
-        -ferror-limit=3
-        -Werror=incompatible-pointer-types
-        -Werror=return-type
-        -Wno-error=incompatible-pointer-types-discards-qualifiers
-        -Wno-incompatible-pointer-types-discards-qualifiers
-        -Wno-error=array-parameter
-    )
-else
-    COMPILER_WARN=(
-        -Wall
-        -Werror=incompatible-pointer-types
-        -Werror=return-type
-    )
-fi
+CLANG_WARN=(
+    -Wall
+    -ferror-limit=3
+    -Werror=incompatible-pointer-types
+    -Werror=return-type
+    -Wno-error=incompatible-pointer-types-discards-qualifiers
+    -Wno-incompatible-pointer-types-discards-qualifiers
+    -Wno-error=array-parameter
+)
 
 download() {
     local name=$1 url=$2
@@ -116,6 +98,7 @@ RAYLIB_A="$RAYLIB_NAME/lib/libraylib.a"
 INCLUDES=(-I./$RAYLIB_NAME/include -I./src -I./vendor)
 LINK_ARCHIVES=("$RAYLIB_A")
 EXTRA_SRC=""
+EXTRA_LDFLAGS=()
 
 if [ "$ENV" = "constellation" ]; then
     SRC_DIR="constellation"
@@ -134,6 +117,23 @@ elif [ "$ENV" = "impulse_wars" ]; then
     download "$BOX2D_NAME" "$BOX2D_URL/$BOX2D_NAME.tar.gz"
     INCLUDES+=(-I./$BOX2D_NAME/include -I./$BOX2D_NAME/src)
     LINK_ARCHIVES+=("./$BOX2D_NAME/libbox2d.a")
+elif [ "$ENV" = "nethack" ]; then
+    SRC_DIR="ocean/$ENV"
+    NLE_DIR="vendor/fast-nle"
+    NLE_REPO="https://github.com/FinlaySanders/fast-nle.git"
+    if [ ! -d "$NLE_DIR/src" ]; then
+        echo "Cloning fast-nle from $NLE_REPO ..."
+        git clone --depth 1 "$NLE_REPO" "$NLE_DIR"
+    fi
+    NETHACK_LIB_DIR="$(pwd)/$NLE_DIR/build"
+    if [ ! -f "$NETHACK_LIB_DIR/libnethack.so" ]; then
+        echo "Building libnethack.so ..."
+        cmake -S "$NLE_DIR" -B "$NETHACK_LIB_DIR" -DCMAKE_BUILD_TYPE=Release
+        cmake --build "$NETHACK_LIB_DIR" --target nethack -j$(nproc)
+    fi
+    INCLUDES+=(-I./$NLE_DIR/include
+               -I./$NLE_DIR/build/_deps/deboost_context-src/include)
+    EXTRA_LDFLAGS+=(-L"$NETHACK_LIB_DIR" -lnethack -Wl,-rpath,"$NETHACK_LIB_DIR" -ldl)
 elif [ -d "ocean/$ENV" ]; then
     SRC_DIR="ocean/$ENV"
 else
@@ -143,12 +143,15 @@ fi
 OUTPUT_NAME=${OUTPUT_NAME:-$ENV}
 
 # Standalone environment build
+# -mavx2 enables AVX2 intrinsics (__m256, _mm256_*) which drive.h and
+# src/bf16.h use directly. x86_64 only — strip if porting to ARM/Apple Silicon.
+SIMD_FLAGS=(-mavx2 -mfma)
 if [ -n "$DEBUG" ] || [ "$MODE" = "local" ]; then
-    CLANG_OPT=(-g -O0 "${COMPILER_WARN[@]}" "${SANITIZE_FLAGS[@]}")
+    CLANG_OPT=(-g -O0 "${CLANG_WARN[@]}" "${SANITIZE_FLAGS[@]}" "${SIMD_FLAGS[@]}")
     NVCC_OPT="-O0 -g"
     LINK_OPT="-g"
 else
-    CLANG_OPT=(-O2 -DNDEBUG "${COMPILER_WARN[@]}")
+    CLANG_OPT=(-O2 -DNDEBUG "${CLANG_WARN[@]}" "${SIMD_FLAGS[@]}")
     NVCC_OPT="-O2 --threads 0"
     LINK_OPT="-O2"
 fi
@@ -157,6 +160,7 @@ if [ "$MODE" = "local" ] || [ "$MODE" = "fast" ]; then
         "${INCLUDES[@]}"
         "$SRC_DIR/$ENV.c" $EXTRA_SRC -o "$OUTPUT_NAME"
         "${LINK_ARCHIVES[@]}"
+        "${EXTRA_LDFLAGS[@]}"
         "${STANDALONE_LDFLAGS[@]}"
         -lm -lpthread -fopenmp
         -DPLATFORM_DESKTOP
@@ -186,42 +190,17 @@ elif [ "$MODE" = "web" ]; then
     exit 0
 fi
 
-# Find CUDA toolkit / nvcc
-NVCC_BIN=""
-if [ -n "${CUDA_HOME:-}" ] && [ -x "$CUDA_HOME/bin/nvcc" ]; then
-    NVCC_BIN="$CUDA_HOME/bin/nvcc"
-elif [ -n "${CUDA_PATH:-}" ] && [ -x "$CUDA_PATH/bin/nvcc" ]; then
-    NVCC_BIN="$CUDA_PATH/bin/nvcc"
-elif command -v nvcc >/dev/null 2>&1; then
-    NVCC_BIN="$(command -v nvcc)"
-elif [ -x /usr/local/cuda/bin/nvcc ]; then
-    NVCC_BIN="/usr/local/cuda/bin/nvcc"
-else
-    for candidate in /usr/local/cuda-*/bin/nvcc; do
-        if [ -x "$candidate" ]; then
-            NVCC_BIN="$candidate"
-            break
-        fi
-    done
-fi
-
-if [ -z "$NVCC_BIN" ]; then
-    echo "Error: nvcc not found. Set CUDA_HOME or add nvcc to PATH."
-    exit 1
-fi
-
-CUDA_HOME="$(dirname "$(dirname "$NVCC_BIN")")"
-
 # Find cuDNN path
+CUDA_HOME=${CUDA_HOME:-${CUDA_PATH:-$(dirname "$(dirname "$(which nvcc)")")}}
 CUDNN_IFLAG=""
 CUDNN_LFLAG=""
-for dir in "$CUDA_HOME/include" /usr/local/cuda/include /usr/include; do
+for dir in /usr/local/cuda/include /usr/include; do
     if [ -f "$dir/cudnn.h" ]; then
         CUDNN_IFLAG="-I$dir"
         break
     fi
 done
-for dir in "$CUDA_HOME/lib64" /usr/local/cuda/lib64 /usr/lib/x86_64-linux-gnu; do
+for dir in /usr/local/cuda/lib64 /usr/lib/x86_64-linux-gnu; do
     if [ -f "$dir/libcudnn.so" ]; then
         CUDNN_LFLAG="-L$dir"
         break
@@ -234,23 +213,36 @@ if [ -z "$CUDNN_LFLAG" ]; then
     CUDNN_LFLAG=$(python -c "import nvidia.cudnn, os; print('-L' + os.path.join(nvidia.cudnn.__path__[0], 'lib'))" 2>/dev/null || echo "")
 fi
 
+# NCCL include/lib fallback (mirrors the cuDNN fallback above).
+# Needed when NCCL is provided by the nvidia-nccl-cu12 wheel in the active venv.
+NCCL_IFLAG=""
+NCCL_LFLAG=""
+for dir in /usr/include /usr/local/cuda/include; do
+    if [ -f "$dir/nccl.h" ]; then NCCL_IFLAG="-I$dir"; break; fi
+done
+for dir in /usr/lib/x86_64-linux-gnu /usr/local/cuda/lib64; do
+    if [ -f "$dir/libnccl.so" ] || [ -f "$dir/libnccl.so.2" ]; then NCCL_LFLAG="-L$dir"; break; fi
+done
+if [ -z "$NCCL_IFLAG" ]; then
+    NCCL_IFLAG=$(python -c "import nvidia.nccl, os; print('-I' + os.path.join(nvidia.nccl.__path__[0], 'include'))" 2>/dev/null || echo "")
+fi
+if [ -z "$NCCL_LFLAG" ]; then
+    NCCL_LFLAG=$(python -c "import nvidia.nccl, os; print('-L' + os.path.join(nvidia.nccl.__path__[0], 'lib'))" 2>/dev/null || echo "")
+fi
+
+WHEEL_RPATH_FLAGS=()
+for lib_flag in "$CUDNN_LFLAG" "$NCCL_LFLAG"; do
+    if [[ "$lib_flag" == -L* ]]; then
+        WHEEL_RPATH_FLAGS+=("-Wl,-rpath,${lib_flag#-L}")
+    fi
+done
+
 export CCACHE_DIR="${CCACHE_DIR:-$HOME/.ccache}"
 export CCACHE_BASEDIR="$(pwd)"
 export CCACHE_COMPILERCHECK=content
-if command -v ccache >/dev/null; then
-    NVCC="ccache $NVCC_BIN"
-else
-    NVCC="$NVCC_BIN"
-fi
-if [ -n "$NVCC_ARCH" ]; then
-    ARCH=$NVCC_ARCH
-elif command -v nvidia-smi &>/dev/null; then
-    GPU_CC=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d '.')
-    ARCH=${GPU_CC:+sm_$GPU_CC}
-    ARCH=${ARCH:-native}
-else
-    ARCH=native
-fi
+NVCC="ccache $CUDA_HOME/bin/nvcc"
+CC="${CC:-$(command -v ccache >/dev/null && echo 'ccache clang' || echo 'clang')}"
+ARCH=${NVCC_ARCH:-native}
 
 PYTHON_INCLUDE=$(python -c "import sysconfig; print(sysconfig.get_path('include'))")
 PYBIND_INCLUDE=$(python -c "import pybind11; print(pybind11.get_include())")
@@ -269,8 +261,9 @@ if [ ! -f "$BINDING_SRC" ]; then
 fi
 
 echo "Compiling static library for $ENV..."
-${CC:-clang} -c "${CLANG_OPT[@]}" \
-    -I. -Isrc -I$SRC_DIR \
+${CC:-clang} -c "${CLANG_OPT[@]}" $EXTRA_CFLAGS \
+    -I. -Isrc -I$SRC_DIR -Ivendor \
+    "${INCLUDES[@]}" \
     -I./$RAYLIB_NAME/include -I$CUDA_HOME/include \
     -DPLATFORM_DESKTOP \
     -fno-semantic-interposition -fvisibility=hidden \
@@ -294,7 +287,7 @@ if [ -z "$MODE" ]; then
         -std=c++17 \
         -I. -Isrc \
         -I$PYTHON_INCLUDE -I$PYBIND_INCLUDE -I$NUMPY_INCLUDE \
-        -I$CUDA_HOME/include $CUDNN_IFLAG -I$RAYLIB_NAME/include \
+        -I$CUDA_HOME/include $CUDNN_IFLAG $NCCL_IFLAG -I$RAYLIB_NAME/include \
         -Xcompiler=-fopenmp \
         -DOBS_TENSOR_T=$OBS_TENSOR_T \
         -DENV_NAME=$ENV \
@@ -304,7 +297,9 @@ if [ -z "$MODE" ]; then
     LINK_CMD=(
         ${CXX:-g++} -shared -fPIC -fopenmp
         build/bindings.o "$STATIC_LIB" "$RAYLIB_A"
-        -L$CUDA_HOME/lib64 $CUDNN_LFLAG
+        -L$CUDA_HOME/lib64 $CUDNN_LFLAG $NCCL_LFLAG
+        "${WHEEL_RPATH_FLAGS[@]}"
+        "${EXTRA_LDFLAGS[@]}"
         -lcudart -lnccl -lnvidia-ml -lcublas -lcusolver -lcurand -lcudnn
         $OMP_LIB $LINK_OPT
         "${SHARED_LDFLAGS[@]}"
@@ -328,6 +323,7 @@ elif [ "$MODE" = "cpu" ]; then
     LINK_CMD=(
         ${CXX:-g++} -shared -fPIC -fopenmp
         build/bindings_cpu.o "$STATIC_LIB" "$RAYLIB_A"
+        "${EXTRA_LDFLAGS[@]}"
         -lm -lpthread $OMP_LIB $LINK_OPT
         "${SHARED_LDFLAGS[@]}"
         -o "$OUTPUT"
@@ -339,7 +335,7 @@ elif [ "$MODE" = "profile" ]; then
     echo "Compiling profile binary ($ARCH)..."
     $NVCC $NVCC_OPT -arch=$ARCH -std=c++17 \
         -I. -Isrc -I$SRC_DIR -Ivendor \
-        -I$CUDA_HOME/include $CUDNN_IFLAG -I$RAYLIB_NAME/include \
+        -I$CUDA_HOME/include $CUDNN_IFLAG $NCCL_IFLAG -I$RAYLIB_NAME/include \
         -DOBS_TENSOR_T=$OBS_TENSOR_T \
         -DENV_NAME=$ENV \
         -Xcompiler=-DPLATFORM_DESKTOP \

@@ -138,16 +138,7 @@ class Logit(Space):
         log_spaced = zero_one*(math.log(1-self.max, self.base) - math.log(1-self.min, self.base)) + math.log(1-self.min, self.base)
         return 1 - self.base**log_spaced
 
-def _matches_sweep_only(full_name, leaf_name, only_include):
-    return any(
-        target == full_name
-        or target == leaf_name
-        or full_name.endswith(f'/{target}')
-        for target in only_include
-    )
-
-
-def _params_from_puffer_sweep(sweep_config, only_include=None, prefix=''):
+def _params_from_puffer_sweep(sweep_config, only_include=None):
     param_spaces = {}
 
     if 'sweep_only' in sweep_config:
@@ -158,15 +149,12 @@ def _params_from_puffer_sweep(sweep_config, only_include=None, prefix=''):
                     'sweep_only', 'max_suggestion_cost', 'early_stop_quantile', 'gpus', 'max_runs'):
             continue
 
-        full_name = f'{prefix}/{name}' if prefix else name
         assert isinstance(param, dict), f'Param {name} is not a dict'
         if any(isinstance(param[k], dict) for k in param):
-            nested_spaces = _params_from_puffer_sweep(param, only_include, prefix=full_name)
-            if nested_spaces:
-                param_spaces[name] = nested_spaces
+            param_spaces[name] = _params_from_puffer_sweep(param, only_include)
             continue
  
-        if only_include and not _matches_sweep_only(full_name, name, only_include):
+        if only_include and not any(k in name for k in only_include):
             continue
 
         assert 'distribution' in param
@@ -198,10 +186,6 @@ class Hyperparameters:
         self.spaces = _params_from_puffer_sweep(config)
         self.flat_spaces = dict(unroll_nested_dict(self.spaces))
         self.num = len(self.flat_spaces)
-        if self.num == 0:
-            raise ValueError(
-                'Sweep search space is empty. Check sweep_only and the configured sweep parameters.'
-            )
 
         self.metric = config['metric']
         goal = config['goal']
@@ -633,6 +617,17 @@ class Protein:
             self.gp_score_buffer = torch.empty(self.gp_max_obs, device=self.device)
             self.gp_cost_buffer = torch.empty(self.gp_max_obs, device=self.device)
             self.infer_batch_buffer = torch.empty(self.infer_batch_size, self.hyperparameters.num, device=self.device)
+
+    def to(self, device):
+        self.device = torch.device(device)
+        for attr in ('gp_score', 'gp_cost', 'likelihood_score', 'likelihood_cost',
+                     'mll_score', 'mll_cost', 'gp_params_buffer', 'gp_score_buffer',
+                     'gp_cost_buffer', 'infer_batch_buffer'):
+            setattr(self, attr, getattr(self, attr).to(self.device))
+        for opt in (self.score_opt, self.cost_opt):
+            for state in opt.state.values():
+                state.update({k: v.to(self.device) for k, v in state.items() if isinstance(v, torch.Tensor)})
+        return self
 
     def _filter_near_duplicates(self, inputs, duplicate_threshold=EPSILON):
         if len(inputs) < 2:
