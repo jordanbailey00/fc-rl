@@ -309,3 +309,36 @@ validation-tool reference, and contract comments were reconciled with the live
 v4.5 repository. Completed TODO entries were removed from the working list and
 archived here. Ignored local analysis documents remain non-authoritative; a
 clean clone uses the tracked documentation index and current source contracts.
+
+## Ket-Zek and Jad Magic accuracy parity
+
+On 2026-09-01 the single shared NPC attack bonus was replaced with
+style-specific melee, Ranged, and Magic attack bonuses. Ket-Zek and TzTok-Jad
+now receive their OSRS `+60` bonus only on Magic attacks; Ket-Zek melee and
+Jad melee/Ranged remain at bonus zero. Exact unit and end-to-end attack-routing
+tests pin the resulting Magic attack rolls at 30,876 and 60,636 respectively.
+
+Before the mechanic changed, W&B control run `dqr4lxe9` reproduced original
+100M baseline `m916qfsv` exactly on every shared behavioral and learner metric.
+Post-change run `mvvexowt` used the same configuration and realized
+99,614,720-step budget. It matched the control exactly through 52,428,800
+steps, then diverged after Ket-Zek exposure began. Final wave reached was
+31.002092 versus 31.117405, average damage taken was 1,306.868286 versus
+1,308.232666, and Jad completion remained zero in both runs. This short run
+therefore exercises the corrected Ket-Zek mechanic; deterministic regression
+tests, rather than the 100M training population, validate Jad's corrected
+style-specific roll.
+
+The same comparison was then repeated for the complete 750M budget. Pre-change
+control `r16nvaq7` reproduced original baseline `txqsiahp` exactly on every
+shared non-host W&B summary and history metric, including 92.7431% final Jad
+completion, 94.1206% wave-63 reach, and 978.003 average damage taken. Corrected
+run `399wemq3` used the identical seed and configuration and first diverged in
+logged behavior at 60,817,408 steps, after Ket-Zek exposure. It crossed 50%,
+80%, 90%, and 95% Jad completion at 361.759M, 373.293M, 387.973M, and 407.896M
+steps respectively. Its final Jad completion was 91.4919%, its final wave-63
+reach was 92.6902%, and average damage taken was 1,024.873. Across the last 50
+epochs it averaged 91.9738% Jad completion versus the control's 94.1647%.
+This isolates the expected modest difficulty increase from the corrected NPC
+accuracy while confirming that the policy still learns and completes the full
+encounter reliably.

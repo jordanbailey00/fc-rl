@@ -46,7 +46,6 @@ static const FcNpcStats NPC_STATS[NPC_TYPE_COUNT] = {
         .attack_speed = 4, .attack_range = 1,
         .melee_max_hit_tenths = 40,
         .att_level = 20, .ranged_level = 30, .magic_level = 15,
-        .att_bonus = 0,
         .def_level = 15, .ranged_def_bonus = 0,
         .melee_attack_type = FC_ATTACK_TYPE_STAB,
         .size = 1, .movement_speed = 1, .prayer_drain = 10,
@@ -59,7 +58,6 @@ static const FcNpcStats NPC_STATS[NPC_TYPE_COUNT] = {
         .attack_speed = 4, .attack_range = 1,
         .melee_max_hit_tenths = 70,
         .att_level = 40, .ranged_level = 60, .magic_level = 30,
-        .att_bonus = 0,
         .def_level = 30, .ranged_def_bonus = 0,
         .melee_attack_type = FC_ATTACK_TYPE_CRUSH,
         .size = 2, .movement_speed = 1,
@@ -72,7 +70,6 @@ static const FcNpcStats NPC_STATS[NPC_TYPE_COUNT] = {
         .attack_speed = 4, .attack_range = 1,
         .melee_max_hit_tenths = 40,
         .att_level = 20, .ranged_level = 30, .magic_level = 15,
-        .att_bonus = 0,
         .def_level = 15, .ranged_def_bonus = 0,
         .melee_attack_type = FC_ATTACK_TYPE_CRUSH,
         .size = 1, .movement_speed = 1,
@@ -86,7 +83,6 @@ static const FcNpcStats NPC_STATS[NPC_TYPE_COUNT] = {
         .attack_speed = 4, .attack_range = 14,
         .melee_max_hit_tenths = 130, .ranged_max_hit_tenths = 130,
         .att_level = 80, .ranged_level = 120, .magic_level = 60,
-        .att_bonus = 0,
         .def_level = 60, .ranged_def_bonus = 0,
         .melee_attack_type = FC_ATTACK_TYPE_CRUSH,
         .size = 3, .movement_speed = 1,
@@ -100,7 +96,6 @@ static const FcNpcStats NPC_STATS[NPC_TYPE_COUNT] = {
         .attack_speed = 4, .attack_range = 1,
         .melee_max_hit_tenths = 250,
         .att_level = 160, .ranged_level = 240, .magic_level = 120,
-        .att_bonus = 0,
         .def_level = 120, .ranged_def_bonus = 0,
         .melee_attack_type = FC_ATTACK_TYPE_CRUSH,
         .size = 4, .movement_speed = 1, .heal_amount = 100,
@@ -108,13 +103,15 @@ static const FcNpcStats NPC_STATS[NPC_TYPE_COUNT] = {
 
     /* NPC_KET_ZEK: Lv 360 magic + melee (DUAL MODE).
      * Void 634: HP 1600, Att 320, Str 480, Def 240, Mag 240, size 5
-     * Current Fight Caves maxima are 550 melee and 520 Magic. */
+     * Current Fight Caves maxima are 550 melee and 520 Magic. The Magic
+     * attack has +60 accuracy; the melee attack has no equipment bonus. */
     [NPC_KET_ZEK] = {
         .max_hp = 1600, .attack_style = ATTACK_MAGIC,
         .attack_speed = 4, .attack_range = 14,
         .melee_max_hit_tenths = 550, .magic_max_hit_tenths = 520,
         .att_level = 320, .ranged_level = 480, .magic_level = 240,
-        .att_bonus = 0, .def_level = 240, .ranged_def_bonus = 0,
+        .magic_attack_bonus = 60,
+        .def_level = 240, .ranged_def_bonus = 0,
         .melee_attack_type = FC_ATTACK_TYPE_STAB,
         .size = 5, .movement_speed = 1,
     },
@@ -122,14 +119,16 @@ static const FcNpcStats NPC_STATS[NPC_TYPE_COUNT] = {
     /* NPC_TZTOK_JAD: Lv 702 magic + ranged + melee.
      * Void 634: HP 2500, Att 640, Str 960, Def 480, Mag 480, Rng 960, size 5
      * combat.toml: melee stab max 970 (range 1), magic max 950 (range 14), ranged max 970
-     * attack speed 8 (double normal), range 14 */
+     * attack speed 8 (double normal), range 14. The Magic attack has +60
+     * accuracy; the melee and Ranged attacks have no equipment bonus. */
     [NPC_TZTOK_JAD] = {
         .max_hp = 2500, .attack_style = ATTACK_MAGIC,
         .attack_speed = 8, .attack_range = 14,
         .melee_max_hit_tenths = 970, .ranged_max_hit_tenths = 970,
         .magic_max_hit_tenths = 950,
         .att_level = 640, .ranged_level = 960, .magic_level = 480,
-        .att_bonus = 0, .def_level = 480, .ranged_def_bonus = 0,
+        .magic_attack_bonus = 60,
+        .def_level = 480, .ranged_def_bonus = 0,
         .melee_attack_type = FC_ATTACK_TYPE_STAB,
         .size = 5, .movement_speed = 1,
     },
@@ -142,7 +141,6 @@ static const FcNpcStats NPC_STATS[NPC_TYPE_COUNT] = {
         .attack_speed = 4, .attack_range = 1,
         .melee_max_hit_tenths = 140,
         .att_level = 140, .ranged_level = 120, .magic_level = 120,
-        .att_bonus = 0,
         .def_level = 60, .ranged_def_bonus = 100,
         .melee_attack_type = FC_ATTACK_TYPE_CRUSH,
         .size = 1, .movement_speed = 1,
@@ -190,6 +188,16 @@ static int npc_attack_level_for_style(const FcNpcStats* stats,
         case ATTACK_MELEE: return stats->att_level;
         case ATTACK_RANGED: return stats->ranged_level;
         case ATTACK_MAGIC: return stats->magic_level;
+        default: return 0;
+    }
+}
+
+static int npc_attack_bonus_for_style(const FcNpcStats* stats,
+                                      int attack_style) {
+    switch (attack_style) {
+        case ATTACK_MELEE: return stats->melee_attack_bonus;
+        case ATTACK_RANGED: return stats->ranged_attack_bonus;
+        case ATTACK_MAGIC: return stats->magic_attack_bonus;
         default: return 0;
     }
 }
@@ -433,7 +441,8 @@ static void launch_npc_attack(FcState* state, FcNpc* npc, int npc_idx,
     FcPlayer* player = &state->player;
     int max_hit_hp = fc_npc_max_hit_hp_for_style(stats, attack_style);
     int attack_level = npc_attack_level_for_style(stats, attack_style);
-    int attack_roll = fc_npc_attack_roll(attack_level, stats->att_bonus);
+    int attack_bonus = npc_attack_bonus_for_style(stats, attack_style);
+    int attack_roll = fc_npc_attack_roll(attack_level, attack_bonus);
     FcAttackType attack_type =
         npc_attack_type_for_style(stats, attack_style);
     int defence_roll = fc_player_def_roll(player, attack_type);

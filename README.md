@@ -12,10 +12,12 @@ potions, and three policy action heads: movement, target selection, and Prayer.
 
 ## Current baseline
 
-The promoted baseline is W&B run
-[`txqsiahp`](https://wandb.ai/jbailey8531-oakton-college/fight+caves+rl/runs/txqsiahp).
-It uses the current OSRS-parity backend and the exact trainer recipe selected by
-sweep run `1nvvx5qu`, with both correct-Prayer reward weights set to zero.
+The promoted 750M baseline is W&B run
+[`399wemq3`](https://wandb.ai/jbailey8531-oakton-college/fight+caves+rl/runs/399wemq3).
+It uses the current OSRS-parity backend, including Ket-Zek and Jad's
+style-specific `+60` Magic attack accuracy, and the exact trainer recipe
+selected by sweep run `1nvvx5qu`, with both correct-Prayer reward weights set
+to zero. Run `mvvexowt` is the matching 100M behavior baseline.
 
 | Property | Live value |
 | --- | --- |
@@ -25,9 +27,9 @@ sweep run `1nvvx5qu`, with both correct-Prayer reward weights set to zero.
 | Vectorization | 4,096 agents, 2 buffers, 16 threads |
 | Policy input | 319 floats: 285 policy features plus 34 policy-visible legality bits |
 | Policy actions | `[17, 9, 8]`: movement, attack target, Prayer |
-| Final Jad kill rate | 92.74% |
-| Final wave-63 reach rate | 94.12% |
-| Final average damage taken | 978.0 |
+| Final Jad kill rate | 91.49% |
+| Final wave-63 reach rate | 92.69% |
+| Final average damage taken | 1,024.9 |
 
 The key recent comparisons are final post-training evaluations:
 
@@ -36,7 +38,9 @@ The key recent comparisons are final post-training evaluations:
 | `1nvvx5qu` | selected Stage 2 sweep recipe | 750M | 94.79% | 95.94% | 877.7 |
 | `8oivozuq` | exact standalone reproduction | 750M | 94.79% | 95.94% | 877.7 |
 | `i215ulj4` | current parity backend, old Prayer reward | 750M | 88.02% | 89.91% | 973.5 |
-| `txqsiahp` | current baseline, Prayer reward zero | 750M | 92.74% | 94.12% | 978.0 |
+| `txqsiahp` | former baseline, Prayer reward zero | 750M | 92.74% | 94.12% | 978.0 |
+| `r16nvaq7` | exact updated-Puffer pre-accuracy control | 750M | 92.74% | 94.12% | 978.0 |
+| `399wemq3` | current corrected-accuracy baseline | 750M | 91.49% | 92.69% | 1,024.9 |
 
 The exact 130-run sweep analysis is in
 [`sweep_top8.md`](sweep_top8.md). Historical runs and configuration changes are
@@ -138,7 +142,7 @@ W&B is enabled by default. From `runescape-rl`:
 cd runescape-rl
 ./train.sh train \
   --config config/fight_caves.ini \
-  --tag v4.5_current_baseline
+  --tag current_baseline
 ```
 
 `train.sh` selects Python, synchronizes the chosen INI into the sibling
@@ -206,18 +210,18 @@ to `[-1, 1]` by the trainer contract.
   provenance.
 - [`sweep_history.md`](runescape-rl/docs/sweep_history.md) and
   [`sweep_top8.md`](sweep_top8.md) preserve sweep evidence.
-- [`baseline.md`](baseline.md) records the fixed 100M behavior-preservation
-  series used during the refactor program.
+- [`baseline.md`](baseline.md) identifies the current 100M/750M baselines and
+  preserves the fixed 100M behavior-refactor series.
 - [`fc_cleanup_and_parity_history.md`](runescape-rl/docs/archive/fc_cleanup_and_parity_history.md)
   archives completed parity, refactor, dead-code, and documentation decisions.
 
 ## Remaining work
 
-The current priorities are real run-energy mechanics, the remaining verified
-encounter-parity differences, recurrent-state/evaluation hygiene, a
-learning-rate schedule experiment, multi-seed confirmation, explicit trainer
-reference tests, and clean-clone/PufferLib PR packaging. See
-[`TODO.md`](TODO.md) for the authoritative list.
+Run energy, spawn-region selection, large Tz-Kek recoil, exact Yt-MejKot
+healing probability, and a new hyperparameter sweep on the corrected Magic
+accuracy are deferred. Clean-clone asset packaging and PufferLib PR readiness
+remain the final project phase. See [`TODO.md`](TODO.md) for the authoritative
+list.
 
 ## License
 

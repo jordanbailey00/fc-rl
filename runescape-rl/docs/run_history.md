@@ -46,7 +46,40 @@ attribution-matrix style used from v28.5 onward.
 
 ---
 
-## v4.5 current baseline — selected `1nvvx5qu`, promoted `txqsiahp` (2026-08-23)
+## Current baseline — corrected Magic accuracy (`399wemq3`, 2026-09-02)
+
+The live mechanics retain Ket-Zek and TzTok-Jad's OSRS `+60` Magic attack
+bonus. This changes only Magic accuracy: Ket-Zek melee and Jad melee/Ranged
+continue using equipment bonus zero, correct Protection Prayer still blocks
+the matching attack completely, and the trainer configuration is unchanged.
+
+The current cold-start baselines are `mvvexowt` at 100M steps and `399wemq3`
+at 750M steps. They supersede the pre-correction behavior baselines while
+preserving those runs as controlled historical evidence.
+
+| Run | Role | Agent steps | Jad kill | Wave 63 | Damage taken |
+| --- | --- | ---: | ---: | ---: | ---: |
+| [`mvvexowt`](https://wandb.ai/jbailey8531-oakton-college/fight+caves+rl/runs/mvvexowt) | current 100M mechanics baseline | 99,614,720 | 0.00% | 0.00% | 1,306.868 |
+| [`399wemq3`](https://wandb.ai/jbailey8531-oakton-college/fight+caves+rl/runs/399wemq3) | current 750M performance baseline | 749,731,840 | **91.49%** | **92.69%** | 1,024.873 |
+| [`dqr4lxe9`](https://wandb.ai/jbailey8531-oakton-college/fight+caves+rl/runs/dqr4lxe9) | 100M pre-correction control | 99,614,720 | 0.00% | 0.00% | 1,308.233 |
+| [`r16nvaq7`](https://wandb.ai/jbailey8531-oakton-college/fight+caves+rl/runs/r16nvaq7) | 750M pre-correction control | 749,731,840 | 92.74% | 94.12% | 978.003 |
+
+The 750M corrected run averaged 91.97% Jad completion over its last 50 epochs
+versus 94.16% for the pre-correction control. It nevertheless peaked at 98.05%
+and reliably learned the complete cave. Because the selected `1nvvx5qu`
+trainer recipe was swept on the easier pre-correction mechanic, a replacement
+hyperparameter sweep is tracked as deferred work.
+
+The exact implementation, roll values, deterministic tests, and controlled
+100M/750M comparisons are archived in
+`docs/archive/fc_cleanup_and_parity_history.md`.
+
+---
+
+## v4.5 former baseline — selected `1nvvx5qu`, promoted `txqsiahp` (2026-08-23)
+
+This section records the baseline before Ket-Zek and Jad's Magic attack bonus
+was corrected. It is preserved as historical experiment evidence.
 
 The live configuration is `runescape-rl/config/fight_caves.ini`, SHA-256
 `33bca87ccde19636c3b742b7e292732978307f648a8e80f6849f1d8d1612c9b6`.
@@ -117,8 +150,9 @@ These are final W&B summaries, not peak values:
   run manifest; evaluator preflight rejects mismatched contracts or parameter
   counts.
 - `1nvvx5qu` and `8oivozuq` are trainer-recipe evidence on the earlier backend.
-  `txqsiahp` is the deployment baseline for the live backend. Their raw rates
-  should not be treated as a single-variable backend comparison.
+  `txqsiahp` was the deployment baseline before the Magic-accuracy correction.
+  Their raw rates should not be treated as a single-variable backend
+  comparison.
 
 ---
 

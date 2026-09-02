@@ -15,7 +15,9 @@ typedef struct {
     int att_level;          /* melee Attack */
     int ranged_level;
     int magic_level;        /* also the Twisted-bow target input */
-    int att_bonus;
+    int melee_attack_bonus;
+    int ranged_attack_bonus;
+    int magic_attack_bonus;
     int def_level;          /* NPC defence level (for player attack accuracy) */
     int ranged_def_bonus;   /* NPC equipment defence vs Ranged */
     int melee_attack_type;  /* FcAttackType */

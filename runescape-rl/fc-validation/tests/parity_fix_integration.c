@@ -107,6 +107,11 @@ static int expected_level(int npc_type, int style) {
     }
 }
 
+static int expected_attack_bonus(int npc_type, int style) {
+    if (style != ATTACK_MAGIC) return 0;
+    return npc_type == NPC_KET_ZEK || npc_type == NPC_TZTOK_JAD ? 60 : 0;
+}
+
 static int expected_max_tenths(int npc_type, int style) {
     switch (npc_type) {
         case NPC_TOK_XIL:
@@ -167,7 +172,9 @@ static int test_npc_004(void) {
 
             int style = expected_style(&oracle, pipeline->kind);
             observed_styles |= 1u << style;
-            int attack_roll = (expected_level(pipeline->npc_type, style) + 9) * 64;
+            int attack_roll =
+                (expected_level(pipeline->npc_type, style) + 9) *
+                (expected_attack_bonus(pipeline->npc_type, style) + 64);
             int defence_roll = independent_defence_roll(
                 &oracle.player,
                 expected_attack_type(pipeline->npc_type, style));

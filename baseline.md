@@ -1,4 +1,22 @@
-# 100M Refactor Training Baseline
+# Training Baselines
+
+## Current corrected-mechanics baselines
+
+The current code includes Ket-Zek and Jad's style-specific `+60` Magic attack
+accuracy. The cold-start reference runs for this mechanic are:
+
+| Budget | W&B run | Realized steps | Final Jad kill | Wave 63 | Damage taken |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 100M | [`mvvexowt`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/mvvexowt) | 99,614,720 | 0.00% | 0.00% | 1,306.868 |
+| 750M | [`399wemq3`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/399wemq3) | 749,731,840 | 91.49% | 92.69% | 1,024.873 |
+
+Both use the live trainer recipe and seed 73. Pre-correction updated-Puffer
+controls `dqr4lxe9` (100M) and `r16nvaq7` (750M) remain historical A/B evidence,
+not current-mechanics baselines. A future sweep is deferred because the
+currently promoted hyperparameters were selected on the easier pre-correction
+combat model.
+
+## Historical 100M refactor baseline
 
 This is the pre-refactor behavioral baseline for the cleanup work now recorded
 in `runescape-rl/docs/archive/fc_cleanup_and_parity_history.md`. After each

@@ -20,7 +20,9 @@ typedef struct {
     int att_level;
     int ranged_level;
     int magic_level;
-    int att_bonus;
+    int melee_attack_bonus;
+    int ranged_attack_bonus;
+    int magic_attack_bonus;
     int def_level;
     int ranged_def_bonus;
     int melee_attack_type;
@@ -35,42 +37,42 @@ static const ExpectedNpcStats EXPECTED_NPCS[NPC_TYPE_COUNT] = {
     [NPC_NONE] = {0},
     [NPC_TZ_KIH] = {
         100, ATTACK_MELEE, 4, 1, 40, 0, 0,
-        20, 30, 15, 0, 15, 0, FC_ATTACK_TYPE_STAB,
+        20, 30, 15, 0, 0, 0, 15, 0, FC_ATTACK_TYPE_STAB,
         1, 1, 10, 0, 0,
     },
     [NPC_TZ_KEK] = {
         200, ATTACK_MELEE, 4, 1, 70, 0, 0,
-        40, 60, 30, 0, 30, 0, FC_ATTACK_TYPE_CRUSH,
+        40, 60, 30, 0, 0, 0, 30, 0, FC_ATTACK_TYPE_CRUSH,
         2, 1, 0, 0, 0,
     },
     [NPC_TZ_KEK_SM] = {
         100, ATTACK_MELEE, 4, 1, 40, 0, 0,
-        20, 30, 15, 0, 15, 0, FC_ATTACK_TYPE_CRUSH,
+        20, 30, 15, 0, 0, 0, 15, 0, FC_ATTACK_TYPE_CRUSH,
         1, 1, 0, 0, 0,
     },
     [NPC_TOK_XIL] = {
         400, ATTACK_RANGED, 4, 14, 130, 130, 0,
-        80, 120, 60, 0, 60, 0, FC_ATTACK_TYPE_CRUSH,
+        80, 120, 60, 0, 0, 0, 60, 0, FC_ATTACK_TYPE_CRUSH,
         3, 1, 0, 0, 0,
     },
     [NPC_YT_MEJKOT] = {
         800, ATTACK_MELEE, 4, 1, 250, 0, 0,
-        160, 240, 120, 0, 120, 0, FC_ATTACK_TYPE_CRUSH,
+        160, 240, 120, 0, 0, 0, 120, 0, FC_ATTACK_TYPE_CRUSH,
         4, 1, 0, 100, 0,
     },
     [NPC_KET_ZEK] = {
         1600, ATTACK_MAGIC, 4, 14, 550, 0, 520,
-        320, 480, 240, 0, 240, 0, FC_ATTACK_TYPE_STAB,
+        320, 480, 240, 0, 0, 60, 240, 0, FC_ATTACK_TYPE_STAB,
         5, 1, 0, 0, 0,
     },
     [NPC_TZTOK_JAD] = {
         2500, ATTACK_MAGIC, 8, 14, 970, 970, 950,
-        640, 960, 480, 0, 480, 0, FC_ATTACK_TYPE_STAB,
+        640, 960, 480, 0, 0, 60, 480, 0, FC_ATTACK_TYPE_STAB,
         5, 1, 0, 0, 0,
     },
     [NPC_YT_HURKOT] = {
         600, ATTACK_MELEE, 4, 1, 140, 0, 0,
-        140, 120, 120, 0, 60, 100, FC_ATTACK_TYPE_CRUSH,
+        140, 120, 120, 0, 0, 0, 60, 100, FC_ATTACK_TYPE_CRUSH,
         1, 1, 0, 50, 4,
     },
 };
@@ -132,8 +134,12 @@ static int test_npc_001(void) {
                         expected->ranged_level, "ranged_level");
         CHECK_NPC_FIELD("NPC-001", type, actual->magic_level,
                         expected->magic_level, "magic_level");
-        CHECK_NPC_FIELD("NPC-001", type, actual->att_bonus,
-                        expected->att_bonus, "att_bonus");
+        CHECK_NPC_FIELD("NPC-001", type, actual->melee_attack_bonus,
+                        expected->melee_attack_bonus, "melee_attack_bonus");
+        CHECK_NPC_FIELD("NPC-001", type, actual->ranged_attack_bonus,
+                        expected->ranged_attack_bonus, "ranged_attack_bonus");
+        CHECK_NPC_FIELD("NPC-001", type, actual->magic_attack_bonus,
+                        expected->magic_attack_bonus, "magic_attack_bonus");
         CHECK_NPC_FIELD("NPC-001", type, actual->def_level,
                         expected->def_level, "def_level");
         CHECK_NPC_FIELD("NPC-001", type, actual->ranged_def_bonus,
@@ -238,6 +244,13 @@ static int level_for_style(const FcNpcStats* stats, int style) {
     return 0;
 }
 
+static int bonus_for_style(const FcNpcStats* stats, int style) {
+    if (style == ATTACK_MELEE) return stats->melee_attack_bonus;
+    if (style == ATTACK_RANGED) return stats->ranged_attack_bonus;
+    if (style == ATTACK_MAGIC) return stats->magic_attack_bonus;
+    return 0;
+}
+
 static int test_npc_003(void) {
     static const AttackRollCase cases[] = {
         {NPC_TZ_KIH, ATTACK_MELEE, 1856},
@@ -247,10 +260,10 @@ static int test_npc_003(void) {
         {NPC_TOK_XIL, ATTACK_RANGED, 8256},
         {NPC_YT_MEJKOT, ATTACK_MELEE, 10816},
         {NPC_KET_ZEK, ATTACK_MELEE, 21056},
-        {NPC_KET_ZEK, ATTACK_MAGIC, 15936},
+        {NPC_KET_ZEK, ATTACK_MAGIC, 30876},
         {NPC_TZTOK_JAD, ATTACK_MELEE, 41536},
         {NPC_TZTOK_JAD, ATTACK_RANGED, 62016},
-        {NPC_TZTOK_JAD, ATTACK_MAGIC, 31296},
+        {NPC_TZTOK_JAD, ATTACK_MAGIC, 60636},
         {NPC_YT_HURKOT, ATTACK_MELEE, 9536},
     };
 
@@ -258,7 +271,7 @@ static int test_npc_003(void) {
         const AttackRollCase* c = &cases[i];
         const FcNpcStats* stats = fc_npc_get_stats(c->npc_type);
         int actual = fc_npc_attack_roll(level_for_style(stats, c->attack_style),
-                                        stats->att_bonus);
+                                        bonus_for_style(stats, c->attack_style));
         if (actual != c->expected_roll) {
             return fail_int("NPC-003", c->npc_type, "offensive roll",
                             actual, c->expected_roll);
@@ -266,22 +279,42 @@ static int test_npc_003(void) {
     }
 
     const FcNpcStats* stats = fc_npc_get_stats(NPC_TZTOK_JAD);
+    const int bonuses[3] = {
+        stats->melee_attack_bonus,
+        stats->ranged_attack_bonus,
+        stats->magic_attack_bonus,
+    };
     const int base[3] = {
-        fc_npc_attack_roll(stats->att_level, stats->att_bonus),
-        fc_npc_attack_roll(stats->ranged_level, stats->att_bonus),
-        fc_npc_attack_roll(stats->magic_level, stats->att_bonus),
+        fc_npc_attack_roll(stats->att_level, bonuses[0]),
+        fc_npc_attack_roll(stats->ranged_level, bonuses[1]),
+        fc_npc_attack_roll(stats->magic_level, bonuses[2]),
     };
     const int levels[3] = {stats->att_level, stats->ranged_level,
                            stats->magic_level};
     for (int changed = 0; changed < 3; changed++) {
         for (int observed = 0; observed < 3; observed++) {
             int level = levels[observed] + (changed == observed ? 1 : 0);
-            int roll = fc_npc_attack_roll(level, stats->att_bonus);
+            int roll = fc_npc_attack_roll(level, bonuses[observed]);
             int expected = base[observed] +
-                (changed == observed ? stats->att_bonus + 64 : 0);
+                (changed == observed ? bonuses[observed] + 64 : 0);
             if (roll != expected) {
                 fprintf(stderr,
                         "FAIL NPC-003: changing level %d altered roll %d incorrectly\n",
+                        changed, observed);
+                return 1;
+            }
+        }
+    }
+
+    for (int changed = 0; changed < 3; changed++) {
+        for (int observed = 0; observed < 3; observed++) {
+            int bonus = bonuses[observed] + (changed == observed ? 1 : 0);
+            int roll = fc_npc_attack_roll(levels[observed], bonus);
+            int expected = base[observed] +
+                (changed == observed ? levels[observed] + 9 : 0);
+            if (roll != expected) {
+                fprintf(stderr,
+                        "FAIL NPC-003: changing bonus %d altered roll %d incorrectly\n",
                         changed, observed);
                 return 1;
             }

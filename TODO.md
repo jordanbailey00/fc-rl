@@ -1,114 +1,96 @@
 # Central Project TODO
 
-This file is the authoritative list of unfinished FC-RL work. Completed
-decisions, parity changes, refactors, dead-code removal, documentation cleanup,
-and validation results are preserved in
+This file is the authoritative list of unfinished FC-RL work. Items under
+**Investigate** require evidence before we decide whether implementation is
+needed. Items under **Deferred** are accepted future work but are not current
+priorities. Completed work and historical decisions are preserved in
 [`fc_cleanup_and_parity_history.md`](runescape-rl/docs/archive/fc_cleanup_and_parity_history.md).
-Current configuration and result context lives in [`README.md`](README.md) and
-[`run_history.md`](runescape-rl/docs/run_history.md).
 
-## Mechanics and OSRS parity
+## Investigate
 
-- [ ] Implement real run-energy initialization, movement drain, and
-  regeneration; add focused parity tests and retrain against the current
-  baseline to measure the movement and kiting impact.
-- [ ] Review the remaining NPC movement/pathfinding approximations, especially
-  obstacle and body-blocking behavior, while preserving the current LOS,
-  collision, footprint, and route-ordering guarantees.
-- [ ] Verify and implement each remaining confirmed encounter difference as an
-  isolated change with focused tests:
-  - Ket-Zek and Jad's missing `+60` Magic attack bonus;
-  - random tile selection within spawn regions instead of fixed center tiles;
-  - Jad healer activation threshold;
-  - Jad healer aggression, return, and healing behavior;
-  - inter-wave delay;
-  - large Tz-Kek melee recoil.
-- [ ] Establish stronger primary-source evidence before changing mechanics
-  whose exact modern OSRS behavior remains unresolved:
-  - Yt-MejKot healing probability;
-  - Tok-Xil adjacent melee/ranged selection probability;
-  - exact Jad Prayer-lock server-cycle boundary;
-  - generic NPC natural-regeneration rate.
+### Movement, routing, and collision parity
 
-## Training and evaluation correctness
+- [x] Audit the remaining movement, pathfinding, and routing discrepancies
+  before proposing any implementation:
+  - compare NPC obstacle navigation and body-blocking behavior with the OSRS
+    references and determine whether any remaining approximations create
+    invalid safespots or escape routes;
+  - capture a deterministic reproduction of the intermittent non-shortest
+    player click route and identify whether it originates in core routing,
+    action translation, or viewer presentation;
+  - document what is actually wrong, how often it occurs, and its gameplay
+    impact;
+  - preserve regression coverage for terrain, walls, diagonal clipping, arena
+    bounds, actor footprints, occupancy, and the already-correct routing
+    behavior while testing any eventual change.
 
-- [ ] Verify MinGRU hidden-state lifecycle at individual episode boundaries.
-  It currently appears possible for state to reset at rollout boundaries
-  rather than each auto-reset; prove the behavior with an evaluator/trainer
-  test before changing it.
-- [ ] Decide whether post-training evaluation should use isolated held-out
-  environment and RNG streams instead of continuing training streams, then
-  implement and document the selected evaluation contract.
-- [ ] Verify rollout and PPO masked log-probabilities against a reference
-  implementation.
-- [ ] Verify masked entropy against a reference implementation.
-- [ ] Prove that every environment reward is consumed exactly once by GAE.
-- [ ] Prove that horizon-boundary rewards are retained.
-- [ ] Prove that terminal rewards at every rollout index are retained.
-- [ ] Verify that scalar and vector advantage implementations agree.
+  **Audit finding (2026-08-27): no reproducible defect found.** The core's NPC
+  pursuit uses the same footprint-aware naive destination and validated
+  diagonal/horizontal/vertical step order as the RSMod and Void references.
+  Player click movement uses breadth-first search and the existing Fight Caves
+  regression proves the audited wall case is both directionally legal and the
+  shortest 18-step route. The viewer previews that same core route rather than
+  calculating a separate path. No deterministic reproduction or code path was
+  found for the previously reported intermittent non-shortest click route, so
+  there is no evidenced implementation change to make. Relevant FC-RL code:
+  `runescape-rl/fc-core/src/fc_pathfinding.c`,
+  `runescape-rl/fc-core/src/fc_npc.c`,
+  `runescape-rl/fc-viewer/src/fc_click_feedback.c`, and
+  `runescape-rl/fc-validation/tests/phase2_guardrails_core.c`. Reference code:
+  `rsmod/api/route/src/main/kotlin/org/rsmod/api/route/StepFactory.kt`,
+  `rsmod/api/game-process/src/main/kotlin/org/rsmod/api/game/process/npc/NpcMovementProcessor.kt`,
+  and
+  `void_rsps/engine/src/main/kotlin/world/gregs/voidps/engine/entity/character/mode/move/Movement.kt`.
 
-Keep FC-RL-specific trainer validation in `fc-validation`; do not modify
-vendored PufferLib for environment-specific behavior.
+### Targeting behavior
 
-## Next trainer experiments
+- [x] Investigate whether target acquisition, persistence, disengagement,
+  retargeting, or automatic approach currently behaves incorrectly. Use
+  focused diagnostics for target acquisition/drop/switches, retarget latency,
+  stale targets, route cancellation, policy overrides, approach success, and
+  timeouts to distinguish a policy decision from an action-translation or core
+  control problem. Do not change targeting behavior without a reproducible
+  failure and demonstrated gameplay impact.
 
-- [ ] Run the Stage 3 learning-rate schedule comparison from the selected Stage
-  2 configuration:
-  - constant learning rate;
-  - decay to zero;
-  - decay to a `0.05` final learning-rate ratio;
-  - decay to a `0.10` final learning-rate ratio;
-  - decay to a `0.25` final learning-rate ratio.
-- [ ] Keep total timesteps fixed across the schedule comparison because Puffer
-  schedules annealing against the configured run budget.
-- [ ] Determine whether scheduling preserves strong late policies and reduces
-  peak-to-final degradation.
-- [ ] Rerun the strongest configurations at the same development budget with
-  trainer seeds `73`, `101`, and `202`.
-- [ ] Select finalists using aggregate Jad completion and consistency rather
-  than one run, then train the top two or three at fixed 1.5B and/or 2.5B-step
-  budgets.
-- [ ] Account for Puffer's priority-beta schedule when comparing different
-  configured timestep budgets.
-- [ ] Rerun sweep-selected configurations outside sweep mode whenever a
-  replayable checkpoint is required.
+  **Audit finding (2026-08-27): no reproducible defect found.** Target actions
+  resolve through the same visible-NPC ordering used by the observation,
+  remain bound to the selected NPC's core array identity, persist while that
+  NPC is alive, rebuild an approach route when the target footprint moves,
+  switch immediately on a new valid target command, and clear on target death
+  or an explicit movement-only command. Focused existing checks for slot
+  identity, stale-target firing, target/movement conflicts, approach routing,
+  route cancellation, and next-tick movement all pass. These behaviors are
+  owned by `runescape-rl/fc-core/src/fc_tick.c` and
+  `runescape-rl/fc-core/src/fc_observation.c`; playable input is translated in
+  `runescape-rl/fc-viewer/src/viewer.c`. No FC-RL or vendored-code issue was
+  identified, so there is no evidenced targeting change to make.
 
-## Deferred environment and control debt
+## Deferred
 
-- [ ] Revisit the intermittent suboptimal click-to-tile route only after
-  capturing a reproducible scenario and focused failing guardrail.
-- [ ] Revisit target persistence and automatic approach/pathing control only if
-  checkpoint replays show clear targeting, disengagement, retargeting, or
-  movement-control failures.
-- [ ] If target/approach work is justified, first add focused diagnostics for
-  acquisition, drops, switches, retarget latency, stale targets, route starts,
-  completions, cancellations, policy overrides, and approach timeouts.
-- [ ] Keep static terrain, walls, diagonal clipping, arena boundaries, and NPC
-  occupancy rules under regression coverage during routing changes.
+These mechanics are accepted future parity work, but they are intentionally
+deprioritized until the current investigations and higher-priority encounter
+work are complete.
 
-## Validation tooling
-
-- [ ] Add strict compiler warnings, first-party static analysis, and linker
-  reachability checks as an explicitly invoked audit under `fc-validation`.
-  Keep this out of the normal per-change test path.
-
-The legacy `MINA`/animation-v1 asset reader is intentionally retained for
-future asset files and export pipelines; it is not a cleanup target.
-
-## Later research backlog
-
-- [ ] Test a late-wave/Jad-focused curriculum with a separate fixed full-cave
-  evaluation distribution.
-- [ ] Compare minimal terminal/progress reward designs without mixing reward,
-  observation, and trainer changes in one experiment.
-- [ ] Run grouped observation ablations, including coherent incoming-hit, NPC
-  identity/type, slot-layout, rotation, and encoder comparisons.
-- [ ] Establish a vanilla PPO control, then reintroduce replay, prioritized
-  sampling, and V-trace one at a time if each proves beneficial.
-- [ ] Revisit further reward simplification only as a controlled experiment;
-  do not revive rejected historical reward variants as active baselines.
+- [ ] Implement OSRS-style run-energy initialization, movement drain, and
+  regeneration, then retrain against the current baseline to measure the
+  movement, kiting, safespotting, and survival impact.
+- [ ] Select valid spawn tiles within configured spawn regions instead of
+  always resolving each region to its fixed center tile, while preserving the
+  authoritative Fight Caves rotations.
+- [ ] Implement the large Tz-Kek melee-contact recoil behavior for future
+  melee-capable loadouts and policies.
+- [ ] Establish stronger primary-source evidence for Yt-MejKot's exact healing
+  probability before changing its healing behavior.
+- [ ] Rerun the Fight Caves hyperparameter sweep on the corrected Ket-Zek and
+  Jad Magic-accuracy mechanics. The previous sweep remains useful historical
+  evidence, but its optimum was selected on the easier pre-correction combat
+  model; optimize both Jad completion and late-run consistency before
+  promoting a new trainer recipe.
 
 ## PufferLib PR readiness
+
+This section remains last and should be undertaken after the planned
+environment, investigation, and validation work is finished.
 
 - [ ] Align the environment's file layout, build scripts, config style, docs,
   tests, and asset handling with PufferLib conventions.

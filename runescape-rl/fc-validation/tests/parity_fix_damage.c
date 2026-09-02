@@ -279,7 +279,8 @@ static int test_dmg_003(void) {
 
     make_npc_attack_state(&state, NPC_TZ_KIH, 11);
     const FcNpcStats* stats = fc_npc_get_stats(NPC_TZ_KIH);
-    int attack_roll = fc_npc_attack_roll(stats->att_level, stats->att_bonus);
+    int attack_roll = fc_npc_attack_roll(stats->att_level,
+                                         stats->melee_attack_bonus);
     int defence_roll = fc_player_def_roll(&state.player,
                                           FC_ATTACK_TYPE_STAB);
     float chance = fc_hit_chance(attack_roll, defence_roll);
