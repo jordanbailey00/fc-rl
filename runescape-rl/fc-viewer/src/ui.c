@@ -30,7 +30,6 @@ typedef struct RuneCUiLayout {
     Rectangle map;
     Rectangle minimap;
     Rectangle compass;
-    Rectangle xp_orb;
     Rectangle worldmap_button;
     Rectangle hp_orb;
     Rectangle prayer_orb;
@@ -552,8 +551,6 @@ static void ui_layout(int screen_w, int screen_h, RuneCUiLayout *out) {
     out->compass = (Rectangle){out->map.x + RUNEC_OSRS_COMPASS_X,
                                out->map.y + RUNEC_OSRS_COMPASS_Y,
                                RUNEC_OSRS_COMPASS_W, RUNEC_OSRS_COMPASS_H};
-    out->xp_orb = (Rectangle){out->map.x + RUNEC_OSRS_ORBS_X + RUNEC_OSRS_XP_X,
-                              out->map.y + RUNEC_OSRS_ORBS_Y + RUNEC_OSRS_XP_Y, 27, 27};
     out->hp_orb = (Rectangle){out->map.x + RUNEC_OSRS_ORBS_X + RUNEC_OSRS_HP_X,
                               out->map.y + RUNEC_OSRS_ORBS_Y + RUNEC_OSRS_HP_Y, 57, 34};
     out->prayer_orb = (Rectangle){out->map.x + RUNEC_OSRS_ORBS_X + RUNEC_OSRS_PRAYER_X,
@@ -1586,15 +1583,6 @@ static void draw_minimap(const RuneCUiState *ui, const RuneCUiLayout *layout) {
         DrawCircle((int)px, (int)py, radius, c);
     }
 
-    Rectangle cover = {layout->map.x + RUNEC_OSRS_MAP_SURROUND_X,
-                       layout->map.y + RUNEC_OSRS_MAP_SURROUND_Y,
-                       RUNEC_OSRS_MAP_SURROUND_W, RUNEC_OSRS_MAP_SURROUND_H};
-    runec_ui_draw_asset(&ui->assets, "osrs_stretch_mapsurround", cover, WHITE);
-    if (!runec_ui_asset_ready(&ui->assets, "osrs_stretch_mapsurround")) {
-        DrawCircleLines((int)center.x, (int)center.y, 73.0f, (Color){51, 48, 35, 255});
-        DrawCircleLines((int)center.x, (int)center.y, 70.0f, (Color){180, 166, 104, 255});
-    }
-
     const Texture2D *compass = runec_ui_asset(&ui->assets, "compass");
     if (compass) {
         Rectangle source = {0, 0, (float)compass->width,
@@ -1616,12 +1604,14 @@ static void draw_minimap(const RuneCUiState *ui, const RuneCUiLayout *layout) {
         draw_text_shadow(ui, "N", layout->compass.x + 16, layout->compass.y + 12, 14, OSRS_ORANGE);
     }
 
-    runec_ui_draw_asset(&ui->assets, "tli_button01_orb01_34x34_0", layout->xp_orb, WHITE);
-    if (!runec_ui_asset_ready(&ui->assets, "tli_button01_orb01_34x34_0"))
-        runec_ui_draw_asset(&ui->assets, "ring_34_0", layout->xp_orb, WHITE);
-    draw_asset_centered(ui, "orb_xp_0", layout->xp_orb, 24, 24, WHITE);
-    if (!runec_ui_asset_ready(&ui->assets, "orb_xp_0"))
-        draw_centered_text(ui, "XP", layout->xp_orb, 12, OSRS_YELLOW);
+    Rectangle cover = {layout->map.x + RUNEC_OSRS_MAP_SURROUND_X,
+                       layout->map.y + RUNEC_OSRS_MAP_SURROUND_Y,
+                       RUNEC_OSRS_MAP_SURROUND_W, RUNEC_OSRS_MAP_SURROUND_H};
+    runec_ui_draw_asset(&ui->assets, "osrs_stretch_mapsurround", cover, WHITE);
+    if (!runec_ui_asset_ready(&ui->assets, "osrs_stretch_mapsurround")) {
+        DrawCircleLines((int)center.x, (int)center.y, 73.0f, (Color){51, 48, 35, 255});
+        DrawCircleLines((int)center.x, (int)center.y, 70.0f, (Color){180, 166, 104, 255});
+    }
 
     draw_orb(ui, layout->hp_orb, "orb_filler_1", "orb_icon_0",
              ui->hitpoints, ui->hitpoints_max, OSRS_RED);

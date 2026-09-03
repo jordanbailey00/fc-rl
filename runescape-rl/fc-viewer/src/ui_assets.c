@@ -80,14 +80,9 @@ static const RuneCUiAssetSpec g_ui_asset_specs[] = {
     UI_ASSET("orb_icon_2"),
     UI_ASSET("orb_icon_3"),
     UI_ASSET("orb_icon_6"),
-    UI_ASSET("ring_34_0"),
     UI_ASSET("tli_button01_orbinfo_65x34_0"),
     UI_ASSET("tli_button01_orbinfo_65x34_1"),
     UI_ASSET("tli_button01_orbinfo_65x34_2"),
-    UI_ASSET("tli_button01_orb01_34x34_0"),
-    UI_ASSET("tli_button01_orb01_34x34_1"),
-    UI_ASSET("tli_button01_orb01_34x34_2"),
-    UI_ASSET("orb_xp_0"),
     UI_ASSET("ring_30"),
     UI_ASSET("worldmap_icon_0"),
     UI_ASSET("chat_tab_button_0"),
@@ -399,6 +394,37 @@ static int find_asset_index(const char *name) {
     return -1;
 }
 
+static Texture2D load_compass_texture(const char *path) {
+    /* The OSRS client clips the rotating compass through sprite 1179 instead
+     * of drawing sprite 169 as an opaque square. Pre-applying that circular
+     * mask is equivalent because its shape is invariant under rotation. */
+    Image compass = fc_load_image_asset(path);
+    Image mask = fc_load_image_asset("data/sprites/ui/resize_compass_mask.png");
+    Texture2D texture = {0};
+
+    if (!compass.data || !mask.data) {
+        if (compass.data) UnloadImage(compass);
+        if (mask.data) UnloadImage(mask);
+        return texture;
+    }
+
+    ImageResizeNN(&mask, compass.width, compass.height);
+    ImageFormat(&compass, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+    ImageFormat(&mask, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+    Color *compass_pixels = compass.data;
+    const Color *mask_pixels = mask.data;
+    int pixel_count = compass.width * compass.height;
+    for (int i = 0; i < pixel_count; i++) {
+        if (mask_pixels[i].a != 0)
+            compass_pixels[i].a = 0;
+    }
+
+    texture = LoadTextureFromImage(compass);
+    UnloadImage(mask);
+    UnloadImage(compass);
+    return texture;
+}
+
 void runec_ui_assets_load(RuneCUiAssets *assets) {
     memset(assets, 0, sizeof(*assets));
 
@@ -422,7 +448,9 @@ void runec_ui_assets_load(RuneCUiAssets *assets) {
             }
             continue;
         }
-        Texture2D tex = fc_load_texture_asset(path);
+        Texture2D tex = strcmp(g_ui_asset_specs[i].name, "compass") == 0
+            ? load_compass_texture(path)
+            : fc_load_texture_asset(path);
         if (tex.id == 0) {
             assets->missing_count++;
             if (g_ui_asset_specs[i].required) {

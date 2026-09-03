@@ -45,8 +45,6 @@
 #define RUNEC_OSRS_ORBS_Y 10.0f
 #define RUNEC_OSRS_ORBS_W 207.0f
 #define RUNEC_OSRS_ORBS_H 197.0f
-#define RUNEC_OSRS_XP_X 0.0f
-#define RUNEC_OSRS_XP_Y 17.0f
 #define RUNEC_OSRS_HP_X 0.0f
 #define RUNEC_OSRS_HP_Y 37.0f
 #define RUNEC_OSRS_PRAYER_X 0.0f

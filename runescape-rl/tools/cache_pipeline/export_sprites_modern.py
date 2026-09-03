@@ -189,14 +189,9 @@ def build_sprite_map() -> dict[int, list[str]]:
         15: 3022,
     }.items():
         _add(sprites, sprite_id, f"orb_icon_{frame}")
-    _add(sprites, 2138, "ring_34_0")
     _add(sprites, 5791, "tli_button01_orbinfo_65x34_0")
     _add(sprites, 5792, "tli_button01_orbinfo_65x34_1")
     _add(sprites, 5793, "tli_button01_orbinfo_65x34_2")
-    _add(sprites, 5794, "tli_button01_orb01_34x34_0")
-    _add(sprites, 5795, "tli_button01_orb01_34x34_1")
-    _add(sprites, 5796, "tli_button01_orb01_34x34_2")
-    _add(sprites, 1196, "orb_xp_0")
     _add(sprites, 1438, "ring_30")
     _add(sprites, 1439, "worldmap_icon_0")
     _add(sprites, 189, "189", "stats_total_left")
