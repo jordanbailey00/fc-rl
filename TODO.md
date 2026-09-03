@@ -71,9 +71,6 @@ These mechanics are accepted future parity work, but they are intentionally
 deprioritized until the current investigations and higher-priority encounter
 work are complete.
 
-- [ ] Implement OSRS-style run-energy initialization, movement drain, and
-  regeneration, then retrain against the current baseline to measure the
-  movement, kiting, safespotting, and survival impact.
 - [ ] Select valid spawn tiles within configured spawn regions instead of
   always resolving each region to its fixed center tile, while preserving the
   authoritative Fight Caves rotations.

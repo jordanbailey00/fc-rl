@@ -20,6 +20,7 @@
  *      b. Eat food / drink potion (if timer ready)
  *      c. Attack initiation from the pre-movement tile
  *      d. Movement (route or directional head), unless an attack fired
+ *      e. Run-energy drain or restoration from actual movement
  *   3. Decrement player timers (attack, food, potion, combo)
  *   4. Prayer drain (only if prayer stayed active across the tick boundary)
  *   5. NPC AI tick (movement + attack) for all active NPCs
@@ -399,10 +400,11 @@ static int process_player_target(FcState* state,
     return metrics_recorded;
 }
 
-static void process_player_movement(FcState* state, int move_action,
-                                    int target_x_action, int target_y_action,
-                                    int explicit_move, int explicit_attack) {
+static int process_player_movement(FcState* state, int move_action,
+                                   int target_x_action, int target_y_action,
+                                   int explicit_move, int explicit_attack) {
     FcPlayer* player = &state->player;
+    int moved_steps = 0;
 
     /* If no attack fired, explicit movement replaces the combat interaction.
      * A fired attack wins the conflict and keeps its target for this tick. */
@@ -437,7 +439,7 @@ static void process_player_movement(FcState* state, int move_action,
         player->route_len = 0;
         player->route_idx = 0;
     } else if (player->route_idx < player->route_len) {
-        int steps = player->is_running ? 2 : 1;
+        int steps = player->is_running && player->run_energy > 0 ? 2 : 1;
         for (int i = 0;
              i < steps && player->route_idx < player->route_len; i++) {
             int next_x = player->route_x[player->route_idx];
@@ -452,6 +454,7 @@ static void process_player_movement(FcState* state, int move_action,
                 player->y = next_y;
                 state->movement_this_tick = 1;
                 record_player_move_waypoint(state);
+                moved_steps++;
             } else {
                 player->route_len = player->route_idx;
                 break;
@@ -464,7 +467,10 @@ static void process_player_movement(FcState* state, int move_action,
                move_action <= FC_MOVE_RUN_NW) {
         int dx = FC_MOVE_DX[move_action];
         int dy = FC_MOVE_DY[move_action];
-        int max_steps = move_action >= FC_MOVE_RUN_N ? 2 : 1;
+        int wants_run = move_action >= FC_MOVE_RUN_N;
+        int max_steps = wants_run
+            ? (fc_player_can_run(player) ? 2 : 0)
+            : 1;
         int old_x = player->x;
         int old_y = player->y;
         int step_x[FC_MAX_RENDER_MOVE_WAYPOINTS];
@@ -488,7 +494,25 @@ static void process_player_movement(FcState* state, int move_action,
                 (float)(player->y - old_y));
             state->movement_this_tick = 1;
             player->is_running = moved >= 2 ? 1 : 0;
+            moved_steps = moved;
         }
+    }
+    return moved_steps;
+}
+
+static void update_player_run_energy(FcPlayer* player, int moved_steps) {
+    if (moved_steps >= 2) {
+        player->run_energy -= FC_RUN_ENERGY_DRAIN;
+        if (player->run_energy <= 0) {
+            player->run_energy = 0;
+            player->is_running = 0;
+        }
+        return;
+    }
+
+    player->run_energy += FC_RUN_ENERGY_RESTORE;
+    if (player->run_energy > FC_RUN_ENERGY_MAX) {
+        player->run_energy = FC_RUN_ENERGY_MAX;
     }
 }
 
@@ -555,8 +579,10 @@ static void process_player_actions(FcState* state,
     target_metrics_recorded = process_player_target(
         state, explicit_directional_move, explicit_tile_move);
 
-    process_player_movement(state, act_move, act_target_x, act_target_y,
-                            explicit_move, explicit_attack);
+    int moved_steps = process_player_movement(
+        state, act_move, act_target_x, act_target_y,
+        explicit_move, explicit_attack);
+    update_player_run_energy(p, moved_steps);
     record_player_action_outcome(state, was_attack_ready,
                                  target_metrics_recorded);
 }

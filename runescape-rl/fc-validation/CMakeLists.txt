@@ -325,6 +325,11 @@ add_test(NAME osrs_hp_regeneration_interval
 set_tests_properties(osrs_hp_regeneration_interval PROPERTIES
     LABELS "guardrail;mechanics;health")
 
+add_test(NAME osrs_run_energy
+    COMMAND phase2_guardrails_core run_energy)
+set_tests_properties(osrs_run_energy PROPERTIES
+    LABELS "guardrail;mechanics;movement;osrs_parity")
+
 add_test(NAME phase3_target_identity_stable
     COMMAND phase2_guardrails_core target_identity)
 set_tests_properties(phase3_target_identity_stable PROPERTIES

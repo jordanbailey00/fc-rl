@@ -141,6 +141,20 @@ typedef enum {
 #define FC_MAX_EPISODE_TICKS   200000 /* ~33 hours at 0.6s/tick — force prayer drain */
 #define FC_HP_REGEN_INTERVAL     100 /* HP regen: 1 HP every 100 ticks (60 seconds) */
 
+/* OSRS run energy uses 100 internal units per displayed percent. The canonical
+ * no-supplies Masori/Twisted-bow loadout floors to 30 kg. Applying the current
+ * integer formulas at level 99 Agility loses 60 units per two-step running
+ * tick and restores 24 units per other tick. */
+#define FC_RUN_ENERGY_MAX       10000
+#define FC_RUN_ENERGY_MIN_START   100
+#define FC_RUN_AGILITY_LEVEL        99
+#define FC_RUN_WEIGHT_KG            30
+#define FC_RUN_ENERGY_DRAIN \
+    ((60 + (67 * FC_RUN_WEIGHT_KG) / 64) * \
+     (300 - FC_RUN_AGILITY_LEVEL) / 300)
+#define FC_RUN_ENERGY_RESTORE \
+    (15 + FC_RUN_AGILITY_LEVEL / 10)
+
 /* Player base stats — defined in fc_player_init.h */
 #include "fc_player_init.h"
 
@@ -209,7 +223,7 @@ typedef struct {
     int combo_timer;    /* karambwan combo eat delay */
 
     /* Run */
-    int run_energy;     /* 0-10000 (100.00%) */
+    int run_energy;     /* 0-FC_RUN_ENERGY_MAX (100.00%) */
     int is_running;     /* 1 if run mode active */
 
     /* Combat stats (from FightCaveEpisodeInitializer.kt) */

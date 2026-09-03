@@ -155,7 +155,7 @@ static void init_player(FcPlayer* p) {
     p->food_timer = 0;
     p->potion_timer = 0;
     p->combo_timer = 0;
-    p->run_energy = 10000;
+    p->run_energy = FC_RUN_ENERGY_MAX;
     p->is_running = 1;
     p->hp_regen_counter = 0;
     p->route_len = 0;
@@ -273,7 +273,8 @@ void fc_step(FcState* state, const int actions[FC_NUM_ACTION_HEADS]) {
 
 void fc_request_set_running(FcState* state, int enabled) {
     if (!state || state->terminal != TERMINAL_NONE) return;
-    state->player.is_running = enabled ? 1 : 0;
+    state->player.is_running = enabled &&
+        state->player.run_energy >= FC_RUN_ENERGY_MIN_START;
 }
 
 void fc_destroy(FcState* state) {
@@ -332,7 +333,7 @@ static int move_action_valid(const FcState* state, int action) {
 
     if (action < 0 || action >= FC_MOVE_DIM) return 0;
     if (action == FC_MOVE_IDLE) return 1;
-    if (action >= FC_MOVE_RUN_N && p->run_energy <= 0) {
+    if (action >= FC_MOVE_RUN_N && !fc_player_can_run(p)) {
         return 0;
     }
 
@@ -597,6 +598,8 @@ void fc_write_obs(const FcState* state, float* out) {
         : 0.0f;
     player[FC_OBS_PLAYER_OVERHEAD_PRAYER_LOST] =
         state->overhead_prayer_lost_this_tick > 0 ? 1.0f : 0.0f;
+    player[FC_OBS_PLAYER_RUN_ENERGY] =
+        clamp01((float)p->run_energy / (float)FC_RUN_ENERGY_MAX);
 
     /* NPC slot selection: gather active NPCs, sort, take first 8 */
     int active_indices[FC_VISIBLE_NPCS];

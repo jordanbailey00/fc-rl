@@ -150,6 +150,7 @@ typedef struct RuneCUiState {
     int prayer_points_max;
     uint32_t active_prayers;
     int run_energy;
+    int run_enabled;
     int combat_level;
     int skill_current[RUNEC_UI_SKILL_COUNT];
     int skill_base[RUNEC_UI_SKILL_COUNT];

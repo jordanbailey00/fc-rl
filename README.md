@@ -10,14 +10,15 @@ The project trains from scratch without demonstrations or a scripted policy.
 The live task uses the SOTA Twisted bow/Masori loadout, no food, no Prayer
 potions, and three policy action heads: movement, target selection, and Prayer.
 
-## Current baseline
+## Current comparison baseline
 
-The promoted 750M baseline is W&B run
+The latest completed 750M comparison baseline is W&B run
 [`399wemq3`](https://wandb.ai/jbailey8531-oakton-college/fight+caves+rl/runs/399wemq3).
-It uses the current OSRS-parity backend, including Ket-Zek and Jad's
-style-specific `+60` Magic attack accuracy, and the exact trainer recipe
-selected by sweep run `1nvvx5qu`, with both correct-Prayer reward weights set
-to zero. Run `mvvexowt` is the matching 100M behavior baseline.
+It includes Ket-Zek and Jad's style-specific `+60` Magic attack accuracy and
+uses the exact trainer recipe selected by sweep run `1nvvx5qu`, with both
+correct-Prayer reward weights set to zero. Run `mvvexowt` is the matching 100M
+behavior baseline. Both runs predate the run-energy observation/mechanic and
+remain the comparison controls for the next training run.
 
 | Property | Live value |
 | --- | --- |
@@ -25,7 +26,7 @@ to zero. Run `mvvexowt` is the matching 100M behavior baseline.
 | Training budget | 750 million agent steps |
 | Policy | 3-layer MinGRU, 512 hidden units |
 | Vectorization | 4,096 agents, 2 buffers, 16 threads |
-| Policy input | 319 floats: 285 policy features plus 34 policy-visible legality bits |
+| Policy input | 320 floats: 286 policy features plus 34 policy-visible legality bits |
 | Policy actions | `[17, 9, 8]`: movement, attack target, Prayer |
 | Final Jad kill rate | 91.49% |
 | Final wave-63 reach rate | 92.69% |
@@ -40,7 +41,7 @@ The key recent comparisons are final post-training evaluations:
 | `i215ulj4` | current parity backend, old Prayer reward | 750M | 88.02% | 89.91% | 973.5 |
 | `txqsiahp` | former baseline, Prayer reward zero | 750M | 92.74% | 94.12% | 978.0 |
 | `r16nvaq7` | exact updated-Puffer pre-accuracy control | 750M | 92.74% | 94.12% | 978.0 |
-| `399wemq3` | current corrected-accuracy baseline | 750M | 91.49% | 92.69% | 1,024.9 |
+| `399wemq3` | corrected-accuracy, pre-run-energy control | 750M | 91.49% | 92.69% | 1,024.9 |
 
 The exact 130-run sweep analysis is in
 [`sweep_top8.md`](sweep_top8.md). Historical runs and configuration changes are
@@ -68,7 +69,8 @@ flowchart LR
 - `fc-core` owns all authoritative gameplay: ticks, combat, Prayer, movement,
   pathfinding, collision, line of sight, NPC behavior, waves, observations,
   rewards, masks, and render events. It is deterministic and allocates no heap
-  memory in the tick hot path.
+  memory in the tick hot path. Run energy drains only on actual two-step run
+  ticks and restores while walking or stationary.
 - `fc-training` is a thin PufferLib adapter. It links the normal `fc_core`
   library and contains no renderer or Raylib dependency.
 - `fc-viewer` uses the same core for human play and policy replay. Its actor,
@@ -177,7 +179,7 @@ across episodes until the window is closed.
 The authoritative observation, action, reward-feature, and mask dimensions are
 in
 [`fc_contracts.h`](runescape-rl/fc-core/include/fc_contracts.h). The Puffer
-adapter writes 285 normalized policy features followed by the first 34 legality
+adapter writes 286 normalized policy features followed by the first 34 legality
 bits into the model input and also supplies those same legality bits through
 PufferLib's native mask channel. The model does not receive the 20 raw reward
 features.
@@ -217,11 +219,10 @@ to `[-1, 1]` by the trainer contract.
 
 ## Remaining work
 
-Run energy, spawn-region selection, large Tz-Kek recoil, exact Yt-MejKot
-healing probability, and a new hyperparameter sweep on the corrected Magic
-accuracy are deferred. Clean-clone asset packaging and PufferLib PR readiness
-remain the final project phase. See [`TODO.md`](TODO.md) for the authoritative
-list.
+Spawn-region selection, large Tz-Kek recoil, exact Yt-MejKot healing
+probability, and a new hyperparameter sweep on the corrected mechanics are
+deferred. Clean-clone asset packaging and PufferLib PR readiness remain the
+final project phase. See [`TODO.md`](TODO.md) for the authoritative list.
 
 ## License
 

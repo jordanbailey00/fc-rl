@@ -66,6 +66,8 @@ static void init_manual_test_state(FcState* state) {
     state->player.ranged_attack_bonus = FC_EQUIP_RANGED_ATK;
     state->player.ranged_strength_bonus = FC_EQUIP_RANGED_STR;
     state->player.attack_target_idx = -1;
+    state->player.run_energy = FC_RUN_ENERGY_MAX;
+    state->player.is_running = 1;
 }
 
 static void clear_manual_tick_signals(FcState* state) {

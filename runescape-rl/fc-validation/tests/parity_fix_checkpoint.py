@@ -23,9 +23,9 @@ CANONICAL_CONFIG = RUNESCAPE_DIR / "config" / "fight_caves.ini"
 PUFFER_DEFAULT_CONFIG = WORKSPACE_DIR / "pufferlib_4" / "config" / "default.ini"
 
 OBSERVATION_VERSION = (
-    "fight_caves_puffer_policy_obs_v8_prayer_timing_mask8_no_supplies"
+    "fight_caves_puffer_policy_obs_v9_run_energy_prayer_timing_mask8_no_supplies"
 )
-ACTION_VERSION = "fight_caves_multidiscrete_3_head_no_supplies_v3_prayer8_stationary_attack_tick"
+ACTION_VERSION = "fight_caves_multidiscrete_3_head_no_supplies_v4_run_energy_prayer8_stationary_attack_tick"
 REWARD_VERSION = (
     "fight_caves_v4_progress_npc_heal_penalty_m0005_"
     "prayer_snapshot_flick_drain"
@@ -37,11 +37,11 @@ ACTIVE_LOADOUT = "FC_LOADOUT_SOTA_TBOW"
 
 EXPECTED_CONTRACT: dict[str, object] = {
     "contract_dump_schema_version": 1,
-    "policy_obs_size": 285,
-    "puffer_obs_size": 319,
+    "policy_obs_size": 286,
+    "puffer_obs_size": 320,
     "puffer_action_dims": [17, 9, 8],
     "puffer_mask_size": 34,
-    "core_obs_size": 474,
+    "core_obs_size": 475,
     "core_action_dims": [17, 9, 8, 3, 2, 65, 65],
     "core_action_mask": 169,
     "reward_feature_count": 20,
@@ -53,10 +53,10 @@ EXPECTED_CONTRACT: dict[str, object] = {
     "active_loadout": ACTIVE_LOADOUT,
 }
 
-# The fake evaluator policy preserves the real 319/{17,9,8}/512x3 topology
+# The fake evaluator policy preserves the real 320/{17,9,8}/512x3 topology
 # shapes while avoiding CUDA, viewer graphics, and a real training process.
 EXPECTED_PARAMETER_FLOATS = (
-    512 * 319       # encoder
+    512 * 320       # encoder
     + (17 + 9 + 8 + 1) * 512  # fused action/value decoder
     + 3 * 3 * 512 * 512  # three MinGRU 3H-by-H weight matrices
 )
@@ -315,8 +315,8 @@ def test_evaluator_hard_failures(fixture_so: Path) -> int:
         common_tokens = [
             "expected",
             "actual",
-            "285",
-            "319",
+            "286",
+            "320",
             "17",
             "9",
             "8",
@@ -519,7 +519,7 @@ def test_latest_checkpoint_filter(fixture_so: Path) -> int:
             required = [
                 str(EXPECTED_PARAMETER_BYTES),
                 str(compatible.stat().st_size),
-                "319",
+                "320",
                 "17",
                 "9",
                 "8",

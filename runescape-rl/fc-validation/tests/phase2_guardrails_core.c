@@ -230,6 +230,113 @@ static int test_hp_regeneration_interval(void) {
     return pass("HP regenerates by 1 HP every 100 ticks");
 }
 
+static void add_inert_npc(FcState* state) {
+    fc_npc_spawn(&state->npcs[0], NPC_TOK_XIL, 50, 50, 0);
+    state->npcs[0].movement_speed = 0;
+    state->npcs[0].attack_timer = 10000;
+    state->npcs_remaining = 1;
+}
+
+static int test_run_energy(void) {
+    FcState state;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+    float obs[FC_TOTAL_OBS];
+    float mask[FC_ACTION_MASK_SIZE];
+
+    if (FC_RUN_ENERGY_MAX != 10000 || FC_RUN_ENERGY_MIN_START != 100 ||
+        FC_RUN_ENERGY_DRAIN != 60 || FC_RUN_ENERGY_RESTORE != 24) {
+        return fail("level-99 OSRS run-energy constants changed");
+    }
+
+    make_open_manual_state(&state, 10, 10);
+    add_inert_npc(&state);
+    actions[0] = FC_MOVE_RUN_E;
+    fc_step(&state, actions);
+    if (state.player.x != 12 || state.player.run_energy != 9940 ||
+        !state.player.is_running) {
+        fc_destroy(&state);
+        return fail("a two-step run did not drain exactly 60 energy units");
+    }
+
+    actions[0] = FC_MOVE_WALK_E;
+    fc_step(&state, actions);
+    if (state.player.x != 13 || state.player.run_energy != 9964 ||
+        state.player.is_running) {
+        fc_destroy(&state);
+        return fail("a walking tick did not restore exactly 24 energy units");
+    }
+
+    actions[0] = FC_MOVE_IDLE;
+    fc_step(&state, actions);
+    if (state.player.run_energy != 9988) {
+        fc_destroy(&state);
+        return fail("a stationary tick did not restore exactly 24 energy units");
+    }
+
+    fc_step(&state, actions);
+    if (state.player.run_energy != FC_RUN_ENERGY_MAX) {
+        fc_destroy(&state);
+        return fail("non-running restoration did not cap at maximum energy");
+    }
+
+    state.player.x = 62;
+    state.player.run_energy = 5000;
+    state.player.is_running = 1;
+    actions[0] = FC_MOVE_RUN_E;
+    fc_step(&state, actions);
+    if (state.player.x != 63 || state.player.run_energy != 5024) {
+        fc_destroy(&state);
+        return fail("a one-step clipped run was charged as a running tick");
+    }
+
+    state.player.x = 10;
+    state.player.run_energy = 0;
+    state.player.is_running = 0;
+    fc_request_set_running(&state, 1);
+    fc_write_mask(&state, mask);
+    if (state.player.is_running ||
+        mask[FC_MASK_MOVE_START + FC_MOVE_RUN_E] != 0.0f) {
+        fc_destroy(&state);
+        return fail("run mode was available below one displayed percent");
+    }
+
+    actions[0] = FC_MOVE_IDLE;
+    for (int tick = 0; tick < 5; tick++) {
+        fc_step(&state, actions);
+    }
+    fc_write_mask(&state, mask);
+    if (state.player.run_energy != 120 ||
+        mask[FC_MASK_MOVE_START + FC_MOVE_RUN_E] != 1.0f) {
+        fc_destroy(&state);
+        return fail("run mode did not become available after restoring past 1 percent");
+    }
+
+    fc_request_set_running(&state, 1);
+    actions[0] = FC_MOVE_RUN_E;
+    fc_step(&state, actions);
+    fc_write_mask(&state, mask);
+    if (state.player.run_energy != 60 || !state.player.is_running ||
+        mask[FC_MASK_MOVE_START + FC_MOVE_RUN_E] != 1.0f) {
+        fc_destroy(&state);
+        return fail("an active run could not consume its final sub-1-percent energy");
+    }
+
+    fc_write_obs(&state, obs);
+    if (fabsf(obs[FC_OBS_PLAYER_RUN_ENERGY] - 0.006f) > 0.000001f) {
+        fc_destroy(&state);
+        return fail("run-energy observation is not normalized from current energy");
+    }
+
+    fc_step(&state, actions);
+    if (state.player.run_energy != 0 || state.player.is_running) {
+        fc_destroy(&state);
+        return fail("run mode did not disable when energy reached zero");
+    }
+
+    fc_destroy(&state);
+    return pass("run energy drains, restores, gates running, and is observed");
+}
+
 static int test_target_identity(void) {
     FcState state;
     float obs[FC_OBS_SIZE];
@@ -3434,13 +3541,14 @@ static int test_osrs_bfs_expansion_order(void) {
 
 int main(int argc, char** argv) {
     if (argc != 2) {
-        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|npc_heal_penalty_actual_heal|prayer_loss_penalty|correct_prayer_reward_all_npcs|no_attack_penalty_wave_scaled|player_death_progress_scaled|simple_reward_zeroed_channels|npc_kill_reward_eligibility|tz_kek_split_kill_rewards|wave_clear_reward_scaling|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|spawn_search_and_slot_allocation|special_tz_kih_prayer_drain|special_mejkot_heal_replaces_attack|special_adjacent_style_selection|special_hurkot_behavior|mechanics_observation_events|safespot_los|diagonal_corner_clipping|directional_movement_wall_boundaries|directional_movement_diagonal_and_sized|directional_movement_route_regression|npc_moves_when_attack_blocked|movement_cannot_enable_same_tick_attack_range|movement_cannot_enable_same_tick_attack_los|attack_suppresses_same_tick_movement_when_already_valid|movement_resumes_tick_after_attack|step1_movement_only_clears_stale_target|step1_projectile_survives_movement_cancel|step1_attack_move_out_of_range_clears_target|step1_directional_cancels_old_approach_route|step1_directional_beats_old_tile_route|step1_attack_approach_without_explicit_movement|step2_occupancy_marks_and_ignores_entities|step2_dynamic_footprint_static_and_occupied|step2_dynamic_diagonal_blocks_occupied_corner|step2_start_reservation_blocks_swap_tile|player_directional_ignores_npc_occupancy|player_tile_route_accepts_npc_occupied_target|player_prebuilt_route_ignores_npc_and_keeps_static_collision|player_move_mask_ignores_npc_and_keeps_static_collision|player_combat_approach_ignores_npc_occupancy|step3_npc_blocked_by_other_npc|step3_large_npc_blocked_by_healer_footprint|step3_tz_kek_split_avoids_occupied_tiles|step4_ranged_npc_chases_player_bounds_not_los_tile|step4_large_npc_chase_checks_full_footprint|step4_npc_stays_when_current_position_can_attack|invalid_action_classes|hp_regeneration_interval>\n",
+        fprintf(stderr, "usage: %s <target_identity|npc_type_obs_one_hot|zero_damage_reward|npc_heal_penalty_actual_heal|prayer_loss_penalty|correct_prayer_reward_all_npcs|no_attack_penalty_wave_scaled|player_death_progress_scaled|simple_reward_zeroed_channels|npc_kill_reward_eligibility|tz_kek_split_kill_rewards|wave_clear_reward_scaling|net_progress_required_work|net_progress_wave_clear|net_progress_tz_kek|net_progress_jad|net_progress_timer_clip|progress_observation_fields|prayer_deadline_observation_fields|healer_spawn_validity|spawn_search_and_slot_allocation|special_tz_kih_prayer_drain|special_mejkot_heal_replaces_attack|special_adjacent_style_selection|special_hurkot_behavior|mechanics_observation_events|safespot_los|diagonal_corner_clipping|directional_movement_wall_boundaries|directional_movement_diagonal_and_sized|directional_movement_route_regression|npc_moves_when_attack_blocked|movement_cannot_enable_same_tick_attack_range|movement_cannot_enable_same_tick_attack_los|attack_suppresses_same_tick_movement_when_already_valid|movement_resumes_tick_after_attack|step1_movement_only_clears_stale_target|step1_projectile_survives_movement_cancel|step1_attack_move_out_of_range_clears_target|step1_directional_cancels_old_approach_route|step1_directional_beats_old_tile_route|step1_attack_approach_without_explicit_movement|step2_occupancy_marks_and_ignores_entities|step2_dynamic_footprint_static_and_occupied|step2_dynamic_diagonal_blocks_occupied_corner|step2_start_reservation_blocks_swap_tile|player_directional_ignores_npc_occupancy|player_tile_route_accepts_npc_occupied_target|player_prebuilt_route_ignores_npc_and_keeps_static_collision|player_move_mask_ignores_npc_and_keeps_static_collision|player_combat_approach_ignores_npc_occupancy|step3_npc_blocked_by_other_npc|step3_large_npc_blocked_by_healer_footprint|step3_tz_kek_split_avoids_occupied_tiles|step4_ranged_npc_chases_player_bounds_not_los_tile|step4_large_npc_chase_checks_full_footprint|step4_npc_stays_when_current_position_can_attack|invalid_action_classes|hp_regeneration_interval|run_energy>\n",
                 argv[0]);
         return 2;
     }
 
     if (strcmp(argv[1], "invalid_action_classes") == 0) return test_invalid_action_classes();
     if (strcmp(argv[1], "hp_regeneration_interval") == 0) return test_hp_regeneration_interval();
+    if (strcmp(argv[1], "run_energy") == 0) return test_run_energy();
     if (strcmp(argv[1], "target_identity") == 0) return test_target_identity();
     if (strcmp(argv[1], "npc_type_obs_one_hot") == 0) return test_npc_type_obs_one_hot();
     if (strcmp(argv[1], "zero_damage_reward") == 0) return test_zero_damage_reward();

@@ -27,12 +27,12 @@ def load_evaluator():
 def test_contract_dimensions(fixture_so: Path) -> int:
     evaluator = load_evaluator()
     actual = evaluator.load_compiled_policy_contract(fixture_so)
-    expected = (285, [17, 9, 8], 34, 319)
+    expected = (286, [17, 9, 8], 34, 320)
     if actual != expected:
         print(f"FAIL CONTRACT-002: evaluator contract {actual!r}, expected {expected!r}")
         return 1
 
-    print("PASS CONTRACT-002: evaluator derives 319 inputs and {17,9,8} actions")
+    print("PASS CONTRACT-002: evaluator derives 320 inputs and {17,9,8} actions")
     return 0
 
 
@@ -50,8 +50,8 @@ def test_action_and_line_buffers(fixture_so: Path) -> int:
             self.stdout = io.StringIO(text)
 
     parsed = evaluator.read_obs_line(ReadProc(exact_values), total_size)
-    if parsed is None or parsed.shape != (319,) or parsed.dtype != np.float32:
-        print("FAIL CONTRACT-003: evaluator did not consume exactly one 319-float line")
+    if parsed is None or parsed.shape != (320,) or parsed.dtype != np.float32:
+        print("FAIL CONTRACT-003: evaluator did not consume exactly one 320-float line")
         return 1
     if evaluator.read_obs_line(ReadProc("0 " * (total_size - 1) + "\n"), total_size) is not None:
         print("FAIL CONTRACT-003: evaluator accepted a short observation/mask line")
@@ -95,7 +95,7 @@ def test_action_and_line_buffers(fixture_so: Path) -> int:
         )
         return 1
 
-    print("PASS CONTRACT-003: evaluator line/action buffers use 319/34/3 strides")
+    print("PASS CONTRACT-003: evaluator line/action buffers use 320/34/3 strides")
     return 0
 
 

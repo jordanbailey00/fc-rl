@@ -350,6 +350,7 @@ static void sync_fc_ui_status(ViewerState* v) {
     v->ui.run_energy = p->run_energy / 100;
     if (v->ui.run_energy < 0) v->ui.run_energy = 0;
     if (v->ui.run_energy > 100) v->ui.run_energy = 100;
+    v->ui.run_enabled = p->is_running != 0;
     v->ui.selected_combat_style = v->combat_style == 2 ? 3 : v->combat_style;
     v->ui.auto_retaliate = 1;
     v->ui.special_attack_energy = 100;
@@ -490,7 +491,10 @@ static void handle_runec_ui_intent(ViewerState* v) {
             if (v->combat_style > 2) v->combat_style = 2;
             break;
         case RUNEC_UI_INTENT_RUN_TOGGLE:
-            fc_request_set_running(&v->state, !p->is_running);
+            if (!v->policy_pipe) {
+                fc_request_set_running(&v->state, !p->is_running);
+                v->ui.run_enabled = p->is_running != 0;
+            }
             break;
         case RUNEC_UI_INTENT_MINIMAP_CLICK: {
             FcVisualPose player_pose =

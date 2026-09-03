@@ -425,8 +425,9 @@ int dbg_draw_panel_tabs(const FcState* state,
                  obs[FC_OBS_PLAYER_HP], obs[FC_OBS_PLAYER_PRAYER],
                  obs[FC_OBS_PLAYER_X], obs[FC_OBS_PLAYER_Y]);
         fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;
-        snprintf(buf, sizeof(buf), "Atk:%.2f Sharks:%.2f Dose:%.2f",
+        snprintf(buf, sizeof(buf), "Atk:%.2f Run:%.2f Sharks:%.2f Dose:%.2f",
                  obs[FC_OBS_PLAYER_ATK_TIMER],
+                 obs[FC_OBS_PLAYER_RUN_ENERGY],
                  obs[FC_OBS_PLAYER_SHARKS],
                  obs[FC_OBS_PLAYER_DOSES]);
         fc_osrs_draw_text(buf, x, by, 8, DBG_COL_LABEL); by += lh;

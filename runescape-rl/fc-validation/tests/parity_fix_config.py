@@ -14,10 +14,10 @@ CANONICAL_CONFIG = RUNESCAPE_DIR / "config" / "fight_caves.ini"
 PUFFER_MIRROR = WORKSPACE_DIR / "pufferlib_4" / "config" / "fight_caves.ini"
 
 EXPECTED_OBSERVATION_VERSION = (
-    "fight_caves_puffer_policy_obs_v8_prayer_timing_mask8_no_supplies"
+    "fight_caves_puffer_policy_obs_v9_run_energy_prayer_timing_mask8_no_supplies"
 )
 EXPECTED_ACTION_VERSION = (
-    "fight_caves_multidiscrete_3_head_no_supplies_v3_prayer8_stationary_attack_tick"
+    "fight_caves_multidiscrete_3_head_no_supplies_v4_run_energy_prayer8_stationary_attack_tick"
 )
 EXPECTED_CANONICAL_REWARD_VERSION = (
     "fight_caves_v4_progress_npc_heal_penalty_m0005_"

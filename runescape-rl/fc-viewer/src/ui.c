@@ -676,6 +676,7 @@ void runec_ui_init(RuneCUiState *ui) {
     ui->prayer_points = 77;
     ui->prayer_points_max = 77;
     ui->run_energy = 100;
+    ui->run_enabled = 1;
     ui->combat_level = 126;
     for (int i = 0; i < RUNEC_UI_SKILL_COUNT; i++) {
         ui->skill_current[i] = 1;
@@ -1081,7 +1082,13 @@ static int handle_tab_click(RuneCUiState *ui,
 static int handle_orb_or_minimap_click(RuneCUiState *ui,
                                        const RuneCUiLayout *layout,
                                        Vector2 mouse) {
-    if (CheckCollisionPointRec(mouse, layout->run_orb)) {
+    Rectangle run_button = {
+        layout->run_orb.x + 3,
+        layout->run_orb.y + 5,
+        50,
+        26,
+    };
+    if (CheckCollisionPointRec(mouse, run_button)) {
         ui->last_intent.kind = RUNEC_UI_INTENT_RUN_TOGGLE;
         ui->last_intent.position = mouse;
         return 1;
@@ -1491,6 +1498,61 @@ static void draw_orb(const RuneCUiState *ui, Rectangle rect, const char *filler,
     draw_centered_text(ui, text, (Rectangle){rect.x + 3, rect.y + 14, 24, 13}, 12, text_color);
 }
 
+static Color orb_value_color(int value, int max_value) {
+    if (max_value <= 0)
+        max_value = 1;
+    if (value < 0)
+        value = 0;
+    if (value > max_value)
+        value = max_value;
+
+    int half = max_value / 2;
+    if (half <= 0)
+        return value >= max_value ? (Color){0, 255, 0, 255}
+                                  : (Color){255, 0, 0, 255};
+    if (value > half) {
+        int red = 255 - 255 * (value - half) / half;
+        return (Color){(unsigned char)red, 255, 0, 255};
+    }
+    int green = 255 * value / half;
+    return (Color){255, (unsigned char)green, 0, 255};
+}
+
+static void draw_run_orb(const RuneCUiState *ui, Rectangle rect) {
+    Rectangle button = {rect.x + 3, rect.y + 5, 50, 26};
+    const char *frame = CheckCollisionPointRec(GetMousePosition(), button)
+        ? "orb_frame_1" : "orb_frame_0";
+    runec_ui_draw_asset(&ui->assets, frame, rect, WHITE);
+
+    Rectangle fill = {rect.x + 27, rect.y + 4, 26, 26};
+    const char *filler = ui->run_enabled ? "orb_filler_6" : "orb_filler_5";
+    const char *icon = ui->run_enabled ? "orb_icon_3" : "orb_icon_2";
+    runec_ui_draw_asset(&ui->assets, filler, fill,
+                        (Color){255, 255, 255, 230});
+
+    int energy = ui->run_energy;
+    if (energy < 0) energy = 0;
+    if (energy > 100) energy = 100;
+    int empty_height = 26 * (100 - energy) / 100;
+    const Texture2D *empty = runec_ui_asset(&ui->assets, "orb_filler_0");
+    if (empty && empty_height > 0) {
+        float source_height = (float)empty->height * (float)empty_height /
+                              fill.height;
+        DrawTexturePro(*empty,
+                       (Rectangle){0, 0, (float)empty->width, source_height},
+                       (Rectangle){fill.x, fill.y, fill.width,
+                                   (float)empty_height},
+                       (Vector2){0, 0}, 0.0f, WHITE);
+    }
+    draw_asset_centered(ui, icon, fill, 26, 26, WHITE);
+
+    char text[16];
+    snprintf(text, sizeof(text), "%d", energy);
+    draw_centered_text(ui, text,
+                       (Rectangle){rect.x + 3, rect.y + 14, 24, 13},
+                       12, orb_value_color(energy, 100));
+}
+
 static void draw_minimap(const RuneCUiState *ui, const RuneCUiLayout *layout) {
     Vector2 center = {layout->minimap.x + layout->minimap.width * 0.5f,
                       layout->minimap.y + layout->minimap.height * 0.5f};
@@ -1565,8 +1627,7 @@ static void draw_minimap(const RuneCUiState *ui, const RuneCUiLayout *layout) {
              ui->hitpoints, ui->hitpoints_max, OSRS_RED);
     draw_orb(ui, layout->prayer_orb, "orb_filler_4", "orb_icon_1",
              ui->prayer_points, ui->prayer_points_max, OSRS_BLUE);
-    draw_orb(ui, layout->run_orb, "orb_filler_5", "orb_icon_2",
-             ui->run_energy, 100, OSRS_GREEN);
+    draw_run_orb(ui, layout->run_orb);
     draw_orb(ui, layout->spec_orb, "orb_filler_9", "orb_icon_6",
              ui->special_attack_energy, 100, OSRS_YELLOW);
 

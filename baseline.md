@@ -1,9 +1,11 @@
 # Training Baselines
 
-## Current corrected-mechanics baselines
+## Corrected-Magic comparison baselines
 
 The current code includes Ket-Zek and Jad's style-specific `+60` Magic attack
-accuracy. The cold-start reference runs for this mechanic are:
+accuracy plus the newer run-energy mechanic and observation. The cold-start
+runs below predate run energy and are the comparison controls for measuring
+that change:
 
 | Budget | W&B run | Realized steps | Final Jad kill | Wave 63 | Damage taken |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -11,10 +13,9 @@ accuracy. The cold-start reference runs for this mechanic are:
 | 750M | [`399wemq3`](https://wandb.ai/jbailey8531-oakton-college/fight%20caves%20rl/runs/399wemq3) | 749,731,840 | 91.49% | 92.69% | 1,024.873 |
 
 Both use the live trainer recipe and seed 73. Pre-correction updated-Puffer
-controls `dqr4lxe9` (100M) and `r16nvaq7` (750M) remain historical A/B evidence,
-not current-mechanics baselines. A future sweep is deferred because the
-currently promoted hyperparameters were selected on the easier pre-correction
-combat model.
+controls `dqr4lxe9` (100M) and `r16nvaq7` (750M) remain historical A/B evidence.
+A future sweep is deferred because the currently promoted hyperparameters were
+selected on the easier pre-correction combat model.
 
 ## Historical 100M refactor baseline
 

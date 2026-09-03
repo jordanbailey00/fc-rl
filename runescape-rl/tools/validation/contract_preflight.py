@@ -19,9 +19,9 @@ class ContractError(RuntimeError):
 
 
 OBSERVATION_VERSION = (
-    "fight_caves_puffer_policy_obs_v8_prayer_timing_mask8_no_supplies"
+    "fight_caves_puffer_policy_obs_v9_run_energy_prayer_timing_mask8_no_supplies"
 )
-ACTION_VERSION = "fight_caves_multidiscrete_3_head_no_supplies_v3_prayer8_stationary_attack_tick"
+ACTION_VERSION = "fight_caves_multidiscrete_3_head_no_supplies_v4_run_energy_prayer8_stationary_attack_tick"
 PRAYER_TIMING_VERSION = (
     "fight_caves_prayer_timing_v1_tick_start_snapshot_flick_drain_jad_lock"
 )
@@ -42,11 +42,11 @@ SUPPORTED_SWEEP_DISTRIBUTIONS = frozenset(
 # symbol; shell launchers, manifests, and evaluators do not repeat arithmetic.
 EXPECTED_COMPILED_FIELDS: dict[str, Any] = {
     "contract_dump_schema_version": 1,
-    "policy_obs_size": 285,
-    "puffer_obs_size": 319,
+    "policy_obs_size": 286,
+    "puffer_obs_size": 320,
     "puffer_action_dims": [17, 9, 8],
     "puffer_mask_size": 34,
-    "core_obs_size": 474,
+    "core_obs_size": 475,
     "core_action_dims": [17, 9, 8, 3, 2, 65, 65],
     "core_action_mask": 169,
     "reward_feature_count": 20,

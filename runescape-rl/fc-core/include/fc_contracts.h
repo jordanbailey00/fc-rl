@@ -7,10 +7,10 @@
  * reward-family name under the same Prayer parity semantics. */
 #define FC_CONTRACT_DUMP_SCHEMA_VERSION 1
 #ifndef FC_OBSERVATION_VERSION
-#define FC_OBSERVATION_VERSION "fight_caves_puffer_policy_obs_v8_prayer_timing_mask8_no_supplies"
+#define FC_OBSERVATION_VERSION "fight_caves_puffer_policy_obs_v9_run_energy_prayer_timing_mask8_no_supplies"
 #endif
 #ifndef FC_ACTION_VERSION
-#define FC_ACTION_VERSION "fight_caves_multidiscrete_3_head_no_supplies_v3_prayer8_stationary_attack_tick"
+#define FC_ACTION_VERSION "fight_caves_multidiscrete_3_head_no_supplies_v4_run_energy_prayer8_stationary_attack_tick"
 #endif
 #ifndef FC_REWARD_VERSION
 #define FC_REWARD_VERSION "fight_caves_v4_progress_npc_heal_penalty_m0005_prayer_snapshot_flick_drain"
@@ -43,17 +43,17 @@
  *   [FC_TOTAL_OBS .. FC_TOTAL_OBS+FC_ACTION_MASK_SIZE-1] action mask
  *
  * Core callers may use policy observations plus raw reward features
- * (FC_TOTAL_OBS), then append the seven-head core mask for a 474-float
+ * (FC_TOTAL_OBS), then append the seven-head core mask for a 475-float
  * diagnostic buffer (FC_OBS_SIZE).
  *
- * Puffer does not receive that diagnostic layout. Its model input is 319
- * floats: FC_POLICY_OBS_SIZE (285) followed by FC_PUFFER_MASK_SIZE (34) mask
+ * Puffer does not receive that diagnostic layout. Its model input is 320
+ * floats: FC_POLICY_OBS_SIZE (286) followed by FC_PUFFER_MASK_SIZE (34) mask
  * bits for the no-supplies policy heads. Those same 34 bits are also supplied
  * through PufferLib's native action-mask channel. The 20 reward features and
  * the masks for core-only action heads are not exposed to the model.
  */
 
-/* --- Player features (22 floats) --- */
+/* --- Player features (23 floats) --- */
 #define FC_OBS_PLAYER_START     0
 #define FC_OBS_PLAYER_HP        0   /* current_hp / max_hp */
 #define FC_OBS_PLAYER_PRAYER    1   /* current_prayer / max_prayer */
@@ -77,7 +77,8 @@
 #define FC_OBS_PLAYER_PRAY_DDL_MAG 19  /* style-specific prayer deadline urgency for actionable magic hits */
 #define FC_OBS_PLAYER_PRAYER_LOST 20   /* total prayer lost this tick / max_prayer */
 #define FC_OBS_PLAYER_OVERHEAD_PRAYER_LOST 21 /* 1 if passive overhead drain removed prayer this tick */
-#define FC_OBS_PLAYER_SIZE      22
+#define FC_OBS_PLAYER_RUN_ENERGY 22 /* current run energy / FC_RUN_ENERGY_MAX */
+#define FC_OBS_PLAYER_SIZE      23
 
 /* --- Per-NPC features (31 floats x 8 visible NPCs = 248 floats) --- */
 /*
@@ -99,7 +100,7 @@
  * The spawn_index tiebreaker ensures deterministic ordering when distances are
  * equal, which is critical for replay consistency and debug reproducibility.
  */
-#define FC_OBS_NPC_START        FC_OBS_PLAYER_SIZE  /* 22 */
+#define FC_OBS_NPC_START        FC_OBS_PLAYER_SIZE  /* 23 */
 #define FC_OBS_NPC_STRIDE       31
 #define FC_OBS_NPC_SLOTS        8   /* FC_VISIBLE_NPCS */
 
@@ -147,7 +148,7 @@
 #define FC_OBS_NPC_TOTAL        (FC_OBS_NPC_STRIDE * FC_OBS_NPC_SLOTS)  /* 248 */
 
 /* --- Wave/meta features (15 floats) --- */
-#define FC_OBS_META_START       (FC_OBS_NPC_START + FC_OBS_NPC_TOTAL)  /* 270 */
+#define FC_OBS_META_START       (FC_OBS_NPC_START + FC_OBS_NPC_TOTAL)  /* 271 */
 #define FC_OBS_META_WAVE        0   /* current_wave / NUM_WAVES */
 #define FC_OBS_META_ROTATION    1   /* rotation_id / NUM_ROTATIONS */
 #define FC_OBS_META_REMAINING   2   /* npcs_remaining / MAX_NPCS */
@@ -166,7 +167,7 @@
 #define FC_OBS_META_SIZE        15
 
 /* --- Policy observation total --- */
-#define FC_POLICY_OBS_SIZE      (FC_OBS_PLAYER_SIZE + FC_OBS_NPC_TOTAL + FC_OBS_META_SIZE)  /* 285 */
+#define FC_POLICY_OBS_SIZE      (FC_OBS_PLAYER_SIZE + FC_OBS_NPC_TOTAL + FC_OBS_META_SIZE)  /* 286 */
 
 /* --- Reward features (20 floats) --- */
 /*
@@ -175,7 +176,7 @@
  * The policy DOES NOT consume these by default.
  * Python applies configurable shaping weights to produce the scalar reward.
  */
-#define FC_REWARD_START         FC_POLICY_OBS_SIZE  /* 285 */
+#define FC_REWARD_START         FC_POLICY_OBS_SIZE  /* 286 */
 #define FC_RWD_DAMAGE_DEALT     0   /* NPC HP reduced this tick (normalized) */
 #define FC_RWD_DAMAGE_TAKEN     1   /* player HP reduced this tick */
 #define FC_RWD_NPC_KILL         2   /* rewardable deaths; excludes respawned Jad healers */
@@ -199,7 +200,7 @@
 #define FC_REWARD_FEATURES      20
 
 /* --- Total observation (policy obs + reward features) --- */
-#define FC_TOTAL_OBS            (FC_POLICY_OBS_SIZE + FC_REWARD_FEATURES)  /* 305 */
+#define FC_TOTAL_OBS            (FC_POLICY_OBS_SIZE + FC_REWARD_FEATURES)  /* 306 */
 
 /* ======================================================================== */
 /* Action space — 7 canonical core heads                                     */
@@ -367,14 +368,14 @@ static const int FC_PUFFER_ACTION_DIMS[FC_PUFFER_NUM_ATNS] = FC_PUFFER_ACT_SIZES
 
 /*
  * Total floats in the full FC backend buffer:
- *   FC_POLICY_OBS_SIZE (285) + FC_REWARD_FEATURES (20) + FC_ACTION_MASK_SIZE (169) = 474
+ *   FC_POLICY_OBS_SIZE (286) + FC_REWARD_FEATURES (20) + FC_ACTION_MASK_SIZE (169) = 475
  *
  * The PufferLib adapter does not allocate or expose this layout. It allocates
- * FC_PUFFER_OBS_SIZE (319), copies the no-supplies mask into the model input at
+ * FC_PUFFER_OBS_SIZE (320), copies the no-supplies mask into the model input at
  * FC_POLICY_OBS_SIZE, and publishes the same flags through the native mask
  * pointer. Reward computation reads authoritative state through fc_reward.
  */
-#define FC_OBS_SIZE             (FC_TOTAL_OBS + FC_ACTION_MASK_SIZE)  /* 474 */
+#define FC_OBS_SIZE             (FC_TOTAL_OBS + FC_ACTION_MASK_SIZE)  /* 475 */
 
 /* ======================================================================== */
 /* Normalization divisors                                                     */

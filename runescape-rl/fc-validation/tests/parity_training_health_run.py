@@ -26,7 +26,7 @@ from parity_perf import check_contract, load_puffer, process_rss_kb, sha256_file
 from parity_training_health import validate_report
 
 
-EXPECTED_OBSERVATION = 319
+EXPECTED_OBSERVATION = 320
 EXPECTED_MASK = 34
 EXPECTED_ACTION_DIMS = [17, 9, 8]
 FINITE_CHANNELS = (

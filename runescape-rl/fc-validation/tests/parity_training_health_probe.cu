@@ -190,7 +190,7 @@ static void require_contract(const PuffeRL& pufferl) {
             || host_dims[0] != 17 || host_dims[1] != 9
             || host_dims[2] != 8) {
         throw std::runtime_error(
-            "TRAIN-001 probe requires the 319/34/{17,9,8} parity contract");
+            "TRAIN-001 probe requires the 320/34/{17,9,8} parity contract");
     }
 }
 

@@ -24,9 +24,9 @@ CANONICAL_CONFIG = RUNESCAPE_DIR / "config" / "fight_caves.ini"
 PUFFER_MIRROR = WORKSPACE_DIR / "pufferlib_4" / "config" / "fight_caves.ini"
 
 OBSERVATION_VERSION = (
-    "fight_caves_puffer_policy_obs_v8_prayer_timing_mask8_no_supplies"
+    "fight_caves_puffer_policy_obs_v9_run_energy_prayer_timing_mask8_no_supplies"
 )
-ACTION_VERSION = "fight_caves_multidiscrete_3_head_no_supplies_v3_prayer8_stationary_attack_tick"
+ACTION_VERSION = "fight_caves_multidiscrete_3_head_no_supplies_v4_run_energy_prayer8_stationary_attack_tick"
 REWARD_VERSION = (
     "fight_caves_v4_progress_npc_heal_penalty_m0005_"
     "prayer_snapshot_flick_drain"
@@ -41,11 +41,11 @@ ACTIVE_LOADOUT = "FC_LOADOUT_SOTA_TBOW"
 # compiled backend; this map is only an independent expected-value oracle.
 EXPECTED_CONTRACT = {
     "contract_dump_schema_version": 1,
-    "policy_obs_size": 285,
-    "puffer_obs_size": 319,
+    "policy_obs_size": 286,
+    "puffer_obs_size": 320,
     "puffer_action_dims": [17, 9, 8],
     "puffer_mask_size": 34,
-    "core_obs_size": 474,
+    "core_obs_size": 475,
     "core_action_dims": [17, 9, 8, 3, 2, 65, 65],
     "core_action_mask": 169,
     "reward_feature_count": 20,
@@ -197,8 +197,8 @@ def test_preflight_rejections(fixture_so: Path) -> int:
     failures: list[str] = []
     mutations: dict[str, object] = {
         "contract_dump_schema_version": 2,
-        "policy_obs_size": 286,
-        "puffer_obs_size": 320,
+        "policy_obs_size": 285,
+        "puffer_obs_size": 319,
         "puffer_action_dims": [17, 9, 5],
         "puffer_mask_size": 31,
         "core_obs_size": 471,

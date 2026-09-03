@@ -12,14 +12,14 @@ _Static_assert(FC_PRAYER_DIM == 8,
                "prayer action head must expose commands 0-7");
 _Static_assert(FC_ACTION_MASK_SIZE == 169,
                "full action-mask size must follow the eight-action prayer head");
-_Static_assert(FC_OBS_SIZE == 474,
+_Static_assert(FC_OBS_SIZE == 475,
                "full core buffer size must follow the expanded mask");
 _Static_assert(FC_PUFFER_NUM_ATNS == 3,
                "Puffer policy must retain three action heads");
 _Static_assert(FC_PUFFER_MASK_SIZE == 34,
                "Puffer mask must contain 17+9+8 entries");
-_Static_assert(FC_PUFFER_OBS_SIZE == 319,
-               "Puffer observation must contain 285 features and 34 masks");
+_Static_assert(FC_PUFFER_OBS_SIZE == 320,
+               "Puffer observation must contain 286 features and 34 masks");
 
 static void init_env(FightCaves* env,
                      float* observations,
@@ -41,8 +41,8 @@ static void init_env(FightCaves* env,
 static int test_no_supplies_policy_contract(void) {
     int expected_obs = FC_POLICY_OBS_SIZE + FC_PUFFER_MASK_SIZE;
 
-    if (FC_POLICY_OBS_SIZE != 285 || FC_PUFFER_OBS_SIZE != 319) {
-        printf("FAIL: expected expanded policy/Puffer obs sizes 285/319, got %d/%d\n",
+    if (FC_POLICY_OBS_SIZE != 286 || FC_PUFFER_OBS_SIZE != 320) {
+        printf("FAIL: expected expanded policy/Puffer obs sizes 286/320, got %d/%d\n",
                FC_POLICY_OBS_SIZE, FC_PUFFER_OBS_SIZE);
         return 1;
     }
@@ -66,11 +66,11 @@ static int test_prayer_contract_dimensions(void) {
     };
     static const int expected_puffer[FC_PUFFER_NUM_ATNS] = {17, 9, 8};
 
-    if (FC_POLICY_OBS_SIZE != 285 || FC_REWARD_FEATURES != 20 ||
-        FC_TOTAL_OBS != 305 || FC_NUM_ACTION_HEADS != 7 ||
+    if (FC_POLICY_OBS_SIZE != 286 || FC_REWARD_FEATURES != 20 ||
+        FC_TOTAL_OBS != 306 || FC_NUM_ACTION_HEADS != 7 ||
         FC_PRAYER_DIM != 8 || FC_ACTION_MASK_SIZE != 169 ||
-        FC_OBS_SIZE != 474 || FC_PUFFER_NUM_ATNS != 3 ||
-        FC_PUFFER_MASK_SIZE != 34 || FC_PUFFER_OBS_SIZE != 319) {
+        FC_OBS_SIZE != 475 || FC_PUFFER_NUM_ATNS != 3 ||
+        FC_PUFFER_MASK_SIZE != 34 || FC_PUFFER_OBS_SIZE != 320) {
         fprintf(stderr,
                 "FAIL CONTRACT-001: derived sizes do not match the parity contract\n");
         return 1;
