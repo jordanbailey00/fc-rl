@@ -304,11 +304,28 @@ static void dbg_draw_range_2d(const FcState* state, Camera3D cam) {
     }
 }
 
+static void dbg_draw_run_energy(const FcState* state) {
+    int energy = state->player.run_energy;
+    if (energy < 0) energy = 0;
+    if (energy > FC_RUN_ENERGY_MAX) energy = FC_RUN_ENERGY_MAX;
+
+    char text[32];
+    snprintf(text, sizeof(text), "Run energy: %d.%02d%%",
+             energy / 100, energy % 100);
+    int width = fc_osrs_measure_text(text, 9);
+    DrawRectangle(6, 6, width + 10, 18,
+                  CLITERAL(Color){20, 18, 14, 210});
+    DrawRectangleLines(6, 6, width + 10, 18,
+                       CLITERAL(Color){120, 110, 90, 255});
+    fc_osrs_draw_text(text, 11, 11, 9, DBG_COL_VALUE);
+}
+
 /* Master 2D overlays for LOS/path/range — called after EndMode3D */
 void debug_overlay_screen(const FcState* state, Camera3D cam, int dbg_flags) {
     if (dbg_flags & DBG_LOS)   dbg_draw_los_2d(state, cam);
     if (dbg_flags & DBG_PATH)  dbg_draw_path_2d(state, cam);
     if (dbg_flags & DBG_RANGE) dbg_draw_range_2d(state, cam);
+    dbg_draw_run_energy(state);
 }
 
 void dbg_draw_prayer_window_indicator(Vector3 world_anchor, Camera3D cam) {
