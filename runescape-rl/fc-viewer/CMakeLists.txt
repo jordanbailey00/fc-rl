@@ -9,6 +9,7 @@ set(FC_VIEWER_SOURCES
     src/fc_assets.c
     src/fc_actor_visual.c
     src/fc_actor_animation.c
+    src/fc_player_appearance.c
     src/fc_click_feedback.c
     src/fc_combat_presentation.c
     src/fc_debug_overlay.c
@@ -52,6 +53,14 @@ if(EXISTS "${RAYLIB_ROOT}/include/raylib.h")
     endif()
 
     message(STATUS "Raylib found at ${RAYLIB_ROOT} — fc_viewer will be built")
+    # Explicitly invoked graphics validation; headless CTest needs no display.
+    add_executable(test_equipment_appearance EXCLUDE_FROM_ALL
+        tests/test_equipment_appearance.c src/fc_player_appearance.c
+        src/fc_models.c src/fc_assets.c src/fc_model_animation.c src/fc_anim_loader.c)
+    target_include_directories(test_equipment_appearance PRIVATE
+        src ${PROJECT_SOURCE_DIR}/fc-core/include ${RAYLIB_ROOT}/include)
+    target_link_libraries(test_equipment_appearance PRIVATE fc_core
+        ${RAYLIB_ROOT}/lib/libraylib.a m dl pthread ${X11_LIBRARIES})
 else()
     message(STATUS "Raylib not found at ${RAYLIB_ROOT} — fc_viewer skipped (set RAYLIB_ROOT)")
 endif()

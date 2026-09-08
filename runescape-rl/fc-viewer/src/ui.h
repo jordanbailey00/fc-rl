@@ -70,6 +70,7 @@ typedef struct RuneCUiSlot {
     int quantity;
     char label[24];
     int enabled;
+    const char *action;           /* supplied by the inventory owner */
 } RuneCUiSlot;
 
 typedef enum RuneCUiMinimapDotKind {

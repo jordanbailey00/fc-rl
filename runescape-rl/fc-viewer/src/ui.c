@@ -150,8 +150,8 @@ static const char *spell_name(int slot) {
 }
 
 static const char *g_equipment_names[RUNEC_UI_EQUIP_SLOT_COUNT] = {
-    "Head", "Cape", "Neck", "Weapon", "Body", "Shield", "Ammo",
-    "Legs", "Unused", "Hands", "Feet", "Unused", "Ring", "Quiver",
+    "Head", "Cape", "Neck", "Weapon", "Body", "Shield", "Unused",
+    "Legs", "Unused", "Hands", "Feet", "Unused", "Ring", "Ammo",
 };
 
 static const Rectangle g_equipment_offsets[RUNEC_UI_EQUIP_SLOT_COUNT] = {
@@ -161,14 +161,14 @@ static const Rectangle g_equipment_offsets[RUNEC_UI_EQUIP_SLOT_COUNT] = {
     {21, 82, 36, 36},
     {77, 82, 36, 36},
     {133, 82, 36, 36},
-    {133, 43, 36, 36},
+    {-1000, -1000, 0, 0},
     {77, 122, 36, 36},
     {-1000, -1000, 0, 0},
     {21, 162, 36, 36},
     {77, 162, 36, 36},
     {-1000, -1000, 0, 0},
     {133, 162, 36, 36},
-    {118, 43, 36, 36},
+    {133, 43, 36, 36},
 };
 
 static const char *g_worn_icon_names[RUNEC_UI_EQUIP_SLOT_COUNT] = {
@@ -706,28 +706,6 @@ void runec_ui_init(RuneCUiState *ui) {
         ui->minimap_texture_ready = 1;
     }
 
-    ui->inventory[0] = (RuneCUiSlot){6570, 6570, 1, "Fire cape", 1};
-    ui->inventory[1] = (RuneCUiSlot){21295, 21295, 1, "Infernal cape", 1};
-    ui->inventory[2] = (RuneCUiSlot){1042, 1042, 1, "Blue partyhat", 1};
-    ui->inventory[3] = (RuneCUiSlot){1044, 1044, 1, "Green partyhat", 1};
-    ui->inventory[4] = (RuneCUiSlot){1046, 1046, 1, "Purple partyhat", 1};
-    ui->inventory[5] = (RuneCUiSlot){1048, 1048, 1, "White partyhat", 1};
-    ui->inventory[6] = (RuneCUiSlot){4151, 4151, 1, "Abyssal whip", 1};
-    ui->inventory[7] = (RuneCUiSlot){11802, 11802, 1, "Armadyl godsword", 1};
-    ui->inventory[8] = (RuneCUiSlot){11832, 11832, 1, "Bandos chestplate", 1};
-    ui->inventory[9] = (RuneCUiSlot){11834, 11834, 1, "Bandos tassets", 1};
-    ui->inventory[10] = (RuneCUiSlot){26382, 26382, 1, "Torva full helm", 1};
-    ui->inventory[11] = (RuneCUiSlot){26384, 26384, 1, "Torva platebody", 1};
-    ui->inventory[12] = (RuneCUiSlot){26386, 26386, 1, "Torva platelegs", 1};
-    ui->inventory[13] = (RuneCUiSlot){10350, 10350, 1, "3a full helmet", 1};
-    ui->inventory[14] = (RuneCUiSlot){10348, 10348, 1, "3a platebody", 1};
-    ui->inventory[15] = (RuneCUiSlot){10346, 10346, 1, "3a platelegs", 1};
-    ui->inventory[16] = (RuneCUiSlot){10352, 10352, 1, "3a kiteshield", 1};
-    ui->inventory[17] = (RuneCUiSlot){995, 1004, 10000000, "Coins", 1};
-    ui->equipment[0] = (RuneCUiSlot){11826, 11826, 1, "Helm", 1};
-    ui->equipment[3] = (RuneCUiSlot){4151, 4151, 1, "Abyssal whip", 1};
-    ui->equipment[4] = (RuneCUiSlot){11828, 11828, 1, "Body", 1};
-    ui->equipment[7] = (RuneCUiSlot){11830, 11830, 1, "Legs", 1};
 
 }
 
@@ -1311,12 +1289,13 @@ static int handle_context_menu_open(RuneCUiState *ui,
     if (ui->active_tab == RUNEC_UI_TAB_INVENTORY) {
         int slot = ui_inventory_slot_at(layout, mouse);
         if (slot >= 0) {
-            static const char *actions[] = {"Use", "Examine", "Drop"};
+            const char *actions[] = {ui->inventory[slot].action ?
+                ui->inventory[slot].action : "Use", "Examine"};
             static const char *empty_actions[] = {"Cancel"};
             const char *title = ui->inventory[slot].enabled
                 ? ui->inventory[slot].label : "Empty inventory slot";
             if (ui->inventory[slot].enabled) {
-                set_context(ui, mouse, title, actions, 3);
+                set_context(ui, mouse, title, actions, 2);
                 set_context_source(ui, RUNEC_UI_CONTEXT_INVENTORY, slot,
                                    ui->inventory[slot].item_id);
             } else {
@@ -1935,8 +1914,8 @@ static void draw_skills(const RuneCUiState *ui, const RuneCUiLayout *layout) {
                           ? ui->skill_current[i] : 1;
         int base_level = i < RUNEC_UI_SKILL_COUNT && ui->skill_base[i] > 0
                        ? ui->skill_base[i] : current_level;
-        char cur[8];
-        char base[8];
+        char cur[12];
+        char base[12];
         snprintf(cur, sizeof(cur), "%d", current_level);
         snprintf(base, sizeof(base), "%d", base_level);
         Color cur_color = current_level < base_level ? (Color){220, 45, 31, 255}

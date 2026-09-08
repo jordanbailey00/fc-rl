@@ -53,7 +53,7 @@ EXPECTED_COMPILED_FIELDS: dict[str, Any] = {
     "observation_version": OBSERVATION_VERSION,
     "action_version": ACTION_VERSION,
     "prayer_timing_version": PRAYER_TIMING_VERSION,
-    "state_hash_version": 4,
+    "state_hash_version": 5,
 }
 REQUIRED_CONTRACT_FIELDS = frozenset(
     {*EXPECTED_COMPILED_FIELDS, "reward_version", "active_loadout"}
@@ -576,7 +576,16 @@ def validate_checkpoint_marker(
     if not isinstance(marker_contract, dict):
         raise ContractError("checkpoint sidecar contract is unavailable")
     expected_contract = preflight["contract"]
+    # Weights do not serialize FcState. v5 only extends state diagnostics for
+    # manually controlled equipment; the no-switch policy schema is unchanged.
+    # Accept this one directional migration, never other contract differences.
+    legacy_equipment_hash = (
+        marker_contract.get("state_hash_version") == 4
+        and expected_contract.get("state_hash_version") == 5
+    )
     for field in sorted(set(expected_contract) | set(marker_contract)):
+        if field == "state_hash_version" and legacy_equipment_hash:
+            continue
         expected = expected_contract.get(field, "<missing>")
         actual = marker_contract.get(field, "<missing>")
         if actual != expected:
@@ -592,7 +601,7 @@ def validate_checkpoint_marker(
             "checkpoint sidecar self-identity mismatch: "
             f"expected={calculated_identity!r}, actual={actual_identity!r}"
         )
-    if actual_identity != expected_identity:
+    if actual_identity != expected_identity and not legacy_equipment_hash:
         raise ContractError(
             "checkpoint contract identity mismatch: "
             f"expected={expected_identity!r}, actual={actual_identity!r}"
@@ -649,7 +658,7 @@ def _checkpoint_resolution(
 ) -> dict[str, Any]:
     if not checkpoint.is_file():
         raise ContractError(f"checkpoint file is unavailable: actual={checkpoint}")
-    validate_checkpoint_marker(marker_path, preflight)
+    marker = validate_checkpoint_marker(marker_path, preflight)
     return {
         "checkpoint_resolution_schema_version": 1,
         "request_mode": request_mode,
@@ -658,7 +667,7 @@ def _checkpoint_resolution(
         "file_size": checkpoint.stat().st_size,
         "checkpoint_sha256": sha256_file(checkpoint),
         "sidecar_path": str(marker_path.resolve()),
-        "sidecar_contract_identity": preflight["contract_identity"],
+        "sidecar_contract_identity": marker["contract_identity"],
     }
 
 
@@ -795,12 +804,11 @@ def load_checkpoint_resolution(
             f"expected={expected_request_mode!r}, actual={request_mode!r}"
         )
     expected_identity = preflight["contract_identity"]
-    for field in ("contract_identity", "sidecar_contract_identity"):
-        if resolution.get(field) != expected_identity:
-            raise ContractError(
-                f"checkpoint resolution {field} mismatch: "
-                f"expected={expected_identity!r}, actual={resolution.get(field)!r}"
-            )
+    if resolution.get("contract_identity") != expected_identity:
+        raise ContractError(
+            "checkpoint resolution contract_identity mismatch: "
+            f"expected={expected_identity!r}, actual={resolution.get('contract_identity')!r}"
+        )
     checkpoint_value = resolution.get("resolved_path")
     sidecar_value = resolution.get("sidecar_path")
     if not isinstance(checkpoint_value, str) or not isinstance(sidecar_value, str):

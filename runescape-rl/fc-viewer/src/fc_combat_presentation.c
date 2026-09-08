@@ -574,6 +574,7 @@ static void ingest_player_attack(FcCombatPresentation *presentation,
     const FcCombatPresentationContext *context) {
     const FcRenderEvents *events = context->events;
     const FcPlayerVisualProfile *profile = context->player_profile;
+    if (!profile->projectile_travel_spot) return; /* unarmed: no projectile */
     int sx = events->player_attack_source_x;
     int sy = events->player_attack_source_y;
     int tx = events->player_attack_target_x;

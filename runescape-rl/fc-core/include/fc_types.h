@@ -194,6 +194,15 @@ typedef struct {
 /* Player                                                                    */
 /* ======================================================================== */
 
+#define FC_INVENTORY_SLOTS 28
+#define FC_EQUIPMENT_SLOTS 14
+
+typedef struct {
+    int item_id;                 /* 0 denotes an empty slot */
+    int quantity;
+    int charges;                 /* loaded darts remain with the blowpipe */
+} FcItemStack;
+
 typedef struct {
     /* Position */
     int x, y;
@@ -292,6 +301,10 @@ typedef struct {
     int total_damage_taken;
     int total_food_eaten;
     int total_potions_used;
+    FcItemStack inventory[FC_INVENTORY_SLOTS];
+    FcItemStack equipment[FC_EQUIPMENT_SLOTS];
+    int melee_attack_bonus, melee_strength_bonus;
+    int selected_food_slot, selected_potion_slot;
 } FcPlayer;
 
 /* ======================================================================== */

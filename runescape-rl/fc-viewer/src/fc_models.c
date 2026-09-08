@@ -424,14 +424,14 @@ void models_free(ModelSet *set) {
     for (int i = 0; i < set->count; i++) {
         if (set->entries[i].loaded) {
             UnloadModel(set->entries[i].model);
+        }
         free(set->entries[i].base_verts);
         free(set->entries[i].rest_verts);
         free(set->entries[i].rest_texcoords);
-            free(set->entries[i].vertex_skins);
-            free(set->entries[i].face_indices);
-            free(set->entries[i].face_priorities);
-            free(set->entries[i].face_uvs);
-        }
+        free(set->entries[i].vertex_skins);
+        free(set->entries[i].face_indices);
+        free(set->entries[i].face_priorities);
+        free(set->entries[i].face_uvs);
     }
     free(set->entries);
     free(set->index_by_id);

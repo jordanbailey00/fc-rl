@@ -10,6 +10,26 @@ The project trains from scratch without demonstrations or a scripted policy.
 The live task uses the SOTA Twisted bow/Masori loadout, no food, no Prayer
 potions, and three policy action heads: movement, target selection, and Prayer.
 
+The playable viewer also supports clicking worn items to remove them and
+inventory items to equip them. Equipment and the 28-slot inventory are owned
+by the C core; swaps respect inventory capacity, stack limits, level
+requirements, and two-handed conflicts. Combat bonuses and the player model
+update without resetting vitals, cooldowns, or attacks already in flight.
+Removing the weapon enables unarmed Punch. Inventory dragging swaps slots.
+These manual controls are disabled during checkpoint replay. They are not
+policy action heads, and the training config, observations, and starting
+combat stats are unchanged.
+
+This deliberately supports the existing loadout items, not the entire OSRS
+item catalogue. Preset item bonuses remain pinned to the existing simulation
+balance; quest progression, equipment degradation, loading new blowpipe
+ammunition, banks, and ground-item dropping are not added. Loaded blowpipe
+darts remain with the weapon when it is removed. The existing food/potion
+actions now consume actual inventory slots and leave empty vials in place.
+State-hash version 5 includes these containers. Version-4 weight checkpoints
+remain accepted only when every policy contract field otherwise matches;
+older action/state traces are still version-gated.
+
 ## Current comparison baseline
 
 The latest completed 750M comparison baseline is W&B run

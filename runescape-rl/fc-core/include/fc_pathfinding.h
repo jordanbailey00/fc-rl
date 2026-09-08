@@ -1,6 +1,9 @@
 #ifndef FC_PATHFINDING_H
 #define FC_PATHFINDING_H
 
+/* Attack-route range 0 means cardinal melee contact, not ranged LOS. */
+#define FC_ROUTE_MELEE_RANGE 0
+
 #include "fc_types.h"
 
 /* ======================================================================== */

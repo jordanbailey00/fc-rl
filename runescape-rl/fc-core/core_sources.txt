@@ -1,5 +1,6 @@
 src/fc_state.c
 src/fc_loadouts.c
+src/fc_items.c
 src/fc_rng.c
 src/fc_tick.c
 src/fc_combat.c

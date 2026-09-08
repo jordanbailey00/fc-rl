@@ -115,7 +115,7 @@ const FcLoadout FC_LOADOUTS[FC_NUM_LOADOUTS] = {
             {FC_EQUIP_SLOT_LEGS,   27241, 0, "Masori chaps (f)"},
             {FC_EQUIP_SLOT_HANDS,  26235, 0, "Zaryte vambraces"},
             {FC_EQUIP_SLOT_FEET,   13237, 0, "Pegasian boots"},
-            {FC_EQUIP_SLOT_RING,   25487, 0, "Venator ring"},
+            {FC_EQUIP_SLOT_RING,   28310, 0, "Venator ring"},
         },
         .model_item_count = 8,
         .model_item_ids = {27235, 22109, 19547, 20997, 27238, 27241, 26235, 13237},

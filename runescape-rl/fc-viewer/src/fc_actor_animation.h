@@ -99,6 +99,7 @@ void fc_actor_animation_update_models(FcActorAnimation *animation,
                                       const unsigned char deferred_deaths[FC_MAX_NPCS]);
 
 const FcPlayerVisualProfile *fc_player_visual_profile(int active_loadout);
+int fc_player_equipment_visual_profile(const FcPlayer *player);
 NpcModelEntry *fc_actor_player_model_entry(NpcModelSet *player_models,
                                            int active_loadout);
 void fc_actor_animation_upload_npc(FcActorAnimation *animation,

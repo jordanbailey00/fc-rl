@@ -492,8 +492,13 @@ typedef enum {
 static int fc_route_goal_reached(
     FcRouteGoalKind kind, int x, int y,
     int dst_x, int dst_y, int dst_size, int attack_range,
+    const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
+    const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
     const uint8_t los_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]) {
     if (kind == FC_ROUTE_EXACT) return x == dst_x && y == dst_y;
+    if (attack_range == FC_ROUTE_MELEE_RANGE)
+        return fc_npc_can_melee_player(x, y, dst_x, dst_y, dst_size,
+                                       walkable, movement_flags);
     int distance = fc_area_distance(x, y, dst_x, dst_y, dst_size);
     return distance > 0 && distance <= attack_range &&
            fc_has_los_between_areas(x, y, 1, dst_x, dst_y, dst_size,
@@ -554,7 +559,7 @@ static int fc_bfs_route(
     while (qh < qt) {
         int cx = qx[qh], cy = qy[qh]; qh++;
         if (fc_route_goal_reached(goal_kind, cx, cy, dst_x, dst_y, dst_size,
-                                  attack_range, los_flags)) {
+                                  attack_range, walkable, movement_flags, los_flags)) {
             found_x = cx;
             found_y = cy;
             break;

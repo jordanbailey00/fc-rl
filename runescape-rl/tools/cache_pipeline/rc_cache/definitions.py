@@ -335,6 +335,10 @@ class ItemDef(DecodeSummary):
     placeholder_template_id: int = -1
     male_model_ids: list[int] = field(default_factory=lambda: [-1, -1, -1])
     female_model_ids: list[int] = field(default_factory=lambda: [-1, -1, -1])
+    wear_positions: list[int] = field(default_factory=lambda: [-1, -1, -1])
+    male_offset_y: int = 0
+    recolors: list[tuple[int, int]] = field(default_factory=list)
+    retextures: list[tuple[int, int]] = field(default_factory=list)
     ground_actions: list[str | None] = field(
         default_factory=lambda: [None, None, "Take", None, None]
     )
@@ -374,7 +378,9 @@ def decode_item_definition(item_id: int, data: bytes) -> ItemDef:
             d.stackable = True
         elif op == 12:
             d.cost = read_i32(buf)
-        elif op in (13, 14, 17, 18, 19, 20, 27, 28, 29, 42, 62, 69, 119, 120, 121, 122, 155, 157, 162, 163, 165):
+        elif op in (13, 14, 27):
+            d.wear_positions[(13, 14, 27).index(op)] = read_u8(buf)
+        elif op in (17, 18, 19, 20, 28, 29, 42, 62, 69, 119, 120, 121, 122, 155, 157, 162, 163, 165):
             read_u8(buf)
         elif op == 15:
             pass
@@ -382,7 +388,7 @@ def decode_item_definition(item_id: int, data: bytes) -> ItemDef:
             d.members = True
         elif op == 23:
             d.male_model_ids[0] = u16_or_missing(read_u16(buf))
-            read_i8(buf)
+            d.male_offset_y = read_i8(buf)
         elif op == 24:
             d.male_model_ids[1] = u16_or_missing(read_u16(buf))
         elif op == 25:
@@ -406,8 +412,8 @@ def decode_item_definition(item_id: int, data: bytes) -> ItemDef:
                 d.inventory_actions[op - 35] = action
         elif op in (40, 41):
             for _ in range(read_u8(buf)):
-                read_u16(buf)
-                read_u16(buf)
+                pair = (read_u16(buf), read_u16(buf))
+                (d.recolors if op == 40 else d.retextures).append(pair)
         elif op == 43:
             read_u8(buf)
             while True:
@@ -419,7 +425,7 @@ def decode_item_definition(item_id: int, data: bytes) -> ItemDef:
             d.inventory_model = read_i32(buf)
         elif op == 45:
             d.male_model_ids[0] = read_i32(buf)
-            read_u8(buf)
+            d.male_offset_y = read_i8(buf)
         elif op == 46:
             d.male_model_ids[1] = read_i32(buf)
         elif op == 47:

@@ -97,9 +97,9 @@ int fc_is_terminal(const FcState* state);
 /* Determinism                                                               */
 /* ======================================================================== */
 
-/* Version 4 removes redundant compatibility/temporary fields from the
- * complete core-owned fixed-width FcState serialization. */
-#define FC_STATE_HASH_VERSION 4u
+/* Version 5 includes inventory, equipment, selected consumable slots and
+ * unarmed bonuses. Policy observations and action dimensions are unchanged. */
+#define FC_STATE_HASH_VERSION 5u
 
 /*
  * Compute a deterministic hash of the game state.

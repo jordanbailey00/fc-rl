@@ -123,6 +123,20 @@ static uint32_t fc_hash_player(uint32_t hash, const FcPlayer* player) {
     FC_HASH_I32(player->total_damage_taken);
     FC_HASH_I32(player->total_food_eaten);
     FC_HASH_I32(player->total_potions_used);
+    for (int i = 0; i < FC_INVENTORY_SLOTS; i++) {
+        FC_HASH_I32(player->inventory[i].item_id);
+        FC_HASH_I32(player->inventory[i].quantity);
+        FC_HASH_I32(player->inventory[i].charges);
+    }
+    for (int i = 0; i < FC_EQUIPMENT_SLOTS; i++) {
+        FC_HASH_I32(player->equipment[i].item_id);
+        FC_HASH_I32(player->equipment[i].quantity);
+        FC_HASH_I32(player->equipment[i].charges);
+    }
+    FC_HASH_I32(player->melee_attack_bonus);
+    FC_HASH_I32(player->melee_strength_bonus);
+    FC_HASH_I32(player->selected_food_slot);
+    FC_HASH_I32(player->selected_potion_slot);
     return hash;
 }
 

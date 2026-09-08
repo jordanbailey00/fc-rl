@@ -23,6 +23,8 @@
 #include "fc_types.h"
 #include "fc_contracts.h"
 #include "fc_api.h"
+#include "fc_items.h"
+#include "fc_player_appearance.h"
 #include "fc_npc.h"
 #include "fc_combat.h"
 #include "fc_pathfinding.h"
@@ -138,7 +140,9 @@ typedef struct {
     ObjectAnimRuntime* object_anim_runtimes;
     int object_anim_runtime_count;
     NpcModelSet* npc_models;
-    NpcModelSet* player_model;
+    FcPlayerAppearance appearance;
+    char item_message[96];
+    float item_message_seconds;
     /* Animation cache (shared by player + all NPCs) */
     AnimCache* anim_cache;
     /* Buffered key inputs (captured every frame, consumed on tick) */
@@ -205,26 +209,6 @@ static void set_ui_slot(RuneCUiSlot* slot, uint32_t item_id,
     slot->quantity = quantity;
     snprintf(slot->label, sizeof(slot->label), "%s", label ? label : "Item");
     slot->enabled = 1;
-}
-
-static uint32_t prayer_potion_item_id_for_doses(int doses) {
-    switch (doses) {
-        case 4: return FC_UI_ITEM_PRAYER_POT_4;
-        case 3: return FC_UI_ITEM_PRAYER_POT_3;
-        case 2: return FC_UI_ITEM_PRAYER_POT_2;
-        case 1: return FC_UI_ITEM_PRAYER_POT_1;
-        default: return FC_UI_ITEM_VIAL;
-    }
-}
-
-static const char* prayer_potion_label_for_doses(int doses) {
-    switch (doses) {
-        case 4: return "Prayer potion(4)";
-        case 3: return "Prayer potion(3)";
-        case 2: return "Prayer potion(2)";
-        case 1: return "Prayer potion(1)";
-        default: return "Vial";
-    }
 }
 
 static uint32_t fc_ui_active_prayer_bits(int prayer) {
@@ -294,48 +278,22 @@ static void load_fc_ui_item_icons(ViewerState* v) {
     }
 }
 
+static void sync_item_slots(RuneCUiSlot *slots, const FcItemStack *items, int count) {
+    for (int i = 0; i < count; i++) {
+        memset(&slots[i], 0, sizeof(slots[i]));
+        const FcItemDef *item = fc_item_definition(items[i].item_id);
+        if (!item) continue;
+        set_ui_slot(&slots[i], (uint32_t)item->id, (uint32_t)item->id,
+                    items[i].quantity, item->name);
+        slots[i].action = item->slot == FC_EQUIP_SLOT_WEAPON ? "Wield" :
+            item->slot >= 0 ? "Wear" : item->id == 385 ? "Eat" :
+            item->id == 229 ? "Use" : "Drink";
+    }
+}
+
 static void sync_fc_ui_items(ViewerState* v) {
-    if (!v) return;
-    FcPlayer* p = &v->state.player;
-    for (int i = 0; i < RUNEC_UI_INV_SLOT_COUNT; i++)
-        memset(&v->ui.inventory[i], 0, sizeof(v->ui.inventory[i]));
-
-    int doses = p->prayer_doses_remaining;
-    if (doses < 0) doses = 0;
-    if (doses > FC_MAX_PRAYER_DOSES) doses = FC_MAX_PRAYER_DOSES;
-    int full_pots = doses / 4;
-    int partial = doses % 4;
-    for (int slot = 0; slot < 8; slot++) {
-        int slot_doses = 0;
-        if (slot < full_pots) slot_doses = 4;
-        else if (slot == full_pots && partial > 0) slot_doses = partial;
-        uint32_t item_id = prayer_potion_item_id_for_doses(slot_doses);
-        set_ui_slot(&v->ui.inventory[slot], item_id, item_id, 1,
-                    prayer_potion_label_for_doses(slot_doses));
-    }
-    for (int slot = 8; slot < RUNEC_UI_INV_SLOT_COUNT; slot++) {
-        if (slot - 8 < p->sharks_remaining) {
-            set_ui_slot(&v->ui.inventory[slot], FC_UI_ITEM_SHARK,
-                        FC_UI_ITEM_SHARK, 1, "Shark");
-        }
-    }
-
-    for (int i = 0; i < RUNEC_UI_EQUIP_SLOT_COUNT; i++)
-        memset(&v->ui.equipment[i], 0, sizeof(v->ui.equipment[i]));
-
-    int loadout = v->active_loadout;
-    if (loadout < 0 || loadout >= FC_NUM_LOADOUTS)
-        loadout = FC_ACTIVE_LOADOUT;
-    const FcLoadout* lo = &FC_LOADOUTS[loadout];
-    for (int i = 0; i < lo->equipment_count; i++) {
-        const FcLoadoutEquipmentItem* equip = &lo->equipment[i];
-        if (equip->slot >= 0 && equip->slot < RUNEC_UI_EQUIP_SLOT_COUNT) {
-            uint32_t icon_id = equip->icon_item_id ? equip->icon_item_id : equip->item_id;
-            int quantity = equip->slot == FC_EQUIP_SLOT_AMMO ? p->ammo_count : 1;
-            set_ui_slot(&v->ui.equipment[equip->slot], equip->item_id,
-                        icon_id, quantity, equip->label);
-        }
-    }
+    sync_item_slots(v->ui.inventory, v->state.player.inventory, FC_INVENTORY_SLOTS);
+    sync_item_slots(v->ui.equipment, v->state.player.equipment, FC_EQUIPMENT_SLOTS);
 }
 
 static void sync_fc_ui_status(ViewerState* v) {
@@ -351,16 +309,14 @@ static void sync_fc_ui_status(ViewerState* v) {
     if (v->ui.run_energy < 0) v->ui.run_energy = 0;
     if (v->ui.run_energy > 100) v->ui.run_energy = 100;
     v->ui.run_enabled = p->is_running != 0;
-    v->ui.selected_combat_style = v->combat_style == 2 ? 3 : v->combat_style;
     v->ui.auto_retaliate = 1;
     v->ui.special_attack_energy = 100;
     v->ui.combat_level = 126;
-    int loadout = v->active_loadout;
-    if (loadout < 0 || loadout >= FC_NUM_LOADOUTS)
-        loadout = FC_ACTIVE_LOADOUT;
-    const FcLoadout* lo = &FC_LOADOUTS[loadout];
-    runec_ui_set_combat_weapon_name(&v->ui, lo->weapon_name);
-    runec_ui_set_combat_style_profile(&v->ui, lo->combat_style_profile);
+    const FcItemDef *weapon = fc_item_definition(p->equipment[FC_EQUIP_SLOT_WEAPON].item_id);
+    v->ui.selected_combat_style = weapon ? (v->combat_style == 2 ? 3 : v->combat_style) : 0;
+    runec_ui_set_combat_weapon_name(&v->ui, weapon ? weapon->name : "Unarmed");
+    runec_ui_set_combat_style_profile(&v->ui,
+        weapon ? FC_LOADOUTS[weapon->visual_profile].combat_style_profile : 0);
 
     for (int i = 0; i < RUNEC_UI_SKILL_COUNT; i++) {
         v->ui.skill_current[i] = 1;
@@ -457,28 +413,52 @@ static void queue_player_attack_request(ViewerState* v, int npc_idx,
                                          screen_x, screen_y);
 }
 
+static void show_item_result(ViewerState *v, FcItemResult result) {
+    snprintf(v->item_message, sizeof(v->item_message), "%s", fc_item_result_message(result));
+    v->item_message_seconds = result == FC_ITEM_OK ? 0.0f : 4.0f;
+}
+
+static void use_inventory_slot(ViewerState *v, int slot) {
+    if (v->policy_pipe || slot < 0 || slot >= FC_INVENTORY_SLOTS) return;
+    const FcItemDef *item = fc_item_definition(v->state.player.inventory[slot].item_id);
+    if (!item) return;
+    FcItemResult result;
+    if (item->slot >= 0) {
+        result = fc_equip_item(&v->state, slot);
+        if (result == FC_ITEM_OK) v->pending_attack_npc = v->attack_target = -1;
+    } else {
+        result = fc_select_consumable(&v->state, slot);
+        if (result == FC_ITEM_OK) {
+            if (item->id == 385) v->pending_eat = FC_EAT_SHARK;
+            else v->pending_drink = FC_DRINK_PRAYER_POT;
+        }
+    }
+    show_item_result(v, result);
+}
+
 static void handle_runec_ui_intent(ViewerState* v) {
     if (!v) return;
     RuneCUiIntent* intent = &v->ui.last_intent;
     FcPlayer* p = &v->state.player;
     switch (intent->kind) {
         case RUNEC_UI_INTENT_INVENTORY_SLOT:
-            if (intent->primary >= 0 && intent->primary < 8) {
-                int full_pots = p->prayer_doses_remaining / 4;
-                int partial = p->prayer_doses_remaining % 4;
-                if (intent->primary < full_pots ||
-                        (intent->primary == full_pots && partial > 0))
-                    v->pending_drink = FC_DRINK_PRAYER_POT;
-            } else if (intent->primary >= 8 && intent->primary < 28) {
-                if (intent->primary - 8 < p->sharks_remaining)
-                    v->pending_eat = FC_EAT_SHARK;
-            }
+            use_inventory_slot(v, intent->primary);
             break;
         case RUNEC_UI_INTENT_INVENTORY_ACTION:
-            if (strcmp(intent->text, "Use") == 0 || strcmp(intent->text, "Drink") == 0)
-                v->pending_drink = FC_DRINK_PRAYER_POT;
-            else if (strcmp(intent->text, "Eat") == 0)
-                v->pending_eat = FC_EAT_SHARK;
+            if (strcmp(intent->text, "Wear") == 0 || strcmp(intent->text, "Wield") == 0 ||
+                strcmp(intent->text, "Eat") == 0 || strcmp(intent->text, "Drink") == 0)
+                use_inventory_slot(v, intent->primary);
+            break;
+        case RUNEC_UI_INTENT_EQUIPMENT_ACTION:
+            if (strcmp(intent->text, "Remove") != 0) break;
+            /* fall through */
+        case RUNEC_UI_INTENT_EQUIPMENT_SLOT:
+            if (!v->policy_pipe)
+                show_item_result(v, fc_unequip_item(&v->state, intent->primary));
+            break;
+        case RUNEC_UI_INTENT_INVENTORY_DRAG:
+            if (!v->policy_pipe)
+                show_item_result(v, fc_inventory_swap(&v->state, intent->primary, intent->secondary));
             break;
         case RUNEC_UI_INTENT_PRAYER_SLOT: {
             int action = fc_ui_prayer_action_for_slot(p, intent->primary);
@@ -612,8 +592,7 @@ static void apply_initial_supplies(ViewerState* v) {
     if (v->initial_prayer_doses < 0) v->initial_prayer_doses = 0;
     if (v->initial_prayer_doses > FC_MAX_PRAYER_DOSES)
         v->initial_prayer_doses = FC_MAX_PRAYER_DOSES;
-    v->state.player.sharks_remaining = v->initial_sharks;
-    v->state.player.prayer_doses_remaining = v->initial_prayer_doses;
+    fc_set_initial_supplies(&v->state, v->initial_sharks, v->initial_prayer_doses);
 }
 
 static void load_reward_params(ViewerState* v) {
@@ -879,6 +858,20 @@ static void print_policy_episode_summary(const ViewerState* v) {
     fprintf(stderr, ",\"env/n\":1.0}\n");
 }
 
+static void sync_player_appearance(ViewerState *v) {
+    int changed = fc_player_appearance_sync(&v->appearance, &v->state.player,
+        FC_LOADOUTS[v->active_loadout].player_model_id);
+    if (changed < 0) {
+        fprintf(stderr, "Cannot compose player appearance from local equipment assets.\n");
+        exit(EXIT_FAILURE);
+    }
+    if (changed && v->actor_animation.player_state) {
+        anim_model_state_free(v->actor_animation.player_state);
+        v->actor_animation.player_state = NULL;
+        /* Keep pose/action clocks: a gear change isn't an animation restart. */
+    }
+}
+
 static void reset_ep(ViewerState* v) {
     load_reward_params(v);
     reset_reward_tracking(v);
@@ -897,6 +890,8 @@ static void reset_ep(ViewerState* v) {
         v->state.player.current_prayer = v->state.player.max_prayer;
     }
     apply_initial_supplies(v);
+    sync_player_appearance(v);
+    v->item_message_seconds = 0.0f;
     fc_reward_runtime_begin_episode(&v->reward_runtime, &v->state);
     fc_fill_render_entities(&v->state, v->entities, &v->entity_count);
     fc_fill_render_events(&v->state, &v->render_events);
@@ -906,7 +901,7 @@ static void reset_ep(ViewerState* v) {
     memset(v->actions, 0, sizeof(v->actions));
     fc_combat_presentation_reset(v->combat_presentation);
     fc_actor_animation_reset(&v->actor_animation, &v->state,
-                             v->player_model, v->active_loadout);
+                             v->appearance.model, v->active_loadout);
     v->pending_prayer = 0;
     v->pending_eat = 0;
     v->pending_drink = 0;
@@ -939,7 +934,7 @@ static void viewer_jump_to_wave(ViewerState* v, int wave) {
     fc_fill_render_events(&v->state, &v->render_events);
     fc_combat_presentation_reset(v->combat_presentation);
     fc_actor_animation_reset(&v->actor_animation, &v->state,
-                             v->player_model, v->active_loadout);
+                             v->appearance.model, v->active_loadout);
     v->attack_target = -1;
     fc_click_feedback_reset(&v->click_feedback);
     dbg_log_clear();
@@ -1465,7 +1460,7 @@ static void draw_scene(ViewerState* v) {
 
             /* Player model or fallback cylinder */
             NpcModelEntry* pm = fc_actor_player_model_entry(
-                v->player_model, v->active_loadout);
+                v->appearance.model, v->active_loadout);
             if (pm && pm->loaded) {
                 Vector3 pos = {ex, gy, ey};
                 float face_angle = pose.face_angle;
@@ -1524,7 +1519,7 @@ static void draw_scene(ViewerState* v) {
         .scene = &v->actor_animation.scene,
         .terrain = v->terrain,
         .anim_cache = v->anim_cache,
-        .player_profile = fc_player_visual_profile(v->active_loadout),
+        .player_profile = fc_player_visual_profile(fc_player_equipment_visual_profile(&v->state.player)),
         .tps = v->tps,
     };
     fc_combat_presentation_draw_world(v->combat_presentation,
@@ -1538,7 +1533,7 @@ static void draw_scene(ViewerState* v) {
         .presentation = combat_context,
         .entities = v->entities,
         .entity_count = v->entity_count,
-        .player_models = v->player_model,
+        .player_models = v->appearance.model,
         .npc_models = v->npc_models,
         .active_loadout = v->active_loadout,
         .ui_assets = &v->ui.assets,
@@ -2267,10 +2262,11 @@ int main(int argc, char** argv) {
         if (!v.npc_models) fprintf(stderr, "warning: NPC models not found\n");
     }
 
-    /* Load player model */
-    {
-        if (fc_asset_exists("fc_player.models"))
-            v.player_model = fc_npc_models_load("fc_player.models", (Texture2D){0});
+    /* Load composable player body and equipment models. */
+    if (!fc_player_appearance_load(&v.appearance)) {
+        fprintf(stderr, "Required player appearance assets are missing or invalid.\n");
+        fc_player_appearance_free(&v.appearance);
+        return 1;
     }
 
     /* Load the animation cache shared by actor and combat presentation. */
@@ -2492,7 +2488,7 @@ int main(int argc, char** argv) {
             update_reward_breakdown(&v);
             fc_actor_animation_ingest_events(
                 &v.actor_animation, &v.render_events, v.anim_cache,
-                v.active_loadout, v.tps);
+                fc_player_equipment_visual_profile(&v.state.player), v.tps);
 
             /* Debug event log — record events from this tick */
             dbg_log_tick(&v.state);
@@ -2517,7 +2513,7 @@ int main(int argc, char** argv) {
                 .scene = &v.actor_animation.scene,
                 .terrain = v.terrain,
                 .anim_cache = v.anim_cache,
-                .player_profile = fc_player_visual_profile(v.active_loadout),
+                .player_profile = fc_player_visual_profile(fc_player_equipment_visual_profile(&v.state.player)),
                 .tps = v.tps,
             };
             fc_combat_presentation_ingest_tick(v.combat_presentation,
@@ -2558,6 +2554,8 @@ int main(int argc, char** argv) {
         }
 
         float frame_dt = GetFrameTime();
+        sync_player_appearance(&v);
+        if (v.item_message_seconds > 0) v.item_message_seconds -= frame_dt;
         fc_click_feedback_update(&v.click_feedback, frame_dt);
         FcCombatPresentationContext combat_context = {
             .state = &v.state,
@@ -2565,7 +2563,7 @@ int main(int argc, char** argv) {
             .scene = &v.actor_animation.scene,
             .terrain = v.terrain,
             .anim_cache = v.anim_cache,
-            .player_profile = fc_player_visual_profile(v.active_loadout),
+            .player_profile = fc_player_visual_profile(fc_player_equipment_visual_profile(&v.state.player)),
             .tps = v.tps,
         };
         unsigned char deferred_deaths[FC_MAX_NPCS];
@@ -2586,7 +2584,7 @@ int main(int argc, char** argv) {
                     v.combat_presentation, i);
         }
         fc_actor_animation_update_models(
-            &v.actor_animation, &v.state, v.player_model, v.npc_models,
+            &v.actor_animation, &v.state, v.appearance.model, v.npc_models,
             v.anim_cache, v.active_loadout, v.tps, frame_dt, deferred_deaths);
         /* Draw */
         BeginDrawing();
@@ -2597,6 +2595,10 @@ int main(int argc, char** argv) {
         draw_runec_side_overrides(&v);
         draw_runec_console(&v);
         draw_click_cross(&v);
+        if (v.item_message_seconds > 0) {
+            DrawRectangle(8, GetScreenHeight() - 34, 490, 26, (Color){20, 16, 12, 240});
+            text_s(v.item_message, 16, GetScreenHeight() - 29, 16, YELLOW);
+        }
 
         EndDrawing();
     }
@@ -2624,7 +2626,7 @@ int main(int argc, char** argv) {
         free(v.object_anim_runtimes);
     }
     if (v.anim_cache) anim_cache_free(v.anim_cache);
-    if (v.player_model) fc_npc_models_unload(v.player_model);
+    fc_player_appearance_free(&v.appearance);
     if (v.npc_models) fc_npc_models_unload(v.npc_models);
     if (v.object_anim_models) fc_npc_models_unload(v.object_anim_models);
     fc_animated_atlas_unload(&v.shared_model_atlas);

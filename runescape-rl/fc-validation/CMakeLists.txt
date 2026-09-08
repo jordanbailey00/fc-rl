@@ -2,6 +2,13 @@
 # This module consumes fc-core as a library and keeps validation logic out of
 # simulator code.
 
+add_executable(equipment tests/equipment.c)
+target_link_libraries(equipment PRIVATE fc_core m)
+target_include_directories(equipment PRIVATE ${PROJECT_SOURCE_DIR}/fc-core/include)
+add_test(NAME equipment_inventory_transactions COMMAND equipment)
+set_tests_properties(equipment_inventory_transactions PROPERTIES
+    LABELS "equipment;unit;integration;preservation")
+
 # Performance gates are explicit opt-in targets rather than CTest entries.
 # Their wall-clock thresholds are machine-specific, while the executable's
 # deterministic workload and machine-readable result are shared by A0 and the
@@ -115,6 +122,11 @@ add_library(parity_compiled_contract SHARED
 target_include_directories(parity_compiled_contract PRIVATE
     ${PROJECT_SOURCE_DIR}/fc-core/include
 )
+add_test(NAME equipment_checkpoint_compatibility
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/tests/equipment_contract.py
+    $<TARGET_FILE:parity_compiled_contract>)
+set_tests_properties(equipment_checkpoint_compatibility PROPERTIES
+    LABELS "equipment;checkpoint;contract")
 
 function(add_parity_fix_test name target case_name labels)
     add_test(NAME ${name} COMMAND ${target} ${case_name})

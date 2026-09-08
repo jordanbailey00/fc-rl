@@ -49,7 +49,7 @@ FIGHT_CAVES_SPOTANIM_IDS = [
     1923, # corrupted Bowfa launch
 ]
 FIGHT_CAVES_ANIM_IDS = {
-    426, 808, 819, 820, 821, 822, 823, 824, 829, 836,
+    422, 426, 808, 819, 820, 821, 822, 823, 824, 829, 836,
     4591, 4226, 4228, 4230, 5061, 7552,
     2618, 2619, 2620, 2621,
     2623, 2624, 2625, 2627,
@@ -292,52 +292,55 @@ def export_fc_player_model(cache_dir: Path, output: Path) -> None:
     }
     kit_defs = model_exporter.decode_identity_kits_modern(reader)
 
-    player_models = []
-    for synthetic_id, loadout_name, item_ids in FIGHT_CAVES_PLAYER_LOADOUTS:
+    def required_parts(ids, label):
         parts = []
-        keep_body_parts = {1}  # jaw/beard; equipped FC gear supplies the rest.
-        for body_part_id in sorted(keep_body_parts):
-            kit_id = model_exporter.DEFAULT_MALE_KITS.get(body_part_id)
-            kit = kit_defs.get(kit_id) if kit_id is not None else None
-            if not kit:
+        for model_id in ids:
+            if model_id < 0:
                 continue
-            kit_parts = []
-            for model_id in kit.body_models:
-                model = load_model(store, model_id)
-                if model:
-                    kit_parts.append(model)
-            if not kit_parts:
-                continue
-            body = kit_parts[0] if len(kit_parts) == 1 else merge_models(kit_parts)
-            apply_recolors(body, kit.original_colors, kit.replacement_colors)
-            parts.append(body)
-
-        for item_id in item_ids:
-            item = item_defs.get(item_id)
-            if item is None:
-                print(f"warning: player item {item_id} missing from item defs")
-                continue
-            item_parts = []
-            for model_id in item.male_model_ids:
-                if model_id < 0:
-                    continue
-                model = load_model(store, model_id)
-                if model is None:
-                    print(f"warning: player item {item_id} model {model_id} missing")
-                    continue
-                item_parts.append(model)
-            if item_parts:
-                parts.append(item_parts[0] if len(item_parts) == 1 else merge_models(item_parts))
-                print(f"player {loadout_name} item {item_id} {item.name!r}: {len(item_parts)} parts")
-
+            model = load_model(store, model_id)
+            if model is None:
+                raise SystemExit(f"{label}: missing model {model_id}")
+            parts.append(model)
         if not parts:
-            raise SystemExit(f"no player model parts decoded for {loadout_name}")
-        merged = parts[0] if len(parts) == 1 else merge_models(parts)
-        merged.model_id = synthetic_id
-        player_models.append(merged)
-        print(f"player {loadout_name}: {merged.vertex_count} verts, {merged.face_count} faces")
+            raise SystemExit(f"{label}: no wearable model")
+        return parts[0] if len(parts) == 1 else merge_models(parts)
 
-    write_models_binary(output, player_models)
+    # Export reusable identity-kit and worn-item pieces, not nine complete
+    # outfits. The client composes only the parts not hidden by wearpos data.
+    models = []
+    for body_part, kit_id in sorted(model_exporter.DEFAULT_MALE_KITS.items()):
+        kit = kit_defs[kit_id]
+        body = required_parts(kit.body_models, f"identity kit {kit_id}")
+        apply_recolors(body, kit.original_colors, kit.replacement_colors)
+        body.model_id = 0xFC100000 + body_part
+        models.append(body)
+
+    records = []
+    wearpos_to_body = {0: 0, 8: 1, 4: 2, 6: 3, 9: 4, 7: 5, 10: 6}
+    for item_id in all_item_ids:
+        item = item_defs[item_id]
+        if item.unknown_opcode is not None:
+            raise SystemExit(f"item {item_id}: unknown opcode {item.unknown_opcode}")
+        model = required_parts(item.male_model_ids, f"item {item_id}")
+        for i in range(model.vertex_count):
+            model.vertices_y[i] += item.male_offset_y
+        apply_recolors(model, [a for a, _ in item.recolors], [b for _, b in item.recolors])
+        if model.face_textures:
+            for src, dst in item.retextures:
+                model.face_textures = [dst if value == src else value for value in model.face_textures]
+        model.model_id = item_id
+        models.append(model)
+        mask = 0
+        for pos in item.wear_positions:
+            if pos in wearpos_to_body:
+                mask |= 1 << wearpos_to_body[pos]
+        if all(pos < 0 for pos in item.wear_positions):
+            raise SystemExit(f"item {item_id}: missing wear-position metadata")
+        records.append((item_id, mask))
+    write_models_binary(output, models)
+    mapping = struct.pack("<II", 0x31504346, len(records))  # FCP1
+    mapping += b"".join(struct.pack("<II", *row) for row in records)
+    output.with_suffix(".parts").write_bytes(mapping)
 
 
 def export_fc_spotanims(cache_dir: Path, output: Path) -> None:

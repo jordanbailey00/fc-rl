@@ -102,6 +102,7 @@ int main(void) {
         "fightcaves.minimap.png",
         "fc_npcs.models",
         "fc_player.models",
+        "fc_player.parts",
         "fc_projectiles.models",
         "fc_spotanims.bin",
         "fc_all.anims",

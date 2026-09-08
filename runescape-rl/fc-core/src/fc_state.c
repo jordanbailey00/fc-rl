@@ -1,4 +1,5 @@
 #include "fc_api.h"
+#include "fc_items_internal.h"
 #include "fc_combat.h"
 #include "fc_npc.h"
 #include "fc_wave.h"
@@ -124,20 +125,7 @@ static void apply_loadout_combat_fields(FcPlayer* p,
     p->ranged_level = loadout->ranged_lvl;
     p->prayer_level = loadout->prayer_lvl;
     p->magic_level = loadout->magic_lvl;
-    p->weapon_kind = loadout->weapon_kind;
-    p->weapon_uses_ammo = loadout->weapon_uses_ammo;
-    p->crystal_piece_mask = loadout->crystal_piece_mask;
-    p->weapon_speed = loadout->weapon_speed;
-    p->weapon_range = loadout->weapon_range;
-    p->ranged_attack_bonus = loadout->ranged_atk;
-    p->ranged_strength_bonus = loadout->ranged_str;
-    p->defence_stab = loadout->def_stab;
-    p->defence_slash = loadout->def_slash;
-    p->defence_crush = loadout->def_crush;
-    p->defence_magic = loadout->def_magic;
-    p->defence_ranged = loadout->def_ranged;
-    p->prayer_bonus = loadout->prayer_bonus;
-    p->ammo_count = loadout->ammo;
+    fc_items_init(p, loadout);
 }
 
 static void init_player(FcPlayer* p) {
@@ -149,8 +137,6 @@ static void init_player(FcPlayer* p) {
     p->current_prayer = p->max_prayer;
     p->prayer = PRAYER_NONE;
     p->prayer_at_tick_start = PRAYER_NONE;
-    p->sharks_remaining = FC_MAX_SHARKS;
-    p->prayer_doses_remaining = FC_MAX_PRAYER_DOSES;
     p->attack_timer = 0;
     p->food_timer = 0;
     p->potion_timer = 0;

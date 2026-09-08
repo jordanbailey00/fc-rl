@@ -114,6 +114,20 @@ static uint32_t reference_player(uint32_t hash, const FcPlayer* player) {
     HASH_I32(player->total_damage_taken);
     HASH_I32(player->total_food_eaten);
     HASH_I32(player->total_potions_used);
+    for (int i = 0; i < FC_INVENTORY_SLOTS; i++) {
+        HASH_I32(player->inventory[i].item_id);
+        HASH_I32(player->inventory[i].quantity);
+        HASH_I32(player->inventory[i].charges);
+    }
+    for (int i = 0; i < FC_EQUIPMENT_SLOTS; i++) {
+        HASH_I32(player->equipment[i].item_id);
+        HASH_I32(player->equipment[i].quantity);
+        HASH_I32(player->equipment[i].charges);
+    }
+    HASH_I32(player->melee_attack_bonus);
+    HASH_I32(player->melee_strength_bonus);
+    HASH_I32(player->selected_food_slot);
+    HASH_I32(player->selected_potion_slot);
     return hash;
 }
 
@@ -153,7 +167,7 @@ static uint32_t reference_npc(uint32_t hash, const FcNpc* npc) {
     return hash;
 }
 
-static uint32_t reference_state_hash_v4(const FcState* state) {
+static uint32_t reference_state_hash_v5(const FcState* state) {
     uint32_t hash = FNV_OFFSET;
     hash = reference_player(hash, &state->player);
     for (int i = 0; i < FC_MAX_NPCS; ++i) {
@@ -322,19 +336,19 @@ static void make_golden_state(FcState* state) {
 }
 
 static int test_version(void) {
-    if (FC_STATE_HASH_VERSION != 4u) {
-        fprintf(stderr, "FAIL DET-001: FC_STATE_HASH_VERSION=%u, expected 4\n",
+    if (FC_STATE_HASH_VERSION != 5u) {
+        fprintf(stderr, "FAIL DET-001: FC_STATE_HASH_VERSION=%u, expected 5\n",
                 (unsigned)FC_STATE_HASH_VERSION);
         return 1;
     }
-    printf("PASS DET-001: canonical state-hash version is 4\n");
+    printf("PASS DET-001: canonical state-hash version is 5\n");
     return 0;
 }
 
 #define MUTATE(label, expression) do {                                      \
     FcState changed = base;                                                 \
     expression;                                                             \
-    uint32_t expected = reference_state_hash_v4(&changed);                  \
+    uint32_t expected = reference_state_hash_v5(&changed);                  \
     uint32_t actual = fc_state_hash(&changed);                              \
     if (expected == reference_base) {                                       \
         fprintf(stderr, "FAIL DET-001 oracle: %s did not change reference hash\n", label); \
@@ -351,9 +365,19 @@ static int test_field_coverage(void) {
     int failures = 0;
     fc_init(&base);
     fc_reset(&base, UINT32_C(0x31415926));
-    uint32_t reference_base = reference_state_hash_v4(&base);
+    uint32_t reference_base = reference_state_hash_v5(&base);
     uint32_t production_base = fc_state_hash(&base);
 
+    MUTATE("inventory identity", changed.player.inventory[27].item_id ^= 1);
+    MUTATE("inventory quantity", changed.player.inventory[13].quantity ^= 1);
+    MUTATE("inventory charges", changed.player.inventory[0].charges ^= 1);
+    MUTATE("equipment identity", changed.player.equipment[13].item_id ^= 1);
+    MUTATE("equipment quantity", changed.player.equipment[3].quantity ^= 1);
+    MUTATE("equipment charges", changed.player.equipment[3].charges ^= 1);
+    MUTATE("melee attack", changed.player.melee_attack_bonus ^= 1);
+    MUTATE("melee strength", changed.player.melee_strength_bonus ^= 1);
+    MUTATE("selected food", changed.player.selected_food_slot ^= 1);
+    MUTATE("selected potion", changed.player.selected_potion_slot ^= 1);
     MUTATE("player.position", changed.player.x ^= 1);
     MUTATE("player.approach_destination", changed.player.approach_target_x ^= 1);
     MUTATE("player.vitals", changed.player.current_hp ^= 1);
@@ -452,26 +476,26 @@ static int test_field_coverage(void) {
 #undef MUTATE
 
 static int test_golden(void) {
-    const uint32_t expected_v4 = UINT32_C(0x569a1fb6);
+    const uint32_t expected_v5 = UINT32_C(0x8fb7eb56);
     FcState state;
     make_golden_state(&state);
-    uint32_t oracle = reference_state_hash_v4(&state);
+    uint32_t oracle = reference_state_hash_v5(&state);
     uint32_t actual = fc_state_hash(&state);
 
-    if (oracle != expected_v4) {
+    if (oracle != expected_v5) {
         fprintf(stderr,
                 "FAIL DET-001 oracle golden: got 0x%08" PRIx32 ", expected 0x%08" PRIx32 "\n",
-                oracle, expected_v4);
+                oracle, expected_v5);
         return 1;
     }
-    if (actual != expected_v4) {
+    if (actual != expected_v5) {
         fprintf(stderr,
                 "FAIL DET-001 canonical golden: got 0x%08" PRIx32 ", expected 0x%08" PRIx32 "\n",
-                actual, expected_v4);
+                actual, expected_v5);
         return 1;
     }
-    printf("PASS DET-001: version-4 synthetic-state golden is 0x%08" PRIx32 "\n",
-           expected_v4);
+    printf("PASS DET-001: version-5 synthetic-state golden is 0x%08" PRIx32 "\n",
+           expected_v5);
     return 0;
 }
 

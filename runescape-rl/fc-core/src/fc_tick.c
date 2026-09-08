@@ -1,4 +1,5 @@
 #include "fc_api.h"
+#include "fc_items_internal.h"
 #include "fc_combat.h"
 #include "fc_prayer.h"
 #include "fc_pathfinding.h"
@@ -201,7 +202,7 @@ static void apply_player_supplies(FcState* state, int eat_action,
         if (player->current_hp > player->max_hp) {
             player->current_hp = player->max_hp;
         }
-        player->sharks_remaining--;
+        fc_items_consume(player, 0);
         *cooldown_timer = cooldown;
         player->food_eaten_this_tick = 1;
         state->food_used_this_tick = 1;
@@ -223,11 +224,12 @@ static void apply_player_supplies(FcState* state, int eat_action,
         if (player->current_prayer > player->max_prayer) {
             player->current_prayer = player->max_prayer;
         }
-        player->prayer_doses_remaining--;
+        fc_items_consume(player, 1);
         player->potion_timer = FC_POTION_COOLDOWN_TICKS;
         player->potion_used_this_tick = 1;
         state->prayer_potion_used_this_tick = 1;
     }
+    player->selected_food_slot = player->selected_potion_slot = -1;
 }
 
 static void prepare_player_interaction(FcState* state, int explicit_move,
@@ -266,20 +268,26 @@ static void prepare_player_interaction(FcState* state, int explicit_move,
 
 static void launch_player_attack(FcState* state, FcNpc* target, int distance) {
     FcPlayer* player = &state->player;
-    int att_roll = fc_player_ranged_attack_roll(player, target);
+    int melee = player->weapon_kind == FC_WEAPON_UNARMED;
+    /* Unarmed Punch is accurate/crush (+3 Attack). Fight Caves NPCs all
+     * have zero crush defence bonus, including the ranged-resistant healers. */
+    int att_roll = melee ? (player->attack_level + 11) *
+        (player->melee_attack_bonus + 64) : fc_player_ranged_attack_roll(player, target);
     const FcNpcStats* target_stats = fc_npc_get_stats(target->npc_type);
     int def_roll = fc_npc_def_roll(target_stats->def_level,
-                                   target_stats->ranged_def_bonus);
+                                   melee ? 0 : target_stats->ranged_def_bonus);
     float chance = fc_hit_chance(att_roll, def_roll);
     int hit = fc_rng_float(state) < chance ? 1 : 0;
-    int final_max_hit_hp = fc_player_ranged_final_max_hit_hp(player, target);
+    int final_max_hit_hp = melee ? (320 + (player->strength_level + 8) *
+        (player->melee_strength_bonus + 64)) / 640 :
+        fc_player_ranged_final_max_hit_hp(player, target);
     int damage = hit
         ? fc_roll_player_damage_tenths(state, final_max_hit_hp) : 0;
-    int delay = fc_ranged_hit_delay(distance);
+    int delay = melee ? 1 : fc_ranged_hit_delay(distance);
 
     fc_queue_pending_hit(target->pending_hits, &target->num_pending_hits,
                          FC_MAX_PENDING_HITS, damage, delay,
-                         ATTACK_RANGED, -1, 0);
+                         melee ? ATTACK_MELEE : ATTACK_RANGED, -1, 0);
     state->attack_attempt_this_tick = 1;
     state->render_events.player_attack_fired = 1;
     state->render_events.player_attack_source_x = player->x;
@@ -295,7 +303,7 @@ static void launch_player_attack(FcState* state, FcNpc* target, int distance) {
     }
     player->attack_timer = player->weapon_speed;
     if (player->weapon_uses_ammo && player->ammo_count > 0) {
-        player->ammo_count--;
+        fc_items_spend_ammo(player);
     }
     player->hit_landed_this_tick = 1;
 }
@@ -336,6 +344,11 @@ static int process_player_target(FcState* state,
         player->x, player->y, 1,
         target->x, target->y, target->size, state->los_flags);
     int target_can_fire = dist > 0 && dist <= weapon_range && has_los;
+    if (player->weapon_kind == FC_WEAPON_UNARMED) {
+        weapon_range = FC_ROUTE_MELEE_RANGE;
+        target_can_fire = fc_npc_can_melee_player(player->x, player->y,
+            target->x, target->y, target->size, state->walkable, state->movement_flags);
+    }
     int target_ready = player->attack_timer <= 0;
 
     record_player_target_held(state, target);
@@ -365,6 +378,9 @@ static int process_player_target(FcState* state,
             fc_has_los_between_areas(
                 rx, ry, 1, target->x, target->y, target->size,
                 state->los_flags);
+        if (player->weapon_kind == FC_WEAPON_UNARMED)
+            route_endpoint_can_fire = fc_npc_can_melee_player(rx, ry,
+                target->x, target->y, target->size, state->walkable, state->movement_flags);
     }
 
     if (!target_can_fire && player->approach_target &&

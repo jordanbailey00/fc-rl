@@ -180,8 +180,8 @@ def decode_identity_kits(cache: CacheReader) -> dict[int, IdentityKitDef]:
 def decode_identity_kits_modern(reader: ModernCacheReader) -> dict[int, IdentityKitDef]:
     """Decode identity kit definitions from modern cache config group 3.
 
-    Same opcode format as 317: opcode 1=body_part, 2=body_models,
-    3=valid_style, 40-49=recolor src, 50-59=recolor dst, 60-69=head models.
+    Modern kits use paired recolors and optional 32-bit model IDs. The
+    separate legacy decoder above retains the 317 opcode format.
     """
     manifest = reader.read_index_manifest(2)
     if MODERN_CONFIG_IDK_GROUP not in manifest.group_ids:
@@ -216,12 +216,21 @@ def decode_identity_kits_modern(reader: ModernCacheReader) -> dict[int, Identity
                 ]
             elif op == 3:
                 kit.valid_style = True
-            elif 40 <= op < 50:
-                kit.original_colors[op - 40] = struct.unpack(">H", buf.read(2))[0]
-            elif 50 <= op < 60:
-                kit.replacement_colors[op - 50] = struct.unpack(">H", buf.read(2))[0]
+            elif op == 5:
+                n = buf.read(1)[0]
+                kit.body_models = [struct.unpack(">I", buf.read(4))[0] for _ in range(n)]
+            elif op == 40:
+                pairs = [struct.unpack(">HH", buf.read(4)) for _ in range(buf.read(1)[0])]
+                kit.original_colors = [a for a, _ in pairs]
+                kit.replacement_colors = [b for _, b in pairs]
+            elif op == 41:
+                raise ValueError(f"identity kit {kit_id}: textured body kit is not supported")
             elif 60 <= op < 70:
                 buf.read(2)  # head model (not needed for body rendering)
+            elif 70 <= op < 80:
+                buf.read(4)
+            else:
+                raise ValueError(f"identity kit {kit_id}: unknown opcode {op}")
 
         kits[kit_id] = kit
 
