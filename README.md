@@ -146,13 +146,23 @@ none of these overlays changes core gameplay.
 Useful playable controls:
 
 - Left click an arena tile or minimap location to route; click an NPC to attack.
+- Right click ground, NPCs, inventory, equipment, or Prayer buttons for the
+  context menu. Its choices reuse the same playable controls; opening,
+  dismissing, and examining do not advance or alter the simulation.
+- NPC clicks follow the displayed animated model (including heads and limbs),
+  not the ground tile behind the cursor. Menus show combat levels colored
+  relative to the player's combat level, with yellow NPC names.
+- World walking clicks show a yellow click cross; attacks show a red one.
+  Crosses animate at the click position for 400 ms, independent of simulation TPS.
+  Ordinary inventory/tab clicks do not show world-interaction crosses or slot borders.
 - `1`, `2`, `3` toggle Protect from Melee, Missiles, or Magic.
 - `X` toggles running; `Space` pauses; `Right Arrow` advances one tick.
 - `R` resets; `F1` through `F8` spawn debug NPC types; `F9` toggles viewer god mode.
 - `D` or `O` toggles diagnostics; `Shift+O` cycles overlay groups.
 - `G` toggles the tile grid; `C` toggles collision.
 - `4` and `5` select camera presets; `L` toggles camera follow.
-- Right-drag orbits, the scroll wheel zooms, and `Q` or `Esc` quits.
+- Right-drag dismisses the menu and orbits; the scroll wheel zooms. `Q` quits;
+  `Esc` closes an open context menu, or quits when no menu is open.
 
 ![NPC tracking, wave selector, and TPS controls](runescape-rl/assets/readme/viewer-npc-controls.png)
 

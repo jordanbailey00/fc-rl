@@ -3,9 +3,11 @@
 #include "fc_asset_raylib.h"
 
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 #define FC_OSRS_FONT_ASSET "data/fonts/p11_full.png"
+#define FC_OSRS_MENU_FONT_ASSET "data/fonts/runescape_bold.ttf"
 #define FC_OSRS_FONT_CELL_SIZE 20
 #define FC_OSRS_FONT_COLUMNS 16
 #define FC_OSRS_FONT_GLYPHS 256
@@ -19,6 +21,7 @@ typedef struct {
 } FcOsrsGlyph;
 
 static Texture2D g_font_texture;
+static Font g_menu_font;
 static FcOsrsGlyph g_glyphs[FC_OSRS_FONT_GLYPHS];
 static int g_font_height;
 static int g_font_ready;
@@ -102,6 +105,9 @@ static void build_glyph_metrics(const Color* pixels, int image_width,
 }
 
 void fc_osrs_text_shutdown(void) {
+    if (g_menu_font.texture.id != 0)
+        UnloadFont(g_menu_font);
+    g_menu_font = (Font){0};
     if (g_font_texture.id != 0)
         UnloadTexture(g_font_texture);
     g_font_texture = (Texture2D){0};
@@ -110,13 +116,45 @@ void fc_osrs_text_shutdown(void) {
     g_font_ready = 0;
 }
 
+static int init_menu_font(void) {
+    g_menu_font = fc_load_font_asset(FC_OSRS_MENU_FONT_ASSET,
+                                    (int)FC_OSRS_MENU_FONT_SIZE);
+    if (g_menu_font.texture.id == 0) return 0;
+    /* RuneC ui_assets.c:runec_make_font_texture_crisp. Rasterize at the
+     * displayed size, then threshold alpha and use point sampling. */
+    Image image = LoadImageFromTexture(g_menu_font.texture);
+    if (!image.data) return 0;
+    ImageFormat(&image, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+    Color *pixels = image.data;
+    for (int i = 0; i < image.width * image.height; i++)
+        pixels[i].a = pixels[i].a >= 160 ? 255 : 0;
+    Texture2D texture = LoadTextureFromImage(image);
+    UnloadImage(image);
+    if (texture.id == 0) return 0;
+    UnloadTexture(g_menu_font.texture);
+    g_menu_font.texture = texture;
+    SetTextureFilter(g_menu_font.texture, TEXTURE_FILTER_POINT);
+    return 1;
+}
+
+Font fc_osrs_menu_font(void) {
+    return g_menu_font;
+}
+
 int fc_osrs_text_init(void) {
     fc_osrs_text_shutdown();
+    if (!init_menu_font()) {
+        fprintf(stderr, "error: failed to load required menu font %s\n",
+                FC_OSRS_MENU_FONT_ASSET);
+        fc_osrs_text_shutdown();
+        return 0;
+    }
 
     Image image = fc_load_image_asset(FC_OSRS_FONT_ASSET);
     if (!image.data || image.width != 320 || image.height != 320) {
         if (image.data)
             UnloadImage(image);
+        fc_osrs_text_shutdown();
         return 0;
     }
     ImageFormat(&image, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);

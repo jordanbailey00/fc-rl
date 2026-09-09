@@ -24,6 +24,7 @@ int main(void) {
     int len = -1;
 
     make_open_state(&state);
+    FcState unchanged = state;
     fc_click_feedback_reset(&feedback);
     fc_click_feedback_select_move(&feedback, &state, 5, 3, 120.0f, 80.0f);
 
@@ -71,6 +72,19 @@ int main(void) {
     assert(feedback.preview_route_len == 0);
     assert(feedback.cross_kind == FC_CLICK_CROSS_INTERACTION);
     assert(feedback.cross_screen_x == 30.0f && feedback.cross_screen_y == 40.0f);
+    assert(fc_click_feedback_cross_frame(&feedback) == 0);
+    fc_click_feedback_update(&feedback, 0.099f);
+    assert(fc_click_feedback_cross_frame(&feedback) == 0);
+    fc_click_feedback_update(&feedback, 0.002f);
+    assert(fc_click_feedback_cross_frame(&feedback) == 1);
+    /* Test only the presentation operation against a complete state snapshot. */
+    FcState before_interaction = state;
+    fc_click_feedback_select_interaction(&feedback, 70.0f, 80.0f);
+    assert(memcmp(&state, &before_interaction, sizeof(state)) == 0);
+    fc_click_feedback_select_move(&feedback, &unchanged, 3, 5, 10, 20);
+    FcState fresh;
+    make_open_state(&fresh);
+    assert(memcmp(&fresh, &unchanged, sizeof(fresh)) == 0);
 
     puts("click feedback tests passed");
     return 0;

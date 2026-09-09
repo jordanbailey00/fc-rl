@@ -5,6 +5,8 @@
 #include "fc_assets.h"
 #include "fc_io.h"
 #include "raylib.h"
+#include "raymath.h"
+#include <float.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -33,6 +35,50 @@ ModelEntry *model_find(ModelSet *set, uint32_t id) {
     for (int i = 0; i < set->count; i++)
         if (set->entries[i].model_id == id && set->entries[i].loaded) return &set->entries[i];
     return NULL;
+}
+
+float models_pick_depth(const ModelEntry *entry, const int16_t *posed_vertices,
+                         Vector3 position, float yaw_degrees, Camera3D camera,
+                         Vector2 mouse, int screen_width, int screen_height) {
+    if (!entry || !entry->loaded || !entry->rest_verts) return -1;
+    /* Same model -> yaw -> translation order as DrawModelEx. Never read the
+     * shared uploaded mesh: another NPC of this type may have a different pose. */
+    Matrix transform = MatrixMultiply(entry->model.transform,
+        MatrixMultiply(MatrixRotateY(yaw_degrees * DEG2RAD),
+                       MatrixTranslate(position.x, position.y, position.z)));
+    Vector3 forward = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
+    float nearest = FLT_MAX;
+    for (int face = 0; face < entry->face_count; face++) {
+        float min_x = FLT_MAX, min_y = FLT_MAX;
+        float max_x = -FLT_MAX, max_y = -FLT_MAX, depth = 0;
+        int visible = 1;
+        for (int corner = 0; corner < 3; corner++) {
+            int offset = (face * 3 + corner) * 3;
+            Vector3 local;
+            if (posed_vertices && entry->face_indices) {
+                int vertex = entry->face_indices[face * 3 + corner] * 3;
+                local = (Vector3){posed_vertices[vertex] / 128.0f,
+                    -posed_vertices[vertex + 1] / 128.0f,
+                    -posed_vertices[vertex + 2] / 128.0f};
+            } else {
+                local = (Vector3){entry->rest_verts[offset], entry->rest_verts[offset + 1],
+                                   entry->rest_verts[offset + 2]};
+            }
+            Vector3 world = Vector3Transform(local, transform);
+            float z = Vector3DotProduct(Vector3Subtract(world, camera.position), forward);
+            if (z <= 0.01f) { visible = 0; break; }
+            Vector2 screen = GetWorldToScreenEx(world, camera, screen_width, screen_height);
+            min_x = fminf(min_x, screen.x); max_x = fmaxf(max_x, screen.x);
+            min_y = fminf(min_y, screen.y); max_y = fmaxf(max_y, screen.y);
+            depth += z / 3.0f;
+        }
+        /* RuneLite Perspective.calculate2DBounds uses projected face rectangles
+         * padded by five pixels, not a ground-tile test or pixel-perfect triangles. */
+        if (visible && mouse.x >= min_x - 5 && mouse.x <= max_x + 5 &&
+            mouse.y >= min_y - 5 && mouse.y <= max_y + 5 && depth < nearest)
+            nearest = depth;
+    }
+    return nearest == FLT_MAX ? -1 : nearest;
 }
 
 static float model_clamp_uv(float v) {

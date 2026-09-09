@@ -42,6 +42,12 @@ typedef struct {
 
 ModelSet *models_load(const char *path, Texture2D atlas_texture);
 ModelEntry *model_find(ModelSet *set, uint32_t id);
+/* Screen-space face picking at the drawn pose, with the client's 5px tolerance.
+ * Returns camera depth for overlap ordering, or -1 for a miss. posed_vertices
+ * uses animation/cache coordinates; NULL selects the asset's rest mesh. */
+float models_pick_depth(const ModelEntry *entry, const int16_t *posed_vertices,
+                         Vector3 position, float yaw_degrees, Camera3D camera,
+                         Vector2 mouse, int screen_width, int screen_height);
 void models_recompute_texture_uvs_from_vertices(ModelEntry *entry,
                                                 const int16_t *verts);
 void models_free(ModelSet *set);

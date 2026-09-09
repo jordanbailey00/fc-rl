@@ -46,6 +46,7 @@ typedef enum RuneCUiIntentKind {
     RUNEC_UI_INTENT_AUTO_RETALIATE,
     RUNEC_UI_INTENT_SPECIAL_ATTACK,
     RUNEC_UI_INTENT_CONTEXT_ACTION,
+    RUNEC_UI_INTENT_WORLD_ACTION,
     RUNEC_UI_INTENT_INVENTORY_ACTION,
     RUNEC_UI_INTENT_EQUIPMENT_ACTION,
     RUNEC_UI_INTENT_INVENTORY_DRAG,
@@ -104,7 +105,8 @@ typedef enum RuneCUiContextSourceKind {
     RUNEC_UI_CONTEXT_INVENTORY,
     RUNEC_UI_CONTEXT_EQUIPMENT,
     RUNEC_UI_CONTEXT_PRAYER,
-    RUNEC_UI_CONTEXT_SPELL
+    RUNEC_UI_CONTEXT_SPELL,
+    RUNEC_UI_CONTEXT_WORLD
 } RuneCUiContextSourceKind;
 
 typedef enum RuneCUiSelectedTargetKind {
@@ -135,8 +137,6 @@ typedef struct RuneCUiState {
 
     RuneCUiSlot inventory[RUNEC_UI_INV_SLOT_COUNT];
     RuneCUiSlot equipment[RUNEC_UI_EQUIP_SLOT_COUNT];
-    int selected_inventory_slot;
-    int selected_equipment_slot;
     int selected_combat_style;
     int auto_retaliate;
     int special_attack_enabled;
@@ -159,6 +159,8 @@ typedef struct RuneCUiState {
 
     int context_open;
     Vector2 context_pos;
+    Color context_target_color;
+    int context_combat_level;
     char context_title[48];
     char context_actions[RUNEC_UI_CONTEXT_ACTIONS][32];
     int context_action_count;
@@ -193,6 +195,10 @@ void runec_ui_set_combat_weapon_name(RuneCUiState *ui, const char *name);
 void runec_ui_set_combat_style_profile(RuneCUiState *ui, int core_weapon_category);
 void runec_ui_clear_selected_target(RuneCUiState *ui);
 int runec_ui_handle_input(RuneCUiState *ui, int screen_w, int screen_h);
+void runec_ui_open_world_context(RuneCUiState *ui, Vector2 pos, int npc_type, int can_walk);
+void runec_ui_open_prayer_context(RuneCUiState *ui, Vector2 pos, int slot);
+void runec_ui_close_context(RuneCUiState *ui);
+void runec_ui_draw_context(const RuneCUiState *ui);
 void runec_ui_draw(RuneCUiState *ui, int screen_w, int screen_h);
 Rectangle runec_ui_chat_panel_rect(int screen_w, int screen_h);
 const char *runec_ui_tab_name(RuneCUiTab tab);

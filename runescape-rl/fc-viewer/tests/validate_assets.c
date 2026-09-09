@@ -108,6 +108,7 @@ int main(void) {
         "fc_all.anims",
         "data/fonts/runescape.ttf",
         "data/fonts/runescape_small.ttf",
+        "data/fonts/runescape_bold.ttf",
         "data/fonts/p11_full.png",
         "data/sprites/ui/hitsplat_zero.png",
         "data/sprites/ui/hitsplat_damage.png",
