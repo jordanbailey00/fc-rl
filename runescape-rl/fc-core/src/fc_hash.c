@@ -53,6 +53,11 @@ static uint32_t fc_hash_pending_hit(uint32_t hash, const FcPendingHit* hit) {
     FC_HASH_I32(hit->prayer_drain);
     FC_HASH_I32(hit->prayer_snapshot);
     FC_HASH_I32(hit->prayer_lock_tick);
+    FC_HASH_I32(hit->spell_id);
+    FC_HASH_I32(hit->accurate);
+    FC_HASH_I32(hit->magic_heal_divisor);
+    FC_HASH_I32(hit->magic_poison);
+    FC_HASH_I32(hit->magic_curse_boost);
     return hash;
 }
 
@@ -137,6 +142,16 @@ static uint32_t fc_hash_player(uint32_t hash, const FcPlayer* player) {
     FC_HASH_I32(player->melee_strength_bonus);
     FC_HASH_I32(player->selected_food_slot);
     FC_HASH_I32(player->selected_potion_slot);
+    FC_HASH_I32(player->spellbook);
+    FC_HASH_I32(player->manual_spell);
+    FC_HASH_I32(player->autocast_spell);
+    FC_HASH_I32(player->magic_attack_bonus);
+    FC_HASH_I32(player->magic_damage_permille);
+    FC_HASH_I32(player->magic_error);
+    FC_HASH_I32(player->infinite_resources);
+    FC_HASH_I32(player->confliction_missed);
+    FC_HASH_I32(player->confliction_target_spawn);
+    FC_HASH_I32(player->confliction_spell);
     return hash;
 }
 
@@ -173,6 +188,12 @@ static uint32_t fc_hash_npc(uint32_t hash, const FcNpc* npc) {
         hash = fc_hash_pending_hit(hash, &npc->pending_hits[i]);
     }
     FC_HASH_I32(npc->num_pending_hits);
+    FC_HASH_I32(npc->frozen_until);
+    FC_HASH_I32(npc->freeze_immune_until);
+    FC_HASH_I32(npc->poison_severity);
+    FC_HASH_I32(npc->poison_next_tick);
+    for (int i = 0; i < 4; i++) FC_HASH_I32(npc->stat_drain[i]);
+    FC_HASH_I32(npc->stat_restore_tick);
     return hash;
 }
 

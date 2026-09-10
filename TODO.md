@@ -6,6 +6,40 @@ needed. Items under **Deferred** are accepted future work but are not current
 priorities. Completed work and historical decisions are preserved in
 [`fc_cleanup_and_parity_history.md`](runescape-rl/docs/archive/fc_cleanup_and_parity_history.md).
 
+## Top priority
+
+### Complete Melee, Ranged, and Magic combat support
+
+- [ ] Flesh out each combat style end to end before treating alternative
+  loadouts as complete training tasks. Audit what is already implemented,
+  identify remaining gaps, and verify mechanics against OSRS references.
+  - Define and clearly expose each loadout's starting combat stance, spellbook,
+    and spell. Decide whether Magic training uses a fixed configured autocast
+    or a future spell-selection action head with legal choices from the active
+    spellbook. Define associated observations, masks, rune requirements,
+    reset behavior, and checkpoint compatibility before extending the policy.
+  - Current starting Magic spells are **Low: Water Blast; Medium: Water Wave;
+    High/Maxed: Water Surge**, all on the Standard spellbook. These come from
+    `FC_LOADOUTS[].autocast_spell` in `runescape-rl/fc-core/src/fc_loadouts.c`.
+    The existing attack-target head uses that autocast; the agent currently
+    cannot choose a different spell or spellbook. Make this explicit in setup
+    and training metadata rather than requiring users to inspect source.
+  - Complete and validate equipment/weapon passives, set effects, attack
+    stances, multi-hit behavior, ammunition effects, and special attacks,
+    including special-attack energy, requirements, cooldowns, and policy controls.
+    Existing implementations must be verified, not duplicated.
+  - Enable the full applicable OSRS prayer set, including offensive/stat-
+    boosting prayers, with correct requirements, exclusions, drain, effects,
+    and viewer/policy controls. The present protection-prayer head does not
+    represent complete prayer support.
+  - Review remaining style-dependent encounter interactions, including the
+    deferred large Tz-Kek melee recoil, and document supported versus missing
+    mechanics for each preset. Keep setup, live combat, observations, and
+    viewer presentation consistent through shared core APIs.
+  - Add focused mechanics/contract tests, visual validation, and controlled
+    training comparisons for changes. Preserve the default task unless a
+    gameplay or policy-contract change is explicitly selected.
+
 ## Investigate
 
 ### Movement, routing, and collision parity

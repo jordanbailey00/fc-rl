@@ -2,6 +2,7 @@
 #include "fc_context_menu.h"
 #include "fc_osrs_text.h"
 #include "fc_minimap.h"
+#include "fc_magic.h"
 #include "ui_reference.h"
 
 #include <ctype.h>
@@ -17,7 +18,7 @@
 #define OSRS_BLUE   ((Color){90, 170, 255, 255})
 #define OSRS_PANEL  ((Color){31, 25, 18, 232})
 #define OSRS_TAB_PRESS_SECONDS 0.12f
-#define RUNEC_UI_SPELL_COUNT 80
+#define RUNEC_UI_SPELL_COUNT 64
 #define RUNEC_UI_SPELL_COLS 8
 #define RUNEC_UI_SPELL_X0 4
 #define RUNEC_UI_SPELL_Y0 6
@@ -53,104 +54,25 @@ static const char *g_prayer_names[25] = {
     "Smite", "Preserve",
 };
 
-typedef struct RuneCUiSpellSlotRef {
-    const char *name;
-    int standard_icon_frame;
-} RuneCUiSpellSlotRef;
-
-static const RuneCUiSpellSlotRef g_standard_spell_slots[RUNEC_UI_SPELL_COUNT] = {
-    {"Lumbridge Home Teleport", 70},
-    {"Wind Strike", 0},
-    {"Confuse", 50},
-    {"Crossbow Bolt Enchantments", 65},
-    {"Water Strike", 1},
-    {"Lvl-1 Enchant", 33},
-    {"Earth Strike", 2},
-    {"Weaken", 51},
-    {"Fire Strike", 3},
-    {"Bones to Bananas", 45},
-    {"Wind Bolt", 4},
-    {"Curse", 52},
-    {"Bind", 56},
-    {"Low Level Alchemy", 48},
-    {"Water Bolt", 5},
-    {"Varrock Teleport", 20},
-    {"Lvl-2 Enchant", 34},
-    {"Earth Bolt", 6},
-    {"Lumbridge Teleport", 21},
-    {"Telekinetic Grab", 46},
-    {"Fire Bolt", 7},
-    {"Falador Teleport", 22},
-    {"Crumble Undead", 47},
-    {"Teleport to House", 23},
-    {"Wind Blast", 8},
-    {"Superheat Item", 68},
-    {"Camelot Teleport", 24},
-    {"Water Blast", 9},
-    {"Lvl-3 Enchant", 35},
-    {"Iban Blast", 40},
-    {"Snare", 57},
-    {"Magic Dart", 66},
-    {"Ardougne Teleport", 25},
-    {"Earth Blast", 10},
-    {"High Level Alchemy", 49},
-    {"Charge Water Orb", 61},
-    {"Lvl-4 Enchant", 36},
-    {"Watchtower Teleport", 26},
-    {"Fire Blast", 11},
-    {"Charge Earth Orb", 62},
-    {"Bones to Peaches", 69},
-    {"Saradomin Strike", 43},
-    {"Claws of Guthix", 42},
-    {"Flames of Zamorak", 41},
-    {"Trollheim Teleport", 27},
-    {"Wind Wave", 12},
-    {"Charge Fire Orb", 63},
-    {"Water Wave", 13},
-    {"Teleport to Ape Atoll", 28},
-    {"Earth Wave", 14},
-    {"Lvl-5 Enchant", 37},
-    {"Kourend Castle Teleport", 29},
-    {"Charge Air Orb", 64},
-    {"Vulnerability", 53},
-    {"Lvl-6 Enchant", 38},
-    {"Teleport to Target", 67},
-    {"Enfeeble", 54},
-    {"Teleother Lumbridge", 30},
-    {"Fire Wave", 15},
-    {"Entangle", 58},
-    {"Stun", 55},
-    {"Charge", 44},
-    {"Wind Surge", 16},
-    {"Teleother Falador", 31},
-    {"Water Surge", 17},
-    {"Tele Block", 60},
-    {"Lvl-7 Enchant", 39},
-    {"Earth Surge", 18},
-    {"Teleother Camelot", 32},
-    {"Fire Surge", 19},
-    {"Civitas illa Fortis Teleport", 72},
-    {"Jewellery Enchantments", 71},
-    {"Monster Inspect", 73},
-    {"Summon Boat", 75},
-    {"Teleport to Boat", 74},
-    {"Alchemic Divergence", 77},
-    {"Alchemic Convergence", 78},
-    {"Minigame Teleport", 76},
-    {"League Home Teleport", 79},
-    {NULL, -1},
-};
-
-static const char *spell_name(int slot) {
-    if (slot >= 0
-            && slot < (int)(sizeof(g_standard_spell_slots)
-                            / sizeof(g_standard_spell_slots[0]))
-            && g_standard_spell_slots[slot].name) {
-        return g_standard_spell_slots[slot].name;
+int runec_ui_spell_id(const RuneCUiState *ui, int slot) {
+    if (slot < 0) return 0;
+    for (int i = 0; i < fc_spell_count(); i++) {
+        const FcSpellDef *spell = fc_spell_at(i);
+        if (ui->autocast_picker && !(spell->autocast & ui->autocast_capabilities)) continue;
+        if (spell->book == ui->spellbook && slot-- == 0) return spell->id;
     }
-    return TextFormat("Spell %d", slot + 1);
+    return 0;
 }
 
+static const char *spell_name(const RuneCUiState *ui, int slot) {
+    const FcSpellDef *spell = fc_spell_definition(runec_ui_spell_id(ui,slot));
+    return spell ? spell->name : "";
+}
+static int spell_grid_y(const RuneCUiState *ui) {
+    return ui->autocast_picker ? 58 : RUNEC_UI_SPELL_Y0;
+}
+static const Rectangle AUTOCAST_OFF = {8, 230, 88, 25};
+static const Rectangle AUTOCAST_BACK = {104, 230, 78, 25};
 static const char *g_equipment_names[RUNEC_UI_EQUIP_SLOT_COUNT] = {
     "Head", "Cape", "Neck", "Weapon", "Body", "Shield", "Unused",
     "Legs", "Unused", "Hands", "Feet", "Unused", "Ring", "Ammo",
@@ -898,14 +820,6 @@ static int handle_context_click(RuneCUiState *ui, Vector2 mouse) {
                 ui->last_intent.kind = RUNEC_UI_INTENT_SELECTED_SPELL;
                 ui->last_intent.primary = ui->context_source_slot;
                 ui->last_intent.secondary = 0;
-            } else if (ui->context_source_kind == RUNEC_UI_CONTEXT_SPELL
-                    && strcmp(action, "Autocast") == 0) {
-                ui->last_intent.kind = RUNEC_UI_INTENT_AUTOCAST_SPELL;
-                ui->last_intent.primary = ui->context_source_slot;
-                ui->last_intent.secondary = 0;
-                copy_text(ui->last_intent.text,
-                          sizeof(ui->last_intent.text),
-                          ui->context_title);
             } else {
                 ui->last_intent.kind = RUNEC_UI_INTENT_CONTEXT_ACTION;
                 ui->last_intent.primary = i;
@@ -1112,6 +1026,7 @@ static int handle_tab_click(RuneCUiState *ui,
         if (!CheckCollisionPointRec(mouse, layout->tab[i]))
             continue;
         ui->active_tab = (RuneCUiTab)i;
+        ui->autocast_picker = 0;
         ui->tab_press_timer[i] = OSRS_TAB_PRESS_SECONDS;
         ui->last_intent.kind = RUNEC_UI_INTENT_TAB;
         ui->last_intent.primary = i;
@@ -1171,6 +1086,31 @@ static int handle_orb_or_minimap_click(RuneCUiState *ui,
 static int handle_combat_click(RuneCUiState *ui,
                                const RuneCUiLayout *layout,
                                Vector2 mouse) {
+    if (ui->autocast_picker) {
+        if (CheckCollisionPointRec(mouse,side_ref_rect(layout,AUTOCAST_BACK))) {
+            ui->autocast_picker = 0;
+            return 1;
+        }
+        int slot = grid_index_at(layout,mouse,RUNEC_UI_SPELL_COUNT,
+            RUNEC_UI_SPELL_COLS,RUNEC_UI_SPELL_X0,spell_grid_y(ui),
+            RUNEC_UI_SPELL_STEP_X,RUNEC_UI_SPELL_STEP_Y,
+            RUNEC_UI_SPELL_ICON_SIZE,RUNEC_UI_SPELL_ICON_SIZE);
+        int id = runec_ui_spell_id(ui,slot);
+        if (id || CheckCollisionPointRec(mouse,side_ref_rect(layout,AUTOCAST_OFF))) {
+            ui->last_intent.kind = RUNEC_UI_INTENT_AUTOCAST_SPELL;
+            ui->last_intent.primary = id; /* stable ID; picker uses a filtered grid */
+            ui->last_intent.position = mouse;
+        }
+        return 1;
+    }
+    if (ui->magic_weapon && CheckCollisionPointRec(mouse,
+            side_ref_rect(layout,RUNEC_OSRS_COMBAT_STYLES[3].rect))) {
+        if (ui->magic_weapon == 1) {
+            runec_ui_clear_selected_target(ui);
+            ui->autocast_picker = 1;
+        }
+        return 1;
+    }
     const RuneCUiCombatStyleOption *style =
         combat_style_at(ui, layout, mouse);
     if (style) {
@@ -1261,17 +1201,18 @@ static int handle_spellbook_click(RuneCUiState *ui,
                                   const RuneCUiLayout *layout,
                                   Vector2 mouse) {
     int slot = grid_index_at(layout, mouse, RUNEC_UI_SPELL_COUNT,
-        RUNEC_UI_SPELL_COLS, RUNEC_UI_SPELL_X0, RUNEC_UI_SPELL_Y0,
+        RUNEC_UI_SPELL_COLS, RUNEC_UI_SPELL_X0, spell_grid_y(ui),
         RUNEC_UI_SPELL_STEP_X, RUNEC_UI_SPELL_STEP_Y,
         RUNEC_UI_SPELL_ICON_SIZE, RUNEC_UI_SPELL_ICON_SIZE);
     if (slot < 0)
         return 0;
-    set_selected_spell_target(ui, slot, spell_name(slot));
+    if (!runec_ui_spell_id(ui,slot)) return 1;
+    set_selected_spell_target(ui, slot, spell_name(ui,slot));
     ui->last_intent.kind = RUNEC_UI_INTENT_SELECTED_SPELL;
     ui->last_intent.primary = slot;
     ui->last_intent.position = mouse;
     copy_text(ui->last_intent.text, sizeof(ui->last_intent.text),
-              spell_name(slot));
+              spell_name(ui,slot));
     return 1;
 }
 
@@ -1333,6 +1274,10 @@ static int handle_context_menu_open(RuneCUiState *ui,
     runec_ui_clear_selected_target(ui);
 
     if (ui->active_tab == RUNEC_UI_TAB_COMBAT) {
+        if (ui->autocast_picker) return 1;
+        if (ui->magic_weapon && CheckCollisionPointRec(mouse,
+                side_ref_rect(layout,RUNEC_OSRS_COMBAT_STYLES[3].rect)))
+            return handle_combat_click(ui,layout,mouse);
         const RuneCUiCombatStyleOption *style =
             combat_style_at(ui, layout, mouse);
         if (style) {
@@ -1404,8 +1349,9 @@ static int handle_context_menu_open(RuneCUiState *ui,
             RUNEC_UI_SPELL_STEP_X, RUNEC_UI_SPELL_STEP_Y,
             RUNEC_UI_SPELL_ICON_SIZE, RUNEC_UI_SPELL_ICON_SIZE);
         if (slot >= 0) {
-            static const char *actions[] = {"Cast", "Autocast", "Examine"};
-            set_context(ui, mouse, spell_name(slot), actions, 3);
+            static const char *actions[] = {"Cast", "Examine"};
+            if (!runec_ui_spell_id(ui,slot)) return 1;
+            set_context(ui, mouse, spell_name(ui,slot), actions, 2);
             set_context_source(ui, RUNEC_UI_CONTEXT_SPELL, slot, 0);
             return 1;
         }
@@ -1951,22 +1897,35 @@ static void draw_prayer(const RuneCUiState *ui, const RuneCUiLayout *layout) {
 static void draw_spellbook(const RuneCUiState *ui, const RuneCUiLayout *layout) {
     for (int i = 0; i < RUNEC_UI_SPELL_COUNT; i++) {
         Rectangle r = grid_cell_rect(layout, i, RUNEC_UI_SPELL_COLS,
-                                     RUNEC_UI_SPELL_X0, RUNEC_UI_SPELL_Y0,
+                                     RUNEC_UI_SPELL_X0, spell_grid_y(ui),
                                      RUNEC_UI_SPELL_STEP_X,
                                      RUNEC_UI_SPELL_STEP_Y,
                                      RUNEC_UI_SPELL_ICON_SIZE,
                                      RUNEC_UI_SPELL_ICON_SIZE);
-        if (!g_standard_spell_slots[i].name)
-            continue;
+        int id = runec_ui_spell_id(ui,i);
+        if (!id) break;
         DrawRectangleRec(r, (Color){12, 12, 28, 105});
         char name[32];
-        snprintf(name, sizeof(name), "standard_spell_on_%d",
-                 g_standard_spell_slots[i].standard_icon_frame);
+        snprintf(name, sizeof(name), "spell_%d", id);
         int drew = draw_asset_centered(ui, name, r, RUNEC_UI_SPELL_ICON_SIZE,
-                                       RUNEC_UI_SPELL_ICON_SIZE, WHITE);
+                                       RUNEC_UI_SPELL_ICON_SIZE,
+                                       ui->spell_enabled[i] ? WHITE : (Color){85,85,85,255});
         if (!drew)
-            draw_centered_text(ui, TextFormat("%d", i + 1), r, 10, OSRS_ORANGE);
+            draw_centered_text(ui, "?", r, 10, OSRS_RED);
+        if (id == ui->autocast_spell) DrawRectangleLinesEx(r,1,OSRS_GREEN);
+        if (CheckCollisionPointRec(GetMousePosition(),r)) {
+            const FcSpellDef *spell = fc_spell_definition(id);
+            runec_ui_draw_text_shadow(&ui->assets,TextFormat("%s (Lv %d)",spell->name,spell->level),
+                layout->side_content.x+4,layout->side_content.y+202,12,OSRS_YELLOW);
+        }
     }
+    if (!ui->autocast_picker)
+        runec_ui_draw_text_shadow(&ui->assets,fc_spellbook_name(ui->spellbook),
+            layout->side_content.x+4,layout->side_content.y+228,12,OSRS_YELLOW);
+    if (!runec_ui_spell_id(ui,0))
+        runec_ui_draw_text_shadow(&ui->assets,ui->autocast_picker
+            ? "No compatible spells." : "No direct combat spells.",
+            layout->side_content.x+4,layout->side_content.y+spell_grid_y(ui)+18,12,WHITE);
 }
 
 static void draw_skills(const RuneCUiState *ui, const RuneCUiLayout *layout) {
@@ -2037,6 +1996,17 @@ static void draw_combat(const RuneCUiState *ui, const RuneCUiLayout *layout) {
                (Vector2){header.x + header.width - 10, header.y + 42}, 1,
                (Color){75, 64, 45, 180});
 
+    if (ui->autocast_picker) {
+        draw_spellbook(ui,layout);
+        Rectangle off = side_ref_rect(layout,AUTOCAST_OFF);
+        Rectangle back = side_ref_rect(layout,AUTOCAST_BACK);
+        draw_combat_box(ui,off,0);
+        draw_combat_box(ui,back,0);
+        draw_centered_text(ui,"Autocast off",off,12,OSRS_ORANGE);
+        draw_centered_text(ui,"Back",back,12,OSRS_ORANGE);
+        return;
+    }
+
     int visible_slot = 0;
     int layout_count = (int)(sizeof(RUNEC_OSRS_COMBAT_STYLES)
         / sizeof(RUNEC_OSRS_COMBAT_STYLES[0]));
@@ -2046,13 +2016,25 @@ static void draw_combat(const RuneCUiState *ui, const RuneCUiLayout *layout) {
             continue;
         const RuneCUiCombatStyleRef *style =
             &RUNEC_OSRS_COMBAT_STYLES[visible_slot++];
-        int selected = combat_style_option_selected(ui, option);
+        int selected = combat_style_option_selected(ui, option) && !ui->autocast_spell;
         Rectangle button = side_ref_rect(layout, style->rect);
         draw_combat_box(ui, button, selected);
         draw_asset_centered(ui, option->icon_asset, side_ref_rect(layout, style->icon_rect),
                             34, 24, WHITE);
         draw_centered_text(ui, option->label, side_ref_rect(layout, style->text_rect),
                            10, selected ? OSRS_YELLOW : OSRS_ORANGE);
+    }
+
+    if (ui->magic_weapon) {
+        const RuneCUiCombatStyleRef *style = &RUNEC_OSRS_COMBAT_STYLES[3];
+        Rectangle button = side_ref_rect(layout,style->rect);
+        draw_combat_box(ui,button,ui->autocast_spell || ui->magic_weapon == 2);
+        char icon[32];
+        if (ui->autocast_spell) snprintf(icon,sizeof(icon),"spell_%d",ui->autocast_spell);
+        else snprintf(icon,sizeof(icon),"side_icon_magic");
+        draw_asset_centered(ui,icon,side_ref_rect(layout,style->icon_rect),24,24,WHITE);
+        draw_centered_text(ui,ui->magic_weapon == 2 ? "Built-in" : "Autocast",
+            side_ref_rect(layout,style->text_rect),12,OSRS_ORANGE);
     }
 
     Rectangle retaliate = side_ref_rect(layout, RUNEC_OSRS_COMBAT_RETALIATE);
@@ -2081,7 +2063,9 @@ static void draw_combat(const RuneCUiState *ui, const RuneCUiLayout *layout) {
         selected_combat_style_option(ui);
     const char *mode = selected_style ? selected_style->mode : "Accurate";
     char category[64];
-    snprintf(category, sizeof(category), "Attack style: %s", mode);
+    const FcSpellDef *autocast = fc_spell_definition(ui->autocast_spell);
+    if (autocast) snprintf(category,sizeof(category),"%s",autocast->name);
+    else snprintf(category, sizeof(category), "Attack style: %s", mode);
     draw_centered_text(ui, category, side_ref_rect(layout, RUNEC_OSRS_COMBAT_CATEGORY),
                        12, OSRS_ORANGE);
 }

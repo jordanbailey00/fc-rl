@@ -156,6 +156,10 @@ typedef struct RuneCUiState {
     int skill_current[RUNEC_UI_SKILL_COUNT];
     int skill_base[RUNEC_UI_SKILL_COUNT];
     int skill_total;
+    int spellbook, autocast_spell;
+    int magic_weapon; /* 0 other, 1 spellcasting staff/wand, 2 powered staff */
+    int autocast_capabilities, autocast_picker;
+    unsigned char spell_enabled[64];
 
     int context_open;
     Vector2 context_pos;
@@ -183,6 +187,7 @@ typedef struct RuneCUiState {
 } RuneCUiState;
 
 void runec_ui_init(RuneCUiState *ui);
+int runec_ui_spell_id(const RuneCUiState *ui, int slot);
 void runec_ui_shutdown(RuneCUiState *ui);
 void runec_ui_clear_minimap(RuneCUiState *ui);
 void runec_ui_add_minimap_dot(RuneCUiState *ui, float dx, float dy,

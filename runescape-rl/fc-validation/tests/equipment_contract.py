@@ -30,6 +30,10 @@ def main():
             return data
 
         legacy = dict(current, state_hash_version=4)
+        assert current["state_hash_version"] == 7
+        magic_legacy = dict(current, state_hash_version=5)
+        data = marker(magic_legacy)
+        assert gate.validate_checkpoint_marker(marker_path, preflight) == data
         data = marker(legacy)
         assert gate.validate_checkpoint_marker(marker_path, preflight) == data
         checkpoint = root / "weights.bin"

@@ -188,6 +188,11 @@ typedef struct {
     int prayer_drain;     /* base prayer drain in tenths (Tz-Kih adds final damage) */
     int prayer_snapshot;  /* prayer locked for this hit; -1 = snapshot pending */
     int prayer_lock_tick; /* first tick on which prayer_snapshot should be filled */
+    int spell_id;         /* 0 = not a spell; immutable launch identity */
+    int accurate;         /* successful zero-damage binds are not splashes */
+    int magic_heal_divisor;
+    int magic_poison; /* positive poison strength, negative venom; captured at launch */
+    int magic_curse_boost; /* charged water tome at launch, not at impact */
 } FcPendingHit;
 
 /* ======================================================================== */
@@ -305,6 +310,12 @@ typedef struct {
     FcItemStack equipment[FC_EQUIPMENT_SLOTS];
     int melee_attack_bonus, melee_strength_bonus;
     int selected_food_slot, selected_potion_slot;
+    /* Opt-in casting state. Zero leaves the existing weapon attack unchanged. */
+    int spellbook, manual_spell, autocast_spell;
+    int magic_attack_bonus, magic_damage_permille;
+    int magic_error;
+    int infinite_resources; /* FC_RESOURCE_*; stacks must still be present. */
+    int confliction_missed, confliction_target_spawn, confliction_spell;
 } FcPlayer;
 
 /* ======================================================================== */
@@ -357,6 +368,10 @@ typedef struct {
     /* Pending hits (player attacks in flight toward this NPC) */
     FcPendingHit pending_hits[FC_MAX_PENDING_HITS];
     int num_pending_hits;
+    int frozen_until, freeze_immune_until;
+    int poison_severity, poison_next_tick;
+    int stat_drain[4]; /* Attack, Strength, Defence, Magic: amounts below base */
+    int stat_restore_tick;
 } FcNpc;
 
 /* ======================================================================== */
@@ -456,6 +471,12 @@ typedef struct {
     int player_attack_target_y;
     int player_attack_target_size;
     int player_attack_hit_delay_ticks;
+    int player_attack_spell_id;
+    int player_attack_weapon_id;
+    int player_magic_target_count;
+    int player_magic_targets[FC_MAX_NPCS];
+    int player_magic_accurate[FC_MAX_NPCS];
+    int player_magic_delay_offset[FC_MAX_NPCS]; /* e.g. Twinflame's second hit */
 
     /* NPC attacks captured when the NPC AI commits the attack. There can be
      * at most one launch per NPC during a simulation tick. */

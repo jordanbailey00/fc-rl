@@ -20,6 +20,8 @@ runescape-rl/build/
 !**/README.md
 !runescape-rl/docs/run_history.md
 !runescape-rl/docs/sweep_history.md
+!runescape-rl/docs/magic.md
+!runescape-rl/docs/loadouts.md
 !runescape-rl/docs/archive/fc_cleanup_and_parity_history.md
 
 # Stray wandb run files written to repo root, and locally-built ELF

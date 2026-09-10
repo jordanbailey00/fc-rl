@@ -2,6 +2,7 @@
 #include "fc_combat.h"
 #include "fc_pathfinding.h"
 #include "fc_api.h"
+#include "fc_magic_internal.h"
 #include "fc_spawn_internal.h"
 #include <stddef.h>
 
@@ -46,7 +47,7 @@ static const FcNpcStats NPC_STATS[NPC_TYPE_COUNT] = {
         .attack_speed = 4, .attack_range = 1,
         .melee_max_hit_tenths = 40,
         .att_level = 20, .ranged_level = 30, .magic_level = 15,
-        .def_level = 15, .ranged_def_bonus = 0,
+        .def_level = 15, .ranged_def_bonus = 0, .water_weakness_pct = 40,
         .melee_attack_type = FC_ATTACK_TYPE_STAB,
         .size = 1, .movement_speed = 1, .prayer_drain = 10,
     },
@@ -58,7 +59,7 @@ static const FcNpcStats NPC_STATS[NPC_TYPE_COUNT] = {
         .attack_speed = 4, .attack_range = 1,
         .melee_max_hit_tenths = 70,
         .att_level = 40, .ranged_level = 60, .magic_level = 30,
-        .def_level = 30, .ranged_def_bonus = 0,
+        .def_level = 30, .ranged_def_bonus = 0, .water_weakness_pct = 40,
         .melee_attack_type = FC_ATTACK_TYPE_CRUSH,
         .size = 2, .movement_speed = 1,
     },
@@ -70,7 +71,7 @@ static const FcNpcStats NPC_STATS[NPC_TYPE_COUNT] = {
         .attack_speed = 4, .attack_range = 1,
         .melee_max_hit_tenths = 40,
         .att_level = 20, .ranged_level = 30, .magic_level = 15,
-        .def_level = 15, .ranged_def_bonus = 0,
+        .def_level = 15, .ranged_def_bonus = 0, .water_weakness_pct = 40,
         .melee_attack_type = FC_ATTACK_TYPE_CRUSH,
         .size = 1, .movement_speed = 1,
     },
@@ -83,7 +84,7 @@ static const FcNpcStats NPC_STATS[NPC_TYPE_COUNT] = {
         .attack_speed = 4, .attack_range = 14,
         .melee_max_hit_tenths = 130, .ranged_max_hit_tenths = 130,
         .att_level = 80, .ranged_level = 120, .magic_level = 60,
-        .def_level = 60, .ranged_def_bonus = 0,
+        .def_level = 60, .ranged_def_bonus = 0, .water_weakness_pct = 40,
         .melee_attack_type = FC_ATTACK_TYPE_CRUSH,
         .size = 3, .movement_speed = 1,
     },
@@ -96,7 +97,7 @@ static const FcNpcStats NPC_STATS[NPC_TYPE_COUNT] = {
         .attack_speed = 4, .attack_range = 1,
         .melee_max_hit_tenths = 250,
         .att_level = 160, .ranged_level = 240, .magic_level = 120,
-        .def_level = 120, .ranged_def_bonus = 0,
+        .def_level = 120, .ranged_def_bonus = 0, .water_weakness_pct = 40,
         .melee_attack_type = FC_ATTACK_TYPE_CRUSH,
         .size = 4, .movement_speed = 1, .heal_amount = 100,
     },
@@ -111,7 +112,7 @@ static const FcNpcStats NPC_STATS[NPC_TYPE_COUNT] = {
         .melee_max_hit_tenths = 550, .magic_max_hit_tenths = 520,
         .att_level = 320, .ranged_level = 480, .magic_level = 240,
         .magic_attack_bonus = 60,
-        .def_level = 240, .ranged_def_bonus = 0,
+        .def_level = 240, .ranged_def_bonus = 0, .water_weakness_pct = 40,
         .melee_attack_type = FC_ATTACK_TYPE_STAB,
         .size = 5, .movement_speed = 1,
     },
@@ -128,7 +129,7 @@ static const FcNpcStats NPC_STATS[NPC_TYPE_COUNT] = {
         .magic_max_hit_tenths = 950,
         .att_level = 640, .ranged_level = 960, .magic_level = 480,
         .magic_attack_bonus = 60,
-        .def_level = 480, .ranged_def_bonus = 0,
+        .def_level = 480, .ranged_def_bonus = 0, .water_weakness_pct = 40,
         .melee_attack_type = FC_ATTACK_TYPE_STAB,
         .size = 5, .movement_speed = 1,
     },
@@ -142,6 +143,7 @@ static const FcNpcStats NPC_STATS[NPC_TYPE_COUNT] = {
         .melee_max_hit_tenths = 140,
         .att_level = 140, .ranged_level = 120, .magic_level = 120,
         .def_level = 60, .ranged_def_bonus = 100,
+        .magic_def_bonus = 100, .water_weakness_pct = 40,
         .melee_attack_type = FC_ATTACK_TYPE_CRUSH,
         .size = 1, .movement_speed = 1,
         .heal_amount = 50, .heal_interval = 4,
@@ -247,6 +249,9 @@ void fc_npc_spawn(FcNpc* npc, int npc_type, int x, int y, int spawn_index) {
     npc->healed_self_this_tick = 0;
     npc->died_this_tick = 0;
     npc->num_pending_hits = 0;
+    npc->frozen_until = npc->freeze_immune_until = 0;
+    npc->poison_severity = npc->poison_next_tick = npc->stat_restore_tick = 0;
+    for (int i = 0; i < 4; i++) npc->stat_drain[i] = 0;
 }
 
 static void build_npc_movement_occupancy(
@@ -259,6 +264,7 @@ static void build_npc_movement_occupancy(
 static int npc_dynamic_step_toward(FcState* state, int npc_idx,
                                    int target_x, int target_y) {
     FcNpc* npc = &state->npcs[npc_idx];
+    if (state->tick < npc->frozen_until) return 0;
     uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT];
     build_npc_movement_occupancy(state, npc_idx, occupied);
     return fc_npc_step_toward_sized_dynamic(&npc->x, &npc->y,
@@ -441,6 +447,17 @@ static void launch_npc_attack(FcState* state, FcNpc* npc, int npc_idx,
     FcPlayer* player = &state->player;
     int max_hit_hp = fc_npc_max_hit_hp_for_style(stats, attack_style);
     int attack_level = npc_attack_level_for_style(stats, attack_style);
+    if (attack_style == ATTACK_MELEE) {
+        attack_level -= npc->stat_drain[FC_MAGIC_DRAIN_ATTACK];
+        int drain = npc->stat_drain[FC_MAGIC_DRAIN_STRENGTH];
+        if (drain) {
+            int strength = npc->npc_type == NPC_YT_HURKOT ? 100 : stats->ranged_level;
+            int before = (320 + (strength+9)*64)/640;
+            int after = (320 + (strength-drain+9)*64)/640;
+            max_hit_hp -= before-after;
+            if (max_hit_hp < 0) max_hit_hp = 0;
+        }
+    } else if (attack_style == ATTACK_MAGIC) attack_level -= npc->stat_drain[FC_MAGIC_DRAIN_MAGIC];
     int attack_bonus = npc_attack_bonus_for_style(stats, attack_style);
     int attack_roll = fc_npc_attack_roll(attack_level, attack_bonus);
     FcAttackType attack_type =
@@ -712,6 +729,8 @@ static int npc_has_attack_position(FcState* state, FcNpc* npc) {
 void fc_npc_tick(FcState* state, int npc_idx) {
     FcNpc* npc = &state->npcs[npc_idx];
     if (!npc->active || npc->is_dead) return;
+
+    if (npc->poison_severity || npc->stat_restore_tick) fc_magic_tick_npc(state,npc);
 
     if (npc->npc_type != NPC_YT_HURKOT) npc->heal_target_idx = -1;
 

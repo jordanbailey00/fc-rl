@@ -6,7 +6,7 @@
 typedef struct {
     ModelSet *parts;
     ModelSet *model;
-    struct { uint32_t item_id, hide_mask; } records[64];
+    struct { uint32_t item_id, hide_mask; } records[256];
     int record_count;
     int worn_ids[FC_EQUIPMENT_SLOTS];
 } FcPlayerAppearance;

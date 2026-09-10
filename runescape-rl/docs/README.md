@@ -6,6 +6,10 @@ compiled contract disagree.
 
 ## Current sources of truth
 
+- [`loadouts.md`](loadouts.md) — twelve tiered gear/level presets, infinite resources,
+  viewer selection, and opt-in training builds.
+- [`magic.md`](magic.md) — optional combat Magic, playable test controls,
+  equipment modifiers, asset provenance, and training isolation.
 - [`../../README.md`](../../README.md) — current architecture, commands,
   baseline, policy input, rewards, and repository status.
 - [`../../TODO.md`](../../TODO.md) — unfinished work only.

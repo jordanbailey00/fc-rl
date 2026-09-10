@@ -3,6 +3,7 @@
 #include "fc_pathfinding.h"
 #include "fc_prayer.h"
 #include "fc_wave_internal.h"
+#include "fc_magic_internal.h"
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -21,6 +22,13 @@
 /* ======================================================================== */
 /* OSRS accuracy formula                                                     */
 /* ======================================================================== */
+
+float fc_double_attack_hit_chance(int att_roll, int def_roll) {
+    double a = att_roll > 0 ? att_roll : 0;
+    double d = def_roll > 0 ? def_roll : 0;
+    if (a > d) return (float)(1.0 - (d + 2) * (2 * d + 3) / (6 * (a + 1) * (a + 1)));
+    return (float)(a * (4 * a + 5) / (6 * (a + 1) * (d + 1)));
+}
 
 float fc_hit_chance(int att_roll, int def_roll) {
     if (att_roll > def_roll)
@@ -80,7 +88,7 @@ int fc_player_ranged_base_attack_roll(const FcPlayer* p) {
 
 static int fc_tbow_target_magic_level(const FcNpc* target) {
     const FcNpcStats* stats = fc_npc_get_stats(target->npc_type);
-    int magic_level = stats->magic_level;
+    int magic_level = stats->magic_level - target->stat_drain[FC_MAGIC_DRAIN_MAGIC];
 
     if (magic_level < 0) magic_level = 0;
     if (magic_level > 250) magic_level = 250;  /* non-CoX cap */
@@ -308,6 +316,7 @@ int fc_queue_pending_hit(FcPendingHit hits[], int* num_hits, int max_hits,
                          int prayer_drain) {
     if (*num_hits >= max_hits) return 0;
     FcPendingHit* h = &hits[*num_hits];
+    *h = (FcPendingHit){0};
     h->active = 1;
     h->damage = damage;
     h->ticks_remaining = ticks;
@@ -361,7 +370,8 @@ void fc_resolve_player_pending_hits(FcState* state) {
 
             p->damage_taken_this_tick += final_damage;
             p->hit_style_this_tick = h->attack_style;
-            p->hit_source_npc_type = state->npcs[h->source_npc_idx].npc_type;
+            p->hit_source_npc_type = h->source_npc_idx >= 0
+                ? state->npcs[h->source_npc_idx].npc_type : NPC_NONE;
             p->hit_locked_prayer_this_tick = locked_prayer;
             p->hit_blocked_this_tick = blocked;
             state->damage_taken_this_tick += final_damage;
@@ -370,6 +380,9 @@ void fc_resolve_player_pending_hits(FcState* state) {
             record_render_hit(state, ENTITY_PLAYER, -1,
                               h->source_npc_idx, h->attack_style,
                               final_damage, blocked);
+            /* Self-inflicted bolt costs are damage, not failed protection
+             * prayers, incoming NPC attacks, or retaliation targets. */
+            if (h->source_npc_idx < 0) { h->active = 0; continue; }
 
             /* Auto-retaliate: if player has no target, target the attacker.
              * approach_target stays 0 — player attacks in place, doesn't chase. */
@@ -499,8 +512,11 @@ void fc_resolve_npc_pending_hits(FcState* state, int npc_idx) {
         h->ticks_remaining--;
         if (h->ticks_remaining <= 0) {
             /* Player's hit lands on NPC */
+            int actual = npc->is_dead ? 0 :
+                (h->damage < npc->current_hp ? h->damage : npc->current_hp);
             npc->current_hp -= h->damage;
             if (npc->current_hp < 0) npc->current_hp = 0;
+            if (h->attack_style == ATTACK_MAGIC) fc_magic_resolve(state,npc,h,actual);
 
             npc->damage_taken_this_tick += h->damage;
             state->damage_dealt_this_tick += h->damage;

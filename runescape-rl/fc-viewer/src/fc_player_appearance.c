@@ -12,7 +12,8 @@ int fc_player_appearance_load(FcPlayerAppearance *appearance) {
     if (!file) return 0;
     uint32_t header[2];
     int ok = fc_read_exact(file, header, sizeof(uint32_t), 2, path, "header") &&
-        header[0] == 0x31504346 && header[1] > 0 && header[1] <= 64;
+        header[0] == 0x31504346 && header[1] > 0 &&
+        header[1] <= sizeof(appearance->records) / sizeof(appearance->records[0]);
     if (ok) {
         appearance->record_count = (int)header[1];
         for (int i = 0; i < appearance->record_count; i++) {

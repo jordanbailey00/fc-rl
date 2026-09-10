@@ -13,6 +13,8 @@ set(FC_VIEWER_SOURCES
     src/fc_click_feedback.c
     src/fc_context_menu.c
     src/fc_combat_presentation.c
+    src/fc_magic_visual.c
+    src/fc_loadout_debug.c
     src/fc_debug_overlay.c
     src/fc_minimap.c
     src/fc_model_animation.c
@@ -54,6 +56,14 @@ if(EXISTS "${RAYLIB_ROOT}/include/raylib.h")
     endif()
 
     message(STATUS "Raylib found at ${RAYLIB_ROOT} — fc_viewer will be built")
+    set(FC_MAGIC_TEST_SOURCES ${FC_VIEWER_SOURCES})
+    list(REMOVE_ITEM FC_MAGIC_TEST_SOURCES src/viewer.c)
+    add_executable(test_magic_viewer tests/test_magic_viewer.c ${FC_MAGIC_TEST_SOURCES})
+    target_include_directories(test_magic_viewer PRIVATE src
+        ${PROJECT_SOURCE_DIR}/fc-core/include ${RAYLIB_ROOT}/include)
+    target_link_libraries(test_magic_viewer PRIVATE fc_core
+        ${RAYLIB_ROOT}/lib/libraylib.a m dl pthread ${X11_LIBRARIES})
+    add_test(NAME test_magic_viewer COMMAND test_magic_viewer)
     # Geometry queries are CPU-only; this test does not open a window.
     add_executable(test_model_picking tests/test_model_picking.c src/fc_models.c src/fc_assets.c)
     target_include_directories(test_model_picking PRIVATE src ${RAYLIB_ROOT}/include)

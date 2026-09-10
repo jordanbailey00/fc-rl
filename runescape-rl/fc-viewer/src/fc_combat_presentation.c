@@ -3,6 +3,7 @@
 #include "fc_asset_raylib.h"
 #include "fc_assets.h"
 #include "fc_models.h"
+#include "fc_magic_visual.h"
 #include "fc_model_animation.h"
 #include "fc_npc.h"
 #include "fc_projectile_visual.h"
@@ -15,7 +16,7 @@
 #include <string.h>
 
 #define MAX_HITSPLATS 32
-#define MAX_PROJECTILES 16
+#define MAX_PROJECTILES 64
 #define MAX_VISUAL_EFFECTS 32
 #define OSRS_HITSPLAT_SECONDS 1.0f
 #define OSRS_HEALTHBAR_SECONDS 6.0f
@@ -571,15 +572,25 @@ void fc_combat_presentation_deferred_deaths(
 }
 
 static void ingest_player_attack(FcCombatPresentation *presentation,
-    const FcCombatPresentationContext *context) {
+    const FcCombatPresentationContext *context, int magic_target) {
     const FcRenderEvents *events = context->events;
     const FcPlayerVisualProfile *profile = context->player_profile;
-    if (!profile->projectile_travel_spot) return; /* unarmed: no projectile */
+    int magic = events->player_magic_target_count > 0;
+    if (magic) profile = fc_magic_visual_profile(events->player_attack_spell_id,
+                                                  events->player_attack_weapon_id);
+    if (!profile) { fprintf(stderr,"Missing magic projectile profile.\n"); return; }
+    if (!magic && !profile->projectile_travel_spot) return; /* unarmed */
     int sx = events->player_attack_source_x;
     int sy = events->player_attack_source_y;
     int tx = events->player_attack_target_x;
     int ty = events->player_attack_target_y;
     int target_size = events->player_attack_target_size;
+    int target_slot = events->player_attack_target_npc_slot;
+    if (magic) {
+        target_slot = events->player_magic_targets[magic_target];
+        const FcNpc *npc = &context->state->npcs[target_slot];
+        tx = npc->x; ty = npc->y; target_size = npc->size;
+    }
     float source_x = (float)sx + 0.5f;
     float source_y = ground_height(context, sx, sy) +
                      profile->projectile_start_height / 128.0f;
@@ -592,14 +603,21 @@ static void ingest_player_attack(FcCombatPresentation *presentation,
         profile->projectile_launch_delay_client_ticks,
         profile->projectile_length_adjustment,
         profile->projectile_step_multiplier, tile_distance(sx, sy, tx, ty));
+    /* Reuse cache-profile travel timing and the existing hit/death deferral.
+     * Impact-only spells still have a timed carrier but no visible missile. */
+    if (magic && !profile->projectile_travel_spot)
+        end_cycle = (events->player_attack_hit_delay_ticks - 1) * 30.0f;
+    if (magic) end_cycle += events->player_magic_delay_offset[magic_target] * 30.0f;
+    uint32_t impact = magic && !events->player_magic_accurate[magic_target]
+        ? 85 : profile->projectile_impact_spot;
     VisualProjectile *projectile = spawn_projectile(presentation,
         source_x, source_y, source_z, target_x, target_y, target_z, 0.1f,
         profile->projectile_color, profile->projectile_radius,
-        profile->projectile_travel_spot, profile->projectile_launch_spot,
-        profile->projectile_impact_spot);
+        profile->projectile_travel_spot,
+        !magic || magic_target == 0 ? profile->projectile_launch_spot : 0, impact);
     configure_tracking(presentation, context, projectile,
         FC_VISUAL_TARGET_PLAYER, 0, FC_VISUAL_TARGET_NPC,
-        events->player_attack_target_npc_slot, ATTACK_RANGED,
+        target_slot, magic ? ATTACK_MAGIC : ATTACK_RANGED,
         profile->projectile_launch_delay_client_ticks, end_cycle,
         profile->projectile_angle, profile->projectile_progress, 1);
 }
@@ -724,8 +742,11 @@ void fc_combat_presentation_ingest_tick(
             player_world_x + 0.3f, player_ground + 3.0f, player_world_z,
             state->tz_kih_prayer_drain_this_tick, HITSPLAT_PRAYER_DRAIN);
     }
-    if (context->events->player_attack_fired)
-        ingest_player_attack(presentation, context);
+    if (context->events->player_attack_fired) {
+        int count = context->events->player_magic_target_count;
+        for (int i = 0; i < (count ? count : 1); i++)
+            ingest_player_attack(presentation, context, i);
+    }
     for (int i = 0; i < context->events->hit_count; i++) {
         const FcRenderHit *hit = &context->events->hits[i];
         if (hit->target_entity_type == ENTITY_PLAYER) {

@@ -26,6 +26,8 @@ typedef struct {
     int prayer_drain;       /* base prayer drain in tenths (Tz-Kih specific) */
     int heal_amount;        /* HP healed per proc */
     int heal_interval;      /* ticks between independent Yt-HurKot heals */
+    int magic_def_bonus;
+    int water_weakness_pct;
 } FcNpcStats;
 
 /* Get stats for a given NPC type */

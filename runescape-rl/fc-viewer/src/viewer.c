@@ -45,6 +45,8 @@
 #include "fc_minimap.h"
 #include "fc_model_animation.h"
 #include "fc_osrs_text.h"
+#include "fc_magic.h"
+#include "fc_loadout_debug.h"
 #include "fc_debug_overlay.h"
 #include "ui.h"
 #include "ui_reference.h"
@@ -158,6 +160,7 @@ typedef struct {
     int scene_right_tracking, scene_right_dragged;
     int console_tab;              /* controls, player, obs, mask, reward, log */
     int console_wave_dropdown_open;
+    FcLoadoutDebugUi loadout_debug;
     int console_scroll[4];        /* player/obs/mask/reward vertical offsets */
     int console_content_height[4];
     /* Prayer overhead icon textures */
@@ -265,23 +268,9 @@ static void load_ui_item_icon(RuneCUiState* ui, uint32_t item_id) {
 }
 
 static void load_fc_ui_item_icons(ViewerState* v) {
-    static const uint32_t ids[] = {
-        FC_UI_ITEM_VIAL, FC_UI_ITEM_SHARK,
-        FC_UI_ITEM_PRAYER_POT_1, FC_UI_ITEM_PRAYER_POT_2,
-        FC_UI_ITEM_PRAYER_POT_3, FC_UI_ITEM_PRAYER_POT_4,
-    };
     if (!v) return;
-    for (int i = 0; i < (int)(sizeof(ids) / sizeof(ids[0])); i++)
-        load_ui_item_icon(&v->ui, ids[i]);
-    for (int li = 0; li < FC_NUM_LOADOUTS; li++) {
-        const FcLoadout* lo = &FC_LOADOUTS[li];
-        for (int ei = 0; ei < lo->equipment_count; ei++) {
-            uint32_t icon_id = lo->equipment[ei].icon_item_id
-                ? lo->equipment[ei].icon_item_id
-                : lo->equipment[ei].item_id;
-            load_ui_item_icon(&v->ui, icon_id);
-        }
-    }
+    for (int i = 0; i < fc_item_count(); i++)
+        load_ui_item_icon(&v->ui, (uint32_t)fc_item_at(i)->id);
 }
 
 static void sync_item_slots(RuneCUiSlot *slots, const FcItemStack *items, int count) {
@@ -293,7 +282,8 @@ static void sync_item_slots(RuneCUiSlot *slots, const FcItemStack *items, int co
                     items[i].quantity, item->name);
         slots[i].action = item->slot == FC_EQUIP_SLOT_WEAPON ? "Wield" :
             item->slot >= 0 ? "Wear" : item->id == 385 ? "Eat" :
-            item->id == 229 ? "Use" : "Drink";
+            item->id == 139 || item->id == 141 || item->id == 143 ||
+            item->id == 2434 ? "Drink" : "Use";
     }
 }
 
@@ -317,12 +307,41 @@ static void sync_fc_ui_status(ViewerState* v) {
     v->ui.run_enabled = p->is_running != 0;
     v->ui.auto_retaliate = 1;
     v->ui.special_attack_energy = 100;
-    v->ui.combat_level = 126;
+    int melee_level = p->attack_level + p->strength_level;
+    int ranged_level = p->ranged_level * 3 / 2;
+    int magic_level = p->magic_level * 3 / 2;
+    int offense = melee_level > ranged_level ? melee_level : ranged_level;
+    if (magic_level > offense) offense = magic_level;
+    v->ui.combat_level = (int)(0.25 * (p->defence_level + p->max_hp / 10 + p->prayer_level / 2)
+                                      + 0.325 * offense);
     const FcItemDef *weapon = fc_item_definition(p->equipment[FC_EQUIP_SLOT_WEAPON].item_id);
-    v->ui.selected_combat_style = weapon ? (v->combat_style == 2 ? 3 : v->combat_style) : 0;
+    v->ui.selected_combat_style = weapon && p->weapon_kind != FC_WEAPON_MELEE
+        ? (v->combat_style == 2 ? 3 : v->combat_style) : 0;
     runec_ui_set_combat_weapon_name(&v->ui, weapon ? weapon->name : "Unarmed");
     runec_ui_set_combat_style_profile(&v->ui,
-        weapon ? FC_LOADOUTS[weapon->visual_profile].combat_style_profile : 0);
+        weapon && weapon->visual_profile >= 0 && weapon->visual_profile < FC_NUM_LOADOUTS
+            ? FC_LOADOUTS[weapon->visual_profile].combat_style_profile :
+        p->weapon_kind == FC_WEAPON_MAGIC_STAFF ? 22 :
+        p->weapon_kind == FC_WEAPON_POWERED_STAFF ? 16 :
+        p->weapon_kind == FC_WEAPON_MELEE ? (weapon->id == 22325 ? 17 :
+            weapon->melee_type == 2 ? 18 : weapon->melee_type == 1 ? 21 : 20) : 0);
+    if (p->weapon_kind == FC_WEAPON_MELEE) {
+        /* Presets use their weapon's accurate stance; no stance-switch action head. */
+        for (int i = 1; i < RUNEC_UI_COMBAT_STYLE_COUNT; i++) v->ui.combat_styles[i].visible = 0;
+    }
+    int capabilities = weapon ? weapon->autocast : 0;
+    if (v->ui.spellbook != p->spellbook || v->ui.autocast_capabilities != capabilities)
+        v->ui.autocast_picker = 0;
+    v->ui.magic_weapon = p->weapon_kind == FC_WEAPON_MAGIC_STAFF ? 1 :
+        p->weapon_kind == FC_WEAPON_POWERED_STAFF ? 2 : 0;
+    v->ui.autocast_capabilities = capabilities;
+    v->ui.spellbook = p->spellbook;
+    v->ui.autocast_spell = p->autocast_spell;
+    for (int i = 0; i < 64; i++) {
+        int id = runec_ui_spell_id(&v->ui, i);
+        v->ui.spell_enabled[i] = id &&
+            fc_magic_check(&v->state, id, v->ui.autocast_picker) == FC_MAGIC_OK;
+    }
 
     for (int i = 0; i < RUNEC_UI_SKILL_COUNT; i++) {
         v->ui.skill_current[i] = 1;
@@ -412,6 +431,21 @@ static void queue_player_tile_request(ViewerState* v, int tx, int ty,
 static void queue_player_attack_request(ViewerState* v, int npc_idx,
                                         float screen_x, float screen_y) {
     if (!v || npc_idx < 0 || npc_idx >= FC_MAX_NPCS) return;
+    if (v->ui.selected_target.kind == RUNEC_UI_SELECTED_SPELL) {
+        if (v->policy_pipe) return;
+        int id = runec_ui_spell_id(&v->ui, v->ui.selected_target.source_slot);
+        FcMagicResult result = fc_cast_spell(&v->state, id, npc_idx);
+        snprintf(v->item_message, sizeof(v->item_message), "%s",
+                 fc_magic_result_message(result));
+        v->item_message_seconds = result == FC_MAGIC_OK ? 0 : 4;
+        if (result == FC_MAGIC_OK) {
+            v->pending_attack_npc = -1;
+            v->pending_tile_x = v->pending_tile_y = -1;
+            runec_ui_clear_selected_target(&v->ui);
+            fc_click_feedback_select_interaction(&v->click_feedback, screen_x, screen_y);
+        }
+        return;
+    }
     v->pending_attack_npc = npc_idx;
     v->pending_tile_x = -1;
     v->pending_tile_y = -1;
@@ -447,6 +481,22 @@ static void handle_runec_ui_intent(ViewerState* v) {
     RuneCUiIntent* intent = &v->ui.last_intent;
     FcPlayer* p = &v->state.player;
     switch (intent->kind) {
+        case RUNEC_UI_INTENT_SELECTED_SPELL:
+        case RUNEC_UI_INTENT_AUTOCAST_SPELL: {
+            int automatic = intent->kind == RUNEC_UI_INTENT_AUTOCAST_SPELL;
+            int id = automatic ? intent->primary : runec_ui_spell_id(&v->ui, intent->primary);
+            FcMagicResult result = FC_MAGIC_INVALID;
+            if (!v->policy_pipe)
+                result = automatic ? fc_set_autocast(&v->state, id) : fc_magic_check(&v->state, id, 0);
+            snprintf(v->item_message, sizeof(v->item_message), "%s",
+                     v->policy_pipe ? "Spell controls are disabled during policy replay."
+                                    : fc_magic_result_message(result));
+            v->item_message_seconds = result == FC_MAGIC_OK ? 0 : 4;
+            if (automatic || result != FC_MAGIC_OK)
+                runec_ui_clear_selected_target(&v->ui);
+            if (automatic && result == FC_MAGIC_OK) v->ui.autocast_picker = 0;
+            break;
+        }
         case RUNEC_UI_INTENT_WORLD_ACTION: {
             int slot = v->context_npc_slot;
             const FcNpc *npc = slot >= 0 && slot < FC_MAX_NPCS ? &v->state.npcs[slot] : NULL;
@@ -503,6 +553,23 @@ static void handle_runec_ui_intent(ViewerState* v) {
             break;
         }
         case RUNEC_UI_INTENT_COMBAT_STYLE:
+            if (p->weapon_kind == FC_WEAPON_MELEE) break;
+            if (p->weapon_kind == FC_WEAPON_MAGIC_STAFF && intent->primary == 0 && !v->policy_pipe) {
+                FcMagicResult result = fc_set_autocast(&v->state, 0);
+                snprintf(v->item_message,sizeof(v->item_message),"%s",fc_magic_result_message(result));
+                v->item_message_seconds = result == FC_MAGIC_OK ? 0 : 4;
+                v->combat_style = 0;
+                break;
+            }
+            if (p->weapon_kind == FC_WEAPON_POWERED_STAFF ||
+                p->weapon_kind == FC_WEAPON_MAGIC_STAFF) {
+                snprintf(v->item_message, sizeof(v->item_message),
+                    "%s", p->weapon_kind == FC_WEAPON_POWERED_STAFF
+                        ? "Powered staves use their built-in spell when attacking."
+                        : "Use Autocast to select a spell, or Bash for melee.");
+                v->item_message_seconds = 4;
+                break;
+            }
             v->combat_style = intent->primary == 3 ? 2 : intent->primary;
             if (v->combat_style < 0) v->combat_style = 0;
             if (v->combat_style > 2) v->combat_style = 2;
@@ -911,11 +978,16 @@ static void sync_player_appearance(ViewerState *v) {
 
 static void reset_ep(ViewerState* v) {
     runec_ui_close_context(&v->ui);
+    runec_ui_clear_selected_target(&v->ui);
+    v->ui.autocast_picker = 0;
+    v->loadout_debug = (FcLoadoutDebugUi){0};
     v->scene_right_tracking = v->scene_right_dragged = 0;
     load_reward_params(v);
     reset_reward_tracking(v);
     v->seed = (uint32_t)GetRandomValue(1, 999999);
     fc_reset(&v->state, v->seed);
+    if (!v->policy_pipe)
+        fc_loadout_debug_action(&v->state, 1, FC_LOADOUT_DEBUG_LEVEL);
     /* Skip to start_wave if set */
     if (v->start_wave > 1 && v->start_wave <= FC_NUM_WAVES) {
         for (int i = 0; i < FC_MAX_NPCS; i++) {
@@ -1684,7 +1756,7 @@ static Rectangle runec_side_content_rect(void) {
     };
 }
 
-#define RUNEC_CONSOLE_TAB_COUNT 6
+#define RUNEC_CONSOLE_TAB_COUNT 7
 #define RUNEC_CONSOLE_NPC_ROWS 8
 #define RUNEC_CONSOLE_NPC_ROW_H 13
 #define RUNEC_CONSOLE_TPS_COLS 4
@@ -1939,13 +2011,15 @@ static void draw_runec_console_diagnostics(ViewerState* v, Rectangle body) {
 
 static void draw_runec_console(ViewerState* v) {
     static const char* labels[RUNEC_CONSOLE_TAB_COUNT] = {
-        "Controls", "Player", "Obs", "Mask", "Reward", "Log"
+        "Controls", "Player", "Obs", "Mask", "Reward", "Log", "Loadout"
     };
     Rectangle panel = runec_console_panel_rect();
     Rectangle body = runec_console_body_rect(panel);
     DrawRectangleRec(body, CLITERAL(Color){0, 0, 0, 76});
     if (v->console_tab == 0)
         draw_runec_console_controls(v, body);
+    else if (v->console_tab == 6)
+        fc_loadout_debug_draw(&v->state, !v->policy_pipe, &v->loadout_debug, body);
     else
         draw_runec_console_diagnostics(v, body);
 
@@ -1975,6 +2049,11 @@ static int process_runec_console_input(ViewerState* v) {
     if (!v) return 0;
     Rectangle panel = runec_console_panel_rect();
     Vector2 mouse = GetMousePosition();
+    if ((v->loadout_debug.dropdown || v->loadout_debug.confirm) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) &&
+        !CheckCollisionPointRec(mouse,panel)) {
+        v->loadout_debug.dropdown = v->loadout_debug.confirm = 0;
+        return 1;
+    }
     if (!CheckCollisionPointRec(mouse, panel))
         return 0;
 
@@ -1986,11 +2065,24 @@ static int process_runec_console_input(ViewerState* v) {
                 continue;
             v->console_tab = tab;
             v->console_wave_dropdown_open = 0;
+            v->loadout_debug.dropdown = v->loadout_debug.confirm = 0;
             return 1;
         }
     }
 
     Rectangle body = runec_console_body_rect(panel);
+    if (v->console_tab == 6 && clicked) {
+        if (v->policy_pipe) return 1;
+        int action = fc_loadout_debug_hit(body, mouse, &v->loadout_debug);
+        if (action >= 0) {
+            snprintf(v->item_message, sizeof(v->item_message), "%s",
+                fc_loadout_debug_action(&v->state, !v->policy_pipe, action));
+            v->item_message_seconds = 4;
+            runec_ui_clear_selected_target(&v->ui);
+            v->pending_attack_npc = -1;
+        }
+        return 1;
+    }
     if (v->console_tab == 0 && clicked) {
         if (v->console_wave_dropdown_open) {
             for (int wave = 1; wave <= FC_NUM_WAVES; wave++) {
@@ -2565,6 +2657,12 @@ int main(int argc, char** argv) {
 
             /* Step simulation */
             fc_step(&v.state, v.actions);
+            if (!v.policy_pipe && v.state.player.magic_error) {
+                snprintf(v.item_message, sizeof(v.item_message), "%s",
+                    fc_magic_result_message((FcMagicResult)v.state.player.magic_error));
+                v.item_message_seconds = 4;
+                v.state.player.magic_error = 0;
+            }
             if (used_human_actions && v.actions[5] > 0 && v.actions[6] > 0)
                 fc_click_feedback_accept_move_tick(&v.click_feedback,
                                                    &v.state);

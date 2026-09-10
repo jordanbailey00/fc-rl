@@ -153,6 +153,31 @@ static void init_player(FcPlayer* p) {
     p->approach_target_size = 0;
 }
 
+FcItemResult fc_apply_loadout(FcState *state, int loadout_id) {
+    if (!state || state->terminal || state->player.current_hp <= 0) return FC_ITEM_BUSY;
+    if (loadout_id < 0 || loadout_id >= FC_NUM_LOADOUTS) return FC_ITEM_INVALID;
+    FcState copy = *state;
+    apply_loadout_combat_fields(&copy.player, &FC_LOADOUTS[loadout_id]);
+    memcpy(copy.player.inventory, state->player.inventory, sizeof(copy.player.inventory));
+    copy.player.sharks_remaining = state->player.sharks_remaining;
+    copy.player.prayer_doses_remaining = state->player.prayer_doses_remaining;
+    copy.player.selected_food_slot = copy.player.selected_potion_slot = -1;
+    if (copy.player.infinite_resources & FC_RESOURCE_RUNES) {
+        FcItemResult result = fc_inventory_add_runes(&copy);
+        if (result != FC_ITEM_OK) return result;
+    }
+    if (copy.player.current_hp > copy.player.max_hp) copy.player.current_hp = copy.player.max_hp;
+    if (copy.player.current_prayer > copy.player.max_prayer)
+        copy.player.current_prayer = copy.player.max_prayer;
+    /* Account setup interrupts intent, never an attack already in flight. */
+    copy.player.attack_target_idx = -1;
+    copy.player.approach_target = 0;
+    copy.player.approach_target_x = copy.player.approach_target_y = -1;
+    state->player = copy.player;
+    state->active_loadout = loadout_id;
+    return FC_ITEM_OK;
+}
+
 /* ======================================================================== */
 /* Lifecycle                                                                 */
 /* ======================================================================== */
@@ -185,7 +210,7 @@ static void validate_loadout_table_or_abort(void) {
             loadout->defence_lvl >= 1 && loadout->ranged_lvl >= 1 &&
             loadout->prayer_lvl >= 1 && loadout->magic_lvl >= 1 &&
             loadout->weapon_kind >= FC_WEAPON_GENERIC_RANGED &&
-            loadout->weapon_kind <= FC_WEAPON_BOW_OF_FAERDHINEN &&
+            loadout->weapon_kind <= FC_WEAPON_MELEE &&
             (loadout->weapon_uses_ammo == 0 ||
              loadout->weapon_uses_ammo == 1) &&
             loadout->ammo >= 0 &&
@@ -197,9 +222,11 @@ static void validate_loadout_table_or_abort(void) {
 
         FcPlayer player = {0};
         apply_loadout_combat_fields(&player, loadout);
-        if (fc_player_ranged_base_max_hit_hp(&player) <= 0) valid = 0;
+        if (loadout->weapon_kind <= FC_WEAPON_BOW_OF_FAERDHINEN &&
+            fc_player_ranged_base_max_hit_hp(&player) <= 0) valid = 0;
         for (int npc_type = NPC_TZ_KIH;
-             valid && npc_type < NPC_TYPE_COUNT; npc_type++) {
+             valid && loadout->weapon_kind <= FC_WEAPON_BOW_OF_FAERDHINEN &&
+             npc_type < NPC_TYPE_COUNT; npc_type++) {
             FcNpc target = {0};
             target.npc_type = npc_type;
             if (fc_player_ranged_final_max_hit_hp(&player, &target) <= 0)
@@ -240,6 +267,8 @@ void fc_reset(FcState* state, uint32_t seed) {
 
     /* Initialize player */
     init_player(&state->player);
+    if ((state->player.infinite_resources & FC_RESOURCE_RUNES) &&
+        fc_inventory_add_runes(state) != FC_ITEM_OK) abort();
     state->active_loadout = FC_ACTIVE_LOADOUT;
     state->render_events.player_attack_target_npc_slot = -1;
     state->render_events.player_move_start_x = state->player.x;

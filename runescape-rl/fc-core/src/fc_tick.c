@@ -1,6 +1,7 @@
 #include "fc_api.h"
 #include "fc_items_internal.h"
 #include "fc_combat.h"
+#include "fc_magic_internal.h"
 #include "fc_prayer.h"
 #include "fc_pathfinding.h"
 #include <math.h>
@@ -240,6 +241,7 @@ static void prepare_player_interaction(FcState* state, int explicit_move,
     /* Explicit movement starts a fresh movement intent before auto-attack can
      * consume a stale route or combat approach. */
     if (explicit_move) {
+        player->manual_spell = 0;
         player->route_len = 0;
         player->route_idx = 0;
         player->approach_target = 0;
@@ -266,28 +268,114 @@ static void prepare_player_interaction(FcState* state, int explicit_move,
     }
 }
 
+static int launch_melee_hits(FcState *state, FcNpc *target) {
+    FcPlayer *p = &state->player;
+    int weapon = p->equipment[FC_EQUIP_SLOT_WEAPON].item_id;
+    int maximum = (320 + (p->strength_level + 8) * (p->melee_strength_bonus + 64)) / 640;
+    int attack = (p->attack_level + 11) * (p->melee_attack_bonus + 64);
+    int targets[3] = {(int)(target - state->npcs)}, count = 1;
+    int dual = weapon == 28997, scythe = weapon == 22325;
+    int primary_hits = scythe ? (target->size < 3 ? target->size : 3) : dual ? 2 : 1;
+    for (int i = 1; i < primary_hits; i++) targets[count++] = targets[0];
+    /* Scythe uses remaining hits in a 1x3 arc ahead, never behind the player.
+     * Large primary footprints receive their extra hits before other NPCs. */
+    if (scythe && count < 3) {
+        int dx = p->x < target->x ? 1 : p->x >= target->x + target->size ? -1 : 0;
+        int dy = dx ? 0 : p->y < target->y ? 1 : -1;
+        for (int i = 0; i < FC_MAX_NPCS && count < 3; i++) {
+            FcNpc *n = &state->npcs[i];
+            if (n == target || !n->active || n->is_dead) continue;
+            int intersects = 0;
+            for (int offset = -1; offset <= 1; offset++) {
+                int x = p->x + dx + offset * dy, y = p->y + dy + offset * dx;
+                intersects |= x >= n->x && x < n->x + n->size &&
+                              y >= n->y && y < n->y + n->size;
+            }
+            if (!intersects || !fc_has_los_between_areas(p->x,p->y,1,n->x,n->y,n->size,state->los_flags))
+                continue;
+            int hits = n->size < 3-count ? n->size : 3-count;
+            for (int h = 0; h < hits; h++) targets[count++] = i;
+        }
+    }
+    for (int i = 0; i < count; i++) {
+        int needed = 0;
+        for (int j = 0; j < count; j++) needed += targets[j] == targets[i];
+        if (state->npcs[targets[i]].num_pending_hits + needed > FC_MAX_PENDING_HITS) return 0;
+    }
+    int first_hit = 0, haste = 0;
+    int blood_set = dual && p->equipment[FC_EQUIP_SLOT_HEAD].item_id == 29028 &&
+        p->equipment[FC_EQUIP_SLOT_BODY].item_id == 29022 &&
+        p->equipment[FC_EQUIP_SLOT_LEGS].item_id == 29025;
+    for (int i = 0; i < count; i++) {
+        FcNpc *n = &state->npcs[targets[i]];
+        const FcNpcStats *stats = fc_npc_get_stats(n->npc_type);
+        /* All Fight Caves NPCs have zero stab/slash/crush defence bonuses. */
+        int defence = fc_npc_def_roll(stats->def_level - n->stat_drain[FC_MAGIC_DRAIN_DEFENCE],0);
+        float chance = weapon == 26219 ? fc_double_attack_hit_chance(attack,defence) :
+                                        fc_hit_chance(attack,defence);
+        int hit = !(dual && i == 1 && !first_hit) && fc_rng_float(state) < chance;
+        if (i == 0) first_hit = hit;
+        int max_hit = scythe ? maximum >> i : dual ?
+            (i == 0 ? maximum / 2 : maximum - maximum / 2) : maximum;
+        int damage = 0;
+        if (hit && weapon == 26219) {
+            int minimum = maximum * 3 / 20;
+            damage = (minimum + fc_rng_int(state,maximum - 2 * minimum + 1)) * 10;
+        } else if (hit) damage = fc_roll_player_damage_tenths(state,max_hit);
+        fc_queue_pending_hit(n->pending_hits,&n->num_pending_hits,FC_MAX_PENDING_HITS,
+                             damage,1,ATTACK_MELEE,-1,0);
+        if (blood_set && hit && fc_rng_int(state,3) == 0) haste = 1;
+    }
+    p->attack_timer = p->weapon_speed - haste;
+    return 1;
+}
+
+static int launch_ranged_hit(FcState *state, FcNpc *target, int delay) {
+    FcPlayer *player = &state->player;
+    if (target->num_pending_hits >= FC_MAX_PENDING_HITS) return 0;
+    int att_roll = fc_player_ranged_attack_roll(player,target);
+    const FcNpcStats *stats = fc_npc_get_stats(target->npc_type);
+    int def_roll = fc_npc_def_roll(stats->def_level - target->stat_drain[FC_MAGIC_DRAIN_DEFENCE],
+                                   stats->ranged_def_bonus);
+    int hit = fc_rng_float(state) < fc_hit_chance(att_roll,def_roll);
+    int maximum = fc_player_ranged_final_max_hit_hp(player,target);
+    int damage = hit ? fc_roll_player_damage_tenths(state,maximum) : 0;
+    int ammo = player->equipment[FC_EQUIP_SLOT_AMMO].item_id;
+    if ((ammo == 9243 || ammo == 21946) && fc_rng_int(state,10) == 0)
+        damage = fc_rng_int(state,maximum * 115 / 100 + 1) * 10;
+    if (ammo == 21944 && player->current_hp >= 100 &&
+        player->num_pending_hits < FC_MAX_PENDING_HITS && fc_rng_int(state,100) < 6) {
+        damage = (target->current_hp / 10 / 5) * 10;
+        if (damage > 1000) damage = 1000;
+        fc_queue_pending_hit(player->pending_hits,&player->num_pending_hits,FC_MAX_PENDING_HITS,
+            (player->current_hp / 10 / 10) * 10,1,ATTACK_NONE,-1,0);
+    }
+    fc_queue_pending_hit(target->pending_hits,&target->num_pending_hits,FC_MAX_PENDING_HITS,
+                         damage,delay,ATTACK_RANGED,-1,0);
+    player->attack_timer = player->weapon_speed;
+    return 1;
+}
+
 static void launch_player_attack(FcState* state, FcNpc* target, int distance) {
     FcPlayer* player = &state->player;
-    int melee = player->weapon_kind == FC_WEAPON_UNARMED;
-    /* Unarmed Punch is accurate/crush (+3 Attack). Fight Caves NPCs all
-     * have zero crush defence bonus, including the ranged-resistant healers. */
-    int att_roll = melee ? (player->attack_level + 11) *
-        (player->melee_attack_bonus + 64) : fc_player_ranged_attack_roll(player, target);
-    const FcNpcStats* target_stats = fc_npc_get_stats(target->npc_type);
-    int def_roll = fc_npc_def_roll(target_stats->def_level,
-                                   melee ? 0 : target_stats->ranged_def_bonus);
-    float chance = fc_hit_chance(att_roll, def_roll);
-    int hit = fc_rng_float(state) < chance ? 1 : 0;
-    int final_max_hit_hp = melee ? (320 + (player->strength_level + 8) *
-        (player->melee_strength_bonus + 64)) / 640 :
-        fc_player_ranged_final_max_hit_hp(player, target);
-    int damage = hit
-        ? fc_roll_player_damage_tenths(state, final_max_hit_hp) : 0;
+    if (fc_magic_active(player)) {
+        player->magic_error = fc_magic_launch(state,target,distance);
+        if (player->magic_error) {
+            player->attack_target_idx = -1;
+            player->approach_target = 0;
+            player->manual_spell = 0;
+        }
+        return;
+    }
+    int melee = player->weapon_kind == FC_WEAPON_UNARMED ||
+        player->weapon_kind == FC_WEAPON_MAGIC_STAFF || player->weapon_kind == FC_WEAPON_MELEE;
     int delay = melee ? 1 : fc_ranged_hit_delay(distance);
-
-    fc_queue_pending_hit(target->pending_hits, &target->num_pending_hits,
-                         FC_MAX_PENDING_HITS, damage, delay,
-                         melee ? ATTACK_MELEE : ATTACK_RANGED, -1, 0);
+    if (melee) {
+        if (!launch_melee_hits(state,target)) return;
+    } else {
+        if (!launch_ranged_hit(state,target,delay)) return;
+    }
+    player->confliction_missed = 0;
     state->attack_attempt_this_tick = 1;
     state->render_events.player_attack_fired = 1;
     state->render_events.player_attack_source_x = player->x;
@@ -301,7 +389,6 @@ static void launch_player_attack(FcState* state, FcNpc* target, int distance) {
     if (target->npc_type > NPC_NONE && target->npc_type < NPC_TYPE_COUNT) {
         state->ep_attack_cycles_to_npc_type[target->npc_type]++;
     }
-    player->attack_timer = player->weapon_speed;
     if (player->weapon_uses_ammo && player->ammo_count > 0) {
         fc_items_spend_ammo(player);
     }
@@ -324,12 +411,13 @@ static int process_player_target(FcState* state,
     /* Like Void CombatMovement: approach until the current target is in range,
      * then attack on cooldown and remain stationary for this tick. */
     if (player->attack_target_idx < 0 ||
-        (player->weapon_uses_ammo && player->ammo_count <= 0)) {
+        (!fc_magic_active(player) && player->weapon_uses_ammo && player->ammo_count <= 0)) {
         return metrics_recorded;
     }
 
     FcNpc* target = &state->npcs[player->attack_target_idx];
     if (!target->active || target->is_dead) {
+        player->manual_spell = 0;
         player->attack_target_idx = -1;
         player->approach_target = 0;
         player->approach_target_x = -1;
@@ -339,12 +427,15 @@ static int process_player_target(FcState* state,
     }
 
     int dist = fc_distance_to_npc(player->x, player->y, target);
-    int weapon_range = player->weapon_range;
+    int magic = fc_magic_active(player);
+    int melee = !magic && (player->weapon_kind == FC_WEAPON_UNARMED ||
+        player->weapon_kind == FC_WEAPON_MAGIC_STAFF || player->weapon_kind == FC_WEAPON_MELEE);
+    int weapon_range = magic ? fc_magic_attack_range(player) : player->weapon_range;
     int has_los = fc_has_los_between_areas(
         player->x, player->y, 1,
         target->x, target->y, target->size, state->los_flags);
     int target_can_fire = dist > 0 && dist <= weapon_range && has_los;
-    if (player->weapon_kind == FC_WEAPON_UNARMED) {
+    if (melee) {
         weapon_range = FC_ROUTE_MELEE_RANGE;
         target_can_fire = fc_npc_can_melee_player(player->x, player->y,
             target->x, target->y, target->size, state->walkable, state->movement_flags);
@@ -378,7 +469,7 @@ static int process_player_target(FcState* state,
             fc_has_los_between_areas(
                 rx, ry, 1, target->x, target->y, target->size,
                 state->los_flags);
-        if (player->weapon_kind == FC_WEAPON_UNARMED)
+        if (melee)
             route_endpoint_can_fire = fc_npc_can_melee_player(rx, ry,
                 target->x, target->y, target->size, state->walkable, state->movement_flags);
     }

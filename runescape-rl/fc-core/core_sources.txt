@@ -4,6 +4,7 @@ src/fc_items.c
 src/fc_rng.c
 src/fc_tick.c
 src/fc_combat.c
+src/fc_magic.c
 src/fc_prayer.c
 src/fc_pathfinding.c
 src/fc_spawn.c

@@ -14,6 +14,7 @@
 static void reset(FcState *s, int empty_inventory) {
     fc_init(s);
     fc_reset(s, 101);
+    s->player.infinite_resources = 0; /* Finite transaction tests; presets tested separately. */
     if (empty_inventory) fc_set_initial_supplies(s, 0, 0);
 }
 
@@ -181,6 +182,7 @@ static int supplies_and_loaded_weapon(void) {
     CHECK(s.player.selected_food_slot == -1 && s.player.selected_potion_slot == -1);
     reset(&s, 1);
     fc_items_init(&s.player, &FC_LOADOUTS[FC_LOADOUT_BLOWPIPE_PURE]);
+    s.player.infinite_resources = 0;
     fc_set_initial_supplies(&s, 0, 0);
     fc_items_spend_ammo(&s.player);
     CHECK(s.player.equipment[3].charges == 49999);
@@ -228,6 +230,27 @@ static int combat(void) {
         if (s.render_events.hits[i].target_entity_type == ENTITY_NPC &&
             s.render_events.hits[i].attack_style == ATTACK_MELEE) melee_hit = 1;
     CHECK(melee_hit); /* delay-one queues resolve during this tick's hit phase */
+    CHECK(fc_inventory_add(&s,(FcItemStack){1432,1,0})==FC_ITEM_OK);
+    uint32_t before=fc_state_hash(&s);
+    CHECK(fc_equip_item(&s,item_slot(&s.player,1432))==FC_ITEM_REQUIREMENTS);
+    CHECK(fc_state_hash(&s)==before);
+    s.player.attack_level=40;
+    CHECK(fc_equip_item(&s,item_slot(&s.player,1432))==FC_ITEM_OK);
+    CHECK(s.player.weapon_kind==FC_WEAPON_MELEE && s.player.weapon_speed==4);
+    CHECK(s.player.weapon_range==1 && !s.player.weapon_uses_ammo && s.player.attack_timer==3);
+    s.player.attack_timer=0;
+    s.player.attack_target_idx=0;
+    s.npcs[0].x=21; s.npcs[0].y=21;
+    fc_step(&s,actions);
+    CHECK(!s.render_events.player_attack_fired);
+    s.npcs[0].x=21; s.npcs[0].y=20;
+    fc_step(&s,actions);
+    CHECK(s.render_events.player_attack_fired && s.player.attack_timer==3);
+    melee_hit=0;
+    for(int i=0;i<s.render_events.hit_count;i++)
+        if(s.render_events.hits[i].target_entity_type==ENTITY_NPC &&
+           s.render_events.hits[i].attack_style==ATTACK_MELEE) melee_hit=1;
+    CHECK(melee_hit && s.player.ammo_count==0);
     CHECK(fc_equip_item(&s, item_slot(&s.player, 20997)) == FC_ITEM_OK);
     CHECK(s.player.attack_timer == 3 && s.player.attack_target_idx == -1);
     int route_x[64], route_y[64];

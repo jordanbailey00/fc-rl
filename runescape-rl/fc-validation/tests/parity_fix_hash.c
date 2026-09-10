@@ -44,6 +44,11 @@ static uint32_t reference_pending_hit(uint32_t hash, const FcPendingHit* hit) {
     HASH_I32(hit->prayer_drain);
     HASH_I32(hit->prayer_snapshot);
     HASH_I32(hit->prayer_lock_tick);
+    HASH_I32(hit->spell_id);
+    HASH_I32(hit->accurate);
+    HASH_I32(hit->magic_heal_divisor);
+    HASH_I32(hit->magic_poison);
+    HASH_I32(hit->magic_curse_boost);
     return hash;
 }
 
@@ -128,6 +133,16 @@ static uint32_t reference_player(uint32_t hash, const FcPlayer* player) {
     HASH_I32(player->melee_strength_bonus);
     HASH_I32(player->selected_food_slot);
     HASH_I32(player->selected_potion_slot);
+    HASH_I32(player->spellbook);
+    HASH_I32(player->manual_spell);
+    HASH_I32(player->autocast_spell);
+    HASH_I32(player->magic_attack_bonus);
+    HASH_I32(player->magic_damage_permille);
+    HASH_I32(player->magic_error);
+    HASH_I32(player->infinite_resources);
+    HASH_I32(player->confliction_missed);
+    HASH_I32(player->confliction_target_spawn);
+    HASH_I32(player->confliction_spell);
     return hash;
 }
 
@@ -164,10 +179,16 @@ static uint32_t reference_npc(uint32_t hash, const FcNpc* npc) {
         hash = reference_pending_hit(hash, &npc->pending_hits[i]);
     }
     HASH_I32(npc->num_pending_hits);
+    HASH_I32(npc->frozen_until);
+    HASH_I32(npc->freeze_immune_until);
+    HASH_I32(npc->poison_severity);
+    HASH_I32(npc->poison_next_tick);
+    for (int i = 0; i < 4; i++) HASH_I32(npc->stat_drain[i]);
+    HASH_I32(npc->stat_restore_tick);
     return hash;
 }
 
-static uint32_t reference_state_hash_v5(const FcState* state) {
+static uint32_t reference_state_hash_v7(const FcState* state) {
     uint32_t hash = FNV_OFFSET;
     hash = reference_player(hash, &state->player);
     for (int i = 0; i < FC_MAX_NPCS; ++i) {
@@ -336,19 +357,19 @@ static void make_golden_state(FcState* state) {
 }
 
 static int test_version(void) {
-    if (FC_STATE_HASH_VERSION != 5u) {
-        fprintf(stderr, "FAIL DET-001: FC_STATE_HASH_VERSION=%u, expected 5\n",
+    if (FC_STATE_HASH_VERSION != 7u) {
+        fprintf(stderr, "FAIL DET-001: FC_STATE_HASH_VERSION=%u, expected 7\n",
                 (unsigned)FC_STATE_HASH_VERSION);
         return 1;
     }
-    printf("PASS DET-001: canonical state-hash version is 5\n");
+    printf("PASS DET-001: canonical state-hash version is 6\n");
     return 0;
 }
 
 #define MUTATE(label, expression) do {                                      \
     FcState changed = base;                                                 \
     expression;                                                             \
-    uint32_t expected = reference_state_hash_v5(&changed);                  \
+    uint32_t expected = reference_state_hash_v7(&changed);                  \
     uint32_t actual = fc_state_hash(&changed);                              \
     if (expected == reference_base) {                                       \
         fprintf(stderr, "FAIL DET-001 oracle: %s did not change reference hash\n", label); \
@@ -365,7 +386,7 @@ static int test_field_coverage(void) {
     int failures = 0;
     fc_init(&base);
     fc_reset(&base, UINT32_C(0x31415926));
-    uint32_t reference_base = reference_state_hash_v5(&base);
+    uint32_t reference_base = reference_state_hash_v7(&base);
     uint32_t production_base = fc_state_hash(&base);
 
     MUTATE("inventory identity", changed.player.inventory[27].item_id ^= 1);
@@ -389,6 +410,16 @@ static int test_field_coverage(void) {
     MUTATE("player.run_state", changed.player.run_energy ^= 1);
     MUTATE("player.combat_stats", changed.player.attack_level ^= 1);
     MUTATE("player.weapon_kind", changed.player.weapon_kind ^= 1);
+    MUTATE("player.spellbook", changed.player.spellbook ^= 1);
+    MUTATE("player.manual_spell", changed.player.manual_spell ^= 1);
+    MUTATE("player.autocast_spell", changed.player.autocast_spell ^= 1);
+    MUTATE("player.magic_error", changed.player.magic_error ^= 1);
+    MUTATE("player.infinite_resources", changed.player.infinite_resources ^= 1);
+    MUTATE("player.confliction_missed", changed.player.confliction_missed ^= 1);
+    MUTATE("player.confliction_target_spawn", changed.player.confliction_target_spawn ^= 1);
+    MUTATE("player.confliction_spell", changed.player.confliction_spell ^= 1);
+    MUTATE("player.magic_attack_bonus", changed.player.magic_attack_bonus ^= 1);
+    MUTATE("player.magic_damage_permille", changed.player.magic_damage_permille ^= 1);
     MUTATE("player.weapon_uses_ammo", changed.player.weapon_uses_ammo ^= 1);
     MUTATE("player.crystal_piece_mask", changed.player.crystal_piece_mask ^= 1);
     MUTATE("player.weapon_timing", changed.player.weapon_speed ^= 1);
@@ -436,6 +467,17 @@ static int test_field_coverage(void) {
     MUTATE("npc.pending.prayer_snapshot", changed.npcs[0].pending_hits[0].prayer_snapshot ^= 1);
     MUTATE("npc.pending.prayer_lock_tick", changed.npcs[0].pending_hits[0].prayer_lock_tick ^= 1);
     MUTATE("npc.pending.count", changed.npcs[0].num_pending_hits ^= 1);
+    MUTATE("npc.pending.spell", changed.npcs[0].pending_hits[0].spell_id ^= 1);
+    MUTATE("npc.pending.accuracy", changed.npcs[0].pending_hits[0].accurate ^= 1);
+    MUTATE("npc.pending.heal", changed.npcs[0].pending_hits[0].magic_heal_divisor ^= 1);
+    MUTATE("npc.pending.poison", changed.npcs[0].pending_hits[0].magic_poison ^= 1);
+    MUTATE("npc.pending.curse_boost", changed.npcs[0].pending_hits[0].magic_curse_boost ^= 1);
+    MUTATE("npc.freeze", changed.npcs[0].frozen_until ^= 1);
+    MUTATE("npc.freeze_immunity", changed.npcs[0].freeze_immune_until ^= 1);
+    MUTATE("npc.poison", changed.npcs[0].poison_severity ^= 1);
+    MUTATE("npc.poison_timer", changed.npcs[0].poison_next_tick ^= 1);
+    MUTATE("npc.stat_drain", changed.npcs[0].stat_drain[0] ^= 1);
+    MUTATE("npc.stat_restore", changed.npcs[0].stat_restore_tick ^= 1);
 
     MUTATE("active_loadout", changed.active_loadout ^= 1);
     MUTATE("wave_state", changed.current_wave ^= 1);
@@ -476,26 +518,26 @@ static int test_field_coverage(void) {
 #undef MUTATE
 
 static int test_golden(void) {
-    const uint32_t expected_v5 = UINT32_C(0x8fb7eb56);
+    const uint32_t expected_v7 = UINT32_C(0x11323e76);
     FcState state;
     make_golden_state(&state);
-    uint32_t oracle = reference_state_hash_v5(&state);
+    uint32_t oracle = reference_state_hash_v7(&state);
     uint32_t actual = fc_state_hash(&state);
 
-    if (oracle != expected_v5) {
+    if (oracle != expected_v7) {
         fprintf(stderr,
                 "FAIL DET-001 oracle golden: got 0x%08" PRIx32 ", expected 0x%08" PRIx32 "\n",
-                oracle, expected_v5);
+                oracle, expected_v7);
         return 1;
     }
-    if (actual != expected_v5) {
+    if (actual != expected_v7) {
         fprintf(stderr,
                 "FAIL DET-001 canonical golden: got 0x%08" PRIx32 ", expected 0x%08" PRIx32 "\n",
-                actual, expected_v5);
+                actual, expected_v7);
         return 1;
     }
-    printf("PASS DET-001: version-5 synthetic-state golden is 0x%08" PRIx32 "\n",
-           expected_v5);
+    printf("PASS DET-001: version-7 synthetic-state golden is 0x%08" PRIx32 "\n",
+           expected_v7);
     return 0;
 }
 

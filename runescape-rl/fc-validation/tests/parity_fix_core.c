@@ -467,7 +467,7 @@ static int test_def_003(void) {
         return 1;
     }
 
-    for (int i = 0; i < FC_NUM_LOADOUTS; i++) {
+    for (int i = 0; i < FC_LOADOUT_MELEE_LOW; i++) {
         const FcLoadout* loadout = &FC_LOADOUTS[i];
         if (loadout->attack_lvl < 1 || loadout->strength_lvl < 1 ||
             loadout->defence_lvl < 1 || loadout->ranged_lvl < 1 ||
@@ -565,7 +565,7 @@ typedef struct {
     int base_max_hit_hp;
 } ExpectedLoadout;
 
-static const ExpectedLoadout EXPECTED_LOADOUTS[FC_NUM_LOADOUTS] = {
+static const ExpectedLoadout EXPECTED_LOADOUTS[FC_LOADOUT_MELEE_LOW] = {
     [FC_LOADOUT_BLACK_DHIDE_RCB] = {
         700, 430, 1, 1, 70, 70, 43, 1,
         FC_WEAPON_GENERIC_RANGED, 1, 0, 5, 7, 153, 100,
@@ -650,7 +650,7 @@ static FcNpc target_of_type(int npc_type) {
 }
 
 static int test_rng_001(void) {
-    for (int i = 0; i < FC_NUM_LOADOUTS; i++) {
+    for (int i = 0; i < FC_LOADOUT_MELEE_LOW; i++) {
         FcPlayer player;
         player_from_loadout(&player, &FC_LOADOUTS[i]);
         int attack = fc_player_ranged_base_attack_roll(&player);
@@ -819,7 +819,7 @@ static int test_tbow_003(void) {
     FcNpc low = target_of_type(NPC_TZ_KIH);
     FcNpc high = target_of_type(NPC_TZTOK_JAD);
 
-    for (int i = 0; i < FC_NUM_LOADOUTS; i++) {
+    for (int i = 0; i < FC_LOADOUT_MELEE_LOW; i++) {
         FcPlayer player;
         player_from_loadout(&player, &FC_LOADOUTS[i]);
         int low_attack = fc_player_ranged_attack_roll(&player, &low);
@@ -1001,7 +1001,7 @@ static int derived_crystal_mask(const FcLoadout* loadout) {
 }
 
 static int test_cry_003(void) {
-    for (int i = 0; i < FC_NUM_LOADOUTS; i++) {
+    for (int i = 0; i < FC_LOADOUT_MELEE_LOW; i++) {
         int expected = i == FC_LOADOUT_BOWFA_CRYSTAL ?
             FC_CRYSTAL_PIECE_ALL : FC_CRYSTAL_PIECE_NONE;
         int derived = derived_crystal_mask(&FC_LOADOUTS[i]);
@@ -1075,7 +1075,7 @@ static int test_cry_004(void) {
     } while (0)
 
 static int test_load_001(void) {
-    for (int i = 0; i < FC_NUM_LOADOUTS; i++) {
+    for (int i = 0; i < FC_LOADOUT_MELEE_LOW; i++) {
         const FcLoadout* actual = &FC_LOADOUTS[i];
         const ExpectedLoadout* expected = &EXPECTED_LOADOUTS[i];
         CHECK_LOADOUT_FIELD(i, actual->max_hp, expected->max_hp, "max_hp");
@@ -1141,7 +1141,7 @@ static void make_loadout_attack_state(FcState* state, int loadout_id,
 }
 
 static int test_load_002(void) {
-    for (int i = 0; i < FC_NUM_LOADOUTS; i++) {
+    for (int i = 0; i < FC_LOADOUT_MELEE_LOW; i++) {
         const FcLoadout* loadout = &FC_LOADOUTS[i];
         const ExpectedLoadout* expected = &EXPECTED_LOADOUTS[i];
         if (loadout->weapon_kind != expected->weapon_kind ||
@@ -1242,7 +1242,7 @@ static int test_load_003(void) {
 
     int tbow_count = 0;
     int bowfa_count = 0;
-    for (int i = 0; i < FC_NUM_LOADOUTS; i++) {
+    for (int i = 0; i < FC_LOADOUT_MELEE_LOW; i++) {
         const FcLoadout* loadout = &FC_LOADOUTS[i];
         if (loadout->weapon_kind == FC_WEAPON_TWISTED_BOW) tbow_count++;
         if (loadout->weapon_kind == FC_WEAPON_BOW_OF_FAERDHINEN) {
@@ -1303,7 +1303,7 @@ static int player_matches_loadout(const FcPlayer* player,
 }
 
 static int test_load_004(void) {
-    for (int i = 0; i < FC_NUM_LOADOUTS; i++) {
+    for (int i = 0; i < FC_LOADOUT_MELEE_LOW; i++) {
         FcPlayer player;
         player_from_loadout(&player, &FC_LOADOUTS[i]);
         if (!player_matches_loadout(&player, &FC_LOADOUTS[i]) ||

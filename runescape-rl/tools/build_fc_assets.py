@@ -49,7 +49,7 @@ FIGHT_CAVES_SPOTANIM_IDS = [
     1923, # corrupted Bowfa launch
 ]
 FIGHT_CAVES_ANIM_IDS = {
-    422, 426, 808, 819, 820, 821, 822, 823, 824, 829, 836,
+    401, 422, 426, 808, 819, 820, 821, 822, 823, 824, 829, 836,
     4591, 4226, 4228, 4230, 5061, 7552,
     2618, 2619, 2620, 2621,
     2623, 2624, 2625, 2627,
@@ -171,6 +171,38 @@ def load_player_loadouts() -> list[tuple[int, str, list[int]]]:
 
 FIGHT_CAVES_PLAYER_LOADOUTS = load_player_loadouts()
 
+# The C table is authoritative: no separate list of magic graphics to drift.
+MAGIC_VISUALS = (REPO_ROOT / "fc-viewer/src/fc_magic_visual.c").read_text()
+FIGHT_CAVES_SPOTANIM_IDS = sorted(set(FIGHT_CAVES_SPOTANIM_IDS) | {85} | {
+    int(value) for value in re.findall(r"\.projectile_(?:launch|travel|impact)_spot=(-?\d+)", MAGIC_VISUALS)
+    if int(value) >= 0
+})
+FIGHT_CAVES_ANIM_IDS |= {813, 1205, 1210, 419, 390, 809, 9471, 10989, 8057, 8056} | {
+    int(value) for value in re.findall(r"\.attack_anim=(\d+)", MAGIC_VISUALS)
+}
+
+
+def worn_item_ids() -> set[int]:
+    source = _strip_c_comments((REPO_ROOT / "fc-core/src/fc_items.c").read_text())
+    ids = set()
+    for block in _extract_initializer_blocks(source, "ITEMS"):
+        item = re.search(r"\.id\s*=\s*(\d+)", block)
+        slot = re.search(r"\.slot\s*=\s*(FC_EQUIP_SLOT_\w+)", block)
+        if item and slot and slot[1] not in {"FC_EQUIP_SLOT_RING", "FC_EQUIP_SLOT_AMMO"}:
+            ids.add(int(item[1]))
+    return ids
+
+
+def export_magic_icons(cache_dir: Path, output: Path) -> None:
+    from export_sprites_modern import export_sprite
+    from rc_cache import RcCacheStore
+    store = RcCacheStore(cache_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    icons = json.loads((PIPELINE_DIR / "magic_icons.json").read_text())
+    for spell, sprite in icons.items():
+        if not export_sprite(store, output, sprite, [f"spell_{spell}"]):
+            raise SystemExit(f"Missing spell icon {spell}: sprite {sprite}")
+
 
 def is_under(path: Path, root: Path) -> bool:
     path = path.resolve()
@@ -284,7 +316,7 @@ def export_fc_player_model(cache_dir: Path, output: Path) -> None:
     reader = model_exporter.ModernCacheReader(cache_dir)
     store = RcCacheStore(cache_dir)
     item_files = store.read_group(INDEX_CONFIGS, CONFIG_ITEM)
-    all_item_ids = sorted({item_id for _, _, ids in FIGHT_CAVES_PLAYER_LOADOUTS for item_id in ids})
+    all_item_ids = sorted(worn_item_ids())
     item_defs = {
         item_id: decode_item_definition(item_id, item_files[item_id])
         for item_id in all_item_ids
@@ -316,7 +348,9 @@ def export_fc_player_model(cache_dir: Path, output: Path) -> None:
         models.append(body)
 
     records = []
-    wearpos_to_body = {0: 0, 8: 1, 4: 2, 6: 3, 9: 4, 7: 5, 10: 6}
+    # Slot 0 equips a hat; only slots 8 (head/hair) and 11 (jaw) hide
+    # identity kits. Treating every hat as a full helmet erases the face.
+    wearpos_to_body = {8: 0, 11: 1, 4: 2, 6: 3, 9: 4, 7: 5, 10: 6}
     for item_id in all_item_ids:
         item = item_defs[item_id]
         if item.unknown_opcode is not None:
@@ -356,7 +390,7 @@ def export_fc_spotanims(cache_dir: Path, output: Path) -> None:
     }
     missing = sorted(set(FIGHT_CAVES_SPOTANIM_IDS) - set(selected))
     if missing:
-        print(f"warning: spotanims missing from cache: {missing}")
+        raise SystemExit(f"required spotanims missing from cache: {missing}")
     export_spotanims.write_spotanims_binary(output, selected)
 
 
@@ -604,6 +638,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
     parser.add_argument("--keys", type=Path, default=DEFAULT_KEYS_PATH)
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
+    parser.add_argument("--magic-only", action="store_true",
+                        help="rebuild player parts, spell icons, combat graphics and animations only")
     parser.add_argument(
         "--replace",
         action="store_true",
@@ -639,6 +675,21 @@ def main(argv: list[str]) -> int:
     assets_dir.mkdir(parents=True, exist_ok=True)
     core_assets_dir.mkdir(parents=True, exist_ok=True)
 
+    if args.magic_only:
+        export_fc_player_model(cache_dir, assets_dir / "fc_player.models")
+        export_fc_spotanims(cache_dir, assets_dir / "fc_spotanims.bin")
+        export_fc_projectile_models(cache_dir, assets_dir / "fc_spotanims.bin",
+                                    assets_dir / "fc_projectiles.models")
+        export_fc_animations(cache_dir, assets_dir / "fc_spotanims.bin",
+                            REPO_ROOT / "fc-viewer/assets/fightcaves.oanim",
+                            assets_dir / "fc_all.anims")
+        export_magic_icons(cache_dir, assets_dir / "data/sprites/ui")
+        manifest = build_manifest(out_dir, cache_dir)
+        (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        if args.replace:
+            replace_runtime_assets(out_dir, manifest)
+        return 0
+
     from export_objects import export_modern_objects
     from export_minimap import export_minimap
     from export_terrain import export_modern_terrain
@@ -666,6 +717,7 @@ def main(argv: list[str]) -> int:
         target_plane=0,
     )
     export_fc_npc_models(cache_dir, assets_dir / "fc_npcs.models")
+    export_magic_icons(cache_dir, assets_dir / "data/sprites/ui")
     export_fc_player_model(cache_dir, assets_dir / "fc_player.models")
     export_fc_spotanims(cache_dir, assets_dir / "fc_spotanims.bin")
     export_fc_projectile_models(

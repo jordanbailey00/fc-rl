@@ -2,6 +2,7 @@
 
 #include "fc_contracts.h"
 #include "fc_items.h"
+#include "fc_magic_visual.h"
 #include "fc_model_animation.h"
 #include "fc_models.h"
 
@@ -126,6 +127,37 @@ const FcPlayerVisualProfile *fc_player_visual_profile(int active_loadout) {
         .run_anim=824, .attack_anim=422,
     };
     if (active_loadout == -1) return &unarmed;
+    static const FcPlayerVisualProfile staff = {
+        .idle_anim=813, .walk_anim=1205, .walk_back_anim=820,
+        .walk_left_anim=822, .walk_right_anim=821, .turn_anim=823,
+        .run_anim=1210, .attack_anim=419,
+    };
+    if (active_loadout == -2) return &staff;
+    static const FcPlayerVisualProfile mace = {
+        .idle_anim=808, .walk_anim=819, .walk_back_anim=820,
+        .walk_left_anim=822, .walk_right_anim=821, .turn_anim=823,
+        .run_anim=824, .attack_anim=401,
+    };
+    if (active_loadout == -3) return &mace;
+    static const FcPlayerVisualProfile melee[] = {
+        {.idle_anim=808, .walk_anim=819, .walk_back_anim=820, .walk_left_anim=822,
+         .walk_right_anim=821, .turn_anim=823, .run_anim=824, .attack_anim=390},
+        {.idle_anim=809, .walk_anim=819, .walk_back_anim=820, .walk_left_anim=822,
+         .walk_right_anim=821, .turn_anim=823, .run_anim=824, .attack_anim=9471},
+        {.idle_anim=808, .walk_anim=819, .walk_back_anim=820, .walk_left_anim=822,
+         .walk_right_anim=821, .turn_anim=823, .run_anim=824, .attack_anim=10989},
+        {.idle_anim=8057, .walk_anim=819, .walk_back_anim=820, .walk_left_anim=822,
+         .walk_right_anim=821, .turn_anim=823, .run_anim=824, .attack_anim=8056},
+    };
+    if (active_loadout <= -4 && active_loadout >= -7) return &melee[-active_loadout-4];
+    if (active_loadout >= FC_LOADOUT_MELEE_LOW && active_loadout < FC_NUM_LOADOUTS) {
+        const FcLoadout *loadout = &FC_LOADOUTS[active_loadout];
+        for (int i = 0; i < loadout->equipment_count; i++) {
+            if (loadout->equipment[i].slot != FC_EQUIP_SLOT_WEAPON) continue;
+            const FcItemDef *weapon = fc_item_definition((int)loadout->equipment[i].item_id);
+            return fc_player_visual_profile(weapon->visual_profile);
+        }
+    }
     if (active_loadout < 0 || active_loadout >= FC_NUM_LOADOUTS)
         active_loadout = FC_ACTIVE_LOADOUT;
     return &PLAYER_VISUALS[active_loadout];
@@ -438,6 +470,14 @@ void fc_actor_animation_ingest_events(FcActorAnimation *animation,
     if (events->player_attack_fired) {
         const FcPlayerVisualProfile *profile =
             fc_player_visual_profile(active_loadout);
+        if (events->player_magic_target_count) {
+            profile = fc_magic_visual_profile(events->player_attack_spell_id,
+                                               events->player_attack_weapon_id);
+            if (!profile) {
+                fprintf(stderr,"Missing magic cast animation profile.\n");
+                return;
+            }
+        }
         AnimSequence *sequence = cache
             ? anim_get_sequence(cache, profile->attack_anim) : NULL;
         animation->player_lock_sequence = profile->attack_anim;

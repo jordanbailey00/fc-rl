@@ -20,15 +20,29 @@ These manual controls are disabled during checkpoint replay. They are not
 policy action heads, and the training config, observations, and starting
 combat stats are unchanged.
 
-This deliberately supports the existing loadout items, not the entire OSRS
+This supports the existing loadout items, twelve tiered combat presets, and selected Magic gear, not the entire OSRS
 item catalogue. Preset item bonuses remain pinned to the existing simulation
 balance; quest progression, equipment degradation, loading new blowpipe
 ammunition, banks, and ground-item dropping are not added. Loaded blowpipe
 darts remain with the weapon when it is removed. The existing food/potion
 actions now consume actual inventory slots and leave empty vials in place.
-State-hash version 5 includes these containers. Version-4 weight checkpoints
+State-hash version 7 includes these containers, opt-in Magic state, and resource/passive state. Version-4/5/6 weight checkpoints
 remain accepted only when every policy contract field otherwise matches;
 older action/state traces are still version-gated.
+
+The playable viewer also supports manual combat spells, autocasting, powered
+staves, rune costs, and Magic equipment bonuses. Its **Loadout** dashboard selects
+Magic, Ranged, or Melee plus Low, Medium, High, or Maxed. Selecting a tier replaces
+worn gear and applies its skill levels through the shared core preset API.
+Magic also has a spellbook dropdown and rune generation; autocast is selected in
+the Combat tab. Separate, confirmation-gated buttons delete inventory or worn items.
+The same presets can be selected for training using `FC_ACTIVE_LOADOUT`; no gear
+or spell-selection action head was added. Default/max-ranged gear and training
+levels remain unchanged. All presets now have unlimited ammo/charges; Magic
+presets receive non-consuming inventory rune stacks, which must still be present
+to cast. Setup buttons cannot modify policy replay. See
+[loadouts and training selection](runescape-rl/docs/loadouts.md) and
+[Magic testing and scope](runescape-rl/docs/magic.md).
 
 ## Current comparison baseline
 
@@ -146,7 +160,7 @@ none of these overlays changes core gameplay.
 Useful playable controls:
 
 - Left click an arena tile or minimap location to route; click an NPC to attack.
-- Right click ground, NPCs, inventory, equipment, or Prayer buttons for the
+- Right click ground, NPCs, inventory, equipment, spells, or Prayer buttons for the
   context menu. Its choices reuse the same playable controls; opening,
   dismissing, and examining do not advance or alter the simulation.
 - NPC clicks follow the displayed animated model (including heads and limbs),
@@ -159,6 +173,9 @@ Useful playable controls:
 - `X` toggles running; `Space` pauses; `Right Arrow` advances one tick.
 - `R` resets; `F1` through `F8` spawn debug NPC types; `F9` toggles viewer god mode.
 - `D` or `O` toggles diagnostics; `Shift+O` cycles overlay groups.
+- Use the console's **Loadout** tab to generate or remove test gear and supplies. Equip generated
+  items from inventory, then cast manually from the spellbook or choose
+  **Autocast** in the Combat tab.
 - `G` toggles the tile grid; `C` toggles collision.
 - `4` and `5` select camera presets; `L` toggles camera follow.
 - Right-drag dismisses the menu and orbits; the scroll wheel zooms. `Q` quits;

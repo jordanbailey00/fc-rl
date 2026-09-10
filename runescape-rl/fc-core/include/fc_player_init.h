@@ -19,6 +19,17 @@ typedef enum {
     FC_LOADOUT_ACB_ARMADYL = 6,
     FC_LOADOUT_BOWFA_CRYSTAL = 7,
     FC_LOADOUT_TBOW_MASORI = 8,
+    FC_LOADOUT_MELEE_LOW,
+    FC_LOADOUT_MELEE_MEDIUM,
+    FC_LOADOUT_MELEE_HIGH,
+    FC_LOADOUT_MELEE_MAX,
+    FC_LOADOUT_RANGED_LOW,
+    FC_LOADOUT_RANGED_MEDIUM,
+    FC_LOADOUT_RANGED_HIGH,
+    FC_LOADOUT_MAGIC_LOW,
+    FC_LOADOUT_MAGIC_MEDIUM,
+    FC_LOADOUT_MAGIC_HIGH,
+    FC_LOADOUT_MAGIC_MAX,
     FC_LOADOUT_COUNT
 } FcLoadoutId;
 
@@ -86,6 +97,7 @@ typedef struct {
     int def_stab, def_slash, def_crush, def_magic, def_ranged;
     int prayer_bonus;
     int ammo;
+    int autocast_spell; /* Optional starting spell; zero leaves magic disabled. */
     int equipment_count;
     FcLoadoutEquipmentItem equipment[FC_LOADOUT_EQUIP_MAX];
     int model_item_count;
@@ -96,8 +108,13 @@ typedef enum {
     FC_WEAPON_GENERIC_RANGED = 0,
     FC_WEAPON_TWISTED_BOW = 1,
     FC_WEAPON_BOW_OF_FAERDHINEN = 2,
-    FC_WEAPON_UNARMED = 3
+    FC_WEAPON_UNARMED = 3,
+    FC_WEAPON_MAGIC_STAFF = 4,
+    FC_WEAPON_POWERED_STAFF = 5,
+    FC_WEAPON_MELEE = 6
 } FcWeaponKind;
+
+enum { FC_RESOURCE_AMMO = 1, FC_RESOURCE_CHARGES = 2, FC_RESOURCE_RUNES = 4 };
 
 #define FC_NUM_LOADOUTS FC_LOADOUT_COUNT
 

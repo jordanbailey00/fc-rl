@@ -5,6 +5,8 @@
 
 /* OSRS accuracy formula: returns hit probability in [0,1] */
 float fc_hit_chance(int att_roll, int def_roll);
+/* Two attack rolls against one defence roll (Fang outside ToA / Confliction). */
+float fc_double_attack_hit_chance(int att_roll, int def_roll);
 
 /* NPC combat */
 int fc_npc_attack_roll(int att_level, int att_bonus);

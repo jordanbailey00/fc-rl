@@ -97,9 +97,9 @@ int fc_is_terminal(const FcState* state);
 /* Determinism                                                               */
 /* ======================================================================== */
 
-/* Version 5 includes inventory, equipment, selected consumable slots and
- * unarmed bonuses. Policy observations and action dimensions are unchanged. */
-#define FC_STATE_HASH_VERSION 5u
+/* Version 6 additionally includes explicit casting and NPC spell-effect state.
+ * The default ranged policy observations and action dimensions are unchanged. */
+#define FC_STATE_HASH_VERSION 7u
 
 /*
  * Compute a deterministic hash of the game state.

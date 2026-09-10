@@ -2,12 +2,27 @@
 # This module consumes fc-core as a library and keeps validation logic out of
 # simulator code.
 
+add_executable(loadout_training tests/loadout_training.c)
+target_include_directories(loadout_training PRIVATE ${PROJECT_SOURCE_DIR}/fc-training)
+target_link_libraries(loadout_training PRIVATE fc_core m)
+add_test(NAME selected_loadout_training COMMAND loadout_training)
+set_tests_properties(selected_loadout_training PROPERTIES LABELS "loadouts;training;integration"
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+
+add_executable(magic tests/magic.c)
+target_link_libraries(magic PRIVATE fc_core m)
+target_include_directories(magic PRIVATE ${PROJECT_SOURCE_DIR}/fc-core/include)
+add_test(NAME magic_combat_transactions COMMAND magic)
+set_tests_properties(magic_combat_transactions PROPERTIES LABELS "magic;combat;unit;integration"
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+
 add_executable(equipment tests/equipment.c)
 target_link_libraries(equipment PRIVATE fc_core m)
 target_include_directories(equipment PRIVATE ${PROJECT_SOURCE_DIR}/fc-core/include)
 add_test(NAME equipment_inventory_transactions COMMAND equipment)
 set_tests_properties(equipment_inventory_transactions PROPERTIES
-    LABELS "equipment;unit;integration;preservation")
+    LABELS "equipment;unit;integration;preservation"
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
 
 # Performance gates are explicit opt-in targets rather than CTest entries.
 # Their wall-clock thresholds are machine-specific, while the executable's
@@ -846,3 +861,8 @@ if(Python3_Interpreter_FOUND)
 else()
     message(STATUS "Python3 not found — skipping phase2 static validation guardrails")
 endif()
+add_executable(loadouts tests/loadouts.c)
+target_link_libraries(loadouts PRIVATE fc_core)
+add_test(NAME tiered_loadout_combat COMMAND loadouts)
+set_tests_properties(tiered_loadout_combat PROPERTIES LABELS "equipment;combat;magic;unit"
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")

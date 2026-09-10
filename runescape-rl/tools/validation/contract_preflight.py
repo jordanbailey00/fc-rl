@@ -53,7 +53,7 @@ EXPECTED_COMPILED_FIELDS: dict[str, Any] = {
     "observation_version": OBSERVATION_VERSION,
     "action_version": ACTION_VERSION,
     "prayer_timing_version": PRAYER_TIMING_VERSION,
-    "state_hash_version": 5,
+    "state_hash_version": 7,
 }
 REQUIRED_CONTRACT_FIELDS = frozenset(
     {*EXPECTED_COMPILED_FIELDS, "reward_version", "active_loadout"}
@@ -576,12 +576,14 @@ def validate_checkpoint_marker(
     if not isinstance(marker_contract, dict):
         raise ContractError("checkpoint sidecar contract is unavailable")
     expected_contract = preflight["contract"]
-    # Weights do not serialize FcState. v5 only extends state diagnostics for
-    # manually controlled equipment; the no-switch policy schema is unchanged.
-    # Accept this one directional migration, never other contract differences.
+    # Weights do not serialize FcState. v5 adds equipment diagnostics and v6
+    # adds opt-in casting diagnostics. v7 adds preset resources and Confliction.
+    # Network dimensions are unchanged; replay uses CURRENT mechanics (including
+    # unlimited default ammo), not a historical-state replay guarantee.
+    # Accept only these forward migrations, never other contract differences.
     legacy_equipment_hash = (
-        marker_contract.get("state_hash_version") == 4
-        and expected_contract.get("state_hash_version") == 5
+        (marker_contract.get("state_hash_version"), expected_contract.get("state_hash_version"))
+        in {(4, 5), (4, 6), (5, 6), (4, 7), (5, 7), (6, 7)}
     )
     for field in sorted(set(expected_contract) | set(marker_contract)):
         if field == "state_hash_version" and legacy_equipment_hash:
