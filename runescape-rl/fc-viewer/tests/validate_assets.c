@@ -103,6 +103,8 @@ int main(void) {
         "fc_npcs.models",
         "fc_player.models",
         "fc_player.parts",
+        "fc_player.atlas",
+        "fc_player.tanim",
         "fc_projectiles.models",
         "fc_spotanims.bin",
         "fc_all.anims",

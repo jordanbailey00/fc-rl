@@ -2269,7 +2269,7 @@ def write_models_binary(
                 tex_colors=tex_colors,
                 atlas=atlas,
                 bake_priority_offsets=bake_priority_offsets,
-                model_lighting=model_lighting,
+                model_lighting=getattr(model, "_export_model_lighting", model_lighting),
             )
             expanded_vert_count = model.face_count * 3
 

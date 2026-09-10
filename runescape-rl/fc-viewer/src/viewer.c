@@ -1602,9 +1602,7 @@ static void draw_scene(ViewerState* v) {
             if (pm && pm->loaded) {
                 Vector3 pos = {ex, gy, ey};
                 float face_angle = pose.face_angle;
-                rlDisableBackfaceCulling();
-                DrawModelEx(pm->model, pos, (Vector3){0,1,0}, face_angle, (Vector3){1,1,1}, WHITE);
-                rlEnableBackfaceCulling();
+                fc_player_appearance_draw(pm, pos, face_angle);
             } else {
                 DrawCylinder((Vector3){ex, gy, ey}, 0.4f, 0.4f, 2.0f, 8, COL_PLAYER);
                 DrawCylinderWires((Vector3){ex, gy, ey}, 0.4f, 0.4f, 2.0f, 8, WHITE);
@@ -2766,6 +2764,7 @@ int main(int argc, char** argv) {
             !v.paused || v.policy_pipe, deferred_deaths);
         if (v.objects)
             fc_animated_atlas_update(&v.objects->atlas, frame_dt);
+        fc_animated_atlas_update(&v.appearance.atlas, frame_dt);
         fc_combat_presentation_update(v.combat_presentation,
                                       &combat_context, frame_dt);
         fc_combat_presentation_deferred_deaths(

@@ -73,7 +73,7 @@ if(EXISTS "${RAYLIB_ROOT}/include/raylib.h")
     add_test(NAME test_model_picking COMMAND test_model_picking)
     # Explicitly invoked graphics validation; headless CTest needs no display.
     add_executable(test_equipment_appearance EXCLUDE_FROM_ALL
-        tests/test_equipment_appearance.c src/fc_player_appearance.c
+        tests/test_equipment_appearance.c src/fc_player_appearance.c src/fc_animated_atlas.c
         src/fc_models.c src/fc_assets.c src/fc_model_animation.c src/fc_anim_loader.c)
     target_include_directories(test_equipment_appearance PRIVATE
         src ${PROJECT_SOURCE_DIR}/fc-core/include ${RAYLIB_ROOT}/include)

@@ -303,12 +303,15 @@ def export_fc_npc_models(cache_dir: Path, output: Path) -> None:
 
 def export_fc_player_model(cache_dir: Path, output: Path) -> None:
     import export_models as model_exporter
+    from export_textures import build_atlas, write_texture_anim_binary
     from rc_cache import (
         CONFIG_ITEM,
         INDEX_CONFIGS,
         RcCacheStore,
         decode_item_definition,
         load_model,
+        load_texture_definitions,
+        load_texture_sprites,
         merge_models,
         write_models_binary,
     )
@@ -363,6 +366,10 @@ def export_fc_player_model(cache_dir: Path, output: Path) -> None:
             for src, dst in item.retextures:
                 model.face_textures = [dst if value == src else value for value in model.face_textures]
         model.model_id = item_id
+        # RuneC's wearable export uses unlit base colors. Apply this to capes
+        # only; retain the existing shading of the other equipment/body parts.
+        if item.wear_positions[0] == 1:  # cache cape equipment slot
+            model._export_model_lighting = "unlit"
         models.append(model)
         mask = 0
         for pos in item.wear_positions:
@@ -371,7 +378,18 @@ def export_fc_player_model(cache_dir: Path, output: Path) -> None:
         if all(pos < 0 for pos in item.wear_positions):
             raise SystemExit(f"item {item_id}: missing wear-position metadata")
         records.append((item_id, mask))
-    write_models_binary(output, models)
+    texture_ids = {texture for model in models for texture in model.face_textures
+                   if texture >= 0}
+    sprites = load_texture_sprites(store, texture_ids)
+    if texture_ids - sprites.keys():
+        raise SystemExit(f"player models: missing textures {sorted(texture_ids - sprites.keys())}")
+    texture_defs = load_texture_definitions(store)
+    if texture_ids - texture_defs.keys():
+        raise SystemExit("player models: missing texture definitions")
+    # Wrapped guard pixels keep animated cape UVs inside their own atlas cell.
+    atlas = build_atlas(sprites, repeat_v_padding=128)
+    write_models_binary(output, models, atlas=atlas, bake_priority_offsets=False)
+    write_texture_anim_binary(output.with_suffix(".tanim"), atlas, texture_defs)
     mapping = struct.pack("<II", 0x31504346, len(records))  # FCP1
     mapping += b"".join(struct.pack("<II", *row) for row in records)
     output.with_suffix(".parts").write_bytes(mapping)

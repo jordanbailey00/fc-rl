@@ -186,7 +186,7 @@ int main(int argc,char **argv) {
             ClearBackground((Color){45,45,45,255});
             Camera3D camera={.position={0,1.6f,-7},.target={0,1.0f,0},.up={0,1,0},.fovy=3.2f,.projection=CAMERA_ORTHOGRAPHIC};
             BeginMode3D(camera);
-            DrawModelEx(entry->model,(Vector3){0,0,0},(Vector3){0,1,0},180,(Vector3){1,1,1},WHITE);
+            fc_player_appearance_draw(entry,(Vector3){0,0,0},180);
             EndMode3D();
             debug=(FcLoadoutDebugUi){.kit=id>=FC_LOADOUT_MAGIC_LOW ? 0 : id>=FC_LOADOUT_RANGED_LOW ? 1 : 2};
             fc_loadout_debug_draw(&s,1,&debug,(Rectangle){7,642,506,126});

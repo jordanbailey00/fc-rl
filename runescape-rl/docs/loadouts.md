@@ -124,6 +124,16 @@ lists were removed. Runtime remains C with local exported assets. Asset export
 correctly distinguishes the hat slot from head/jaw hide slots, avoiding missing
 faces under open hats. No runtime dependencies on reference repositories exist.
 
+Player parts use the textured MDL3 format with local `fc_player.atlas` and
+`fc_player.tanim` companions. The existing animated-atlas component scrolls the
+cache textures at their recorded direction/speed, and the appearance composer
+preserves/rebases texture triangles so UVs follow animated capes. Cape colors
+use RuneC's unlit wearable-export convention; other equipment retains its
+existing shading. Wearable face priorities remain metadata, not baked geometry
+offsets. Rebuild these companions together with
+`python3 tools/build_fc_assets.py --magic-only --replace` using the local cache.
+Missing player materials fail startup rather than reverting to color-only capes.
+
 INI hyperparameters, rewards, observations (286+34), and policy heads [17,9,8]
 are unchanged. State-hash v7 includes resource flags and Confliction state;
 old state hashes are not interchangeable. Compatible weight-only v4/v5/v6
@@ -147,3 +157,28 @@ tests pass ASan/UBSan; the default CUDA `sm_120` backend rebuild passes. The
 hidden-window graphics check passes and all eleven outfit screenshots were
 inspected. Interactive combat and equipment switching should still be visually
 validated in the playable viewer.
+
+The subsequent cape-material fix also passes all 172 tests and the explicit
+`test_equipment_appearance` / `test_magic_viewer --graphics` checks. Build the
+former target explicitly and run from `build/`; it writes `equipment-appearance.png`
+and `cape-appearance-{0,1}.png` there. The cape sheets show rear idle/walk/attack
+poses at two texture times, with assertions for texture-triangle rebasing,
+animated UV bounds, cache scroll speeds, and unchanged simulation hashes.
+All 169 exported parts retain their base geometry, skin labels, face indices,
+and priorities; all 163 non-cape parts retain their vertex colors.
+ASan/UBSan graphics validation passes (driver leak detection disabled). Startup
+checks with either player material companion missing fail explicitly. The first
+graphics invocation from `/tmp` correctly rejected missing arena maps; the
+successful checks ran from the documented checkout/build directory instead.
+
+Follow-up correction: those initial graphics tests inherited Raylib's default
+backface culling, while the live viewer explicitly disabled it for the player.
+This let cape lining/reverse faces draw over the outside, reproducing broken
+lava patches on Fire/Infernal and white streaks on the regular Saradomin cape.
+The live player draw and both graphics tests now share a one-sided draw function,
+matching RuneC's equipped-model pass; NPC/scenery rendering and assets are not
+changed by this follow-up. The cape test includes Magic Low and compares the
+live draw pixel-for-pixel against an explicit one-sided reference at two texture
+times, starting from disabled culling. Its `cape-two-sided-{0,1}.png` sheets
+reproduce the old defect; `cape-reference-{0,1}.png` match the corrected sheets.
+All 172 CTest tests and both explicit graphics checks pass after this correction.
