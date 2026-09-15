@@ -29,7 +29,16 @@ Jad also gives us a useful example of how mechanics turn into strategy. In the c
 
 ![Fight Caves arena collision and line-of-sight maps, NPC footprint examples and enemy introduction waves](writeup-assets/arena-and-waves.svg)
 
-*Figure 1. Current runtime maps and first enemy appearances. The [standalone collision grid](writeup-assets/collision-map.svg) shows every tile in red or green; directional LOS blockers are a separate layer.*
+*Figure 1. Current runtime maps and first enemy appearances. Directional LOS blockers are a separate layer from tile collision.*
+
+<details>
+<summary>View the full red/green collision grid</summary>
+
+![The 64 by 64 Fight Caves collision grid, with 1872 blocked tiles in red and 2224 walkable tiles in green](writeup-assets/collision-map.svg)
+
+*Red tiles are blocked; green tiles are walkable. This grid comes directly from the current runtime collision file.*
+
+</details>
 
 ### What the agent brought into the cave
 
