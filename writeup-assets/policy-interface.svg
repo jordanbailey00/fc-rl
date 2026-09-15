@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="864pt" height="612pt" viewBox="0 0 864 612" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Fight Caves writeup figure builder</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 612 
+L 864 612 
+L 864 0 
+L 0 0 
+z
+" style="fill: #fcfcfa"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 45.95616 195.687 
+L 236.22624 195.687 
+Q 247.2336 195.687 247.2336 189.60372 
+L 247.2336 123.55668 
+Q 247.2336 117.4734 236.22624 117.4734 
+L 45.95616 117.4734 
+Q 34.9488 117.4734 34.9488 123.55668 
+L 34.9488 189.60372 
+Q 34.9488 195.687 45.95616 195.687 
+z
+" style="fill: #376eb4; fill-opacity: 0.070588; stroke: #376eb4; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 45.95616 291.2814 
+L 236.22624 291.2814 
+Q 247.2336 291.2814 247.2336 285.19812 
+L 247.2336 219.15108 
+Q 247.2336 213.0678 236.22624 213.0678 
+L 45.95616 213.0678 
+Q 34.9488 213.0678 34.9488 219.15108 
+L 34.9488 285.19812 
+Q 34.9488 291.2814 45.95616 291.2814 
+z
+" style="fill: #376eb4; fill-opacity: 0.070588; stroke: #376eb4; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 45.95616 386.8758 
+L 236.22624 386.8758 
+Q 247.2336 386.8758 247.2336 380.79252 
+L 247.2336 314.74548 
+Q 247.2336 308.6622 236.22624 308.6622 
+L 45.95616 308.6622 
+Q 34.9488 308.6622 34.9488 314.74548 
+L 34.9488 380.79252 
+Q 34.9488 386.8758 45.95616 386.8758 
+z
+" style="fill: #376eb4; fill-opacity: 0.070588; stroke: #376eb4; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 305.41536 195.687 
+L 519.27264 195.687 
+Q 530.28 195.687 530.28 189.60372 
+L 530.28 123.55668 
+Q 530.28 117.4734 519.27264 117.4734 
+L 305.41536 117.4734 
+Q 294.408 117.4734 294.408 123.55668 
+L 294.408 189.60372 
+Q 294.408 195.687 305.41536 195.687 
+z
+" style="fill: #087f72; fill-opacity: 0.070588; stroke: #087f72; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 305.41536 291.2814 
+L 519.27264 291.2814 
+Q 530.28 291.2814 530.28 285.19812 
+L 530.28 219.15108 
+Q 530.28 213.0678 519.27264 213.0678 
+L 305.41536 213.0678 
+Q 294.408 213.0678 294.408 219.15108 
+L 294.408 285.19812 
+Q 294.408 291.2814 305.41536 291.2814 
+z
+" style="fill: #087f72; fill-opacity: 0.070588; stroke: #087f72; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_7">
+    <path d="M 305.41536 386.8758 
+L 519.27264 386.8758 
+Q 530.28 386.8758 530.28 380.79252 
+L 530.28 314.74548 
+Q 530.28 308.6622 519.27264 308.6622 
+L 305.41536 308.6622 
+Q 294.408 308.6622 294.408 314.74548 
+L 294.408 380.79252 
+Q 294.408 386.8758 305.41536 386.8758 
+z
+" style="fill: #087f72; fill-opacity: 0.070588; stroke: #087f72; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_8">
+    <path d="M 305.41536 482.4702 
+L 519.27264 482.4702 
+Q 530.28 482.4702 530.28 476.38692 
+L 530.28 410.33988 
+Q 530.28 404.2566 519.27264 404.2566 
+L 305.41536 404.2566 
+Q 294.408 404.2566 294.408 410.33988 
+L 294.408 476.38692 
+Q 294.408 482.4702 305.41536 482.4702 
+z
+" style="fill: #087f72; fill-opacity: 0.070588; stroke: #087f72; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_9">
+    <path d="M 612.04896 330.3882 
+L 810.18144 330.3882 
+Q 821.1888 330.3882 821.1888 324.30492 
+L 821.1888 206.11548 
+Q 821.1888 200.0322 810.18144 200.0322 
+L 612.04896 200.0322 
+Q 601.0416 200.0322 601.0416 206.11548 
+L 601.0416 324.30492 
+Q 601.0416 330.3882 612.04896 330.3882 
+z
+" style="fill: #805aa4; fill-opacity: 0.070588; stroke: #805aa4; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_10">
+    <path d="M 612.04896 478.125 
+L 810.18144 478.125 
+Q 821.1888 478.125 821.1888 472.04172 
+L 821.1888 379.92348 
+Q 821.1888 373.8402 810.18144 373.8402 
+L 612.04896 373.8402 
+Q 601.0416 373.8402 601.0416 379.92348 
+L 601.0416 472.04172 
+Q 601.0416 478.125 612.04896 478.125 
+z
+" style="fill: #376eb4; fill-opacity: 0.070588; stroke: #376eb4; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="line2d_1">
+    <path d="M 526.3488 158.7528 
+L 565.6608 158.7528 
+" clip-path="url(#pe8d0adb136)" style="fill: none; stroke: #546777; stroke-width: 1.3; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_2">
+    <path d="M 526.3488 254.3472 
+L 565.6608 254.3472 
+" clip-path="url(#pe8d0adb136)" style="fill: none; stroke: #546777; stroke-width: 1.3; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_3">
+    <path d="M 526.3488 349.9416 
+L 565.6608 349.9416 
+" clip-path="url(#pe8d0adb136)" style="fill: none; stroke: #546777; stroke-width: 1.3; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_4">
+    <path d="M 526.3488 445.536 
+L 565.6608 445.536 
+" clip-path="url(#pe8d0adb136)" style="fill: none; stroke: #546777; stroke-width: 1.3; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_5">
+    <path d="M 565.6608 445.536 
+L 565.6608 158.7528 
+" clip-path="url(#pe8d0adb136)" style="fill: none; stroke: #546777; stroke-width: 1.3; stroke-linecap: square"/>
+   </g>
+   <g id="text_1">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #376eb4" x="141.0912" y="145.439679" transform="rotate(-0 141.0912 145.439679)">Player state</text>
+   </g>
+   <g id="text_2">
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #182c3c" x="141.0912" y="172.237206" transform="rotate(-0 141.0912 172.237206)">Health bars • prayer • position</text>
+   </g>
+   <g id="text_3">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #376eb4" x="141.0912" y="241.034079" transform="rotate(-0 141.0912 241.034079)">Nearby enemies</text>
+   </g>
+   <g id="text_4">
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #182c3c" x="141.0912" y="267.831606" transform="rotate(-0 141.0912 267.831606)">Appearance • health • attack cues</text>
+   </g>
+   <g id="text_5">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #376eb4" x="141.0912" y="336.627659" transform="rotate(-0 141.0912 336.627659)">Encounter state</text>
+   </g>
+   <g id="text_6">
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #182c3c" x="141.0912" y="363.426006" transform="rotate(-0 141.0912 363.426006)">Wave • progress • remaining work</text>
+   </g>
+   <g id="text_7">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #087f72" x="412.344" y="145.439679" transform="rotate(-0 412.344 145.439679)">23 inputs  ·  Player</text>
+   </g>
+   <g id="text_8">
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #182c3c" x="412.344" y="172.237206" transform="rotate(-0 412.344 172.237206)">HP, Prayer, timers, target</text>
+   </g>
+   <g id="patch_11">
+    <path d="M 245.301112 158.7528 
+Q 270.821483 158.7528 294.553001 158.7528 
+" style="fill: none; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+    <path d="M 290.153001 156.5528 
+L 294.553001 158.7528 
+L 290.153001 160.9528 
+z
+" style="fill: #546777; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+   </g>
+   <g id="text_9">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #087f72" x="412.344" y="241.034079" transform="rotate(-0 412.344 241.034079)">248 inputs  ·  8 NPC slots</text>
+   </g>
+   <g id="text_10">
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #182c3c" x="412.344" y="267.831606" transform="rotate(-0 412.344 267.831606)">Type, HP, LOS, style, deadlines</text>
+   </g>
+   <g id="patch_12">
+    <path d="M 245.301112 254.3472 
+Q 270.821483 254.3472 294.553001 254.3472 
+" style="fill: none; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+    <path d="M 290.153001 252.1472 
+L 294.553001 254.3472 
+L 290.153001 256.5472 
+z
+" style="fill: #546777; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+   </g>
+   <g id="text_11">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #087f72" x="412.344" y="336.628479" transform="rotate(-0 412.344 336.628479)">15 inputs  ·  Wave / progress</text>
+   </g>
+   <g id="text_12">
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #182c3c" x="412.344" y="363.426006" transform="rotate(-0 412.344 363.426006)">Remaining work, rotation</text>
+   </g>
+   <g id="patch_13">
+    <path d="M 245.301112 349.9416 
+Q 270.821483 349.9416 294.553001 349.9416 
+" style="fill: none; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+    <path d="M 290.153001 347.7416 
+L 294.553001 349.9416 
+L 290.153001 352.1416 
+z
+" style="fill: #546777; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+   </g>
+   <g id="text_13">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #087f72" x="412.344" y="432.222879" transform="rotate(-0 412.344 432.222879)">34 inputs  ·  Action mask</text>
+   </g>
+   <g id="text_14">
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #182c3c" x="412.344" y="459.020406" transform="rotate(-0 412.344 459.020406)">One legality bit per choice</text>
+   </g>
+   <g id="text_15">
+    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #805aa4" x="711.1152" y="229.138245" transform="rotate(-0 711.1152 229.138245)">Recurrent MinGRU</text>
+   </g>
+   <g id="text_16">
+    <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(681.856919 273.031113)">320 inputs</text>
+    <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(655.332309 289.531113)">3 layers × 512 units</text>
+   </g>
+   <g id="patch_14">
+    <path d="M 567.661911 254.3472 
+Q 585.317632 254.3472 601.184497 254.3472 
+" style="fill: none; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+    <path d="M 596.784497 252.1472 
+L 601.184497 254.3472 
+L 596.784497 256.5472 
+z
+" style="fill: #546777; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+   </g>
+   <g id="patch_15">
+    <path d="M 739.172388 200.27993 
+Q 774.014308 76.759115 808.370588 198.557607 
+" style="fill: none; stroke: #805aa4; stroke-width: 1.6; stroke-linecap: round"/>
+    <path d="M 809.293447 193.725596 
+L 808.370588 198.557607 
+L 805.058695 194.920113 
+z
+" style="fill: #805aa4; stroke: #805aa4; stroke-width: 1.6; stroke-linecap: round"/>
+   </g>
+   <g id="text_17">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #805aa4" x="707.184" y="158.7528" transform="rotate(-0 707.184 158.7528)">Carried state</text>
+   </g>
+   <g id="text_18">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #376eb4" x="711.1152" y="401.806479" transform="rotate(-0 711.1152 401.806479)">Action heads + sampling</text>
+   </g>
+   <g id="text_19">
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(635.986528 434.514606)">Move 17  /  Attack 9  /  Prayer 8</text>
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(646.875161 448.764606)">Legality mask applied here</text>
+   </g>
+   <g id="patch_16">
+    <path d="M 707.184 330.213957 
+Q 707.184 352.114045 707.184 372.225278 
+" style="fill: none; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+    <path d="M 709.384 367.825278 
+L 707.184 372.225278 
+L 704.984 367.825278 
+z
+" style="fill: #546777; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+   </g>
+   <g id="patch_17">
+    <path d="M 528.349911 445.536 
+Q 565.662882 445.536 601.186999 445.536 
+" style="fill: none; stroke: #087f72; stroke-width: 1.6; stroke-linecap: round"/>
+    <path d="M 596.786999 443.336 
+L 601.186999 445.536 
+L 596.786999 447.736 
+z
+" style="fill: #087f72; stroke: #087f72; stroke-width: 1.6; stroke-linecap: round"/>
+   </g>
+   <g id="text_20">
+    <text style="font-size: 9px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #805aa4" x="707.184" y="515.0592" transform="rotate(-0 707.184 515.0592)">Separate critic: value estimate</text>
+   </g>
+   <g id="text_21">
+    <text style="font-weight: 700; font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #182c3c" x="164.6784" y="480.2976" transform="rotate(-0 164.6784 480.2976)">Human cues</text>
+   </g>
+  </g>
+  <g id="text_22">
+   <text style="font-weight: 700; font-size: 19px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #182c3c" x="38.88" y="38.917031" transform="rotate(-0 38.88 38.917031)">From game cues to policy actions</text>
+  </g>
+  <g id="text_23">
+   <text style="font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #546777" x="38.88" y="65.506359" transform="rotate(-0 38.88 65.506359)">Structured engine features replace visual inference and mouse input.</text>
+  </g>
+  <g id="text_24">
+   <text style="font-size: 9px; font-family: 'DejaVu Sans'; fill: #546777" transform="translate(38.88 572.876438)">Exact timing/healing features are engine-provided. NPC slots reorder by distance.</text>
+   <text style="font-size: 9px; font-family: 'DejaVu Sans'; fill: #546777" transform="translate(38.88 585.926438)">Nine aggregate incoming-hit channels are zeroed; per-NPC timing remains. Masks also constrain sampling.</text>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="pe8d0adb136">
+   <rect x="38.88" y="97.92" width="786.24" height="434.52"/>
+  </clipPath>
+ </defs>
+</svg>

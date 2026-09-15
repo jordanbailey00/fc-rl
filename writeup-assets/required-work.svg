@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="864pt" height="576pt" viewBox="0 0 864 576" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Fight Caves writeup figure builder</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 576 
+L 864 576 
+L 864 0 
+L 0 0 
+z
+" style="fill: #fcfcfa"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 45.95616 257.7888 
+L 236.22624 257.7888 
+Q 247.2336 257.7888 247.2336 252.06336 
+L 247.2336 140.82624 
+Q 247.2336 135.1008 236.22624 135.1008 
+L 45.95616 135.1008 
+Q 34.9488 135.1008 34.9488 140.82624 
+L 34.9488 252.06336 
+Q 34.9488 257.7888 45.95616 257.7888 
+z
+" style="fill: #376eb4; fill-opacity: 0.070588; stroke: #376eb4; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 336.86496 257.7888 
+L 527.13504 257.7888 
+Q 538.1424 257.7888 538.1424 252.06336 
+L 538.1424 140.82624 
+Q 538.1424 135.1008 527.13504 135.1008 
+L 336.86496 135.1008 
+Q 325.8576 135.1008 325.8576 140.82624 
+L 325.8576 252.06336 
+Q 325.8576 257.7888 336.86496 257.7888 
+z
+" style="fill: #087f72; fill-opacity: 0.070588; stroke: #087f72; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 627.77376 257.7888 
+L 818.04384 257.7888 
+Q 829.0512 257.7888 829.0512 252.06336 
+L 829.0512 140.82624 
+Q 829.0512 135.1008 818.04384 135.1008 
+L 627.77376 135.1008 
+Q 616.7664 135.1008 616.7664 140.82624 
+L 616.7664 252.06336 
+Q 616.7664 257.7888 627.77376 257.7888 
+z
+" style="fill: #be4c51; fill-opacity: 0.070588; stroke: #be4c51; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 45.95616 490.896 
+L 385.61184 490.896 
+Q 396.6192 490.896 396.6192 485.17056 
+L 396.6192 378.02304 
+Q 396.6192 372.2976 385.61184 372.2976 
+L 45.95616 372.2976 
+Q 34.9488 372.2976 34.9488 378.02304 
+L 34.9488 485.17056 
+Q 34.9488 490.896 45.95616 490.896 
+z
+" style="fill: #bd811d; fill-opacity: 0.070588; stroke: #bd811d; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 478.38816 490.896 
+L 818.04384 490.896 
+Q 829.0512 490.896 829.0512 485.17056 
+L 829.0512 378.02304 
+Q 829.0512 372.2976 818.04384 372.2976 
+L 478.38816 372.2976 
+Q 467.3808 372.2976 467.3808 378.02304 
+L 467.3808 485.17056 
+Q 467.3808 490.896 478.38816 490.896 
+z
+" style="fill: #805aa4; fill-opacity: 0.070588; stroke: #805aa4; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="text_1">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #376eb4" x="141.0912" y="161.891319" transform="rotate(-0 141.0912 161.891319)">Before damage</text>
+   </g>
+   <g id="text_2">
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(99.139052 204.210006)">Required work: W</text>
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(63.128114 218.460006)">10 game HP = 100 internal units</text>
+   </g>
+   <g id="text_3">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #087f72" x="432" y="161.891319" transform="rotate(-0 432 161.891319)">After 10 HP damage</text>
+   </g>
+   <g id="text_4">
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(373.981719 204.210006)">Required work: W − 100</text>
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(379.124336 218.460006)">Progress reward: +0.1</text>
+   </g>
+   <g id="text_5">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #be4c51" x="722.9088" y="161.891319" transform="rotate(-0 722.9088 161.891319)">After 10 HP healing</text>
+   </g>
+   <g id="text_6">
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(680.956652 204.210006)">Required work: W</text>
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(636.731183 218.460006)">Progress: −0.1  /  heal event: -0.005</text>
+   </g>
+   <g id="patch_7">
+    <path d="M 245.300392 194.4 
+Q 286.545473 194.4 326.0017 194.4 
+" style="fill: none; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+    <path d="M 321.6017 192.2 
+L 326.0017 194.4 
+L 321.6017 196.6 
+z
+" style="fill: #546777; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+   </g>
+   <g id="patch_8">
+    <path d="M 536.209192 194.4 
+Q 577.454273 194.4 616.9105 194.4 
+" style="fill: none; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+    <path d="M 612.5105 192.2 
+L 616.9105 194.4 
+L 612.5105 196.6 
+z
+" style="fill: #546777; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+   </g>
+   <g id="text_7">
+    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #182c3c" x="432" y="317.088" transform="rotate(-0 432 317.088)">Cycle total: -0.005 before other reward terms and trainer clipping</text>
+   </g>
+   <g id="text_8">
+    <text style="font-weight: 700; font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #bd811d" x="215.784" y="399.468041" transform="rotate(-0 215.784 399.468041)">Tz-Kek: count the children in advance</text>
+   </g>
+   <g id="text_9">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(105.841813 439.124975)">Remaining parent HP + both future children</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(95.976188 454.124975)">Splitting does not create unexpected new work.</text>
+   </g>
+   <g id="text_10">
+    <text style="font-weight: 700; font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #805aa4" x="648.216" y="399.468041" transform="rotate(-0 648.216 399.468041)">Jad: count the boss HP</text>
+   </g>
+   <g id="text_11">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(556.55975 439.124975)">Healers need not die for completion.</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(560.213656 454.124975)">Healing Jad restores required work.</text>
+   </g>
+  </g>
+  <g id="text_12">
+   <text style="font-weight: 700; font-size: 19px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #182c3c" x="38.88" y="37.477031" transform="rotate(-0 38.88 37.477031)">Reward the work that stays done</text>
+  </g>
+  <g id="text_13">
+   <text style="font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #546777" x="38.88" y="62.122359" transform="rotate(-0 38.88 62.122359)">A 10-HP damage / healing cycle, using the current component weights</text>
+  </g>
+  <g id="text_14">
+   <text style="font-size: 9px; font-family: 'DejaVu Sans'; fill: #546777" transform="translate(38.88 538.172438)">Source: current reward configuration and required-work accounting. Code-derived illustration within the unclamped range.</text>
+   <text style="font-size: 9px; font-family: 'DejaVu Sans'; fill: #546777" transform="translate(38.88 551.222437)">The +0.1 / −0.1 components cancel; the separate effective-heal event costs −0.005.</text>
+  </g>
+ </g>
+</svg>

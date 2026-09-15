@@ -1,0 +1,97 @@
+{
+  "data_sha256": "1fe43d4271f475160f0723c3ba4240fd0f79ddef8c586b36bfa3d9ff558ebc88",
+  "matplotlib": "3.11.2",
+  "numpy": "2.5.3",
+  "figures": [
+    {
+      "name": "collision-map",
+      "title": "Fight Caves collision grid",
+      "note": "Source: current fightcaves.collision, row-major [y][x].\nTile walkability only; directional movement walls and line-of-sight flags are separate."
+    },
+    {
+      "name": "arena-and-waves",
+      "title": "The arena, its boundaries and the waves",
+      "note": "Sources: current maps and WAVE_TABLE. LOS green = no full-tile projectile block; dark edges block directions.\nFootprint swatches and first-appearance cards are illustrative; card spacing does not represent wave duration."
+    },
+    {
+      "name": "engine",
+      "title": "One simulation, several ways to use it",
+      "note": "Architecture schematic from current simulation/adapter and retained engine history.\nThe archival viewer screenshot shown alongside this figure is an existing project asset."
+    },
+    {
+      "name": "policy-interface",
+      "title": "From game cues to policy actions",
+      "note": "Exact timing/healing features are engine-provided. NPC slots reorder by distance.\nNine aggregate incoming-hit channels are zeroed; per-NPC timing remains. Masks also constrain sampling."
+    },
+    {
+      "name": "prayer-window",
+      "title": "Jad's protection deadline comes before impact",
+      "note": "Source: current launch, pending-prayer-lock and tick-order code.\nOrdinary NPC launch snapshots and immediate melee use different timing rules."
+    },
+    {
+      "name": "survival-without-completion",
+      "title": "Surviving longer did not finish the cave",
+      "note": "Source: retained run reports, xgsb170g / ss966rf9. Episode limits: 30,000 / 200,000 ticks.\nSummary measurements; this comparison does not isolate the tick-cap change."
+    },
+    {
+      "name": "project-turning-points",
+      "title": "The task changed as the project developed",
+      "note": "Sources: engine, run, sweep and reproduction-audit histories. Dates are milestone labels, not a time scale.\nMay 88.6% is a report summary. June used full supplies; current evaluation uses zero supplies."
+    },
+    {
+      "name": "current-learning",
+      "title": "Learning to reach Jad, then finish",
+      "note": "Source: selected 0024 native log. Bin x positions are average step locations; dashed lines guide the eye.\nFinal evaluation: n=10,800, 89.25% reached Jad, 88.61% completed. No dense checkpoint curve is inferred."
+    },
+    {
+      "name": "prayer-reward-diagnosis",
+      "title": "Rewarded protection could crowd out progress",
+      "note": "Sources: cfuyizo1, i215ulj4, txqsiahp native final metrics. Reward components are before total clipping.\nThe two panels describe different experiments; other shaping remained active in the removal comparison."
+    },
+    {
+      "name": "healing-and-stalling",
+      "title": "Healing erased damage; later, the policy disengaged",
+      "note": "Top: transcribed l2l7lf6b report windows; healing = 87.75% of gross damage. Inactivity measures overlap.\nBottom: native final evaluations, same 2.4998B steps / seed 73. Both have zero wins; current multiplier is 1.0."
+    },
+    {
+      "name": "movement-correction",
+      "title": "A movement correction let training get farther",
+      "note": "Source: documented July movement/positioning fix and mzqf7iml / 7mxnrzua final metrics.\n1.499B steps each; reward, learner, vector and policy settings match. Multiple movement rules changed."
+    },
+    {
+      "name": "required-work",
+      "title": "Reward the work that stays done",
+      "note": "Source: current reward configuration and required-work accounting. Code-derived illustration within the unclamped range.\nThe +0.1 / \u22120.1 components cancel; the separate effective-heal event costs \u22120.005."
+    },
+    {
+      "name": "july-search",
+      "title": "July search: the distribution of all 140 results",
+      "note": "Source: all 140 native logs matched to the July 27 sweep manifest. Requested budget 750M steps.\nHistorical task with faster HP regeneration. Selected by peak performance; its final result is plotted here."
+    },
+    {
+      "name": "current-search",
+      "title": "Current search: 90 attempts at the same task",
+      "note": "Sources: trial_status.jsonl and final native metrics; 499,122,176 actual steps for completed 500M attempts.\nTrial 0008 is excluded from valid scores. Task, architecture and selection seed 73 are fixed."
+    },
+    {
+      "name": "stability-versus-endpoint",
+      "title": "Strong endpoints can hide different learning histories",
+      "note": "Sources: August top-eight report and native final metrics. q10 is a training quantile, not an evaluation confidence interval.\nThe later learner improved near the end; low quarter-wide statistics alone do not establish an end-of-run collapse."
+    },
+    {
+      "name": "final-outcomes",
+      "title": "Most failures of the selected policy happen before Jad",
+      "note": "Source: selected native final evaluation. Arrival and failure counts are rounded from aggregate rates.\nConditional completion describes the states this policy reaches Jad in."
+    },
+    {
+      "name": "training-seeds",
+      "title": "A good checkpoint does not guarantee a good new training run",
+      "note": "Source: twelve confirmation INIs, final evaluation; episode denominators are retained in figure-data.json.\n* Seed 73 was used to select the recipes. Highlighted gap: 0084 / seed 303 reaches Jad 81.19%, completes 7.44%."
+    },
+    {
+      "name": "encounter-transfer",
+      "title": "What could carry over to another encounter",
+      "note": "Conceptual future-work diagram based on the article. Engineering reuse and policy transfer are separate measurements."
+    }
+  ]
+}

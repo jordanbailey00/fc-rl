@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="864pt" height="396pt" viewBox="0 0 864 396" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Fight Caves writeup figure builder</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 396 
+L 864 396 
+L 864 0 
+L 0 0 
+z
+" style="fill: #fcfcfa"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 56.16 205.92 
+L 820.8 205.92 
+L 820.8 122.76 
+L 56.16 122.76 
+z
+" style="fill: #fcfcfa"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 56.16 191.367 
+L 138.3588 191.367 
+L 138.3588 137.313 
+L 56.16 137.313 
+z
+" clip-path="url(#pc660bb9265)" style="fill: #bd811d"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 138.3588 191.367 
+L 143.244 191.367 
+L 143.244 137.313 
+L 138.3588 137.313 
+z
+" clip-path="url(#pc660bb9265)" style="fill: #be4c51"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 143.244 191.367 
+L 820.8 191.367 
+L 820.8 137.313 
+L 143.244 137.313 
+z
+" clip-path="url(#pc660bb9265)" style="fill: #087f72"/>
+   </g>
+   <g id="matplotlib.axis_1">
+    <g id="xtick_1">
+     <g id="line2d_1">
+      <defs>
+       <path id="m2a91082790" d="M 0 0 
+L 0 3.5 
+" style="stroke: #546777; stroke-width: 0.8"/>
+      </defs>
+      <g>
+       <use xlink:href="#m2a91082790" x="56.16" y="205.92" style="fill: #546777; stroke: #546777; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_1">
+      <text style="font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #546777" x="56.16" y="221.277422" transform="rotate(-0 56.16 221.277422)">0</text>
+     </g>
+    </g>
+    <g id="xtick_2">
+     <g id="line2d_2">
+      <g>
+       <use xlink:href="#m2a91082790" x="247.32" y="205.92" style="fill: #546777; stroke: #546777; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_2">
+      <text style="font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #546777" x="247.32" y="221.277422" transform="rotate(-0 247.32 221.277422)">25</text>
+     </g>
+    </g>
+    <g id="xtick_3">
+     <g id="line2d_3">
+      <g>
+       <use xlink:href="#m2a91082790" x="438.48" y="205.92" style="fill: #546777; stroke: #546777; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_3">
+      <text style="font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #546777" x="438.48" y="221.277422" transform="rotate(-0 438.48 221.277422)">50</text>
+     </g>
+    </g>
+    <g id="xtick_4">
+     <g id="line2d_4">
+      <g>
+       <use xlink:href="#m2a91082790" x="629.64" y="205.92" style="fill: #546777; stroke: #546777; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_4">
+      <text style="font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #546777" x="629.64" y="221.277422" transform="rotate(-0 629.64 221.277422)">75</text>
+     </g>
+    </g>
+    <g id="xtick_5">
+     <g id="line2d_5">
+      <g>
+       <use xlink:href="#m2a91082790" x="820.8" y="205.92" style="fill: #546777; stroke: #546777; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_5">
+      <text style="font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #546777" x="820.8" y="221.277422" transform="rotate(-0 820.8 221.277422)">100</text>
+     </g>
+    </g>
+    <g id="text_6">
+     <text style="font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #182c3c" x="438.48" y="236.278281" transform="rotate(-0 438.48 236.278281)">Episodes (%)</text>
+    </g>
+   </g>
+   <g id="matplotlib.axis_2"/>
+   <g id="patch_6">
+    <path d="M 56.16 205.92 
+L 56.16 122.76 
+" style="fill: none; stroke: #dfe5e6; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="patch_7">
+    <path d="M 337.216153 267.548633 
+Q 239.936364 228.78791 142.656575 190.027187 
+" style="fill: none; stroke: #be4c51; stroke-linecap: round"/>
+   </g>
+  </g>
+  <g id="text_7">
+   <text style="font-weight: 700; font-size: 19px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #182c3c" x="38.88" y="30.277031" transform="rotate(-0 38.88 30.277031)">Most failures of the selected policy happen before Jad</text>
+  </g>
+  <g id="text_8">
+   <text style="font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #546777" x="38.88" y="45.202359" transform="rotate(-0 38.88 45.202359)">10,800 full-cave evaluations  •  selected checkpoint 0024</text>
+  </g>
+  <g id="text_9">
+   <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; fill: #bd811d" transform="translate(69.12 246.957656)">Before Jad</text>
+   <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; fill: #bd811d" transform="translate(69.12 261.36)">1,161  /  10.75%</text>
+  </g>
+  <g id="text_10">
+   <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; fill: #be4c51" transform="translate(328.32 246.957656)">At Jad</text>
+   <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; fill: #be4c51" transform="translate(328.32 261.36)">69  /  0.64%</text>
+  </g>
+  <g id="text_11">
+   <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; fill: #087f72" transform="translate(587.52 246.957656)">Completed</text>
+   <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; fill: #087f72" transform="translate(587.52 261.36)">9,570  /  88.61%</text>
+  </g>
+  <g id="text_12">
+   <text style="font-weight: 700; font-size: 13px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #182c3c" x="432" y="328.68" transform="rotate(-0 432 328.68)">After reaching Jad: 9,570 / 9,639 = 99.28% completion</text>
+  </g>
+  <g id="text_13">
+   <text style="font-size: 9px; font-family: 'DejaVu Sans'; fill: #546777" transform="translate(38.88 364.652438)">Source: selected native final evaluation. Arrival and failure counts are rounded from aggregate rates.</text>
+   <text style="font-size: 9px; font-family: 'DejaVu Sans'; fill: #546777" transform="translate(38.88 377.702437)">Conditional completion describes the states this policy reaches Jad in.</text>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="pc660bb9265">
+   <rect x="56.16" y="122.76" width="764.64" height="83.16"/>
+  </clipPath>
+ </defs>
+</svg>

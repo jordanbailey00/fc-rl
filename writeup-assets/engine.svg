@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="864pt" height="547.2pt" viewBox="0 0 864 547.2" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Fight Caves writeup figure builder</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 547.2 
+L 864 547.2 
+L 864 0 
+L 0 0 
+z
+" style="fill: #fcfcfa"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 53.81856 198.27792 
+L 220.50144 198.27792 
+Q 231.5088 198.27792 231.5088 192.838752 
+L 231.5088 114.359328 
+Q 231.5088 108.92016 220.50144 108.92016 
+L 53.81856 108.92016 
+Q 42.8112 108.92016 42.8112 114.359328 
+L 42.8112 192.838752 
+Q 42.8112 198.27792 53.81856 198.27792 
+z
+" style="fill: #bd811d; fill-opacity: 0.070588; stroke: #bd811d; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 336.86496 198.27792 
+L 534.99744 198.27792 
+Q 546.0048 198.27792 546.0048 192.838752 
+L 546.0048 114.359328 
+Q 546.0048 108.92016 534.99744 108.92016 
+L 336.86496 108.92016 
+Q 325.8576 108.92016 325.8576 114.359328 
+L 325.8576 192.838752 
+Q 325.8576 198.27792 336.86496 198.27792 
+z
+" style="fill: #087f72; fill-opacity: 0.070588; stroke: #087f72; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 635.63616 198.27792 
+L 802.31904 198.27792 
+Q 813.3264 198.27792 813.3264 192.838752 
+L 813.3264 114.359328 
+Q 813.3264 108.92016 802.31904 108.92016 
+L 635.63616 108.92016 
+Q 624.6288 108.92016 624.6288 114.359328 
+L 624.6288 192.838752 
+Q 624.6288 198.27792 635.63616 198.27792 
+z
+" style="fill: #376eb4; fill-opacity: 0.070588; stroke: #376eb4; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 336.86496 369.2232 
+L 534.99744 369.2232 
+Q 546.0048 369.2232 546.0048 363.784032 
+L 546.0048 281.419488 
+Q 546.0048 275.98032 534.99744 275.98032 
+L 336.86496 275.98032 
+Q 325.8576 275.98032 325.8576 281.419488 
+L 325.8576 363.784032 
+Q 325.8576 369.2232 336.86496 369.2232 
+z
+" style="fill: #805aa4; fill-opacity: 0.070588; stroke: #805aa4; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 635.63616 369.2232 
+L 802.31904 369.2232 
+Q 813.3264 369.2232 813.3264 363.784032 
+L 813.3264 281.419488 
+Q 813.3264 275.98032 802.31904 275.98032 
+L 635.63616 275.98032 
+Q 624.6288 275.98032 624.6288 281.419488 
+L 624.6288 363.784032 
+Q 624.6288 369.2232 635.63616 369.2232 
+z
+" style="fill: #376eb4; fill-opacity: 0.070588; stroke: #376eb4; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="text_1">
+    <text style="font-weight: 700; font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #bd811d" x="137.16" y="135.149993" transform="rotate(-0 137.16 135.149993)">Offline cache exports</text>
+   </g>
+   <g id="text_2">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(96.092813 160.513775)">Terrain • objects</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(78.013906 176.482525)">Collision • visual assets</text>
+   </g>
+   <g id="text_3">
+    <text style="font-weight: 700; font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #087f72" x="435.9312" y="135.149993" transform="rotate(-0 435.9312 135.149993)">Shared C simulation</text>
+   </g>
+   <g id="text_4">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(386.56245 161.482525)">State + seeded tick</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(362.520263 176.482525)">Movement • combat • waves</text>
+   </g>
+   <g id="patch_7">
+    <path d="M 229.577032 153.59904 
+Q 278.684407 153.59904 326.002928 153.59904 
+" style="fill: none; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+    <path d="M 321.602928 151.39904 
+L 326.002928 153.59904 
+L 321.602928 155.79904 
+z
+" style="fill: #546777; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+   </g>
+   <g id="text_5">
+    <text style="font-size: 9px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #182c3c" x="274.752" y="134.17344" transform="rotate(-0 274.752 134.17344)">Arena data</text>
+   </g>
+   <g id="text_6">
+    <text style="font-weight: 700; font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #376eb4" x="718.9776" y="135.149993" transform="rotate(-0 718.9776 135.149993)">Policy / training</text>
+   </g>
+   <g id="text_7">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(661.8026 161.482525)">Observations • actions</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(655.211975 175.513775)">Rewards • episode resets</text>
+   </g>
+   <g id="patch_8">
+    <path d="M 544.071592 145.8288 
+Q 585.316673 145.8288 624.7729 145.8288 
+" style="fill: none; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+    <path d="M 620.3729 143.6288 
+L 624.7729 145.8288 
+L 620.3729 148.0288 
+z
+" style="fill: #546777; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+   </g>
+   <g id="patch_9">
+    <path d="M 626.562008 169.13952 
+Q 585.316927 169.13952 545.8607 169.13952 
+" style="fill: none; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+    <path d="M 550.2607 171.33952 
+L 545.8607 169.13952 
+L 550.2607 166.93952 
+z
+" style="fill: #546777; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+   </g>
+   <g id="text_8">
+    <text style="font-weight: 700; font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #805aa4" x="435.9312" y="302.210153" transform="rotate(-0 435.9312 302.210153)">Viewer</text>
+   </g>
+   <g id="text_9">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(384.334325 329.516495)">Rendering • controls</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(366.6187 344.516495)">HP • targets • LOS overlays</text>
+   </g>
+   <g id="text_10">
+    <text style="font-weight: 700; font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #376eb4" x="718.9776" y="302.210153" transform="rotate(-0 718.9776 302.210153)">Replay / checks</text>
+   </g>
+   <g id="text_11">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(662.644006 330.485245)">Actions • state hashes</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(665.072913 345.485245)">Deterministic fixtures</text>
+   </g>
+   <g id="patch_10">
+    <path d="M 432 198.332223 
+Q 432 237.129268 432 274.137458 
+" style="fill: none; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+    <path d="M 434.2 269.737458 
+L 432 274.137458 
+L 429.8 269.737458 
+z
+" style="fill: #546777; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+   </g>
+   <g id="patch_11">
+    <path d="M 528.106251 197.295199 
+Q 601.042927 237.129845 672.409638 276.107049 
+" style="fill: none; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+    <path d="M 669.602549 272.067216 
+L 672.409638 276.107049 
+L 667.493518 275.928821 
+z
+" style="fill: #546777; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+   </g>
+   <g id="patch_12">
+    <path d="M 142.764071 197.437535 
+Q 235.441708 258.498405 326.625562 318.575093 
+" style="fill: none; stroke: #bd811d; stroke-width: 1.6; stroke-linecap: round"/>
+    <path d="M 324.161726 314.317216 
+L 326.625562 318.575093 
+L 321.740959 317.991435 
+z
+" style="fill: #bd811d; stroke: #bd811d; stroke-width: 1.6; stroke-linecap: round"/>
+   </g>
+   <g id="text_12">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #bd811d" x="141.0912" y="289.57824" transform="rotate(-0 141.0912 289.57824)">Visual assets</text>
+   </g>
+   <g id="text_13">
+    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #182c3c" x="432" y="448.86816" transform="rotate(-0 432 448.86816)">Render when inspecting; step without rendering when training.</text>
+   </g>
+  </g>
+  <g id="text_14">
+   <text style="font-weight: 700; font-size: 19px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #182c3c" x="38.88" y="36.325031" transform="rotate(-0 38.88 36.325031)">One simulation, several ways to use it</text>
+  </g>
+  <g id="text_15">
+   <text style="font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #546777" x="38.88" y="59.415159" transform="rotate(-0 38.88 59.415159)">Offline assets feed a shared runtime; training and viewing use the same game rules.</text>
+  </g>
+  <g id="text_16">
+   <text style="font-size: 9px; font-family: 'DejaVu Sans'; fill: #546777" transform="translate(38.88 510.409237)">Architecture schematic from current simulation/adapter and retained engine history.</text>
+   <text style="font-size: 9px; font-family: 'DejaVu Sans'; fill: #546777" transform="translate(38.88 523.459237)">The archival viewer screenshot shown alongside this figure is an existing project asset.</text>
+  </g>
+ </g>
+</svg>

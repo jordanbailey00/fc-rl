@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="864pt" height="532.8pt" viewBox="0 0 864 532.8" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Fight Caves writeup figure builder</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 532.8 
+L 864 532.8 
+L 864 0 
+L 0 0 
+z
+" style="fill: #fcfcfa"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 45.95616 397.3356 
+L 322.71264 397.3356 
+Q 333.72 397.3356 333.72 392.039568 
+L 333.72 145.395792 
+Q 333.72 140.09976 322.71264 140.09976 
+L 45.95616 140.09976 
+Q 34.9488 140.09976 34.9488 145.395792 
+L 34.9488 392.039568 
+Q 34.9488 397.3356 45.95616 397.3356 
+z
+" style="fill: #087f72; fill-opacity: 0.070588; stroke: #087f72; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 541.28736 397.3356 
+L 818.04384 397.3356 
+Q 829.0512 397.3356 829.0512 392.039568 
+L 829.0512 145.395792 
+Q 829.0512 140.09976 818.04384 140.09976 
+L 541.28736 140.09976 
+Q 530.28 140.09976 530.28 145.395792 
+L 530.28 392.039568 
+Q 530.28 397.3356 541.28736 397.3356 
+z
+" style="fill: #805aa4; fill-opacity: 0.070588; stroke: #805aa4; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="text_1">
+    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #087f72" x="184.3344" y="166.619133" transform="rotate(-0 184.3344 166.619133)">Reusable infrastructure</text>
+   </g>
+   <g id="text_2">
+    <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(102.392994 251.167258)">Deterministic ticks and resets</text>
+    <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(123.702056 266.601633)">Collision / line of sight</text>
+    <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(138.594166 283.101633)">Batched training</text>
+    <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(134.624713 299.601633)">Viewer and replay</text>
+    <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(104.072213 316.101633)">Reward / episode diagnostics</text>
+   </g>
+   <g id="text_3">
+    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #805aa4" x="679.6656" y="166.619133" transform="rotate(-0 679.6656 166.619133)">Encounter-specific work</text>
+   </g>
+   <g id="text_4">
+    <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(609.807866 251.167258)">Enemies and attack rules</text>
+    <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(615.554506 266.601633)">Hazards and objectives</text>
+    <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(621.204897 283.101633)">Observation capacity</text>
+    <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(603.645288 299.601633)">Actions and switching costs</text>
+    <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(602.764428 317.167258)">Reward scale and resources</text>
+   </g>
+   <g id="patch_4">
+    <path d="M 331.788232 270.60912 
+Q 432.000512 270.60912 530.423938 270.60912 
+" style="fill: none; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+    <path d="M 526.023938 268.40912 
+L 530.423938 270.60912 
+L 526.023938 272.80912 
+z
+" style="fill: #546777; stroke: #546777; stroke-width: 1.6; stroke-linecap: round"/>
+   </g>
+   <g id="text_5">
+    <text style="font-weight: 700; font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #182c3c" x="432" y="213.86592" transform="rotate(-0 432 213.86592)">New encounter</text>
+   </g>
+   <g id="text_6">
+    <text style="font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #182c3c" x="432" y="459.75312" transform="rotate(-0 432 459.75312)">Test: train from scratch versus transferred weights under the same declared budget.</text>
+   </g>
+  </g>
+  <g id="text_7">
+   <text style="font-weight: 700; font-size: 19px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #182c3c" x="38.88" y="35.749031" transform="rotate(-0 38.88 35.749031)">What could carry over to another encounter</text>
+  </g>
+  <g id="text_8">
+   <text style="font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #546777" x="38.88" y="58.061559" transform="rotate(-0 38.88 58.061559)">Proposed applications only; no transfer result is claimed.</text>
+  </g>
+  <g id="text_9">
+   <text style="font-size: 9px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #546777" x="38.88" y="509.577638" transform="rotate(-0 38.88 509.577638)">Conceptual future-work diagram based on the article. Engineering reuse and policy transfer are separate measurements.</text>
+  </g>
+ </g>
+</svg>

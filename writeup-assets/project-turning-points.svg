@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="864pt" height="576pt" viewBox="0 0 864 576" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Fight Caves writeup figure builder</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 576 
+L 864 576 
+L 864 0 
+L 0 0 
+z
+" style="fill: #fcfcfa"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 45.95616 278.2368 
+L 267.67584 278.2368 
+Q 278.6832 278.2368 278.6832 272.51136 
+L 278.6832 149.00544 
+Q 278.6832 143.28 267.67584 143.28 
+L 45.95616 143.28 
+Q 34.9488 143.28 34.9488 149.00544 
+L 34.9488 272.51136 
+Q 34.9488 278.2368 45.95616 278.2368 
+z
+" style="fill: #376eb4; fill-opacity: 0.070588; stroke: #376eb4; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 313.27776 278.2368 
+L 534.99744 278.2368 
+Q 546.0048 278.2368 546.0048 272.51136 
+L 546.0048 149.00544 
+Q 546.0048 143.28 534.99744 143.28 
+L 313.27776 143.28 
+Q 302.2704 143.28 302.2704 149.00544 
+L 302.2704 272.51136 
+Q 302.2704 278.2368 313.27776 278.2368 
+z
+" style="fill: #be4c51; fill-opacity: 0.070588; stroke: #be4c51; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 580.59936 278.2368 
+L 802.31904 278.2368 
+Q 813.3264 278.2368 813.3264 272.51136 
+L 813.3264 149.00544 
+Q 813.3264 143.28 802.31904 143.28 
+L 580.59936 143.28 
+Q 569.592 143.28 569.592 149.00544 
+L 569.592 272.51136 
+Q 569.592 278.2368 580.59936 278.2368 
+z
+" style="fill: #087f72; fill-opacity: 0.070588; stroke: #087f72; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 45.95616 474.5376 
+L 267.67584 474.5376 
+Q 278.6832 474.5376 278.6832 468.81216 
+L 278.6832 345.30624 
+Q 278.6832 339.5808 267.67584 339.5808 
+L 45.95616 339.5808 
+Q 34.9488 339.5808 34.9488 345.30624 
+L 34.9488 468.81216 
+Q 34.9488 474.5376 45.95616 474.5376 
+z
+" style="fill: #bd811d; fill-opacity: 0.070588; stroke: #bd811d; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 313.27776 474.5376 
+L 534.99744 474.5376 
+Q 546.0048 474.5376 546.0048 468.81216 
+L 546.0048 345.30624 
+Q 546.0048 339.5808 534.99744 339.5808 
+L 313.27776 339.5808 
+Q 302.2704 339.5808 302.2704 345.30624 
+L 302.2704 468.81216 
+Q 302.2704 474.5376 313.27776 474.5376 
+z
+" style="fill: #805aa4; fill-opacity: 0.070588; stroke: #805aa4; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_7">
+    <path d="M 580.59936 474.5376 
+L 802.31904 474.5376 
+Q 813.3264 474.5376 813.3264 468.81216 
+L 813.3264 345.30624 
+Q 813.3264 339.5808 802.31904 339.5808 
+L 580.59936 339.5808 
+Q 569.592 339.5808 569.592 345.30624 
+L 569.592 468.81216 
+Q 569.592 474.5376 580.59936 474.5376 
+z
+" style="fill: #087f72; fill-opacity: 0.070588; stroke: #087f72; stroke-width: 1.2; stroke-linejoin: miter"/>
+   </g>
+   <g id="text_1">
+    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #376eb4" x="156.816" y="120.7872" transform="rotate(-0 156.816 120.7872)">March</text>
+   </g>
+   <g id="text_2">
+    <text style="font-weight: 700; font-size: 10.3px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #376eb4" x="156.816" y="169.918551" transform="rotate(-0 156.816 169.918551)">Build and inspect</text>
+   </g>
+   <g id="text_3">
+    <text style="font-size: 9.3px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(86.170148 218.618419)">Kotlin prototype → C simulator</text>
+    <text style="font-size: 9.3px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(88.038867 232.568419)">Shared viewer / training rules</text>
+   </g>
+   <g id="text_4">
+    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #be4c51" x="424.1376" y="120.7872" transform="rotate(-0 424.1376 120.7872)">April</text>
+   </g>
+   <g id="text_5">
+    <text style="font-weight: 700; font-size: 10.3px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #be4c51" x="424.1376" y="169.918551" transform="rotate(-0 424.1376 169.918551)">Survival without completion</text>
+   </g>
+   <g id="text_6">
+    <text style="font-size: 9.3px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(342.74153 218.618419)">Mean episode nearly 200,000 ticks</text>
+    <text style="font-size: 9.3px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(350.492498 232.994911)">Mean wave about 30; zero wins</text>
+   </g>
+   <g id="text_7">
+    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #087f72" x="691.4592" y="120.7872" transform="rotate(-0 691.4592 120.7872)">May</text>
+   </g>
+   <g id="text_8">
+    <text style="font-weight: 700; font-size: 10.3px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #087f72" x="691.4592" y="169.918551" transform="rotate(-0 691.4592 169.918551)">Strong policies; new diagnostic</text>
+   </g>
+   <g id="text_9">
+    <text style="font-size: 9.3px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(614.588161 218.618419)">88.6% reported with full supplies</text>
+    <text style="font-size: 9.3px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(619.2912 232.568419)">Begin no-food / no-potion tests</text>
+   </g>
+   <g id="text_10">
+    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #bd811d" x="156.816" y="317.088" transform="rotate(-0 156.816 317.088)">June</text>
+   </g>
+   <g id="text_11">
+    <text style="font-weight: 700; font-size: 10.3px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #bd811d" x="156.816" y="366.219351" transform="rotate(-0 156.816 366.219351)">Define the actual experiment</text>
+   </g>
+   <g id="text_12">
+    <text style="font-size: 9.3px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(68.315602 414.919219)">Healer / map / compiled-loadout audit</text>
+    <text style="font-size: 9.3px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(75.128578 429.770156)">Rebuilt SOTA loadout: 90.98% wins</text>
+   </g>
+   <g id="text_13">
+    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #805aa4" x="424.1376" y="317.088" transform="rotate(-0 424.1376 317.088)">July–August</text>
+   </g>
+   <g id="text_14">
+    <text style="font-weight: 700; font-size: 10.3px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #805aa4" x="424.1376" y="366.219351" transform="rotate(-0 424.1376 366.219351)">Rewards, mechanics and updates</text>
+   </g>
+   <g id="text_15">
+    <text style="font-size: 9.3px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(326.823272 414.919219)">Required-work feedback; trainer searches</text>
+    <text style="font-size: 9.3px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(333.376139 428.869219)">Compare stability as well as final score</text>
+   </g>
+   <g id="text_16">
+    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #087f72" x="691.4592" y="317.088" transform="rotate(-0 691.4592 317.088)">Current</text>
+   </g>
+   <g id="text_17">
+    <text style="font-weight: 700; font-size: 10.3px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #087f72" x="691.4592" y="366.219351" transform="rotate(-0 691.4592 366.219351)">No-supply checkpoint</text>
+   </g>
+   <g id="text_18">
+    <text style="font-size: 9.3px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(620.567044 415.345711)">88.61% over 10,800 full caves</text>
+    <text style="font-size: 9.3px; font-family: 'DejaVu Sans'; fill: #182c3c" transform="translate(623.253145 428.869219)">Fresh training seeds still vary</text>
+   </g>
+  </g>
+  <g id="text_19">
+   <text style="font-weight: 700; font-size: 19px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #182c3c" x="38.88" y="37.477031" transform="rotate(-0 38.88 37.477031)">The task changed as the project developed</text>
+  </g>
+  <g id="text_20">
+   <text style="font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #546777" x="38.88" y="62.122359" transform="rotate(-0 38.88 62.122359)">Historical milestones carry different gear, supplies, mechanics and budgets.</text>
+  </g>
+  <g id="text_21">
+   <text style="font-size: 9px; font-family: 'DejaVu Sans'; fill: #546777" transform="translate(38.88 538.172438)">Sources: engine, run, sweep and reproduction-audit histories. Dates are milestone labels, not a time scale.</text>
+   <text style="font-size: 9px; font-family: 'DejaVu Sans'; fill: #546777" transform="translate(38.88 551.222437)">May 88.6% is a report summary. June used full supplies; current evaluation uses zero supplies.</text>
+  </g>
+ </g>
+</svg>

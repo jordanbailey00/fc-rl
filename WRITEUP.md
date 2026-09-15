@@ -27,7 +27,9 @@ This gives us two connected learning problems. The agent needs to survive long e
 
 Jad also gives us a useful example of how mechanics turn into strategy. In the current simulation, he has 250 HP and can summon four healers below 150 HP. Each healer can restore 5 HP every four ticks while in healing range. A resolved player hit, even a zero-damage hit, distracts that healer permanently: it stops healing and pursues the player. Changing targets can therefore remove a source of healing while creating another nearby threat.
 
-> **FIGURE 1 — The arena and its progression.** Place an arena map here with actual collision/LOS boundaries and illustrative 1×1, 3×3 and 5×5 footprints. Under it, show the first-appearance waves from the table. Use current runtime maps and `WAVE_TABLE`; label the positions as examples. Export: `writeup-assets/arena-and-waves.svg`.
+![Fight Caves arena collision and line-of-sight maps, NPC footprint examples and enemy introduction waves](writeup-assets/arena-and-waves.svg)
+
+*Figure 1. Current runtime maps and first enemy appearances. The [standalone collision grid](writeup-assets/collision-map.svg) shows every tile in red or green; directional LOS blockers are a separate layer.*
 
 ### What the agent brought into the cave
 
@@ -60,7 +62,13 @@ The early benchmark records show why this was worth doing: C-side throughput at 
 
 Speed alone wouldn't help if the game rules were wrong. Seeded resets, action replay and field-based state hashes let us check that the same inputs produced the same transitions. Viewer overlays exposed collision, NPC footprints, routes and pending attacks. Those tools became particularly useful once we had a policy willing to repeat an awkward interaction several million times.
 
-> **FIGURE 3 — One simulation, several ways to inspect it.** Place a two-part figure here. A: offline cache exports → collision/arena data and visual assets; shared C state/tick → training adapter, viewer and replay/checker. Route visual assets to the viewer. B: annotate `runescape-rl/assets/readme/viewer-debug-los.png` with footprint, route, collision and LOS callouts; label it archival. Exports: `writeup-assets/engine.svg` and `writeup-assets/viewer-diagnostics.png`. Optional inset: 205→4,382 exported instances, explicitly an asset-parser correction rather than a training result.
+![Shared C simulation feeding training, viewer and deterministic replay](writeup-assets/engine.svg)
+
+*Figure 3a. The simulation owns the rules; training and inspection use the same state transitions.*
+
+![Archival viewer showing tile overlays, NPC footprints and line-of-sight diagnostics](runescape-rl/assets/readme/viewer-debug-los.png)
+
+*Figure 3b. An archival debugging view, reused from the project. This shows the inspection tools rather than the selected current policy.*
 
 ## Giving the agent a way to play
 
@@ -107,7 +115,13 @@ That gives the policy a response opportunity after the tell. It also gives us a 
 
 The engine makes that order explicit: snapshot protection; process the player's prayer, target, attack and allowed movement; update timers/resources; run NPC behavior; resolve pending hits; handle deaths, waves and healers; advance the tick and lock due prayer decisions. Ordinary NPC attacks use the start-of-tick prayer snapshot at launch. Jad's delayed non-melee lock is a separate rule; melee resolves immediately.
 
-> **FIGURE 4 — From game state to a decision.** Place a human-view/structured-view diagram here. Map appearance, health bars and attack cues to their supplied features, then show 23 + 248 + 15 + 34 inputs → three 512-wide MinGRU layers → 17/9/8 action heads and a value output. Add the recurrent-state loop and a separate mask-to-sampler arrow. Mark exact timing as engine-provided. Beneath it, draw the Jad timeline: launch at T → response at T+1 → lock before action T+2 → impact. Exports: `writeup-assets/policy-interface.svg` and `writeup-assets/prayer-window.svg`.
+![Human cues mapped to the 320-input recurrent policy, action heads and legality masks](writeup-assets/policy-interface.svg)
+
+*Figure 4a. The policy receives structured features, including exact timing information, and chooses movement, attack and prayer actions.*
+
+![Jad attack launch, response opportunity, protection lock and impact timeline](writeup-assets/prayer-window.svg)
+
+*Figure 4b. Current non-melee Jad timing. This is a code-derived schematic; a measured policy response belongs with the replay below.*
 
 ### Turning experience into updates
 
@@ -131,7 +145,9 @@ A later experiment raised the episode limit from 30,000 to 200,000 ticks and tra
 
 We had made room for a very long unsuccessful cave. The summaries don't tell us whether that policy hid, kited or got stuck. They do tell us that extra survival time wasn't turning into completed waves. The cap and training budget both changed, so this is a useful failure record rather than a clean measurement of the cap's effect.
 
-> **FIGURE 5 — A longer episode with almost the same progress.** Place paired summary panels here for `xgsb170g` and `ss966rf9`: mean wave 27.6/30.0, ticks 3,110/199,939, and wins 0/10,174 versus 0/4,239. Label 500M/2B budgets and the changed cap. Source: the run-history entries. Export: `writeup-assets/survival-without-completion.svg`.
+![Comparison of mean wave, episode duration and zero completions in the first and higher-cap runs](writeup-assets/survival-without-completion.svg)
+
+*Figure 5. Extra episode time did not turn survival into completion. The historical runs also had different training budgets.*
 
 ### We had strong agents before we had the current task
 
@@ -145,7 +161,9 @@ The subsequent nine-loadout comparison explicitly rebuilt the backend for each l
 
 This is why the experiment record now includes code, assets, executable, loadout, configuration and checkpoint identity. Those details define the game the network actually learned.
 
-> **OPTIONAL FIGURE 6 — How the task changed.** Place a compact annotated timeline here: March simulator work → April stalls → May strong full-supply policies and no-supply diagnostic → June loadout/reproduction audit → July reward/trainer work → current no-supply result. Keep results in separate labeled cards, without a shared performance trend line. For the June gear comparison, use final values from `ov5qfn36.json` and `ymj1j1mi.json`; label full supplies, fixed learner settings and 1.499B actual steps. The May 88.6% is from the campaign report; its raw log has not been recovered. Export: `writeup-assets/project-turning-points.svg`.
+![Project milestones from the March simulator to the current no-supply checkpoint](writeup-assets/project-turning-points.svg)
+
+*Figure 6. The task and implementation changed along the way. The scores retain their original conditions.*
 
 ### What learning looks like in the current run
 
@@ -164,7 +182,9 @@ The final evaluation reached 88.61% completion. Its mean episode lasted 4,930.82
 
 The logs show where performance improved. To explain the specific tactics, we need the matching replay: which targets it picked, when it fired, and what happened to the healers. A rising wave curve can't tell us that the agent discovered a particular safespot.
 
-> **FIGURE 7 — Learning to reach Jad, then finish.** Place aligned wave, episode-length and reach/completion panels here, using the four training bins. Show averaging explicitly. Add separate final-evaluation markers at 499.12M: 89.25% reach and 88.61% completion, n=10,800. For a denser curve, parse `confirm_0024_seed73.log`, deduplicate epoch displays and exclude final-evaluation repeats; label it the exact seed-73 confirmation with rounded console metrics. Export: `writeup-assets/current-learning.svg`.
+![Training-bin averages for mean wave, episode duration, Jad reach and completion, with separate final evaluation](writeup-assets/current-learning.svg)
+
+*Figure 7. Four training-bin averages from the selected run. Dashed segments guide the eye between summaries; diamonds mark the separate final evaluation.*
 
 > **VIDEO 2 — What those improvements look like.** Directly below Figure 7, place identified early, middle and final-checkpoint clips. Show target selection, actual attacks, movement and prayer. Include a final-policy Jad/healer sequence with healing events, healer distraction and Jad HP. Add a 6–12-tick state/action trace beside that clip. Use it to determine whether the policy tags, kills or outdamages healers before adding that behavioral claim. Exports: `writeup-assets/training-stages.mp4` and `writeup-assets/jad-decision-trace.svg`. Historical clips need their own compatible runtimes.
 
@@ -191,7 +211,9 @@ The prayer component was roughly 30 times the progress component before the tota
 
 Later, we had a cleaner test of that incentive. Removing the remaining correct-danger-prayer reward, with the same 750M budget and training seed, improved final completion from **88.02% to 92.74%** (`i215ulj4` → `txqsiahp`). Its weight went from 0.005 to zero. Other shaping stayed active, so the lesson was specific: this extra payment wasn't helping that setup.
 
-> **FIGURE 8 — What the agent was getting paid for.** Place prayer/progress reward bars here, 86.87 versus 2.92, with the no-target/no-progress fractions and zero wins beside them. Label components as measured before total clipping; don't stack them to equal the clipped return. Add a separate matched-removal panel: 88.0188%→92.7431%, n=10,216/10,018. Sources: `cfuyizo1`, `i215ulj4`, `txqsiahp`. Export: `writeup-assets/prayer-reward-diagnosis.svg`.
+![Prayer and progress reward components alongside the later prayer-reward removal comparison](writeup-assets/prayer-reward-diagnosis.svg)
+
+*Figure 8. Prayer reward dominated one failed run. In a later matched experiment, removing the remaining prayer payment improved completion.*
 
 ### Healing can erase a lot of apparent progress
 
@@ -203,7 +225,9 @@ Those are two different symptoms: damage being undone, followed by disengagement
 
 We tried charging 1.1 times as much for negative progress instead of 1.0. At the same 2,499,805,184 steps and seed 73, final mean wave increased from 3.75 to 25.27; mean cave progress rose from 0.0503 to 0.3953. Both runs still had zero completions. It helped that comparison, but didn't finish the job. The current reward uses multiplier 1.0.
 
-> **FIGURE 9 — Damage, healing and disengagement.** Place same-window damage/healing bars here, either in labeled internal tenths of HP or both divided by ten. Separately show late-window attack-none 98.81% and no-target 98.59%; these overlap, so don't stack them. Add the final multiplier comparison, including zero wins in both runs. Source: the `l2l7lf6b` windows in `fc_revamp.md` and final JSON metrics for `l2l7lf6b`/`ruuq4231`. Export: `writeup-assets/healing-and-stalling.svg`. An authenticated historical loop replay would be a useful optional companion.
+![Gross damage and NPC healing, later inactivity, and final negative-progress multiplier comparison](writeup-assets/healing-and-stalling.svg)
+
+*Figure 9. Damage/healing, later inactivity and final evaluations describe different windows. The multiplier change improved progress but produced no wins.*
 
 ### Sometimes the game needs fixing
 
@@ -217,7 +241,9 @@ Combat formulas needed the same attention. Natural regeneration had been restori
 
 This made the agent useful as a source of awkward test cases. The workflow was to locate a repeated failure in the metrics, inspect the state/action trace, reproduce it in a deterministic fixture, and then check the relevant rule. A collapse could come from rewards, geometry, observation timing or the learner. Turning a penalty knob before doing that work could hide the actual problem.
 
-> **FIGURE 10 — A concrete mechanics correction.** Place before/after geometry sketches here using a recovered deterministic fixture for the July chase/contact issue. Mark footprints, blocked edges, attack validity and next movement. Beside them, plot mean wave 40.8176→49.1724, with n=10,070/10,021 and zero completions. Sources: `mzqf7iml.json`, `7mxnrzua.json`, the “Backend movement/positioning fix” entry in `fc_revamp.md` and matching historical code. Label a reconstructed diagram as a schematic if the fixture cannot be recovered. Export: `writeup-assets/movement-correction.svg`.
+![Illustrative blocked-LOS pursuit correction and measured mean-wave improvement](writeup-assets/movement-correction.svg)
+
+*Figure 10. A schematic of the chase/LOS failure mode alongside the historical result. The layout illustrates the rule; the exact original fixture has not been recovered.*
 
 ## Giving progress a useful meaning
 
@@ -245,7 +271,9 @@ The factors `63 × S` undo the normalization when we turn a change in cave progr
 
 Ten game HP is 100 internal units, so removing it earns **+0.1** progress reward. Restoring it costs **−0.1**, plus **−0.005** for one effective heal event. Those are component values before the trainer clips the combined reward. We can now give frequent feedback without treating the same restored HP as fresh progress every time it's damaged.
 
-> **FIGURE 11 — The accounting behind the reward.** Place the 10-HP damage/heal example here: remaining work before damage, after damage and after healing, with +0.1/−0.1 and the separate −0.005 event cost. Include a large Tz-Kek branching into two already-counted children, and a Jad/healer inset showing why healer HP isn't mandatory work. Label this a code-derived example. Export: `writeup-assets/required-work.svg`.
+![Required-work accounting for a 10-HP damage and healing cycle, Tz-Kek splitting and Jad healers](writeup-assets/required-work.svg)
+
+*Figure 11. Dealing and restoring the same HP cancels the progress component. The effective-healing event adds its separate cost.*
 
 ### The rest of the reward budget
 
@@ -304,7 +332,9 @@ V-trace limits and replay-priority settings changed too; the exact values are in
 
 This was a turning point for the simpler reward setup. It also used the older, faster HP regeneration rule; that belongs beside its 95.58% when we report the result.
 
-> **FIGURE 12 — Searching the training recipe.** Place a July trial-index versus final-completion scatter here, with baseline and selected run marked. Recover the 140-run membership from `v3_simple_reward_sweep.md` and the JSON logs first; if incomplete, use labeled baseline/selected summary dots. Add a separate current-campaign panel after the current-search discussion below: 72.4608% baseline, 88.6111% selected, 90 attempts. Mark current trial `0008` as invalid, outside the valid-score plot. Keep each campaign's task/budget in its caption. Exports: `writeup-assets/july-search.svg` and `writeup-assets/current-search.svg`.
+![All 140 July sweep final evaluations sorted by completion rate, with baseline and selected run marked](writeup-assets/july-search.svg)
+
+*Figure 12a. All 140 July trials were recovered by their shared run manifest. They are sorted by final completion because launch order has not been recovered.*
 
 ### August: look at how it got there
 
@@ -321,11 +351,17 @@ Here, q10 is the tenth percentile of the logged training measurements: a way to 
 
 The selected run learned high completion earlier and maintained it through the final quarter. The other learned successfully much later. A final-score leaderboard would miss that distinction. The [August analysis](sweep_top8.md) retains the full comparison.
 
-> **FIGURE 13 — Similar endpoints, different learning histories.** Place final-quarter mean/q10 markers and distinct final-evaluation dots here, using the two runs above. Annotate first-90% steps and 4,096/8,192 agents. Label q10 as a training quantile, not evaluation uncertainty. Replace with dense curves only after retrieving the original histories. Export: `writeup-assets/stability-versus-endpoint.svg`.
+![August training-window mean and tenth percentile compared with final evaluation and time to reach 90 percent](writeup-assets/stability-versus-endpoint.svg)
+
+*Figure 13. Similar final scores can come from very different learning histories. The training q10 measures the lower part of the final-quarter window.*
 
 ### The current recipe
 
 The latest search fixed the task, model, agent count, horizon, minibatch, gamma/GAE, V-trace settings and training seed, then varied eight optimizer/update parameters. Of 90 attempts, 89 produced finite checkpoints; one became numerically unstable. The selected run improved final completion from the prior **72.46% to 88.61%** at the same roughly 500M-step budget.
+
+![Current search final completion by trial number, with baseline, selected run and invalid attempt marked](writeup-assets/current-search.svg)
+
+*Figure 12b. The current search in launch order. Trial 0008 had invalid numerical weights and is shown separately from the valid scores.*
 
 An earlier comparison also tested how we collected experience and updated the network. Asynchronous training allows those jobs to overlap; synchronous training coordinates collection and updates. We paired that choice with whether the recurrent network kept its state between 256-step horizons:
 
@@ -354,7 +390,9 @@ The recorded Jad-reach rate was 89.25%, corresponding to about 9,639 arrivals. O
 
 For these weights, most failures happened before Jad. That points us toward the earlier waves and the states the policy creates there. When this policy arrived at the final encounter, it usually finished.
 
-> **FIGURE 14 — Where the selected checkpoint fails.** Place a 100% stacked outcome bar here: 1,161 pre-Jad failures, 69 Jad failures, 9,570 completions. Label reconstructed counts, n=10,800 and the conditional denominator of 9,639. Put the tiny Jad-failure label outside its segment. Export: `writeup-assets/final-outcomes.svg`. Per-wave/rotation breakdowns need episode records before they can be added.
+![Selected evaluation split into 1161 pre-Jad failures, 69 Jad failures and 9570 completions](writeup-assets/final-outcomes.svg)
+
+*Figure 14. Outcome counts reconstructed from aggregate rates. Of approximately 9,639 Jad arrivals, 9,570 finished.*
 
 ### A reliable checkpoint and a reliable training recipe
 
@@ -374,7 +412,9 @@ Recipe `0084`, seed 303, makes the distinction particularly clear. It reached Ja
 
 So we have a checkpoint that wins repeatedly, and a training recipe with substantial variation. Comparing strong and weak seeds' HP and Prayer on arrival, prayer deadlines, targets and healer events is the next useful diagnosis. Another aggregate score won't tell us which decision differs.
 
-> **FIGURE 15 — Show every training seed.** Place paired Jad-reach/completion markers for all twelve confirmations here, grouped by recipe and labeled by seed. Mark seed 73 as used for selection and highlight the `0084`/303 gap. Read final `env/jad_kill_rate`, `env/reached_wave_63` and `env/n` from the confirmation INIs. Keep runs separate rather than pooling episodes into one success rate. Export: `writeup-assets/training-seeds.svg`.
+![Jad reach and completion for three recipes across four training seeds each](writeup-assets/training-seeds.svg)
+
+*Figure 15. Every confirmation run is shown separately. Seed 73 was used during selection; the other seeds test fresh training.*
 
 ## Taking this to another encounter
 
@@ -393,7 +433,9 @@ The Inferno is an obvious direction to explore: another wave encounter, with its
 
 These are future experiments. A sensible first test would implement one bounded encounter, then compare training from scratch with a transferred initialization under the same budget. That would let us measure whether the old policy helps, beyond the engineering time saved by reusing the framework.
 
-> **OPTIONAL FIGURE 16 — What carries over.** Place a small diagram here separating reusable simulation/training/diagnostic components from the mechanics, observations, actions and rewards that need encounter-specific work. Mark proposed encounters as future work. Export: `writeup-assets/encounter-transfer.svg`.
+![Reusable simulation and training components compared with encounter-specific work](writeup-assets/encounter-transfer.svg)
+
+*Figure 16. Proposed reuse and the work still needed for another encounter. This is future work.*
 
 ## What I'll take from this project
 
@@ -409,7 +451,7 @@ The result is an agent that completes most full caves under a documented no-supp
 
 The evidence here was reviewed through **September 14, 2026**. Current mechanics and learner details use the latest native simulation snapshot. Historical scores keep their original gear, supplies, mechanics and budgets; they're milestones rather than one directly comparable leaderboard.
 
-The media blocks are production instructions at the intended insertion points. Suggested filenames are future exports, not existing recordings or plots.
+The figures and their [data, sources and build instructions](writeup-assets/README.md) are included in the repository. Remaining video and starting-loadout blocks mark captures still to add. Historical summaries and code-derived schematics are labeled in the figures.
 
 ### Code and experiment records
 
