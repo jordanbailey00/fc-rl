@@ -28,8 +28,23 @@ PufferTank's image sets that GLX override.
 ```
 
 Settings come from `config/fight_caves.ini` on top of `config/default.ini`, and
-any of them can be overridden with `--section.key=value`. The `[env]` section
-holds the starting supplies and the reward settings. Training is headless.
+any of them can be overridden with `--section.key=value`. Training is headless.
+The `[env]` section holds three kinds of settings:
+
+- **Capabilities** are what the agent can do beyond moving, attacking and the
+  protection prayers. Each one adds action heads, observations and mask bits,
+  so the build compiles them in from the INI and training stops with a message
+  if the INI and the build disagree; rebuild after changing one.
+  `consumables = 1` adds eat and drink heads and observes their cooldowns.
+- **Scenario** settings are what an episode starts with and need no rebuild:
+  `gear_set_1` names a gear preset, the `*_level` keys set skill levels, and
+  `initial_sharks` and `initial_prayer_doses` fill the inventory. Gear must be
+  wearable at the configured levels.
+- **Rewards** and their shaping terms.
+
+Training and replay print the capabilities, policy heads and scenario at
+startup. `./fight_caves describe` prints them for the current config (it takes
+the same `--env.key=value` overrides) or says what is wrong with it.
 
 The environment reports episode averages for `zero_progress_ticks`,
 `wave_reached`, `wrong_prayer_hits`, `reached_wave_63`, `jad_kill_rate`,

@@ -101,6 +101,10 @@ def read_run(path, steps):
     return ini, metrics
 
 
+# Every capability at its largest: the simulation suite's second build.
+ALL_CAPABILITIES = ["-DFC_CAP_CONSUMABLES=1"]
+
+
 def build_native_tests(root, output, run, *, cuda=False):
     """Shared compiler recipe for pytest and stdlib-only checkout acceptance."""
     root, output = Path(root).resolve(), Path(output).resolve()
@@ -127,9 +131,13 @@ def build_native_tests(root, output, run, *, cuda=False):
     run("layout-build", *cc, "-std=c11", *flags, "-c", linkage, "-o", probe)
     run("driver-build", *cxx, "-x", "c++", "-std=c++17", *flags,
         "-DFC_LINKAGE_DRIVER", "-c", linkage, "-o", driver)
-    suites = {name: output / name for name in ("simulation", "linkage")}
+    suites = {name: output / name
+              for name in ("simulation", "simulation-capabilities", "linkage")}
     run("simulation-build", *cc, "-std=c11", *flags,
         root / "tests/test_fight_caves_simulation.c", *libs, "-o", suites["simulation"])
+    run("simulation-capabilities-build", *cc, "-std=c11", *flags, *ALL_CAPABILITIES,
+        root / "tests/test_fight_caves_simulation.c", *libs,
+        "-o", suites["simulation-capabilities"])
     run("linkage-build", *cxx, driver, probe, binding, *libs, "-o", suites["linkage"])
     if cuda:
         cuda_home = os.environ.get("CUDA_HOME") or os.environ.get("CUDA_PATH")

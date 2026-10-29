@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
-"""Install the Fight Caves asset bundles pinned in resources/fight_caves/asset_manifest.json.
+"""Fight Caves build helpers.
+
+setup installs the asset bundles pinned in resources/fight_caves/asset_manifest.json.
+cflags prints the compiler flags for the capabilities set in the [env] section
+of config/fight_caves.ini; build.sh passes them to every Fight Caves compile.
 
 Usage: python3 ocean/fight_caves/tools.py setup [--force | --verify-only]
+       python3 ocean/fight_caves/tools.py cflags [--config PATH]
 """
 
 from __future__ import annotations
 
 import argparse
+import configparser
 import hashlib
 from http.client import HTTPException
 import json
@@ -22,10 +28,41 @@ RESOURCE_ROOT = REPO_ROOT / "resources" / "fight_caves"
 MANIFEST = RESOURCE_ROOT / "asset_manifest.json"
 # Written into each installed bundle directory: the SHA-256 of its archive.
 STAMP = ".archive-sha256"
+# Capabilities by [env] key with their allowed values; a missing key means 0.
+# core.h has the same names as FC_CAP_<KEY>, and puf_init checks the INI it
+# trains with against the values compiled in.
+CAPABILITIES = {"consumables": (0, 1)}
 
 
 class AssetError(RuntimeError):
     pass
+
+
+class ConfigError(RuntimeError):
+    pass
+
+
+def capability_flags(config: Path) -> list[str]:
+    """Reads [env] the way PufferLib does: config/default.ini, then config."""
+    if not config.is_file():
+        raise ConfigError(f"{config} not found")
+    parser = configparser.ConfigParser(inline_comment_prefixes=("#", ";"),
+                                       interpolation=None, strict=False)
+    parser.read([REPO_ROOT / "config" / "default.ini", config])
+    env = parser["env"] if parser.has_section("env") else {}
+    flags = []
+    for key, allowed in CAPABILITIES.items():
+        raw = env.get(key, "0").strip().replace("_", "")
+        value = {"true": 1.0, "false": 0.0}.get(raw.lower())
+        try:
+            value = float(raw) if value is None else value
+        except ValueError:
+            value = None
+        if value is None or value not in allowed:
+            choices = " or ".join(str(v) for v in allowed)
+            raise ConfigError(f"{key} = {env.get(key)}: must be {choices}")
+        flags.append(f"-DFC_CAP_{key.upper()}={int(value)}")
+    return flags
 
 
 def sha256_file(path: Path) -> str:
@@ -82,15 +119,26 @@ def install_bundle(bundle: dict) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Install the pinned Fight Caves runtime and viewer asset bundles."
+        description="Install the pinned Fight Caves asset bundles, or print the "
+                    "compiler flags for the configured capabilities."
     )
-    parser.add_argument("command", choices=["setup"])
+    parser.add_argument("command", choices=["setup", "cflags"])
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--force", action="store_true",
-                      help="download and reinstall every bundle")
+                      help="setup: download and reinstall every bundle")
     mode.add_argument("--verify-only", action="store_true",
-                      help="check the installed stamps without downloading")
+                      help="setup: check the installed stamps without downloading")
+    parser.add_argument("--config", type=Path,
+                        default=REPO_ROOT / "config" / "fight_caves.ini",
+                        help="cflags: the INI whose [env] capabilities to compile in")
     args = parser.parse_args(argv)
+    if args.command == "cflags":
+        try:
+            print(" ".join(capability_flags(args.config)))
+        except (ConfigError, configparser.Error) as exc:
+            print(f"Fight Caves config error: {exc}", file=sys.stderr)
+            return 1
+        return 0
     try:
         for bundle in json.loads(MANIFEST.read_text(encoding="utf-8"))["bundles"]:
             prefix, archive_name = bundle["install_prefix"], bundle["archive"]

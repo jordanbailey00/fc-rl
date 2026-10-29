@@ -90,10 +90,15 @@ static void check_observation(const FcState* state) {
 
 static int core_contract_test(void) {
     _Static_assert(FC_STATE_HASH_VERSION == 6, "analytics state hash version drifted");
-    _Static_assert(FC_POLICY_OBS_SIZE == 286, "policy observation contract drifted");
-    _Static_assert(FC_PUFFER_OBS_SIZE == 320, "Puffer observation contract drifted");
-    _Static_assert(FC_PUFFER_MASK_SIZE == 34, "Puffer mask contract drifted");
-    _Static_assert(FC_PUFFER_NUM_ATNS == 3, "Puffer action-head count drifted");
+    /* 286 + 34 = 320 floats and three heads with the default capabilities. */
+    _Static_assert(FC_POLICY_OBS_SIZE == 286 + 3 * FC_CAP_CONSUMABLES,
+                   "policy observation contract drifted");
+    _Static_assert(FC_PUFFER_MASK_SIZE == 34 + 5 * FC_CAP_CONSUMABLES,
+                   "Puffer mask contract drifted");
+    _Static_assert(FC_PUFFER_OBS_SIZE == FC_POLICY_OBS_SIZE + FC_PUFFER_MASK_SIZE,
+                   "Puffer observation contract drifted");
+    _Static_assert(FC_PUFFER_NUM_ATNS == 3 + 2 * FC_CAP_CONSUMABLES,
+                   "Puffer action-head count drifted");
 
     FcState first;
     FcState second;
@@ -229,7 +234,7 @@ static int loadout_totals(void) {
         .crystal_piece_mask = 0, .ammo_count = 50000,
     };
     FcPlayer p = {0};
-    fc_items_init(&p, &FC_LOADOUT);
+    fc_items_init(&p, &FC_GEAR_PRESETS[0]);
     CHECK(p.ranged_attack_bonus == expected.ranged_attack_bonus);
     CHECK(p.ranged_strength_bonus == expected.ranged_strength_bonus);
     CHECK(p.defence_stab == expected.defence_stab);
@@ -247,29 +252,33 @@ static int loadout_totals(void) {
     return 0;
 }
 
-/* The loadout and NPC tables are compile-time constants, checked here rather
- * than on every fc_init. */
+/* The gear presets, default levels and NPC tables are compile-time constants,
+ * checked here rather than on every fc_init. */
 static int constant_tables(void) {
-    const FcLoadout *loadout = &FC_LOADOUT;
-    CHECK(loadout->max_hp > 0 && loadout->max_prayer > 0);
-    CHECK(loadout->attack_lvl >= 1 && loadout->strength_lvl >= 1 &&
-          loadout->defence_lvl >= 1 && loadout->ranged_lvl >= 1 &&
-          loadout->prayer_lvl >= 1 && loadout->magic_lvl >= 1);
-    CHECK(loadout->ammo >= 0 && loadout->equipment_count > 0 &&
-          loadout->equipment_count <= FC_LOADOUT_EQUIP_MAX);
-    int occupied[FC_EQUIPMENT_SLOTS] = {0};
-    for (int i = 0; i < loadout->equipment_count; i++) {
-        const FcItemDef *item = fc_item_definition(loadout->equipment[i]);
-        CHECK(item && item->slot >= 0 && item->slot < FC_EQUIPMENT_SLOTS);
-        CHECK(occupied[item->slot]++ == 0);
-    }
-    FcPlayer player = {0};
-    apply_loadout_combat_fields(&player, loadout);
-    for (int type = NPC_TZ_KIH; type < NPC_TYPE_COUNT; type++) {
-        FcNpc target = {.npc_type = type};
-        int attack_roll, max_hit;
-        fc_player_ranged_rolls(&player, &target, &attack_roll, &max_hit);
-        CHECK(max_hit > 0);
+    char err[256];
+    FcScenario scenario = fc_default_scenario();
+    CHECK(fc_scenario_check(&scenario, err, sizeof(err)) == 0);
+    for (int p = 0; p < FC_GEAR_PRESET_COUNT; p++) {
+        const FcGearPreset *preset = &FC_GEAR_PRESETS[p];
+        CHECK(fc_gear_preset_find(preset->name) == p);
+        CHECK(fc_gear_preset_by_id(preset->id) == preset);
+        CHECK(preset->ammo >= 0 && preset->equipment_count > 0 &&
+              preset->equipment_count <= FC_LOADOUT_EQUIP_MAX);
+        int occupied[FC_EQUIPMENT_SLOTS] = {0};
+        for (int i = 0; i < preset->equipment_count; i++) {
+            const FcItemDef *item = fc_item_definition(preset->equipment[i]);
+            CHECK(item && item->slot >= 0 && item->slot < FC_EQUIPMENT_SLOTS);
+            CHECK(occupied[item->slot]++ == 0);
+        }
+        FcPlayer player = {0};
+        apply_levels(&player, FC_DEFAULT_LEVELS);
+        fc_items_init(&player, preset);
+        for (int type = NPC_TZ_KIH; type < NPC_TYPE_COUNT; type++) {
+            FcNpc target = {.npc_type = type};
+            int attack_roll, max_hit;
+            fc_player_ranged_rolls(&player, &target, &attack_roll, &max_hit);
+            CHECK(max_hit > 0);
+        }
     }
     /* NPC reach and attack rules assume a melee-style NPC has a melee hit. */
     for (int type = NPC_TZ_KIH; type < NPC_TYPE_COUNT; type++) {
@@ -705,8 +714,12 @@ static int equipment_appearance_test(void) {
 
 #undef CHECK
 
+_Static_assert(OBS_SIZE == FC_PUFFER_OBS_SIZE && NUM_ATNS == FC_PUFFER_NUM_ATNS,
+               "the Puffer contract is the core's");
+#if FC_DEFAULT_CAPABILITIES
 _Static_assert(OBS_SIZE == 320, "observation contract changed");
 _Static_assert(NUM_ATNS == 3, "action head count changed");
+#endif
 _Static_assert(sizeof(obs_t) == sizeof(float), "observations must be floats");
 _Static_assert(offsetof(Log, n) + sizeof(float) == sizeof(Log), "n must be last");
 
@@ -747,10 +760,18 @@ static void check_obs(FightCaves* env) {
     fc_write_mask(&env->state, mask);
     Agent* a = &env->agents[0];
     assert(memcmp(obs, a->observations, FC_POLICY_OBS_SIZE * sizeof(float)) == 0);
-    for (int i = 0; i < FC_PUFFER_MASK_SIZE; i++) {
-        assert(a->observations[FC_POLICY_OBS_SIZE + i] == mask[i]);
-        assert(a->action_mask[i] == (mask[i] != 0.0f));
+    /* Each policy head's mask segment, in policy order. */
+    int i = 0;
+    for (int h = 0; h < FC_PUFFER_NUM_ATNS; h++) {
+        int head = FC_PUFFER_ACTION_HEADS[h];
+        assert(FC_PUFFER_ACTION_DIMS[h] == FC_ACTION_DIMS[head]);
+        for (int v = 0; v < FC_ACTION_DIMS[head]; v++, i++) {
+            float expected = mask[FC_MASK_HEAD_START[head] + v];
+            assert(a->observations[FC_POLICY_OBS_SIZE + i] == expected);
+            assert(a->action_mask[i] == (expected != 0.0f));
+        }
     }
+    assert(i == FC_PUFFER_MASK_SIZE);
 }
 
 /* Independent core calls check action translation and returned outputs. */
@@ -758,7 +779,8 @@ static void checked_step(FightCaves* env) {
     FcState expected = env->state;
     FcRewardRuntime runtime = env->reward_runtime;
     int actions[FC_NUM_ACTION_HEADS] = {0};
-    for (int h = 0; h < NUM_ATNS; h++) actions[h] = (int)env->agents[0].actions[h];
+    for (int h = 0; h < NUM_ATNS; h++)
+        actions[FC_PUFFER_ACTION_HEADS[h]] = (int)env->agents[0].actions[h];
     fc_step(&expected, actions);
     FcRewardBreakdown reward = fc_reward_compute_breakdown(
         &expected, &env->reward_params, &runtime);
@@ -854,7 +876,7 @@ static void init_and_config_test(void) {
     Env* env = test_env(&empty);
     FcRewardParams defaults = fc_reward_default_params();
     assert(env->reward_params.w_progress == defaults.w_progress);
-    assert(env->initial_sharks == 0 && env->initial_prayer_doses == 0);
+    assert(env->scenario.sharks == 0 && env->scenario.prayer_doses == 0);
     check_obs(env);
     test_free(env);
 
@@ -947,12 +969,101 @@ static void replay_controls_test(FightCaves* env) {
     puts("native replay controls: read-only gameplay, pause and single-step passed");
 }
 
+static void expect_config_error(Dict* kwargs, const char* expected) {
+    FcRewardParams reward;
+    FcScenario scenario;
+    char err[512] = {0};
+    assert(fc_read_env_config(kwargs, &reward, &scenario, err, sizeof(err)) != 0);
+    if (strstr(err, expected) == NULL) {
+        fprintf(stderr, "config error \"%s\" lacks \"%s\"\n", err, expected);
+        abort();
+    }
+}
+
+static void scenario_config_test(void) {
+    Dict kwargs = {0};
+    /* A capability key that is set must say what this build has. */
+    dict_set(&kwargs, "consumables", !FC_CAP_CONSUMABLES);
+    expect_config_error(&kwargs, FC_CAP_CONSUMABLES
+        ? "consumables = 0, but this build has consumables = 1"
+        : "consumables = 1, but this build has consumables = 0");
+    dict_set(&kwargs, "consumables", FC_CAP_CONSUMABLES);
+
+    puf_ini_set(&kwargs, "gear_set_1", "dragon_claws");
+    expect_config_error(&kwargs, "gear_set_1 = dragon_claws: no such gear preset; "
+                        "the presets are tbow_masori");
+    puf_ini_set(&kwargs, "gear_set_1", "tbow_masori");
+    dict_set(&kwargs, "defence_level", 0);
+    expect_config_error(&kwargs, "defence_level = 0: levels must be 1 to 99");
+    dict_set(&kwargs, "defence_level", 99);
+    dict_set(&kwargs, "ranged_level", 70);
+    expect_config_error(&kwargs, "gear_set_1 = tbow_masori: Masori mask (f) needs "
+                        "80 ranged, but ranged_level = 70");
+
+    /* Levels set hitpoints, prayer points and the prayer potion restore. */
+    dict_set(&kwargs, "ranged_level", 90);
+    dict_set(&kwargs, "hitpoints_level", 80);
+    dict_set(&kwargs, "prayer_level", 70);
+    dict_set(&kwargs, "initial_prayer_doses", 4);
+    FightCaves* env = test_env(&kwargs);
+    const FcPlayer* p = &env->state.player;
+    assert(p->ranged_level == 90 && p->max_hp == 800 && p->current_hp == 800);
+    assert(p->prayer_level == 70 && p->max_prayer == 700 && p->current_prayer == 700);
+    assert(p->prayer_doses_remaining == 4 && p->sharks_remaining == 0);
+    assert(env->state.active_loadout == FC_LOADOUT_SOTA_TBOW);
+    check_obs(env);
+    test_free(env);
+    dict_clear(&kwargs);
+    puts("scenario config: capability check, presets, levels and requirements passed");
+}
+
+#if FC_CAP_CONSUMABLES
+/* The eat and drink heads reach the core through the policy actions, and
+ * their masks and cooldowns are observed. */
+static void consumables_test(void) {
+    enum { EAT = 3, DRINK = 4 };
+    const int eat_mask = FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM;
+    assert(FC_PUFFER_ACTION_HEADS[EAT] == FC_HEAD_EAT &&
+           FC_PUFFER_ACTION_HEADS[DRINK] == FC_HEAD_DRINK);
+    Dict kwargs = {0};
+    dict_set(&kwargs, "initial_sharks", 2);
+    dict_set(&kwargs, "initial_prayer_doses", 4);
+    FightCaves* env = test_env(&kwargs);
+    FcPlayer* p = &env->state.player;
+    Agent* a = &env->agents[0];
+    assert(a->action_mask[eat_mask + FC_EAT_SHARK] == 0);  /* full hitpoints */
+    p->current_hp -= 300;
+    p->current_prayer -= 300;
+    fc_puffer_write_obs(env);
+    check_obs(env);
+    assert(a->action_mask[eat_mask + FC_EAT_SHARK] == 1);
+    assert(a->action_mask[eat_mask + FC_EAT_DIM + FC_DRINK_PRAYER_POT] == 1);
+    a->actions[EAT] = FC_EAT_SHARK;
+    a->actions[DRINK] = FC_DRINK_PRAYER_POT;
+    checked_step(env);
+    assert(p->sharks_remaining == 1 && p->prayer_doses_remaining == 3);
+    const float* supply = a->observations + FC_OBS_SUPPLY_START;
+    assert(supply[FC_OBS_SUPPLY_FOOD_TIMER] > 0 && supply[FC_OBS_SUPPLY_POTION_TIMER] > 0);
+    assert(a->action_mask[eat_mask + FC_EAT_SHARK] == 0);  /* food delay */
+    test_free(env);
+    dict_clear(&kwargs);
+    puts("consumables: eat and drink heads, masks and cooldowns passed");
+}
+#endif
+
 static int adapter_test(int graphical) {
     native_config_test();
     init_and_config_test();
+    scenario_config_test();
+#if FC_CAP_CONSUMABLES
+    consumables_test();
+#endif
     terminal_and_log_test();
+    /* The shipped INI with this build's capabilities, as on the command line. */
+    char consumables[] = "--env.consumables=1";
+    char* overrides[] = {consumables};
     Ini ini = {0};
-    puf_ini_load_env(&ini, "fight_caves", 0, NULL);
+    puf_ini_load_env(&ini, "fight_caves", FC_CAP_CONSUMABLES ? 1 : 0, overrides);
     Dict* kwargs = puf_ini_section(&ini, "env", 0);
     FightCaves* env = test_env(kwargs);
     FightCaves* rendered = test_env(kwargs);
@@ -1006,8 +1117,12 @@ static int adapter_test(int graphical) {
         assert(fc_state_hash(&rendered->viewer->state) == fc_state_hash(&env->state));
     }
     printf("adapter trace: steps=2048 episodes=%d digest=%08x\n", episodes, trace);
-    /* Pinned like the core contract: a change here changes what training sees. */
-    assert(episodes == 2 && trace == 0xe9b2fd18u);
+    /* Pinned like the core contract: a change here changes what training
+     * sees. Other capabilities observe more, so only the default is pinned. */
+    assert(episodes == 2);
+#if FC_DEFAULT_CAPABILITIES
+    assert(trace == 0xe9b2fd18u);
+#endif
     if (!graphical) {
         free(rendered->viewer);
         rendered->viewer = NULL;
@@ -1019,7 +1134,9 @@ static int adapter_test(int graphical) {
 
 /* Native CPU policy plumbing used by CPU replay, independent of CUDA and graphics. */
 static void cpu_policy_test(void) {
+#if FC_DEFAULT_CAPABILITIES
     assert(fc_policy_weight_count(512, 3) == 2541056);
+#endif
     assert(fc_policy_weight_count(0, 3) == 0);
     assert(fc_policy_weight_count(15, 3) == 0);
     assert(fc_policy_weight_count(512, 0) == 0);
@@ -1035,7 +1152,11 @@ static void cpu_policy_test(void) {
     PufferNet* fresh = make_puffernet(weights, 1, OBS_SIZE, 8, 2, dims, NUM_ATNS);
     float obs[OBS_SIZE] = {0}, actions[NUM_ATNS], other[NUM_ATNS];
     unsigned char mask[FC_PUFFER_MASK_SIZE] = {0};
+    /* One legal action per head: 2, 3 and 4 for move, attack and prayer, and
+     * the last action of any capability head. */
     mask[2] = mask[17 + 3] = mask[17 + 9 + 4] = 1;
+    for (int h = 3, start = 17 + 9 + 8; h < NUM_ATNS; start += dims[h++])
+        mask[start + dims[h] - 1] = 1;
     float terminal = 0;
     forward_puffernet(carried, obs, actions, mask, &terminal);
     float once[16];
@@ -1043,6 +1164,7 @@ static void cpu_policy_test(void) {
     forward_puffernet(carried, obs, actions, mask, &terminal);
     assert(memcmp(once, carried->mingru->state, sizeof(once)) != 0);
     assert(actions[0] == 2 && actions[1] == 3 && actions[2] == 4);
+    for (int h = 3; h < NUM_ATNS; h++) assert(actions[h] == dims[h] - 1);
     terminal = 1;
     forward_puffernet(carried, obs, actions, mask, &terminal);
     terminal = 0;

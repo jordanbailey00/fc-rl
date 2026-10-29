@@ -2570,7 +2570,7 @@ static const char *g_worn_icon_names[FC_EQUIPMENT_SLOTS] = {
 /*
  * Exact b237 combat_interface_weapon_category DB rows from the local
  * Joshua-F dump for the weapon categories the player can have
- * (FcLoadout.combat_style_profile, or 0 when unarmed), so weapon tabs use the
+ * (FcGearPreset.combat_style_profile, or 0 when unarmed), so weapon tabs use the
  * same labels/icons as OSRS. Core has no style choice: it punches unarmed and
  * always fires the bow on Rapid.
  */
@@ -6339,8 +6339,7 @@ typedef struct ViewerState {
     int godmode;        /* 1 = player can't die */
     int policy_replay;    /* 1 = read-only presentation of native policy transitions */
     int start_wave;     /* 0 = wave 1 (default), >0 = skip to this wave on reset */
-    int initial_sharks;
-    int initial_prayer_doses;
+    FcScenario scenario;  /* [env] gear, levels and supplies */
     FcRewardParams reward_params;
     FcRewardRuntime reward_runtime;
     FcRewardBreakdown reward_breakdown;
@@ -6448,7 +6447,7 @@ static void sync_fc_ui_status(ViewerState* v) {
     const FcItemDef *weapon = fc_item_definition(p->equipment[FC_EQUIP_SLOT_WEAPON].item_id);
     fc_ui_set_combat_weapon_name(&v->ui, weapon ? weapon->name : "Unarmed");
     v->ui.combat_profile = combat_profile_for_weapon_category(
-        weapon ? FC_LOADOUT.combat_style_profile : 0);
+        weapon ? fc_gear_preset_by_id(v->state.active_loadout)->combat_style_profile : 0);
 }
 
 /* Where the minimap centres the player: the drawn position, or the tile
@@ -6669,7 +6668,7 @@ static void load_reward_params(ViewerState* v) {
     }
     /* A config without an [env] section also keeps the defaults. */
     fc_apply_env_config(puf_ini_section(&ini, "env", 1), &v->reward_params,
-                        &v->initial_sharks, &v->initial_prayer_doses);
+                        &v->scenario);
     puf_ini_free(&ini);
     v->reward_config_loaded = found;
     snprintf(v->reward_config_path, sizeof(v->reward_config_path), "%s",
@@ -6808,7 +6807,7 @@ static void reset_ep(ViewerState* v) {
     fc_reset(&v->state, (uint32_t)GetRandomValue(1, 999999));
     if (v->start_wave > 1 && v->start_wave <= FC_NUM_WAVES)
         restart_at_wave(&v->state, v->start_wave);
-    fc_set_initial_supplies(&v->state, v->initial_sharks, v->initial_prayer_doses);
+    fc_apply_scenario(&v->state, &v->scenario);
     reset_reward_tracking(v);
     fc_viewer_reset_presentation(v);
 }

@@ -9,21 +9,109 @@
 #include "fight_caves.h"
 #undef FC_CORE_IMPLEMENTATION
 
+/* Capabilities as built, by [env] key. A key that is set must match; a
+ * missing one, as in a config-less viewer or a test, takes the built value. */
+static const struct { const char* key; int built; } FC_BUILT_CAPABILITIES[] = {
+    {"consumables", FC_CAP_CONSUMABLES},
+};
+#define FC_BUILT_CAPABILITY_COUNT \
+    ((int)(sizeof(FC_BUILT_CAPABILITIES) / sizeof(FC_BUILT_CAPABILITIES[0])))
+
 /* The [env] settings puf_init and the viewer's manual play share: every
- * FC_REWARD_SETTINGS key (a missing key keeps its default) and the starting
- * supplies. */
-static void fc_apply_env_config(Dict* kwargs, FcRewardParams* reward,
-                                int* initial_sharks, int* initial_prayer_doses) {
+ * FC_REWARD_SETTINGS key (a missing key keeps its default), the capabilities,
+ * which must match this build, and the scenario. Returns 0, or -1 with the
+ * reason in err. */
+static int fc_read_env_config(Dict* kwargs, FcRewardParams* reward,
+                              FcScenario* scenario, char* err, size_t err_size) {
     *reward = fc_reward_default_params();
     for (int i = 0; i < FC_REWARD_SETTING_COUNT; i++) {
         DictItem* item = dict_find(kwargs, FC_REWARD_SETTINGS[i].key);
         if (item != NULL)
             fc_reward_setting_store(reward, &FC_REWARD_SETTINGS[i], item->value);
     }
-    DictItem* item = dict_find(kwargs, "initial_sharks");
-    *initial_sharks = item ? (int)item->value : 0;
+    for (int i = 0; i < FC_BUILT_CAPABILITY_COUNT; i++) {
+        DictItem* item = dict_find(kwargs, FC_BUILT_CAPABILITIES[i].key);
+        if (item == NULL) continue;
+        int value = (int)item->value;
+        if (value != FC_BUILT_CAPABILITIES[i].built) {
+            snprintf(err, err_size,
+                     "%s = %d, but this build has %s = %d. Capabilities change the "
+                     "action heads and observation, so set them in "
+                     "config/fight_caves.ini and rebuild: ./build.sh fight_caves",
+                     FC_BUILT_CAPABILITIES[i].key, value,
+                     FC_BUILT_CAPABILITIES[i].key, FC_BUILT_CAPABILITIES[i].built);
+            return -1;
+        }
+    }
+
+    *scenario = fc_default_scenario();
+    DictItem* item = dict_find(kwargs, "gear_set_1");
+    if (item != NULL) {
+        const char* name = item->str ? item->str : "";
+        scenario->gear_set = fc_gear_preset_find(name);
+        if (scenario->gear_set < 0) {
+            int n = snprintf(err, err_size, "gear_set_1 = %s: no such gear preset; "
+                             "the presets are", name);
+            for (int i = 0; i < FC_GEAR_PRESET_COUNT && n > 0 && (size_t)n < err_size; i++)
+                n += snprintf(err + n, err_size - n, " %s", FC_GEAR_PRESETS[i].name);
+            return -1;
+        }
+    }
+    for (int s = 0; s < FC_SKILL_COUNT; s++) {
+        char key[32];
+        snprintf(key, sizeof(key), "%s_level", FC_SKILL_NAMES[s]);
+        item = dict_find(kwargs, key);
+        if (item != NULL) scenario->levels[s] = (int)item->value;
+    }
+    item = dict_find(kwargs, "initial_sharks");
+    scenario->sharks = item ? (int)item->value : 0;
     item = dict_find(kwargs, "initial_prayer_doses");
-    *initial_prayer_doses = item ? (int)item->value : 0;
+    scenario->prayer_doses = item ? (int)item->value : 0;
+    /* Supplies are clamped to what the inventory holds. */
+    scenario->sharks = scenario->sharks < 0 ? 0
+        : scenario->sharks > FC_MAX_SHARKS ? FC_MAX_SHARKS : scenario->sharks;
+    scenario->prayer_doses = scenario->prayer_doses < 0 ? 0
+        : scenario->prayer_doses > FC_MAX_PRAYER_DOSES ? FC_MAX_PRAYER_DOSES
+        : scenario->prayer_doses;
+    return fc_scenario_check(scenario, err, err_size);
+}
+
+/* fc_read_env_config, stopping with the reason on a bad config. */
+static void fc_apply_env_config(Dict* kwargs, FcRewardParams* reward,
+                                FcScenario* scenario) {
+    char err[512];
+    if (fc_read_env_config(kwargs, reward, scenario, err, sizeof(err)) != 0) {
+        fprintf(stderr, "Fight Caves config error: %s\n", err);
+        exit(EXIT_FAILURE);
+    }
+}
+
+/* What this build's policy sees and does, and what an episode starts with. */
+static void fc_print_summary(FILE* out, const FcScenario* scenario) {
+    fprintf(out, "Fight Caves: consumables=%d | heads", FC_CAP_CONSUMABLES);
+    for (int h = 0; h < FC_PUFFER_NUM_ATNS; h++)
+        fprintf(out, "%s %s %d", h ? "," : "",
+                FC_HEAD_NAMES[FC_PUFFER_ACTION_HEADS[h]], FC_PUFFER_ACTION_DIMS[h]);
+    fprintf(out, " | obs %d + %d mask = %d\n", FC_POLICY_OBS_SIZE,
+            FC_PUFFER_MASK_SIZE, FC_PUFFER_OBS_SIZE);
+    fprintf(out, "Fight Caves scenario: gear_set_1 = %s | levels",
+            FC_GEAR_PRESETS[scenario->gear_set].name);
+    for (int s = 0; s < FC_SKILL_COUNT; s++)
+        fprintf(out, "%s %s %d", s ? "," : "", FC_SKILL_NAMES[s], scenario->levels[s]);
+    fprintf(out, " | %d sharks, %d prayer doses\n", scenario->sharks,
+            scenario->prayer_doses);
+}
+
+int fc_describe_env(Dict* kwargs) {
+    FcRewardParams reward;
+    FcScenario scenario;
+    char err[512];
+    if (fc_read_env_config(kwargs, &reward, &scenario, err, sizeof(err)) != 0) {
+        fprintf(stderr, "Fight Caves config error: %s\n", err);
+        return 1;
+    }
+    fc_print_summary(stdout, &scenario);
+    return 0;
 }
 
 #include "viewer.c"
@@ -50,14 +138,21 @@ static void fc_puffer_write_obs(FightCaves* env) {
     /* Policy observations */
     fc_write_obs(&env->state, obs);
 
-    /* Keep the float mask in observations for checkpoint compatibility, and
-     * publish the same legality flags through PufferLib's native mask channel. */
+    /* Keep the float mask of the policy heads in observations for checkpoint
+     * compatibility, and publish the same legality flags through PufferLib's
+     * native mask channel. */
     float full_mask[FC_ACTION_MASK_SIZE];
     fc_write_mask(&env->state, full_mask);
-    memcpy(obs + FC_POLICY_OBS_SIZE, full_mask, sizeof(float) * FC_PUFFER_MASK_SIZE);
+    float* mask = obs + FC_POLICY_OBS_SIZE;
+    for (int h = 0; h < FC_PUFFER_NUM_ATNS; h++) {
+        memcpy(mask, full_mask + FC_MASK_HEAD_START[FC_PUFFER_ACTION_HEADS[h]],
+               sizeof(float) * FC_PUFFER_ACTION_DIMS[h]);
+        mask += FC_PUFFER_ACTION_DIMS[h];
+    }
     if (agent->action_mask != NULL) {
         for (int i = 0; i < FC_PUFFER_MASK_SIZE; i++) {
-            agent->action_mask[i] = (unsigned char)(full_mask[i] != 0.0f);
+            agent->action_mask[i] =
+                (unsigned char)(obs[FC_POLICY_OBS_SIZE + i] != 0.0f);
         }
     }
 }
@@ -93,9 +188,7 @@ void puf_reset(Env* env) {
     env->seed_counter++;
     fc_reset(&env->state,
              fc_puffer_mix_reset_seed((uint32_t)env->rng, env->seed_counter));
-    /* fc_set_initial_supplies clamps the configured supply counts. */
-    fc_set_initial_supplies(&env->state, env->initial_sharks,
-                            env->initial_prayer_doses);
+    fc_apply_scenario(&env->state, &env->scenario);
     fc_reward_runtime_begin_episode(&env->reward_runtime, &env->state);
     /* Compute initial observations */
     fc_puffer_write_obs(env);
@@ -106,13 +199,12 @@ void puf_step(Env* env) {
     Agent* agent = &env->agents[0];
     agent->terminals[0] = 0.0f;
 
-    /* Convert float actions from network to int action heads.
-     * PufferLib sends actions as floats in a flat array.
-     * Puffer-facing no-supplies policy uses only move/attack/prayer.
-     * Core heads 3-6 are left as zero: no eat, no drink, no walk-to-tile. */
+    /* PufferLib sends one float per policy head. The core heads the policy
+     * does not emit stay zero, their no-op: no walk-to-tile, and no eating
+     * or drinking without the consumables capability. */
     int actions[FC_NUM_ACTION_HEADS] = {0};
     for (int h = 0; h < FC_PUFFER_NUM_ATNS; h++) {
-        actions[h] = (int)agent->actions[h];
+        actions[FC_PUFFER_ACTION_HEADS[h]] = (int)agent->actions[h];
     }
 
     /* Step the game simulation */
@@ -156,6 +248,7 @@ void puf_render(Env* env) {
         ViewerState* v = env->viewer;
         v->state = v->reset_state = env->state;
         v->reward_params = env->reward_params;
+        v->scenario = env->scenario;
         v->reward_runtime = env->reward_runtime;
         snprintf(v->reward_config_path, sizeof(v->reward_config_path),
                  "Puffer environment configuration");
@@ -192,8 +285,13 @@ void puf_close(Env* env) {
 
 void puf_init(Env* env, Dict* kwargs) {
     env->num_agents = 1;  /* Fight Caves is single-agent */
-    fc_apply_env_config(kwargs, &env->reward_params, &env->initial_sharks,
-                        &env->initial_prayer_doses);
+    fc_apply_env_config(kwargs, &env->reward_params, &env->scenario);
+    /* Puffer initializes every env on one thread; print the summary once. */
+    static int summary_printed = 0;
+    if (!summary_printed) {
+        fc_print_summary(stdout, &env->scenario);
+        summary_printed = 1;
+    }
 
     /* Callers pass a zeroed Env (Puffer callocs its envs and zeroes its
      * bufferless probe), so the other fields need no initialization. */

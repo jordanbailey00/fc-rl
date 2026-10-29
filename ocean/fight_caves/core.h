@@ -16,9 +16,9 @@
  * training adapter and viewer. Combat bonuses are derived from item definitions.
  */
 
-/* The one player loadout, Masori (f) with a Twisted bow. Its id is stored in
- * the hashed FcState.active_loadout and keeps the value it had when this was
- * one of nine presets. */
+/* Gear preset ids, stored in the hashed FcState.active_loadout. The default
+ * preset, Masori (f) with a Twisted bow, keeps the id it had when the presets
+ * were compiled-in loadouts. */
 typedef enum {
     FC_LOADOUT_SOTA_TBOW = 1
 } FcLoadoutId;
@@ -39,15 +39,28 @@ typedef enum {
     FC_EQUIP_SLOT_RING = 12,
 } FcEquipmentSlot;
 
+/* A named set of worn equipment: what [env] gear_set_1 selects. */
 typedef struct {
+    const char* name;
+    int id;                     /* FcLoadoutId */
     int combat_style_profile;   /* the viewer's combat-tab weapon category */
-    int max_hp, max_prayer;     /* tenths */
-    int attack_lvl, strength_lvl, defence_lvl;
-    int ranged_lvl, prayer_lvl, magic_lvl;
     int ammo;
     int equipment_count;
     int equipment[FC_LOADOUT_EQUIP_MAX];
-} FcLoadout;
+} FcGearPreset;
+
+typedef enum {
+    FC_SKILL_ATTACK, FC_SKILL_STRENGTH, FC_SKILL_DEFENCE, FC_SKILL_RANGED,
+    FC_SKILL_MAGIC, FC_SKILL_PRAYER, FC_SKILL_HITPOINTS, FC_SKILL_COUNT
+} FcSkill;
+
+/* What an episode starts with, set in [env]: the gear preset, skill levels
+ * and supplies. Unlike the capabilities below, these need no rebuild. */
+typedef struct {
+    int gear_set;                    /* index into FC_GEAR_PRESETS */
+    int levels[FC_SKILL_COUNT];
+    int sharks, prayer_doses;
+} FcScenario;
 
 /* Stored in the hashed FcPlayer.weapon_kind, so the values stay as they were. */
 typedef enum {
@@ -539,6 +552,28 @@ typedef struct {
 } FcState;
 
 
+/* Capabilities */
+
+/*
+ * What the agent can do beyond moving, attacking and protection prayers. A
+ * capability adds action heads, observations and mask bits, so it is fixed at
+ * compile time: build.sh passes the values set in config/fight_caves.ini
+ * (python3 ocean/fight_caves/tools.py cflags), and puf_init stops when the INI
+ * and the build disagree. A build without these flags, such as a test, gets
+ * the defaults, which are the layout the shipped config trains with.
+ */
+#ifndef FC_CAP_CONSUMABLES
+#define FC_CAP_CONSUMABLES 0   /* eat and drink heads */
+#endif
+
+#if FC_CAP_CONSUMABLES != 0 && FC_CAP_CONSUMABLES != 1
+#error "FC_CAP_CONSUMABLES must be 0 or 1"
+#endif
+
+/* 1 when every capability has its default, the shipped layout. */
+#define FC_DEFAULT_CAPABILITIES (FC_CAP_CONSUMABLES == 0)
+
+
 /* Contracts */
 
 /*
@@ -551,10 +586,11 @@ typedef struct {
  */
 
 /*
- * Observation layout. fc_write_obs writes the FC_POLICY_OBS_SIZE (286) policy
- * observations. Puffer's model input is 320 floats: those observations
- * followed by FC_PUFFER_MASK_SIZE (34) mask bits for the no-supplies policy
- * heads. Those same 34 bits are also supplied through PufferLib's native
+ * Observation layout. fc_write_obs writes the FC_POLICY_OBS_SIZE policy
+ * observations: 286 with the default capabilities, plus a block per enabled
+ * capability. Puffer's model input is those observations followed by the
+ * FC_PUFFER_MASK_SIZE mask bits of the policy heads (34 by default, so 320
+ * floats). Those same bits are also supplied through PufferLib's native
  * action-mask channel; the masks for core-only action heads are not exposed
  * to the model.
  */
@@ -666,8 +702,18 @@ typedef struct {
 #define FC_OBS_META_REWARDABLE_NPC_KILL 14  /* 1 if at least one eligible NPC died this tick */
 #define FC_OBS_META_SIZE        15
 
+/* --- Capability blocks, appended in this order when enabled --- */
+
+/* Consumables (3 floats). The supply counts are player features 8 and 9. */
+#define FC_OBS_SUPPLY_START     (FC_OBS_META_START + FC_OBS_META_SIZE)  /* 286 */
+#define FC_OBS_SUPPLY_FOOD_TIMER   0  /* food_timer / FC_FOOD_COOLDOWN_TICKS */
+#define FC_OBS_SUPPLY_POTION_TIMER 1  /* potion_timer / FC_POTION_COOLDOWN_TICKS */
+#define FC_OBS_SUPPLY_COMBO_TIMER  2  /* combo_timer / FC_COMBO_EAT_TICKS */
+#define FC_OBS_SUPPLY_SIZE      (3 * FC_CAP_CONSUMABLES)
+
 /* --- Policy observation total --- */
-#define FC_POLICY_OBS_SIZE      (FC_OBS_PLAYER_SIZE + FC_OBS_NPC_TOTAL + FC_OBS_META_SIZE)  /* 286 */
+#define FC_POLICY_OBS_SIZE      (FC_OBS_PLAYER_SIZE + FC_OBS_NPC_TOTAL + \
+                                 FC_OBS_META_SIZE + FC_OBS_SUPPLY_SIZE)  /* 286 by default */
 
 /*
  * Action space: 7 canonical core heads, shared by headless training, policy
@@ -678,6 +724,11 @@ typedef struct {
  */
 
 #define FC_NUM_ACTION_HEADS     7
+
+enum {
+    FC_HEAD_MOVE, FC_HEAD_ATTACK, FC_HEAD_PRAYER, FC_HEAD_EAT, FC_HEAD_DRINK,
+    FC_HEAD_TARGET_X, FC_HEAD_TARGET_Y
+};
 
 /* Head 0: MOVE — directional tile movement (low-level) */
 /*
@@ -770,17 +821,9 @@ static const int FC_MOVE_DY[17] = {
 
 /* Action head dimensions as a static array (for iteration in viewer/binding) */
 static const int FC_ACTION_DIMS[FC_NUM_ACTION_HEADS] = FC_ACT_SIZES;
-
-/* Puffer-facing no-supplies policy contract.
- * This is the single source of truth for the action heads and masks consumed
- * by Puffer training and policy replay. Core still supports all canonical
- * action heads; the Puffer policy emits the prefix below. */
-#define FC_PUFFER_NUM_ATNS      3
-#define FC_PUFFER_ACT_SIZES     { FC_MOVE_DIM, FC_ATTACK_DIM, FC_PRAYER_DIM }
-#define FC_PUFFER_MASK_SIZE     (FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM)
-#define FC_PUFFER_OBS_SIZE      (FC_POLICY_OBS_SIZE + FC_PUFFER_MASK_SIZE)
-
-static const int FC_PUFFER_ACTION_DIMS[FC_PUFFER_NUM_ATNS] = FC_PUFFER_ACT_SIZES;
+static const char* const FC_HEAD_NAMES[FC_NUM_ACTION_HEADS] = {
+    "move", "attack", "prayer", "eat", "drink", "move_target_x", "move_target_y"
+};
 
 /*
  * Action mask. Per-tick binary mask: 1.0 = valid, 0.0 = invalid.
@@ -798,6 +841,37 @@ static const int FC_PUFFER_ACTION_DIMS[FC_PUFFER_NUM_ATNS] = FC_PUFFER_ACT_SIZES
 #define FC_MASK_DRINK_START      (FC_MASK_EAT_START + FC_EAT_DIM)              /* 37 */
 #define FC_MASK_TARGET_X_START   (FC_MASK_DRINK_START + FC_DRINK_DIM)           /* 39 */
 #define FC_MASK_TARGET_Y_START   (FC_MASK_TARGET_X_START + FC_MOVE_TARGET_X_DIM) /* 104 */
+
+static const int FC_MASK_HEAD_START[FC_NUM_ACTION_HEADS] = {
+    FC_MASK_MOVE_START, FC_MASK_ATTACK_START, FC_MASK_PRAYER_START,
+    FC_MASK_EAT_START, FC_MASK_DRINK_START, FC_MASK_TARGET_X_START,
+    FC_MASK_TARGET_Y_START
+};
+
+/* Puffer-facing policy contract: the core heads the policy emits, in order.
+ * Movement, attack and protection prayers are always there, and each enabled
+ * capability appends its heads. This is the single source of truth for the
+ * action heads and masks consumed by Puffer training and policy replay; core
+ * still supports every canonical head. */
+#if FC_CAP_CONSUMABLES
+#define FC_PUFFER_SUPPLY_HEADS  , FC_HEAD_EAT, FC_HEAD_DRINK
+#define FC_PUFFER_SUPPLY_DIMS   , FC_EAT_DIM, FC_DRINK_DIM
+#else
+#define FC_PUFFER_SUPPLY_HEADS
+#define FC_PUFFER_SUPPLY_DIMS
+#endif
+
+#define FC_PUFFER_NUM_ATNS      (3 + 2 * FC_CAP_CONSUMABLES)
+#define FC_PUFFER_HEADS \
+    { FC_HEAD_MOVE, FC_HEAD_ATTACK, FC_HEAD_PRAYER FC_PUFFER_SUPPLY_HEADS }
+#define FC_PUFFER_ACT_SIZES \
+    { FC_MOVE_DIM, FC_ATTACK_DIM, FC_PRAYER_DIM FC_PUFFER_SUPPLY_DIMS }
+#define FC_PUFFER_MASK_SIZE     (FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM + \
+                                 FC_CAP_CONSUMABLES * (FC_EAT_DIM + FC_DRINK_DIM))
+#define FC_PUFFER_OBS_SIZE      (FC_POLICY_OBS_SIZE + FC_PUFFER_MASK_SIZE)
+
+static const int FC_PUFFER_ACTION_DIMS[FC_PUFFER_NUM_ATNS] = FC_PUFFER_ACT_SIZES;
+static const int FC_PUFFER_ACTION_HEADS[FC_PUFFER_NUM_ATNS] = FC_PUFFER_HEADS;
 
 
 /* Npc */
@@ -1584,7 +1658,7 @@ static void fc_set_initial_supplies(FcState *state, int sharks, int prayer_doses
         reset_supplies(&state->player, sharks, prayer_doses);
 }
 
-static void fc_items_init(FcPlayer *p, const FcLoadout *loadout) {
+static void fc_items_init(FcPlayer *p, const FcGearPreset *loadout) {
     memset(p->equipment, 0, sizeof(p->equipment));
     for (int i = 0; i < loadout->equipment_count; i++) {
         const FcItemDef *item = fc_item_definition(loadout->equipment[i]);
@@ -1735,26 +1809,88 @@ static void fc_items_spend_ammo(FcPlayer *p) {
 
 /* Loadout */
 
-static const FcLoadout FC_LOADOUT = {
-    .combat_style_profile = 25,   /* bow */
-    .max_hp = 990, .max_prayer = 990,
-    .attack_lvl = 1, .strength_lvl = 1, .defence_lvl = 99,
-    .ranged_lvl = 99, .prayer_lvl = 99, .magic_lvl = 1,
-    .ammo = 50000,                /* dragon arrows */
-    .equipment_count = 10,
-    .equipment = {
-        27235,  /* Masori mask (f) */
-        22109,  /* Ava's assembler */
-        19547,  /* Necklace of anguish */
-        20997,  /* Twisted bow */
-        27238,  /* Masori body (f) */
-        11212,  /* Dragon arrow */
-        27241,  /* Masori chaps (f) */
-        26235,  /* Zaryte vambraces */
-        13237,  /* Pegasian boots */
-        28310,  /* Venator ring */
+/* Gear presets by [env] gear_set_1 name. The first is the default. */
+static const FcGearPreset FC_GEAR_PRESETS[] = {
+    {
+        .name = "tbow_masori", .id = FC_LOADOUT_SOTA_TBOW,
+        .combat_style_profile = 25,   /* bow */
+        .ammo = 50000,                /* dragon arrows */
+        .equipment_count = 10,
+        .equipment = {
+            27235,  /* Masori mask (f) */
+            22109,  /* Ava's assembler */
+            19547,  /* Necklace of anguish */
+            20997,  /* Twisted bow */
+            27238,  /* Masori body (f) */
+            11212,  /* Dragon arrow */
+            27241,  /* Masori chaps (f) */
+            26235,  /* Zaryte vambraces */
+            13237,  /* Pegasian boots */
+            28310,  /* Venator ring */
+        },
     },
 };
+#define FC_GEAR_PRESET_COUNT ((int)(sizeof(FC_GEAR_PRESETS) / sizeof(FC_GEAR_PRESETS[0])))
+
+static const char* const FC_SKILL_NAMES[FC_SKILL_COUNT] = {
+    "attack", "strength", "defence", "ranged", "magic", "prayer", "hitpoints"
+};
+static const int FC_DEFAULT_LEVELS[FC_SKILL_COUNT] = {1, 1, 99, 99, 1, 99, 99};
+
+static int fc_gear_preset_find(const char* name) {
+    for (int i = 0; i < FC_GEAR_PRESET_COUNT; i++)
+        if (strcmp(FC_GEAR_PRESETS[i].name, name) == 0) return i;
+    return -1;
+}
+
+static const FcGearPreset* fc_gear_preset_by_id(int id) {
+    for (int i = 0; i < FC_GEAR_PRESET_COUNT; i++)
+        if (FC_GEAR_PRESETS[i].id == id) return &FC_GEAR_PRESETS[i];
+    return &FC_GEAR_PRESETS[0];
+}
+
+static FcScenario fc_default_scenario(void) {
+    FcScenario scenario = {0};
+    memcpy(scenario.levels, FC_DEFAULT_LEVELS, sizeof(scenario.levels));
+    return scenario;
+}
+
+/* Every level is 1-99 and gear set 1's items are wearable at those levels.
+ * Returns 0, or -1 with the reason in err. Supplies are clamped instead. */
+static int fc_scenario_check(const FcScenario* scenario, char* err, size_t err_size) {
+    for (int s = 0; s < FC_SKILL_COUNT; s++) {
+        if (scenario->levels[s] < 1 || scenario->levels[s] > 99) {
+            snprintf(err, err_size, "%s_level = %d: levels must be 1 to 99",
+                     FC_SKILL_NAMES[s], scenario->levels[s]);
+            return -1;
+        }
+    }
+    if (scenario->gear_set < 0 || scenario->gear_set >= FC_GEAR_PRESET_COUNT) {
+        snprintf(err, err_size, "gear_set_1: unknown gear preset index %d",
+                 scenario->gear_set);
+        return -1;
+    }
+    const FcGearPreset* preset = &FC_GEAR_PRESETS[scenario->gear_set];
+    for (int i = 0; i < preset->equipment_count; i++) {
+        const FcItemDef* item = fc_item_definition(preset->equipment[i]);
+        const struct { int need, skill; } reqs[] = {
+            {item->ranged_level, FC_SKILL_RANGED},
+            {item->defence_level, FC_SKILL_DEFENCE},
+            {item->hitpoints_level, FC_SKILL_HITPOINTS},
+        };
+        for (unsigned r = 0; r < sizeof(reqs) / sizeof(reqs[0]); r++) {
+            if (scenario->levels[reqs[r].skill] < reqs[r].need) {
+                snprintf(err, err_size,
+                         "gear_set_1 = %s: %s needs %d %s, but %s_level = %d",
+                         preset->name, item->name, reqs[r].need,
+                         FC_SKILL_NAMES[reqs[r].skill], FC_SKILL_NAMES[reqs[r].skill],
+                         scenario->levels[reqs[r].skill]);
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
 
 
 /* Npc */
@@ -3434,24 +3570,24 @@ static void setup_arena(FcState* state) {
     memcpy(state->los_flags, g_los_cache.cells, sizeof(state->los_flags));
 }
 
-/* Player initialization — the loadout is the combat-state authority. The
- * simulation test checks the loadout itself. */
-static void apply_loadout_combat_fields(FcPlayer* p,
-                                        const FcLoadout* loadout) {
-    p->max_hp = loadout->max_hp;
-    p->max_prayer = loadout->max_prayer;
-    p->attack_level = loadout->attack_lvl;
-    p->strength_level = loadout->strength_lvl;
-    p->defence_level = loadout->defence_lvl;
-    p->ranged_level = loadout->ranged_lvl;
-    p->prayer_level = loadout->prayer_lvl;
-    p->magic_level = loadout->magic_lvl;
-    fc_items_init(p, loadout);
+/* Player initialization — the levels and gear preset are the combat-state
+ * authority. The simulation test checks the presets themselves. */
+static void apply_levels(FcPlayer* p, const int levels[FC_SKILL_COUNT]) {
+    p->attack_level = levels[FC_SKILL_ATTACK];
+    p->strength_level = levels[FC_SKILL_STRENGTH];
+    p->defence_level = levels[FC_SKILL_DEFENCE];
+    p->ranged_level = levels[FC_SKILL_RANGED];
+    p->magic_level = levels[FC_SKILL_MAGIC];
+    p->prayer_level = levels[FC_SKILL_PRAYER];
+    p->max_hp = levels[FC_SKILL_HITPOINTS] * 10;
+    p->max_prayer = levels[FC_SKILL_PRAYER] * 10;
 }
 
-/* fc_reset has zeroed the player; this sets the non-zero starting values. */
+/* fc_reset has zeroed the player; this sets the non-zero starting values
+ * with the default levels and gear. */
 static void init_player(FcPlayer* p) {
-    apply_loadout_combat_fields(p, &FC_LOADOUT);
+    apply_levels(p, FC_DEFAULT_LEVELS);
+    fc_items_init(p, &FC_GEAR_PRESETS[0]);
     p->x = FC_ARENA_WIDTH / 2;
     p->y = FC_ARENA_HEIGHT / 2;
     p->current_hp = p->max_hp;
@@ -3461,9 +3597,24 @@ static void init_player(FcPlayer* p) {
     set_player_target(p, -1);
 }
 
+/* Reset-time configuration from [env], applied after fc_reset: the scenario's
+ * levels, gear set 1 and supplies, at full hitpoints and prayer. With the
+ * default scenario this only empties the inventory. */
+static void fc_apply_scenario(FcState* state, const FcScenario* scenario) {
+    if (!state || state->tick != 0) return;
+    FcPlayer* p = &state->player;
+    const FcGearPreset* preset = &FC_GEAR_PRESETS[scenario->gear_set];
+    apply_levels(p, scenario->levels);
+    fc_items_init(p, preset);
+    reset_supplies(p, scenario->sharks, scenario->prayer_doses);
+    p->current_hp = p->max_hp;
+    p->current_prayer = p->max_prayer;
+    state->active_loadout = preset->id;
+}
+
 void fc_init(FcState* state) {
     memset(state, 0, sizeof(FcState));
-    state->active_loadout = FC_LOADOUT_SOTA_TBOW;
+    state->active_loadout = FC_GEAR_PRESETS[0].id;
 }
 
 /* Start an episode from the seed: seeds the RNG, selects a random wave
@@ -3483,7 +3634,7 @@ static void fc_reset(FcState* state, uint32_t seed) {
 
     /* Initialize player */
     init_player(&state->player);
-    state->active_loadout = FC_LOADOUT_SOTA_TBOW;
+    state->active_loadout = FC_GEAR_PRESETS[0].id;
     state->render_events.player_attack_target_npc_slot = -1;
     state->render_events.player_move_start_x = state->player.x;
     state->render_events.player_move_start_y = state->player.y;
@@ -3897,6 +4048,16 @@ void fc_write_obs(const FcState* state, float* out) {
         : 0.0f;
     meta[FC_OBS_META_REWARDABLE_NPC_KILL] =
         rewardable_npc_kills_this_tick(state) > 0 ? 1.0f : 0.0f;
+
+#if FC_CAP_CONSUMABLES
+    float* supply = out + FC_OBS_SUPPLY_START;
+    supply[FC_OBS_SUPPLY_FOOD_TIMER] =
+        clamp01((float)p->food_timer / (float)FC_FOOD_COOLDOWN_TICKS);
+    supply[FC_OBS_SUPPLY_POTION_TIMER] =
+        clamp01((float)p->potion_timer / (float)FC_POTION_COOLDOWN_TICKS);
+    supply[FC_OBS_SUPPLY_COMBO_TIMER] =
+        clamp01((float)p->combo_timer / (float)FC_COMBO_EAT_TICKS);
+#endif
 }
 
 void fc_write_mask(const FcState* state, float* out) {
@@ -4115,7 +4276,7 @@ static void apply_player_supplies(FcState* state, int eat_action,
 
     if (drink_action == FC_DRINK_PRAYER_POT &&
         fc_drink_action_valid(state, drink_action)) {
-        int restore = fc_prayer_potion_restore(FC_LOADOUT.prayer_lvl);
+        int restore = fc_prayer_potion_restore(player->prayer_level);
         player->current_prayer += restore;
         if (player->current_prayer > player->max_prayer) {
             player->current_prayer = player->max_prayer;

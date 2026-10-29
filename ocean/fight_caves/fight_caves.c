@@ -141,13 +141,26 @@ static int replay(int argc, char** argv, int check_only) {
     return 0;
 }
 
+/* Prints what this build's policy sees and does, and the scenario the config
+ * selects, or why the config does not fit this build. */
+static int describe(int argc, char** argv) {
+    Ini ini = {0};
+    puf_ini_load_env(&ini, "fight_caves", argc - 2, argv + 2);
+    int status = fc_describe_env(puf_ini_section(&ini, "env", 0));
+    puf_ini_free(&ini);
+    return status;
+}
+
 #ifndef FC_CPU_TEST
 int main(int argc, char** argv) {
     if (argc > 1 && (strcmp(argv[1], "eval") == 0 || strcmp(argv[1], "check") == 0))
         return replay(argc, argv, strcmp(argv[1], "check") == 0);
+    if (argc > 1 && strcmp(argv[1], "describe") == 0)
+        return describe(argc, argv);
     if (argc == 2 && strcmp(argv[1], "--help") == 0)
         printf("CPU tools: %s check CHECKPOINT.bin | "
-               "eval CHECKPOINT.bin [--headless] [--section.key=value ...]\n", argv[0]);
+               "eval CHECKPOINT.bin [--headless] [--section.key=value ...] | "
+               "describe [--env.key=value ...]\n", argv[0]);
     return fc_viewer_main(argc, argv);
 }
 #endif

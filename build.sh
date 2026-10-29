@@ -187,6 +187,11 @@ elif [ "$ENV" = "fight_caves" ]; then
         exit 1
     fi
     python3 "$SRC_DIR/tools.py" setup
+    # The capabilities in config/fight_caves.ini shape the action heads and
+    # observation, so every Fight Caves compile gets the same flags.
+    FC_CAP_FLAGS_LINE=$(python3 "$SRC_DIR/tools.py" cflags)
+    read -ra FC_CAP_FLAGS <<< "$FC_CAP_FLAGS_LINE"
+    EXTRA_CFLAGS+=("${FC_CAP_FLAGS[@]}")
     EXTRA_SRC="$SRC_DIR/binding.c"
 elif [ "$ENV" = "nethack" ]; then
     SRC_DIR="ocean/$ENV"
@@ -480,7 +485,7 @@ FC_BINDING_OBJECT=""
 if [ "$ENV" = "fight_caves" ]; then
     $CC $LINK_OPT "${CLANG_WARN[@]}" "${SIMD_FLAGS[@]}" -std=c11 \
         -D_POSIX_C_SOURCE=200809L -DPLATFORM_DESKTOP \
-        -I. -Isrc -I$SRC_DIR -Ivendor "${INCLUDES[@]}" \
+        -I. -Isrc -I$SRC_DIR -Ivendor "${INCLUDES[@]}" "${FC_CAP_FLAGS[@]}" \
         -c "$SRC_DIR/binding.c" -o build/fight_caves_binding.o
     FC_BINDING_OBJECT="build/fight_caves_binding.o"
     EXTRA_SRC="$FC_BINDING_OBJECT"

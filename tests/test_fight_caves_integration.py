@@ -58,7 +58,7 @@ def native_suites(executable, tmp_path_factory):
     return load_module(E2E).build_native_tests(REPO_ROOT, output, native_command)
 
 
-@pytest.mark.parametrize("suite", ["simulation", "linkage"])
+@pytest.mark.parametrize("suite", ["simulation", "simulation-capabilities", "linkage"])
 def test_native_suite(native_suites, suite):
     native_command(suite, native_suites[suite])
 
@@ -218,11 +218,28 @@ def test_config_contains_only_supported_native_settings():
     core = (ENV_ROOT / "core.h").read_text()
     env_keys = set(re.findall(r'kwargs,\s*"([^"]+)"', binding))
     reward_keys = set(re.findall(r'\{"(\w+)",\s*offsetof\(FcRewardParams,', core))
-    assert set(config["env"]) <= env_keys | reward_keys
+    capability_keys = set(re.findall(r'\{"(\w+)",\s*FC_CAP_\w+\}', binding))
+    skills = re.search(r"FC_SKILL_NAMES\[FC_SKILL_COUNT\] = \{([^}]*)\}", core).group(1)
+    level_keys = {f"{skill}_level" for skill in re.findall(r'"(\w+)"', skills)}
+    # The build (tools.py cflags) and puf_init's check know the same capabilities.
+    assert capability_keys == set(load_module(TOOLS).CAPABILITIES)
+    assert set(config["env"]) <= env_keys | reward_keys | capability_keys | level_keys
     for section in config.sections():
         if section == "env":
             continue
         assert set(config[section]) <= set(default[section]), section
+
+
+def test_cflags_compile_in_the_configured_capabilities(tmp_path):
+    tools = load_module(TOOLS)
+    config = tmp_path / "fight_caves.ini"
+    config.write_text("[env]\nw_progress = 0.001\n")
+    assert tools.capability_flags(config) == ["-DFC_CAP_CONSUMABLES=0"]
+    config.write_text("[env]\nconsumables = 1  # eat and drink\n")
+    assert tools.capability_flags(config) == ["-DFC_CAP_CONSUMABLES=1"]
+    config.write_text("[env]\nconsumables = 2\n")
+    with pytest.raises(tools.ConfigError, match="consumables = 2: must be 0 or 1"):
+        tools.capability_flags(config)
 
 
 def test_asset_manifest_pins_both_bundles():

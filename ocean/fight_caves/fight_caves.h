@@ -44,10 +44,10 @@ struct Env {
     FcState state;
     ViewerState* viewer;         /* NULL throughout headless training */
 
-    /* Reward weights and shaping configuration, initialized once per env. */
+    /* Reward weights, shaping and the starting scenario, read from [env]
+     * once per env. */
     FcRewardParams reward_params;
-    int initial_sharks;
-    int initial_prayer_doses;
+    FcScenario scenario;
     FcRewardRuntime reward_runtime;
 
     /* RNG seed counter (increments each episode for variety) */
@@ -57,6 +57,10 @@ typedef Env FightCaves;
 
 /* Manual play: implemented in viewer.c, run by fight_caves.c's main. */
 int fc_viewer_main(int argc, char** argv);
+
+/* Prints the capabilities this build has and the scenario an [env] section
+ * selects, or why that config is unusable (then returns nonzero). */
+int fc_describe_env(Dict* kwargs);
 
 #ifdef __cplusplus
 }

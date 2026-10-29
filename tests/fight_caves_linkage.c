@@ -24,7 +24,7 @@ static const size_t layout[] = {
     offsetof(Env, log), offsetof(Env, agents), offsetof(Env, num_agents),
     offsetof(Env, rng), offsetof(Env, tag), offsetof(Env, boundary_reached),
     offsetof(Env, state), offsetof(Env, viewer), offsetof(Env, reward_params),
-    offsetof(Env, initial_sharks), offsetof(Env, initial_prayer_doses),
+    offsetof(Env, scenario), sizeof(FcScenario),
     offsetof(Env, reward_runtime), offsetof(Env, seed_counter),
     sizeof(Agent), FC_TEST_ALIGNOF(Agent), offsetof(Agent, observations),
     offsetof(Agent, actions), offsetof(Agent, rewards), offsetof(Agent, terminals),
