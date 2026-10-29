@@ -1805,7 +1805,7 @@ static ModelSet *compose(ModelEntry *parts[], int count, uint32_t id) {
 }
 
 /* The fc_player.parts record of a worn item, or -1. The pinned bundle has
- * none for the magic presets' items but the Barrows gloves. */
+ * none for the magic and melee presets' items but the Barrows gloves. */
 static int appearance_record(const FcPlayerAppearance *appearance, int item_id) {
     for (int record = 0; record < appearance->record_count; record++)
         if (appearance->records[record].item_id == (uint32_t)item_id) return record;
@@ -1936,7 +1936,8 @@ static const FcUiStoneRef FC_OSRS_SIDE_STONES[] = {
     {-1, "side_stone_highlights_3", "side_icon_music",    {203, 0, 38, 36}, {204, 0, 33, 36}},
 };
 
-/* Button, icon and label rectangles of a weapon's three combat styles. */
+/* Button, icon and label rectangles of a weapon's combat styles, filled in
+ * this order (RuneC's RUNEC_OSRS_COMBAT_STYLES). */
 typedef struct FcUiCombatStyleRef {
     Rectangle rect;
     Rectangle icon_rect;
@@ -1947,13 +1948,15 @@ static const FcUiCombatStyleRef FC_OSRS_COMBAT_STYLES[] = {
     {{20,  46, 68, 47}, {37,  51, 34, 24}, {20,  67, 68, 13}},
     {{102, 46, 68, 47}, {119, 51, 34, 24}, {102, 76, 68, 13}},
     {{20,  99, 68, 47}, {37, 104, 34, 24}, {20, 129, 68, 13}},
+    {{102, 99, 68, 47}, {119, 104, 34, 24}, {102, 129, 68, 13}},
 };
 
 static const Rectangle FC_OSRS_COMBAT_HEADER = {10, 0, 170, 44};
 static const Rectangle FC_OSRS_COMBAT_TITLE = {10, 6, 170, 14};
 static const Rectangle FC_OSRS_COMBAT_LEVEL = {10, 26, 170, 12};
 static const Rectangle FC_OSRS_COMBAT_CATEGORY = {0, 233, 190, 28};
-/* RuneC's autocast box, beside the third style. */
+/* RuneC's autocast box, beside the third style where a melee weapon has its
+ * fourth. */
 static const Rectangle FC_OSRS_COMBAT_AUTOCAST = {102, 99, 68, 47};
 
 /* Ui Assets */
@@ -2019,12 +2022,24 @@ static const char *const g_ui_asset_names[] = {
     "miscgraphics_3",
     "combatboxes_0",
     "combatboxes_1",
+    "combaticons_4",
+    "combaticons_5",
+    "combaticons_6",
+    "combaticons_7",
+    "combaticons_10",
+    "combaticons_11",
+    "combaticons_12",
+    "combaticons_13",
     "combaticons_14",
     "combaticons_15",
     "combaticons_16",
     "combaticons_19",
+    "combaticons2_8",
+    "combaticons2_9",
     "combaticons2_13",
     "combaticons2_14",
+    "combaticons2_18",
+    "combaticons2_19",
     "combaticons2_5",
     "combaticons2_6",
     "combaticons2_7",
@@ -2430,7 +2445,7 @@ int fc_menu_action_at(FcMenuLayout menu, int rows, int x, int y) {
 #define FC_UI_CONTEXT_ACTIONS 5
 #define FC_UI_MINIMAP_DOTS 256
 #define FC_UI_ITEM_ICON_CACHE 512
-#define FC_UI_COMBAT_STYLE_COUNT 3
+#define FC_UI_COMBAT_STYLE_COUNT 4
 
 typedef enum FcUiTab {
     FC_UI_TAB_NONE = -1,
@@ -2490,17 +2505,19 @@ typedef struct FcUiItemIcon {
     Texture2D texture;
 } FcUiItemIcon;
 
+/* One combat style: RuneC's attack style index it is (attack_style_idx), its
+ * name, stance and icon. A NULL label is no style. */
 typedef struct FcUiCombatStyleDef {
+    int style_index;
     const char *label;
     const char *mode;
     const char *icon_asset;
 } FcUiCombatStyleDef;
 
 /* A weapon category's combat styles. The tab only shows them: the active
- * style is the one the simulation attacks with. */
+ * style is the one the simulation attacks with (FcUiState.combat_style). */
 typedef struct FcUiCombatProfile {
     int weapon_category;
-    int active_style;
     FcUiCombatStyleDef styles[FC_UI_COMBAT_STYLE_COUNT];
 } FcUiCombatProfile;
 
@@ -2528,6 +2545,7 @@ typedef struct FcUiState {
     FcUiSlot equipment[FC_EQUIPMENT_SLOTS];
     char combat_weapon_name[64];
     const FcUiCombatProfile *combat_profile;
+    int combat_style;             /* the attack style index the attacks use */
     /* A staff's autocast box: shown with autocast_box, selected while the
      * attacks cast autocast_name. */
     int autocast_box, casting;
@@ -2612,36 +2630,62 @@ static const char *g_worn_icon_names[FC_EQUIPMENT_SLOTS] = {
 /*
  * Exact b237 combat_interface_weapon_category DB rows from the local
  * Joshua-F dump for the weapon categories the player can have
- * (FcGearPreset.combat_style_profile, or 0 when unarmed), so weapon tabs use the
- * same labels/icons as OSRS. Core has no style choice: it punches unarmed,
- * always fires ranged weapons on Rapid and bashes with a staff that is not
- * casting.
+ * (FcGearPreset.combat_style_profile, RuneC's weapon type, or 0 when
+ * unarmed), as RuneC's viewer (rc-viewer/ui.c) maps them, so weapon tabs use
+ * the same labels/icons as OSRS. The core fires ranged weapons on Rapid and
+ * punches, bashes or attacks with a melee weapon in the worn gear preset's
+ * attack style. RuneC's core attacks with the Scythe of vitur's Jab as an
+ * Aggressive crush (fc_melee_style) where this row says Controlled.
  */
 static const FcUiCombatProfile g_combat_profiles[] = {
-    {0, 0, {    /* unarmed: OSRS category 0 */
-        {"Punch", "Accurate", "combaticons_14"},
-        {"Kick", "Aggressive", "combaticons_15"},
-        {"Block", "Defensive", "combaticons_16"},
+    {0, {    /* unarmed: OSRS category 0 */
+        {0, "Punch", "Accurate", "combaticons_14"},
+        {1, "Kick", "Aggressive", "combaticons_15"},
+        {3, "Block", "Defensive", "combaticons_16"},
     }},
-    {9, 1, {    /* crossbow: OSRS category 5 */
-        {"Accurate", "Accurate", "combaticons2_5"},
-        {"Rapid", "Rapid", "combaticons2_6"},
-        {"Longrange", "Longrange", "combaticons2_7"},
+    {9, {    /* crossbow: OSRS category 5 */
+        {0, "Accurate", "Accurate", "combaticons2_5"},
+        {1, "Rapid", "Rapid", "combaticons2_6"},
+        {3, "Longrange", "Longrange", "combaticons2_7"},
     }},
-    {23, 1, {   /* thrown: OSRS category 19 */
-        {"Accurate", "Accurate", "combaticons2_10"},
-        {"Rapid", "Rapid", "combaticons2_11"},
-        {"Longrange", "Longrange", "combaticons2_12"},
+    {23, {   /* thrown: OSRS category 19 */
+        {0, "Accurate", "Accurate", "combaticons2_10"},
+        {1, "Rapid", "Rapid", "combaticons2_11"},
+        {3, "Longrange", "Longrange", "combaticons2_12"},
     }},
-    {25, 1, {   /* bow: OSRS category 3 */
-        {"Accurate", "Accurate", "combaticons2_15"},
-        {"Rapid", "Rapid", "combaticons2_16"},
-        {"Longrange", "Longrange", "combaticons2_17"},
+    {25, {   /* bow: OSRS category 3 */
+        {0, "Accurate", "Accurate", "combaticons2_15"},
+        {1, "Rapid", "Rapid", "combaticons2_16"},
+        {3, "Longrange", "Longrange", "combaticons2_17"},
     }},
-    {22, 0, {   /* staff: OSRS category 18, as RuneC's viewer shows it */
-        {"Bash", "Accurate", "combaticons2_13"},
-        {"Pound", "Aggressive", "combaticons2_14"},
-        {"Focus", "Defensive", "combaticons_19"},
+    {22, {   /* staff: OSRS category 18, as RuneC's viewer shows it */
+        {0, "Bash", "Accurate", "combaticons2_13"},
+        {1, "Pound", "Aggressive", "combaticons2_14"},
+        {3, "Focus", "Defensive", "combaticons_19"},
+    }},
+    {FC_WEAPON_TYPE_SLASH_SWORD, {   /* OSRS category 9 */
+        {0, "Chop", "Accurate", "combaticons_6"},
+        {1, "Slash", "Aggressive", "combaticons_5"},
+        {2, "Lunge", "Controlled", "combaticons_7"},
+        {3, "Block", "Defensive", "combaticons_4"},
+    }},
+    {FC_WEAPON_TYPE_SPIKED, {        /* OSRS category 16 */
+        {0, "Pound", "Accurate", "combaticons_13"},
+        {1, "Pummel", "Aggressive", "combaticons_11"},
+        {2, "Spike", "Controlled", "combaticons_12"},
+        {3, "Block", "Defensive", "combaticons_10"},
+    }},
+    {FC_WEAPON_TYPE_STAB_SWORD, {    /* OSRS category 17 */
+        {0, "Stab", "Accurate", "combaticons_7"},
+        {1, "Lunge", "Aggressive", "combaticons_6"},
+        {2, "Slash", "Controlled", "combaticons_5"},
+        {3, "Block", "Defensive", "combaticons_4"},
+    }},
+    {FC_WEAPON_TYPE_SCYTHE, {        /* OSRS category 14 */
+        {0, "Reap", "Accurate", "combaticons2_19"},
+        {1, "Chop", "Aggressive", "combaticons2_9"},
+        {2, "Jab", "Controlled", "combaticons2_18"},
+        {3, "Block", "Defensive", "combaticons2_8"},
     }},
 };
 
@@ -3555,10 +3599,12 @@ static void draw_combat(const FcUiState *ui, const FcUiLayout *layout) {
                (Color){75, 64, 45, 180});
 
     const FcUiCombatProfile *profile = ui->combat_profile;
-    for (int i = 0; i < FC_UI_COMBAT_STYLE_COUNT; i++) {
+    const char *mode = "None";
+    for (int i = 0; i < FC_UI_COMBAT_STYLE_COUNT && profile->styles[i].label; i++) {
         const FcUiCombatStyleDef *option = &profile->styles[i];
         const FcUiCombatStyleRef *style = &FC_OSRS_COMBAT_STYLES[i];
-        int active = i == profile->active_style && !ui->casting;
+        int active = option->style_index == ui->combat_style && !ui->casting;
+        if (option->style_index == ui->combat_style) mode = option->mode;
         Rectangle button = side_ref_rect(layout, style->rect);
         draw_combat_box(ui, button, active);
         draw_asset_centered(ui, option->icon_asset, side_ref_rect(layout, style->icon_rect),
@@ -3584,7 +3630,7 @@ static void draw_combat(const FcUiState *ui, const FcUiLayout *layout) {
 
     char category[64];
     snprintf(category, sizeof(category), "Attack style: %s", ui->casting ? "Casting"
-             : profile->styles[profile->active_style].mode);
+             : mode);
     draw_centered_text(ui, category, side_ref_rect(layout, FC_OSRS_COMBAT_CATEGORY),
                        12, OSRS_ORANGE);
 }
@@ -4140,7 +4186,7 @@ typedef struct {
 #define JAD_ANIM_MELEE 2655
 #define JAD_ANIM_MAGIC 2656
 
-/* Each ranged weapon's animations, by item id. Projectile columns follow
+/* Each wielded weapon's animations, by item id. Projectile columns follow
  * FcProjectileProfile. */
 static const struct {
     int item_id;
@@ -4209,6 +4255,35 @@ static const struct {
         PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
         PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
         1210, 4505, {0},
+    }},
+    /* The melee weapons' stances (player_pose_sets.toml: the human ones for
+     * the movements it does not list, and for the Dragon scimitar and Dual
+     * macuahuitl, which it does not list) and the attack of the presets'
+     * style, attack style 0 (data/defs/combat_visuals.tsv, stance_idx 0).
+     * They fire nothing. */
+    {4587, {    /* Dragon scimitar */
+        PLAYER_ANIM_HUMAN_IDLE, PLAYER_ANIM_HUMAN_WALK,
+        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
+        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
+        PLAYER_ANIM_HUMAN_RUN, 390, {0},
+    }},
+    {28997, {   /* Dual macuahuitl */
+        PLAYER_ANIM_HUMAN_IDLE, PLAYER_ANIM_HUMAN_WALK,
+        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
+        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
+        PLAYER_ANIM_HUMAN_RUN, 10989, {0},
+    }},
+    {26219, {   /* Osmumten's fang: sword-ready */
+        809, PLAYER_ANIM_HUMAN_WALK,
+        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
+        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
+        PLAYER_ANIM_HUMAN_RUN, 9471, {0},
+    }},
+    {22325, {   /* Scythe of vitur: scythe */
+        8057, PLAYER_ANIM_HUMAN_WALK,
+        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
+        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
+        PLAYER_ANIM_HUMAN_RUN, 8056, {0},
     }},
 };
 
@@ -4623,7 +4698,7 @@ static uint16_t profile_pose_sequence(const FcPlayerVisualProfile *profile,
 }
 
 /* The weapon's stance sequence, or the human one when the pinned assets
- * lack it (the staves' stances). */
+ * lack it (the staves' and melee weapons' stances). */
 static uint16_t player_pose_sequence(AnimCache *cache,
                                      const FcPlayerVisualProfile *profile,
                                      FcVisualLocomotion locomotion) {
@@ -6829,11 +6904,12 @@ static int load_ui_item_icon(FcUiState* ui, uint32_t item_id) {
 
 /* Whether the pinned viewer bundle was made with an item's icon and worn
  * model: the ranged gear presets' equipment and the supplies, not the magic
- * presets' equipment or the runes, which it predates. */
+ * and melee presets' equipment or the runes, which it predates. */
 static int fc_viewer_bundle_has_item(int item_id) {
     for (int p = 0; p < FC_GEAR_PRESET_COUNT; p++) {
         const FcGearPreset *preset = &FC_GEAR_PRESETS[p];
-        if (preset->autocast) continue;
+        int kind = fc_gear_preset_weapon(preset)->weapon_kind;
+        if (kind == FC_WEAPON_STAFF || kind == FC_WEAPON_MELEE) continue;
         for (int i = 0; i < preset->equipment_count; i++)
             if (preset->equipment[i] == item_id) return 1;
     }
@@ -6856,8 +6932,8 @@ static int load_fc_ui_item_icons(ViewerState* v) {
             missing++;
     }
     if (missing)
-        fprintf(stderr, "%d magic item and rune icons are not in the viewer assets; "
-                "those items show their names\n", missing);
+        fprintf(stderr, "%d magic and melee item and rune icons are not in the viewer "
+                "assets; those items show their names\n", missing);
     return ready;
 }
 
@@ -6910,6 +6986,9 @@ static void sync_fc_ui_status(ViewerState* v) {
     fc_ui_set_combat_weapon_name(&v->ui, weapon ? weapon->name : "Unarmed");
     v->ui.combat_profile = combat_profile_for_weapon_category(
         weapon ? fc_gear_preset_by_id(v->state.active_loadout)->combat_style_profile : 0);
+    /* Rapid for a ranged weapon, else the worn preset's attack style. */
+    v->ui.combat_style = fc_player_weapon_type(p) < 0 ? 1
+        : fc_gear_preset_by_id(v->state.active_loadout)->attack_style;
     /* A staff's autocast box and spell. */
     v->ui.autocast_box = weapon && weapon->weapon_kind == FC_WEAPON_STAFF;
     v->ui.casting = fc_player_cast_spell(&v->state) >= 0;

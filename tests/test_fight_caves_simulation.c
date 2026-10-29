@@ -175,22 +175,26 @@ static FcScenario preset_scenario(int preset) {
     return scenario;
 }
 
-/* The levels each magic preset was made for, as fc-rl-4.0-dlc's loadouts
- * table gives them, in FcSkill order: Attack, Strength, Defence, Ranged,
- * Magic, Prayer, Hitpoints. */
-static const struct { const char *name; int levels[FC_SKILL_COUNT]; } MAGIC_LEVELS[] = {
+/* The levels each magic and melee preset was made for, as fc-rl-4.0-dlc's
+ * loadouts table (docs/loadouts.md) gives them, in FcSkill order: Attack,
+ * Strength, Defence, Ranged, Magic, Prayer, Hitpoints. */
+static const struct { const char *name; int levels[FC_SKILL_COUNT]; } PRESET_LEVELS[] = {
     {"smoke_staff_mystic", {60, 60, 60, 60, 60, 43, 65}},
     {"kodai_virtus", {80, 80, 80, 80, 94, 80, 90}},
     {"harmonised_ancestral", {99, 99, 99, 99, 99, 99, 99}},
+    {"dragon_scimitar_torso", {60, 60, 60, 60, 60, 43, 65}},
+    {"macuahuitl_blood_moon", {70, 75, 70, 70, 70, 70, 80}},
+    {"fang_bandos", {82, 85, 80, 80, 80, 80, 90}},
+    {"scythe_torva", {99, 99, 99, 99, 99, 99, 99}},
 };
-#define MAGIC_PRESET_COUNT ((int)(sizeof(MAGIC_LEVELS) / sizeof(MAGIC_LEVELS[0])))
+#define PRESET_LEVEL_COUNT ((int)(sizeof(PRESET_LEVELS) / sizeof(PRESET_LEVELS[0])))
 
-/* preset_scenario for a magic preset, at its levels. */
-static FcScenario magic_scenario(const char *name) {
+/* preset_scenario for a preset, at its PRESET_LEVELS levels if it has them. */
+static FcScenario levels_scenario(const char *name) {
     FcScenario scenario = preset_scenario(fc_gear_preset_find(name));
-    for (int i = 0; i < MAGIC_PRESET_COUNT; i++)
-        if (strcmp(MAGIC_LEVELS[i].name, name) == 0)
-            memcpy(scenario.levels, MAGIC_LEVELS[i].levels, sizeof(scenario.levels));
+    for (int i = 0; i < PRESET_LEVEL_COUNT; i++)
+        if (strcmp(PRESET_LEVELS[i].name, name) == 0)
+            memcpy(scenario.levels, PRESET_LEVELS[i].levels, sizeof(scenario.levels));
     return scenario;
 }
 
@@ -343,6 +347,41 @@ static int preset_totals(void) {
             .weapon_speed = 5, .weapon_range = 1, .weapon_uses_ammo = 0,
             .crystal_piece_mask = 0, .ammo_count = 0,
         },
+        /* The melee presets, from RuneC's items.bin rows (the first three
+         * equal fc-rl-4.0-dlc's totals; scythe_torva's Avernic treads (max)
+         * have no bonuses in RuneC), with their crush and Strength bonuses. */
+        [FC_LOADOUT_DRAGON_SCIMITAR_TORSO] = {
+            .ranged_attack_bonus = 9, .ranged_strength_bonus = 0, .defence_stab = 240,
+            .defence_slash = 260, .defence_crush = 242, .defence_magic = 18,
+            .defence_ranged = 198, .prayer_bonus = 10, .weapon_kind = FC_WEAPON_MELEE,
+            .weapon_speed = 4, .weapon_range = 1, .weapon_uses_ammo = 0,
+            .crystal_piece_mask = 0, .ammo_count = 0,
+            .melee_attack_bonus = 44, .melee_strength_bonus = 111,
+        },
+        [FC_LOADOUT_MACUAHUITL_BLOOD_MOON] = {
+            .ranged_attack_bonus = 3, .ranged_strength_bonus = 0, .defence_stab = 164,
+            .defence_slash = 216, .defence_crush = 227, .defence_magic = 111,
+            .defence_ranged = 192, .prayer_bonus = 7, .weapon_kind = FC_WEAPON_MELEE,
+            .weapon_speed = 4, .weapon_range = 1, .weapon_uses_ammo = 0,
+            .crystal_piece_mask = 0, .ammo_count = 0,
+            .melee_attack_bonus = 144, .melee_strength_bonus = 127,
+        },
+        [FC_LOADOUT_FANG_BANDOS] = {
+            .ranged_attack_bonus = -37, .ranged_strength_bonus = 0, .defence_stab = 268,
+            .defence_slash = 252, .defence_crush = 278, .defence_magic = -1,
+            .defence_ranged = 267, .prayer_bonus = 11, .weapon_kind = FC_WEAPON_MELEE,
+            .weapon_speed = 5, .weapon_range = 1, .weapon_uses_ammo = 0,
+            .crystal_piece_mask = 0, .ammo_count = 0,
+            .melee_attack_bonus = 62, .melee_strength_bonus = 164,
+        },
+        [FC_LOADOUT_SCYTHE_TORVA] = {
+            .ranged_attack_bonus = -53, .ranged_strength_bonus = 0, .defence_stab = 273,
+            .defence_slash = 269, .defence_crush = 280, .defence_magic = -10,
+            .defence_ranged = 313, .prayer_bonus = 9, .weapon_kind = FC_WEAPON_MELEE,
+            .weapon_speed = 5, .weapon_range = 1, .weapon_uses_ammo = 0,
+            .crystal_piece_mask = 0, .ammo_count = 0,
+            .melee_attack_bonus = 75, .melee_strength_bonus = 139,
+        },
     };
     int pinned = 0;
     for (unsigned id = 0; id < sizeof(expected) / sizeof(expected[0]); id++)
@@ -370,6 +409,9 @@ static int preset_totals(void) {
         CHECK(p.weapon_uses_ammo == e->weapon_uses_ammo);
         CHECK(p.crystal_piece_mask == e->crystal_piece_mask);
         CHECK(p.ammo_count == e->ammo_count);
+        if (e->weapon_kind == FC_WEAPON_MELEE)
+            CHECK(p.melee_attack_bonus == e->melee_attack_bonus &&
+                  p.melee_strength_bonus == e->melee_strength_bonus);
     }
     return 0;
 }
@@ -398,10 +440,22 @@ static int constant_tables(void) {
         fc_items_init(&player, preset);
         CHECK(combat_profile_for_weapon_category(preset->combat_style_profile)
                   ->weapon_category == preset->combat_style_profile);
-        /* A magic preset's projectile is its spell's. */
+        /* A magic preset's projectile is its spell's; a melee weapon fires
+         * none, has its RuneC weapon type as its combat tab and attacks in
+         * an attack style it has. Every other preset punches or bashes
+         * Accurate. */
+        const FcItemDef *weapon = fc_gear_preset_weapon(preset);
+        int melee = weapon->weapon_kind == FC_WEAPON_MELEE;
         CHECK((preset->autocast
                ? FC_SPELL_VISUALS[preset->autocast - 1].projectile.travel_spot
-               : fc_player_visual_profile(&player)->projectile.travel_spot) != 0);
+               : fc_player_visual_profile(&player)->projectile.travel_spot) != 0 || melee);
+        FcMeleeStyle style;
+        if (melee)
+            CHECK(fc_player_visual_profile(&player)->projectile.travel_spot == 0 &&
+                  preset->combat_style_profile == weapon->weapon_type &&
+                  fc_melee_style(weapon->weapon_type, preset->attack_style, &style));
+        else
+            CHECK(preset->attack_style == 0);
         CHECK(!preset->runes || (preset->autocast && preset->runes == FC_PRESET_RUNE_QUANTITY));
         for (int type = NPC_TZ_KIH; type < NPC_TYPE_COUNT; type++) {
             FcNpc target = {.npc_type = type};
@@ -613,26 +667,26 @@ static int combat(void) {
 }
 
 /* Each preset is wearable at exactly its items' Ranged, Defence, Hitpoints,
- * Magic and Attack requirements and not one level below any of them. At the
- * default levels, or a magic preset's own, it fights: a few hundred ticks of
- * attacking the nearest NPC land hits, and each shot spends one arrow, bolt
- * or loaded dart (the magic tests check the casts and runes). */
+ * Magic, Attack and Strength requirements and not one level below any of
+ * them. At the default levels, or a magic or melee preset's own, it fights: a
+ * few hundred ticks of attacking the nearest NPC land hits, and each shot
+ * spends one arrow, bolt or loaded dart (the magic tests check the casts and
+ * runes, the melee tests the melee attacks). */
 static int gear_presets(void) {
     const int skills[] = {FC_SKILL_RANGED, FC_SKILL_DEFENCE, FC_SKILL_HITPOINTS,
-                          FC_SKILL_MAGIC, FC_SKILL_ATTACK};
+                          FC_SKILL_MAGIC, FC_SKILL_ATTACK, FC_SKILL_STRENGTH};
     const int skill_count = (int)(sizeof(skills) / sizeof(skills[0]));
     char err[256], prefix[64], expected[96];
     for (int p = 0; p < FC_GEAR_PRESET_COUNT; p++) {
         const FcGearPreset *preset = &FC_GEAR_PRESETS[p];
-        FcScenario scenario = preset->runes ? magic_scenario(preset->name)
-                                            : preset_scenario(p);
+        FcScenario scenario = levels_scenario(preset->name);
         FcScenario minimum = preset_scenario(p);
         for (int k = 0; k < skill_count; k++) minimum.levels[skills[k]] = 1;
         for (int i = 0; i < preset->equipment_count; i++) {
             const FcItemDef *item = fc_item_definition(preset->equipment[i]);
             const int needs[] = {item->ranged_level, item->defence_level,
                                  item->hitpoints_level, item->magic_level,
-                                 item->attack_level};
+                                 item->attack_level, item->strength_level};
             for (int k = 0; k < skill_count; k++)
                 if (needs[k] > minimum.levels[skills[k]])
                     minimum.levels[skills[k]] = needs[k];
@@ -668,17 +722,18 @@ static int gear_presets(void) {
         const FcItemStack *weapon = &s.player.equipment[FC_EQUIP_SLOT_WEAPON];
         int left = weapon->item_id == FC_ITEM_ID_TOXIC_BLOWPIPE
             ? weapon->charges : s.player.equipment[FC_EQUIP_SLOT_AMMO].quantity;
-        if (preset->runes) {
+        if (preset->runes || s.player.weapon_kind == FC_WEAPON_MELEE) {
             CHECK(!s.player.weapon_uses_ammo && s.player.ammo_count == 0);
         } else {
             CHECK(s.player.ammo_count == left);
             CHECK(left == (s.player.weapon_uses_ammo ? preset->ammo - attacks : 0));
         }
         printf("gear preset %s: wearable from %d ranged, %d defence, %d hitpoints, "
-               "%d magic, %d attack; %d attacks and %d hits in %d ticks\n", preset->name,
-               minimum.levels[FC_SKILL_RANGED], minimum.levels[FC_SKILL_DEFENCE],
-               minimum.levels[FC_SKILL_HITPOINTS], minimum.levels[FC_SKILL_MAGIC],
-               minimum.levels[FC_SKILL_ATTACK], attacks, hits, ticks);
+               "%d magic, %d attack, %d strength; %d attacks and %d hits in %d ticks\n",
+               preset->name, minimum.levels[FC_SKILL_RANGED],
+               minimum.levels[FC_SKILL_DEFENCE], minimum.levels[FC_SKILL_HITPOINTS],
+               minimum.levels[FC_SKILL_MAGIC], minimum.levels[FC_SKILL_ATTACK],
+               minimum.levels[FC_SKILL_STRENGTH], attacks, hits, ticks);
     }
     return 0;
 }
@@ -924,10 +979,11 @@ static void draw_player_cell(ModelEntry *entry, AnimCache *cache, int cell,
 
 /* Every gear preset composes from its equipment, and a ranged preset's
  * weapon animations and projectile spot animations ship. The pinned assets
- * predate the magic presets: their items without models are left out of the
- * figure, and their missing stances, casts and spell graphics are listed. With
- * FC_TEST_OUTPUT_DIR set, each is drawn to <preset>.png there: idle from the
- * front and side, then two frames of its attack. */
+ * predate the magic and melee presets: their items without models are left
+ * out of the figure, and their missing stances, attacks, casts and spell
+ * graphics are listed; melee weapons fire nothing. With FC_TEST_OUTPUT_DIR
+ * set, each is drawn to <preset>.png there: idle from the front and side,
+ * then two frames of its attack. */
 static int gear_preset_appearances(FcPlayerAppearance *appearance, AnimCache *cache) {
     const char *dir = getenv("FC_TEST_OUTPUT_DIR");
     SpotAnimSet *spots = spotanims_load("fc_spotanims.bin");
@@ -963,18 +1019,20 @@ static int gear_preset_appearances(FcPlayerAppearance *appearance, AnimCache *ca
         };
         const FcProjectileProfile *shot = &profile->projectile;
         const uint32_t spot_ids[] = {shot->travel_spot, shot->launch_spot, shot->impact_spot};
-        if (!shot->travel_spot) return 1;
+        int melee = state.player.weapon_kind == FC_WEAPON_MELEE;
+        int newer = preset->autocast || melee;   /* the bundle predates it */
+        if ((shot->travel_spot == 0) != melee) return 1;
         char missing[256] = "";
         for (int i = 0; i < (int)(sizeof(sequences) / sizeof(sequences[0])); i++) {
             if (anim_get_sequence(cache, sequences[i])) continue;
-            if (!preset->autocast) return 1;
+            if (!newer) return 1;
             snprintf(missing + strlen(missing), sizeof(missing) - strlen(missing),
                      " sequence %d", sequences[i]);
         }
         for (int i = 0; i < 3; i++) {
             if (!spot_ids[i] || (spotanim_find(spots, (int)spot_ids[i]) &&
                 model_find(projectiles, PROJ_SPOTANIM_MODEL_BASE + spot_ids[i]))) continue;
-            if (!preset->autocast) return 1;
+            if (!newer) return 1;
             snprintf(missing + strlen(missing), sizeof(missing) - strlen(missing),
                      " spot %u", spot_ids[i]);
         }
@@ -983,7 +1041,7 @@ static int gear_preset_appearances(FcPlayerAppearance *appearance, AnimCache *ca
                 fc_item_definition(preset->equipment[i])->slot == FC_EQUIP_SLOT_AMMO ||
                 fc_item_definition(preset->equipment[i])->slot == FC_EQUIP_SLOT_RING)
                 continue;
-            if (!preset->autocast) return 1;
+            if (!newer) return 1;
             snprintf(missing + strlen(missing), sizeof(missing) - strlen(missing),
                      " item %d", preset->equipment[i]);
         }
@@ -1440,7 +1498,8 @@ static void scenario_config_test(void) {
                         "the presets are tbow_masori rcb_black_dhide rcb_pure "
                         "msb_pure blowpipe_pure acb_armadyl bowfa_crystal "
                         "tbow_masori_no_ring smoke_staff_mystic "
-                        "kodai_virtus harmonised_ancestral");
+                        "kodai_virtus harmonised_ancestral dragon_scimitar_torso "
+                        "macuahuitl_blood_moon fang_bandos scythe_torva");
     puf_ini_set(&kwargs, "gear_set_1", "tbow_masori");
     dict_set(&kwargs, "defence_level", 0);
     expect_config_error(&kwargs, "defence_level = 0: levels must be 1 to 99");
@@ -1693,15 +1752,20 @@ static void prayer_book_test(void) {
     fc_player_ranged_rolls(&ranged, &bonus, &target, &roll, &max_hit);
     assert(roll == 15092 && max_hit == 16);
     /* Melee, test_melee_formula_uses_boosts_prayer_equipment_and_npc_defence's
-     * Piety, Attack 70, Strength 80, +100 attack and +50 strength, with the
-     * env's accurate Punch instead of its aggressive stance: Attack
-     * 70 * 120 / 100 + 3 + 8 = 95 and Strength 80 * 123 / 100 + 8 = 106, so
-     * roll 95 * 164 = 15580 and max hit (106 * 114 + 320) / 640 = 19. */
-    FcPlayer melee = {.attack_level = 70, .strength_level = 80,
-                      .melee_attack_bonus = 100, .melee_strength_bonus = 50};
+     * Piety, Attack 70, Strength 80, Aggressive, +100 attack and +50
+     * strength: Attack 70 * 120 / 100 + 8 = 92 and Strength
+     * 80 * 123 / 100 + 3 + 8 = 109, so roll 92 * 164 = 15088 and max hit
+     * (109 * 114 + 320) / 640 = 19; the Accurate punch's Attack is 95, roll
+     * 95 * 164 = 15580, and Strength 106. */
     s.caps.prayers = BOOK(PIETY);
     bonus = fc_prayer_bonus(&s);
-    fc_player_melee_rolls(&melee, &bonus, &roll, &max_hit);
+    fc_melee_rolls(70, 80, 100, 50, FC_STANCE_AGGRESSIVE, &bonus, &roll, &max_hit);
+    assert(roll == 15088 && max_hit == 19);
+    FcPlayer melee = {.attack_level = 70, .strength_level = 80,
+                      .weapon_kind = FC_WEAPON_UNARMED,
+                      .melee_attack_bonus = 100, .melee_strength_bonus = 50};
+    const FcMeleeStyle punch = {FC_ATTACK_TYPE_CRUSH, FC_STANCE_ACCURATE};
+    fc_player_melee_rolls(&melee, &bonus, &punch, &roll, &max_hit);
     assert(roll == 15580 && max_hit == 19);
     /* Prayer runtime test_prayer_stats: at level 10 the 5% Burst of Strength
      * and Sharp Eye add one Strength and ranged Strength level. */
@@ -1709,17 +1773,17 @@ static void prayer_book_test(void) {
     /* Defence (rc_player_effective_defence_level, no stance here): Piety at
      * Defence 99 is 99 * 125 / 100 + 8 = 131, against +64 crush defence. */
     FcPlayer defender = {.defence_level = 99, .magic_level = 1, .defence_crush = 64};
-    assert(fc_player_def_roll(&defender, &bonus, FC_ATTACK_TYPE_CRUSH) == 131 * 128);
+    assert(fc_player_def_roll(&defender, &bonus, 0, FC_ATTACK_TYPE_CRUSH) == 131 * 128);
     /* Magic defence, test_magic_formula_uses_magic_prayer_damage_and_defence_blend:
      * Magic 80, Defence 50, +30 magic defence and 25% magic defence give
      * 100 * 7 / 10 + 50 * 3 / 10 + 8 = 93 and roll 8742. Its Augury has no
      * Defence; RuneC's real Augury adds 25%: 70 + 62 * 3 / 10 + 8 = 96. */
     FcPlayer caster = {.defence_level = 50, .magic_level = 80, .defence_magic = 30};
     FcPrayerBonus magic_only = {.magic_defence = 25};
-    assert(fc_player_def_roll(&caster, &magic_only, FC_ATTACK_TYPE_MAGIC) == 8742);
+    assert(fc_player_def_roll(&caster, &magic_only, 0, FC_ATTACK_TYPE_MAGIC) == 8742);
     s.caps.prayers = BOOK(AUGURY);
     bonus = fc_prayer_bonus(&s);
-    assert(fc_player_def_roll(&caster, &bonus, FC_ATTACK_TYPE_MAGIC) == 96 * 94);
+    assert(fc_player_def_roll(&caster, &bonus, 0, FC_ATTACK_TYPE_MAGIC) == 96 * 94);
 
     /* Rapid Heal (rc_stat_restore_tick; test_prayer_stats): switching it on
      * restarts the timer, and the next HP comes 50 ticks later; switching it
@@ -2256,7 +2320,7 @@ static void magic_formula_test(void) {
     };
     FcState s;
     for (int i = 0; i < (int)(sizeof(presets) / sizeof(presets[0])); i++) {
-        FcScenario scenario = magic_scenario(presets[i].name);
+        FcScenario scenario = levels_scenario(presets[i].name);
         fc_init(&s);
         fc_reset(&s, 101);
         fc_apply_scenario(&s, &scenario);
@@ -2334,14 +2398,14 @@ static void magic_autocast_test(void) {
 #if FC_CAP_SPELLBOOK == 2
     /* kodai_virtus's Water Surge is the other book's, so it is not set; Ice
      * Rush is. */
-    FcScenario scenario = magic_scenario("kodai_virtus");
+    FcScenario scenario = levels_scenario("kodai_virtus");
     const int spell = FC_SPELL_ICE_RUSH;
     magic_fixture(&s, &scenario, NPC_TOK_XIL, 20, 28);
     assert(s.caps.autocast == 0);
     assert(fc_spell_check(&s, FC_SPELL_WATER_SURGE) == FC_CAST_WRONG_BOOK);
     assert(fc_spell_set_autocast(&s, spell) == FC_CAST_OK);
 #else
-    FcScenario scenario = magic_scenario("smoke_staff_mystic");
+    FcScenario scenario = levels_scenario("smoke_staff_mystic");
     const int spell = FC_SPELL_WATER_BLAST;
     magic_fixture(&s, &scenario, NPC_TOK_XIL, 20, 28);
     assert(fc_spell_check(&s, FC_SPELL_ICE_BARRAGE) == FC_CAST_WRONG_BOOK);
@@ -2411,7 +2475,7 @@ static void magic_autocast_test(void) {
 
     /* The Harmonised nightmare staff autocasts only Standard spells, every 4
      * ticks (rc_content_prepare_magic; magic runtime). */
-    FcScenario harmonised = magic_scenario("harmonised_ancestral");
+    FcScenario harmonised = levels_scenario("harmonised_ancestral");
     magic_fixture(&s, &harmonised, NPC_TOK_XIL, 20, 28);
 #if FC_CAP_SPELLBOOK == 2
     assert(s.caps.autocast == 0 && fc_spell_check(&s, FC_SPELL_ICE_BARRAGE) == FC_CAST_WEAPON);
@@ -2438,7 +2502,7 @@ static void magic_autocast_test(void) {
  * lands. */
 static void magic_effects_test(void) {
     FcState s;
-    FcScenario scenario = magic_scenario("kodai_virtus");
+    FcScenario scenario = levels_scenario("kodai_virtus");
     magic_fixture(&s, &scenario, NPC_TOK_XIL, 20, 28);
     FcNpcSpellEffects *effects = &s.caps.npc_spells[0];
     /* Blood heals a quarter of the damage in whole HP, up to max HP. */
@@ -2534,8 +2598,9 @@ static void magic_effects_test(void) {
  * book the Kodai wand's Ice Barrage), spending its runes, or else bashing or
  * punching. */
 static void magic_preset_episodes(void) {
-    for (int i = 0; i < MAGIC_PRESET_COUNT; i++) {
-        FcScenario scenario = magic_scenario(MAGIC_LEVELS[i].name);
+    for (int i = 0; i < PRESET_LEVEL_COUNT; i++) {
+        if (!FC_GEAR_PRESETS[fc_gear_preset_find(PRESET_LEVELS[i].name)].autocast) continue;
+        FcScenario scenario = levels_scenario(PRESET_LEVELS[i].name);
         FcState s;
         fc_init(&s);
         fc_reset(&s, 101);
@@ -2563,7 +2628,7 @@ static void magic_preset_episodes(void) {
             assert(casts == 0);
         }
         printf("magic preset %s: autocasts %s, %d casts of %d attacks, %d hits in %d ticks\n",
-               MAGIC_LEVELS[i].name, spell >= 0 ? FC_SPELLS[spell].name : "nothing",
+               PRESET_LEVELS[i].name, spell >= 0 ? FC_SPELLS[spell].name : "nothing",
                casts, attacks, hits, ticks);
     }
 }
@@ -2796,6 +2861,455 @@ static void magic_config_test(void) {
     puts("magic config: Magic and Attack requirements and the runes' inventory passed");
 }
 
+/* Melee, against RuneC_v4: rc-core/combat_formula.c (the stance bonuses,
+ * rc_refresh_player_combat_style, rc_calc_melee, rc_player_attack_speed and
+ * rc_player_attack_range), combat.c's melee reach (player_can_attack_npc_now),
+ * rc-content/combat/magic.c's rc_content_player_hit_delay, the items of
+ * data/defs/items.bin, and the expected values of
+ * tests/test_combat_phase5_formula_core.c (formula core) and
+ * tests/test_combat_phase4_weapon_styles_cycle.c (weapon styles). */
+
+/* The melee hits that landed on an NPC this tick. */
+static int melee_hits_on_npcs(const FcState *s) {
+    int hits = 0;
+    for (int i = 0; i < s->render_events.hit_count; i++)
+        hits += s->render_events.hits[i].target_entity_type == ENTITY_NPC &&
+                s->render_events.hits[i].attack_style == ATTACK_MELEE;
+    return hits;
+}
+
+static void melee_formula_test(void) {
+    /* Formula core test_melee_formula_uses_boosts_prayer_equipment_and_npc_defence:
+     * Piety's 20% Attack and 23% Strength, Attack 70, Strength 80,
+     * Aggressive, +100 slash and +50 Strength: roll 15088 and max hit 19,
+     * against a Defence 40 NPC without a bonus, 3136. */
+    FcPrayerBonus piety = {.attack = 20, .strength = 23, .defence = 25}, none = {0};
+    int roll, max_hit;
+    fc_melee_rolls(70, 80, 100, 50, FC_STANCE_AGGRESSIVE, &piety, &roll, &max_hit);
+    assert(roll == 15088 && max_hit == 19);
+    assert(fc_npc_roll(40, 0) == 3136);
+    /* Each stance's invisible levels (stance_attack_bonus,
+     * stance_strength_bonus, stance_defence_bonus) and the rolls at Attack
+     * 70, Strength 80, +100 attack and +150 Strength without prayers:
+     * (70 + stance + 8) * 164 and ((80 + stance + 8) * 214 + 320) / 640. */
+    static const struct { int stance, attack, strength, defence, roll, max_hit; } stances[] = {
+        {FC_STANCE_ACCURATE, 3, 0, 0, 13284, 29},
+        {FC_STANCE_AGGRESSIVE, 0, 3, 0, 12792, 30},
+        {FC_STANCE_DEFENSIVE, 0, 0, 3, 12792, 29},
+        {FC_STANCE_CONTROLLED, 1, 1, 1, 12956, 30},
+    };
+    for (int i = 0; i < 4; i++) {
+        int attack, strength, defence;
+        fc_stance_levels(stances[i].stance, &attack, &strength, &defence);
+        assert(attack == stances[i].attack && strength == stances[i].strength &&
+               defence == stances[i].defence);
+        fc_melee_rolls(70, 80, 100, 150, stances[i].stance, &none, &roll, &max_hit);
+        assert(roll == stances[i].roll && max_hit == stances[i].max_hit);
+    }
+    /* Formula core test_npc_formula_uses_style_stat_and_player_defence_roll:
+     * Defensive adds 3 to Defence 50 and Magic 90 blended, 89, against +30
+     * magic defence: 8366. Controlled adds 1 to Defence: (50 + 1 + 8) * 128. */
+    FcPlayer defender = {.defence_level = 50, .magic_level = 90, .defence_magic = 30,
+                         .defence_crush = 64};
+    assert(fc_player_def_roll(&defender, &none, 3, FC_ATTACK_TYPE_MAGIC) == 8366);
+    assert(fc_player_def_roll(&defender, &none, 1, FC_ATTACK_TYPE_CRUSH) == 59 * 128);
+
+    /* rc_refresh_player_combat_style by weapon type and attack style index
+     * (-1: unavailable). Weapon styles' test_category_specific_and_unavailable_slots
+     * pins unarmed 2 and 3, spiked 2 and staff 2;
+     * test_slash_sword_table_sets_style_stance_xp_and_metadata the slash
+     * sword's 0 and 2; the rest is combat_formula.c's tables. */
+    enum { T_ST = FC_ATTACK_TYPE_STAB, T_SL = FC_ATTACK_TYPE_SLASH,
+           T_CR = FC_ATTACK_TYPE_CRUSH, S_ACC = FC_STANCE_ACCURATE,
+           S_AGG = FC_STANCE_AGGRESSIVE, S_DEF = FC_STANCE_DEFENSIVE,
+           S_CON = FC_STANCE_CONTROLLED };
+    static const struct { int type, styles[4][2]; } table[] = {
+        {FC_WEAPON_TYPE_UNARMED, {{T_CR, S_ACC}, {T_CR, S_AGG}, {-1, -1}, {T_CR, S_DEF}}},
+        {FC_WEAPON_TYPE_STAFF, {{T_CR, S_ACC}, {T_CR, S_AGG}, {-1, -1}, {T_CR, S_DEF}}},
+        {FC_WEAPON_TYPE_SCYTHE, {{T_SL, S_ACC}, {T_SL, S_AGG}, {T_CR, S_AGG}, {T_SL, S_DEF}}},
+        {FC_WEAPON_TYPE_SLASH_SWORD,
+         {{T_SL, S_ACC}, {T_SL, S_AGG}, {T_ST, S_CON}, {T_SL, S_DEF}}},
+        {FC_WEAPON_TYPE_SPIKED, {{T_CR, S_ACC}, {T_CR, S_AGG}, {T_ST, S_CON}, {T_CR, S_DEF}}},
+        {FC_WEAPON_TYPE_STAB_SWORD,
+         {{T_ST, S_ACC}, {T_ST, S_AGG}, {T_SL, S_CON}, {T_ST, S_DEF}}},
+    };
+    for (int t = 0; t < (int)(sizeof(table) / sizeof(table[0])); t++) {
+        for (int index = 0; index < 4; index++) {
+            FcMeleeStyle style;
+            int available = fc_melee_style(table[t].type, index, &style);
+            assert(available == (table[t].styles[index][0] >= 0));
+            if (available)
+                assert(style.attack_type == table[t].styles[index][0] &&
+                       style.stance == table[t].styles[index][1]);
+        }
+    }
+    FcMeleeStyle style;
+    assert(!fc_melee_style(FC_WEAPON_TYPE_SLASH_SWORD, -1, &style) &&
+           !fc_melee_style(FC_WEAPON_TYPE_SLASH_SWORD, 4, &style) &&
+           !fc_melee_style(25, 0, &style));   /* a bow attacks with Ranged */
+
+    /* The melee presets at their levels: their style's attack type, the worn
+     * bonuses for it and the Strength bonus (items.bin), and the rolls,
+     * Accurate: (Attack + 3 + 8) * (bonus + 64) and
+     * ((Strength + 8) * (Strength bonus + 64) + 320) / 640. */
+    static const struct {
+        const char *name;
+        int attack_type, bonus, strength, roll, max_hit, speed;
+    } presets[] = {
+        {"dragon_scimitar_torso", T_SL, 114, 111, 71 * 178, 19, 4},
+        {"macuahuitl_blood_moon", T_CR, 144, 127, 81 * 208, 25, 4},
+        {"fang_bandos", T_ST, 169, 164, 93 * 233, 33, 5},
+        {"scythe_torva", T_SL, 170, 139, 110 * 234, 34, 5},
+    };
+    FcState s;
+    for (int i = 0; i < 4; i++) {
+        FcScenario scenario = levels_scenario(presets[i].name);
+        fc_init(&s);
+        fc_reset(&s, 101);
+        fc_apply_scenario(&s, &scenario);
+        assert(s.player.weapon_kind == FC_WEAPON_MELEE && s.player.weapon_range == 1 &&
+               fc_player_attack_speed(&s) == presets[i].speed);
+        assert(fc_player_melee_style(&s, &style) &&
+               style.attack_type == presets[i].attack_type && style.stance == S_ACC);
+        assert(fc_player_melee_bonus(&s.player, style.attack_type) == presets[i].bonus &&
+               s.player.melee_strength_bonus == presets[i].strength);
+        fc_player_melee_rolls(&s.player, &none, &style, &roll, &max_hit);
+        assert(roll == presets[i].roll && max_hit == presets[i].max_hit);
+        assert(fc_player_stance_defence(&s) == 0);   /* Accurate */
+    }
+#if FC_CAP_PRAYERS
+    /* Piety on scythe_torva: Attack 99 * 120 / 100 + 3 + 8 = 129 and Strength
+     * 99 * 123 / 100 + 8 = 129, so ((129 * 203) + 320) / 640 = 41. */
+    s.caps.prayers = 1u << FC_BOOK_PIETY;
+    FcPrayerBonus bonus = fc_prayer_bonus(&s);
+    fc_player_melee_rolls(&s.player, &bonus, &style, &roll, &max_hit);
+    assert(roll == 129 * 234 && max_hit == 41);
+#endif
+    /* The ranged presets punch in their style 0, Accurate crush, with the
+     * crush bonus; a bow does not attack in melee. */
+    FcScenario scenario = preset_scenario(0);
+    fc_init(&s);
+    fc_reset(&s, 101);
+    fc_apply_scenario(&s, &scenario);
+    assert(!fc_player_melee_style(&s, &style) && fc_player_stance_defence(&s) == 0);
+    assert(fc_unequip_item(&s, FC_EQUIP_SLOT_WEAPON) == FC_ITEM_OK);
+    assert(fc_player_melee_style(&s, &style) && style.attack_type == T_CR &&
+           style.stance == S_ACC && fc_player_melee_bonus(&s.player, T_CR) == -8);
+    puts("melee: stances, weapon styles, rolls and the presets' bonuses against RuneC passed");
+}
+
+/* A melee weapon through fc_step: the approach to open cardinal contact, the
+ * hit landing the tick after the attack (the punch's lands in its tick, see
+ * combat), the weapon's speed, and the reach of 1. */
+static void melee_attack_test(void) {
+    FcScenario scenario = levels_scenario("dragon_scimitar_torso");
+    FcState s;
+    magic_fixture(&s, &scenario, NPC_TZ_KEK, 27, 20);
+    s.npcs[0].current_hp = s.npcs[0].max_hp = 100000;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+    actions[FC_HEAD_ATTACK] = 1;
+    int ticks = 0;
+    for (; ticks < 20 && !s.render_events.player_attack_fired; ticks++) {
+        assert(melee_hits_on_npcs(&s) == 0);
+        fc_step(&s, actions);
+    }
+    /* It walked to a tile beside the NPC and attacked from there. */
+    const FcNpc *npc = &s.npcs[0];
+    assert(s.render_events.player_attack_fired && ticks > 1);
+    assert(fc_npc_can_melee_player(s.player.x, s.player.y, npc->x, npc->y, npc->size,
+                                   s.movement_flags));
+    assert(s.render_events.player_attack_style == ATTACK_MELEE &&
+           s.render_events.player_attack_spell == 0 &&
+           s.render_events.player_attack_hit_delay_ticks == 2);
+    assert(npc->num_pending_hits == 1 && melee_hits_on_npcs(&s) == 0);
+    assert(s.player.attack_timer == 3);   /* speed 4, end-of-tick decrement */
+    fc_step(&s, actions);
+    assert(!s.render_events.player_attack_fired && melee_hits_on_npcs(&s) == 1 &&
+           npc->num_pending_hits == 0);
+    int gap = 1;
+    for (; gap < 10 && !s.render_events.player_attack_fired; gap++) fc_step(&s, actions);
+    assert(gap == 4);
+    /* Reach 1 is open cardinal contact (RuneC's rc_route_target_reached for an
+     * adjacent melee attack): not a corner, two tiles away, the footprint
+     * itself or across a wall. */
+    assert(fc_can_attack_from(26, 20, 27, 20, 2, FC_ROUTE_MELEE_RANGE,
+                              s.movement_flags, s.los_flags));
+    assert(!fc_can_attack_from(26, 19, 27, 20, 2, FC_ROUTE_MELEE_RANGE,
+                               s.movement_flags, s.los_flags));
+    assert(!fc_can_attack_from(25, 20, 27, 20, 2, FC_ROUTE_MELEE_RANGE,
+                               s.movement_flags, s.los_flags));
+    assert(!fc_can_attack_from(27, 20, 27, 20, 2, FC_ROUTE_MELEE_RANGE,
+                               s.movement_flags, s.los_flags));
+    s.movement_flags[26][20] = FC_MOVE_WALL_EAST;
+    assert(!fc_can_attack_from(26, 20, 27, 20, 2, FC_ROUTE_MELEE_RANGE,
+                               s.movement_flags, s.los_flags));
+    /* The Osmumten's fang attacks every 5 ticks. */
+    scenario = levels_scenario("fang_bandos");
+    magic_fixture(&s, &scenario, NPC_TZ_KEK, 21, 20);
+    s.npcs[0].current_hp = s.npcs[0].max_hp = 100000;
+    int attacks = 0;
+    for (int tick = 0; tick < 21; tick++) {
+        fc_step(&s, actions);
+        attacks += s.render_events.player_attack_fired;
+    }
+    assert(attacks == 5);
+    puts("melee: approach, cardinal reach, next-tick hits and weapon speeds passed");
+}
+
+/* Each melee preset at its levels attacks the nearest NPC for a few hundred
+ * ticks: melee attacks at no faster than its weapon's speed, landing hits,
+ * spending nothing. */
+static void melee_preset_episodes(void) {
+    for (int p = 0; p < FC_GEAR_PRESET_COUNT; p++) {
+        const FcGearPreset *preset = &FC_GEAR_PRESETS[p];
+        if (fc_gear_preset_weapon(preset)->weapon_kind != FC_WEAPON_MELEE) continue;
+        FcScenario scenario = levels_scenario(preset->name);
+        FcState s;
+        fc_init(&s);
+        fc_reset(&s, 101);
+        fc_apply_scenario(&s, &scenario);
+        FcItemStack equipment[FC_EQUIPMENT_SLOTS];
+        memcpy(equipment, s.player.equipment, sizeof(equipment));
+        int actions[FC_NUM_ACTION_HEADS] = {0};
+        actions[FC_HEAD_ATTACK] = 1;
+        int attacks = 0, hits = 0, ticks = 0, last = -100;
+        for (; ticks < 300 && !fc_is_terminal(&s); ticks++) {
+            fc_step(&s, actions);
+            if (s.render_events.player_attack_fired) {
+                assert(s.render_events.player_attack_style == ATTACK_MELEE &&
+                       s.render_events.player_attack_hit_delay_ticks == 2);
+                assert(ticks - last >= s.player.weapon_speed);
+                last = ticks;
+                attacks++;
+            }
+            hits += s.hits_landed_this_tick;
+        }
+        assert(attacks > 0 && hits > 0);
+        assert(memcmp(equipment, s.player.equipment, sizeof(equipment)) == 0);
+        printf("melee preset %s: %s, speed %d: %d attacks, %d hits in %d ticks\n",
+               preset->name, fc_gear_preset_weapon(preset)->name, s.player.weapon_speed,
+               attacks, hits, ticks);
+    }
+}
+
+#if FC_GEAR_SWITCHING
+/* Switching between magic, melee and ranged sets: kodai_virtus worn, then
+ * macuahuitl_blood_moon and rcb_black_dhide as far as gear_sets goes; a
+ * fourth set repeats kodai_virtus, which is worn. */
+static const char *const MELEE_LINEUP[FC_MAX_GEAR_SETS] =
+    {"kodai_virtus", "macuahuitl_blood_moon", "rcb_black_dhide", "kodai_virtus"};
+
+static void melee_gear_switch_test(void) {
+    FcScenario scenario = fc_default_scenario();
+    for (int k = 0; k < FC_CAP_GEAR_SETS; k++)
+        scenario.gear_set[k] = fc_gear_preset_find(MELEE_LINEUP[k]);
+    /* Water Surge's 85 Magic, Eternal boots' 75 Defence, the crossbow set's
+     * 70 Ranged; the Blood moon set needs nothing in RuneC's items.bin. */
+    const int levels[FC_SKILL_COUNT] = {70, 75, 75, 70, 94, 70, 90};
+    memcpy(scenario.levels, levels, sizeof(levels));
+    char err[256];
+    FcItemStack items[FC_MAX_SWITCH_ITEMS];
+    int switch_items = fc_gear_switch_items(&scenario, items);
+    const int sets = FC_CAP_GEAR_SETS < 3 ? FC_CAP_GEAR_SETS : 3;
+    assert(switch_items == (sets == 3 ? 9 + 7 : 9));
+    scenario.sharks = FC_INVENTORY_SLOTS - switch_items - FC_PRESET_RUNE_COUNT;
+    assert(fc_scenario_check(&scenario, err, sizeof(err)) == 0);
+    scenario.sharks = 0;
+
+    FcState s, again;
+    gear_fixture(&s, &scenario);
+    assert(wears_preset(&s.player, "kodai_virtus"));
+    /* The gear block: the Kodai wand casts, the Dual macuahuitl attacks in
+     * melee from 1 tile every 4 ticks, the Rune crossbow shoots 7 tiles every
+     * 5. */
+    float obs[FC_POLICY_OBS_SIZE];
+    fc_write_obs(&s, obs);
+    const float *weapons = obs + FC_OBS_GEAR_START + FC_OBS_GEAR_WEAPONS;
+    const float *melee_set = weapons + FC_OBS_GEAR_STRIDE;
+    assert(weapons[FC_OBS_GEAR_MAGIC] == 1.0f && weapons[FC_OBS_GEAR_MELEE] == 0.0f);
+    assert(melee_set[FC_OBS_GEAR_MELEE] == 1.0f && melee_set[FC_OBS_GEAR_RANGED] == 0.0f &&
+           melee_set[FC_OBS_GEAR_MAGIC] == 0.0f && melee_set[FC_OBS_GEAR_RANGE] == 0.1f &&
+           melee_set[FC_OBS_GEAR_SPEED] == 0.4f);
+    if (sets == 3) {
+        const float *crossbow = weapons + 2 * FC_OBS_GEAR_STRIDE;
+        assert(crossbow[FC_OBS_GEAR_RANGED] == 1.0f && crossbow[FC_OBS_GEAR_MELEE] == 0.0f &&
+               crossbow[FC_OBS_GEAR_RANGE] == 0.7f && crossbow[FC_OBS_GEAR_SPEED] == 0.5f);
+    }
+
+    /* A Tok-Xil beside the player, in reach of every set. */
+    memset(s.npcs, 0, sizeof(s.npcs));
+    memset(s.walkable, 1, sizeof(s.walkable));
+    memset(s.movement_flags, 0, sizeof(s.movement_flags));
+    memset(s.los_flags, 0, sizeof(s.los_flags));
+    s.player.x = 20;
+    s.player.y = 20;
+    fc_npc_spawn(&s.npcs[0], NPC_TOK_XIL, 21, 19, 1);
+    s.npcs_remaining = 1;
+    s.npcs[0].attack_timer = 100000;
+    s.npcs[0].current_hp = s.npcs[0].max_hp = 100000;
+    again = s;
+    /* The wand casts kodai_virtus's Water Surge, or with the Ancient book the
+     * autocast head's Ice Barrage. */
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+    actions[FC_HEAD_ATTACK] = 1;
+    const int ancient = FC_PLAYER_SPELLBOOK == FC_SPELLBOOK_ANCIENT;
+    const int spell = ancient ? FC_SPELL_ICE_BARRAGE : FC_SPELL_WATER_SURGE;
+#if FC_SPELLBOOK_HEAD
+    actions[FC_HEAD_AUTOCAST] = ancient ? FC_SPELL_ICE_BARRAGE - FC_BOOK_FIRST_SPELL + 1
+                                        : FC_AUTOCAST_KEEP;
+#endif
+    fc_step(&s, actions);
+    assert(s.render_events.player_attack_spell == spell + 1);
+#if FC_SPELLBOOK_HEAD
+    actions[FC_HEAD_AUTOCAST] = FC_AUTOCAST_KEEP;
+#endif
+    /* The switch wields the Dual macuahuitl, which attacks in the same tick:
+     * Pound, an Accurate crush landing the next tick; the spell stays set. */
+    actions[FC_HEAD_GEAR_SET] = 2;
+    s.player.attack_timer = 0;
+    fc_step(&s, actions);
+    FcMeleeStyle style;
+    assert(s.caps.gear_set == 1 && s.active_loadout == FC_LOADOUT_MACUAHUITL_BLOOD_MOON &&
+           wears_preset(&s.player, "macuahuitl_blood_moon"));
+    assert(s.render_events.player_attack_fired &&
+           s.render_events.player_attack_style == ATTACK_MELEE &&
+           s.render_events.player_attack_hit_delay_ticks == 2);
+    assert(s.caps.autocast == spell + 1 && fc_player_cast_spell(&s) == -1);
+    assert(fc_player_melee_style(&s, &style) && style.attack_type == FC_ATTACK_TYPE_CRUSH &&
+           style.stance == FC_STANCE_ACCURATE);
+    assert(item_total(&s.player, 21006) == 1);   /* the Kodai wand, put away */
+    if (sets == 3) {
+        /* The crossbow shoots a bolt. */
+        actions[FC_HEAD_GEAR_SET] = 3;
+        s.player.attack_timer = 0;
+        fc_step(&s, actions);
+        assert(wears_preset(&s.player, "rcb_black_dhide") &&
+               s.render_events.player_attack_style == ATTACK_RANGED &&
+               item_total(&s.player, 9143) == 49999);
+    }
+    /* Back to the wand: it casts again. */
+    actions[FC_HEAD_GEAR_SET] = 1;
+    s.player.attack_timer = 0;
+    fc_step(&s, actions);
+    assert(s.caps.gear_set == 0 && s.render_events.player_attack_spell == spell + 1);
+
+    /* An episode switching every 25 ticks, ending on the wand: every set
+     * attacks in its style, deterministically. */
+    s = again;
+    int attacks[3] = {0}, casts = 0, melee = 0;
+    for (int tick = 0; tick < 625; tick++) {
+        int set = tick / 25 % sets;
+        actions[FC_HEAD_GEAR_SET] = s.caps.gear_set != set ? set + 1 : FC_GEAR_SET_NO_CHANGE;
+#if FC_SPELLBOOK_HEAD
+        actions[FC_HEAD_AUTOCAST] = tick == 0 && ancient
+            ? FC_SPELL_ICE_BARRAGE - FC_BOOK_FIRST_SPELL + 1 : FC_AUTOCAST_KEEP;
+#endif
+        fc_step(&s, actions);
+        fc_step(&again, actions);
+        assert(fc_state_hash(&s) == fc_state_hash(&again));
+        attacks[set] += s.render_events.player_attack_fired;
+        casts += s.render_events.player_attack_spell == spell + 1;
+        melee += s.render_events.player_attack_fired &&
+                 s.render_events.player_attack_style == ATTACK_MELEE;
+    }
+    assert(s.caps.gear_set == 0 && attacks[0] > 0 && attacks[1] > 0);
+    assert(casts == attacks[0] && melee == attacks[1]);
+    if (sets == 3) assert(attacks[2] > 0 && item_total(&s.player, 9143) == 50000 - attacks[2]);
+    for (int r = 0; r < FC_PRESET_RUNE_COUNT; r++)
+        assert(rune_total(&s.player, FC_PRESET_RUNES[r]) == FC_PRESET_RUNE_QUANTITY -
+               casts * cast_cost(&s.player, spell, FC_PRESET_RUNES[r]));
+    printf("melee gear sets: %d casts with kodai_virtus, %d melee attacks with "
+           "macuahuitl_blood_moon and %d bolts with rcb_black_dhide in 625 ticks passed\n",
+           casts, melee, sets == 3 ? attacks[2] : 0);
+}
+#endif
+
+/* The melee presets' requirement errors, the Strength requirement on
+ * equipping, and a melee preset through the adapter. */
+static void melee_config_test(void) {
+    Dict kwargs = {0};
+    puf_ini_set(&kwargs, "gear_set_1", "scythe_torva");
+    other_gear_sets(&kwargs, "scythe_torva");
+    dict_set(&kwargs, "attack_level", 99);
+    dict_set(&kwargs, "strength_level", 74);
+    expect_config_error(&kwargs, "gear_set_1 = scythe_torva: Scythe of vitur needs 75 "
+                        "strength, but strength_level = 74");
+    puf_ini_set(&kwargs, "gear_set_1", "fang_bandos");
+    other_gear_sets(&kwargs, "fang_bandos");
+    expect_config_error(&kwargs, "gear_set_1 = fang_bandos: Primordial boots needs 75 "
+                        "strength, but strength_level = 74");
+    puf_ini_set(&kwargs, "gear_set_1", "dragon_scimitar_torso");
+    other_gear_sets(&kwargs, "dragon_scimitar_torso");
+    dict_set(&kwargs, "attack_level", 59);
+    expect_config_error(&kwargs, "gear_set_1 = dragon_scimitar_torso: Dragon scimitar "
+                        "needs 60 attack, but attack_level = 59");
+    puf_ini_set(&kwargs, "gear_set_1", "fang_bandos");
+    other_gear_sets(&kwargs, "fang_bandos");
+    dict_set(&kwargs, "attack_level", 99);
+    dict_set(&kwargs, "strength_level", 75);
+    FightCaves* env = test_env(&kwargs);
+    FcState* st = &env->state;
+    assert(st->active_loadout == FC_LOADOUT_FANG_BANDOS && st->caps.autocast == 0);
+    assert(st->player.equipment[FC_EQUIP_SLOT_WEAPON].item_id == 26219 &&
+           st->player.weapon_kind == FC_WEAPON_MELEE);
+    for (int i = 0; i < FC_INVENTORY_SLOTS; i++) assert(st->player.inventory[i].item_id == 0);
+    check_obs(env);
+    /* Wearing the Scythe of vitur needs 75 Strength; it is two-handed, so
+     * the Avernic defender comes off with the fang. */
+    st->player.inventory[0] = (FcItemStack){22325, 1, 0};
+    st->player.strength_level = 74;
+    assert(fc_equip_item(st, 0) == FC_ITEM_REQUIREMENTS);
+    st->player.strength_level = 75;
+    assert(fc_equip_item(st, 0) == FC_ITEM_OK);
+    assert(st->player.equipment[FC_EQUIP_SLOT_WEAPON].item_id == 22325 &&
+           st->player.equipment[FC_EQUIP_SLOT_SHIELD].item_id == 0 &&
+           item_slot(&st->player, 26219) >= 0 && item_slot(&st->player, 22322) >= 0);
+    fc_puffer_write_obs(env);
+    check_obs(env);
+    test_free(env);
+    dict_clear(&kwargs);
+    puts("melee config: Attack and Strength requirements and a melee preset passed");
+}
+
+/* README.md's presets table has one row per preset, with levels that wear it
+ * and, for the magic and melee presets, those of PRESET_LEVELS. Columns: the
+ * preset, its main gear, then the levels in FcSkill order. */
+static void readme_presets_test(void) {
+    FILE *f = fopen("ocean/fight_caves/README.md", "r");
+    assert(f);
+    int rows[FC_GEAR_PRESET_COUNT] = {0};
+    char line[512];
+    while (fgets(line, sizeof(line), f)) {
+        const char *row = line + strspn(line, " ");
+        char name[64];
+        if (sscanf(row, "| `%63[^`]`", name) != 1 || strcmp(name, "gear_set_1") == 0)
+            continue;
+        int preset = fc_gear_preset_find(name);
+        assert(preset >= 0);
+        rows[preset]++;
+        int levels[FC_SKILL_COUNT], cells = 0;
+        const char *cell = row;
+        for (int c = 0; (cell = strchr(cell, '|')) != NULL; c++, cell++) {
+            if (c < 2 || c >= 2 + FC_SKILL_COUNT) continue;
+            int parsed = sscanf(cell + 1, "%d", &levels[c - 2]);
+            assert(parsed == 1);
+            cells++;
+        }
+        assert(cells == FC_SKILL_COUNT);
+        FcScenario scenario = preset_scenario(preset);
+        memcpy(scenario.levels, levels, sizeof(levels));
+        char err[256];
+        assert(fc_scenario_check(&scenario, err, sizeof(err)) == 0);
+        for (int i = 0; i < PRESET_LEVEL_COUNT; i++)
+            if (strcmp(PRESET_LEVELS[i].name, name) == 0)
+                assert(memcmp(PRESET_LEVELS[i].levels, levels, sizeof(levels)) == 0);
+    }
+    fclose(f);
+    for (int p = 0; p < FC_GEAR_PRESET_COUNT; p++) assert(rows[p] == 1);
+    printf("README presets table: %d presets with the levels they were made for passed\n",
+           FC_GEAR_PRESET_COUNT);
+}
+
 #if FC_CAP_CONSUMABLES
 /* The eat and drink heads reach the core through the policy actions, and
  * their masks and cooldowns are observed. */
@@ -2848,6 +3362,7 @@ static int adapter_test(int graphical) {
     spellbook_adapter_test();
 #endif
     magic_config_test();
+    melee_config_test();
     terminal_and_log_test();
     /* The shipped INI with this build's capabilities, as on the command line.
      * Puffer's overrides replace only keys the INI has, so gear sets past the
@@ -3001,6 +3516,7 @@ int main(int argc, char** argv) {
     gear_switch_test();
     gear_episode_test();
     magic_gear_switch_test();
+    melee_gear_switch_test();
 #endif
     magic_definitions_test();
     magic_formula_test();
@@ -3008,6 +3524,10 @@ int main(int argc, char** argv) {
     magic_autocast_test();
     magic_effects_test();
     magic_preset_episodes();
+    melee_formula_test();
+    melee_attack_test();
+    melee_preset_episodes();
+    readme_presets_test();
     if (core_contract_test() || equipment_test() || episode_analytics_test() ||
         context_menu_test() || click_feedback_test() || model_picking_test() ||
         adapter_test(graphical)) return 1;

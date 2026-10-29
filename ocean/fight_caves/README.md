@@ -111,9 +111,14 @@ The `[env]` section holds three kinds of settings:
   | `smoke_staff_mystic` | Mystic smoke staff casting Water Blast, Mystic robes, Mage's book | 60 | 60 | 60 | 60 | 60 | 43 | 65 |
   | `kodai_virtus` | Kodai wand casting Water Surge, Virtus robes, Elidinis' ward | 80 | 80 | 80 | 80 | 94 | 80 | 90 |
   | `harmonised_ancestral` | Harmonised nightmare staff casting Water Surge, Ancestral robes, Elidinis' ward (f) | 99 | 99 | 99 | 99 | 99 | 99 | 99 |
+  | `dragon_scimitar_torso` | Dragon scimitar on Chop (accurate slash), Fighter torso, Dragon defender, Helm of neitiznot | 60 | 60 | 60 | 60 | 60 | 43 | 65 |
+  | `macuahuitl_blood_moon` | Dual macuahuitl on Pound (accurate crush), Blood moon armour | 70 | 75 | 70 | 70 | 70 | 70 | 80 |
+  | `fang_bandos` | Osmumten's fang on Stab (accurate stab), Bandos armour, Avernic defender | 82 | 85 | 80 | 80 | 80 | 80 | 90 |
+  | `scythe_torva` | Scythe of vitur on Reap (accurate slash), Torva armour, Infernal cape | 99 | 99 | 99 | 99 | 99 | 99 | 99 |
 
-  The last four are the low, medium, high and maxed magic presets of the
-  fc-rl 4.0 loadouts, with RuneC v4's item definitions. Worn at the start or
+  `smoke_staff_mystic`, `kodai_virtus` and `harmonised_ancestral` are the
+  low, high and maxed magic presets of the fc-rl 4.0 loadouts, with RuneC v4's
+  item definitions. Worn at the start or
   switched to, a magic preset sets its spell as the autocast spell when RuneC
   would accept it (with `spellbook = ancient` its Standard spell cannot be;
   the autocast head sets an Ancient one). Each carries 50,000 of every rune
@@ -149,6 +154,34 @@ The `[env]` section holds three kinds of settings:
   changes only experience), rune pouches, tomes and powered or charged staves
   are not ported, as no preset uses them.
 
+  The last four are the low, medium, high and maxed melee presets of the
+  fc-rl 4.0 loadouts, with RuneC v4's item definitions and requirements:
+  RuneC's items data has no requirements for the Osmumten's fang, Dual
+  macuahuitl, Blood moon and Torva armour, Amulet of rancour and Ultor ring,
+  and `scythe_torva` wears the Avernic treads (max) without bonuses.
+
+  Melee follows RuneC: a melee weapon attacks from open cardinal contact
+  (reach 1), every 4 ticks (Dragon scimitar, Dual macuahuitl) or 5
+  (Osmumten's fang, Scythe of vitur), the hit landing the tick after the
+  attack. The weapon's type gives its attack styles and the preset names the
+  one it attacks with: each attacks on its first, accurate style, as the
+  fc-rl 4.0 presets did, with the attack type RuneC gives that style.
+  Accuracy is (Attack, raised by the attack prayers' percentage, + the
+  stance's invisible levels + 8) × (the attack type's bonus + 64) against (the
+  NPC's Defence + 9) × 64: the NPCs here have no stab, slash or crush defence
+  bonus, which RuneC also rolls as 0 for every ordinary NPC. The max hit is
+  ((Strength, raised by the strength prayers' percentage, + the stance's
+  invisible levels + 8) × (Strength bonus + 64) + 320) / 640. Accurate adds 3
+  Attack levels, Aggressive 3 Strength, Defensive 3 Defence (to the player's
+  defence rolls) and Controlled 1 of each. The unarmed punch and a staff's
+  bash roll the same way on accurate crush and still land in the attack's
+  tick. Not available until RuneC implements them: weapon passives and set
+  effects (the Scythe of vitur's extra hits, Osmumten's fang's accuracy and
+  damage rules, the Dual macuahuitl's second hit, the Blood moon set's
+  faster attacks, and any Bandos, Torva, Ultor ring or Amulet of rancour
+  effect) and special attacks. RuneC's 2-tile polearm reach is not ported,
+  as no preset wields a polearm.
+
 - **Rewards** and their shaping terms.
 
 Training and replay print the capabilities, policy heads and scenario at
@@ -175,11 +208,13 @@ protection prayers, and with `gear_sets` above 1, F1 to F4 switch to gear sets 1
 to 4. The side panel has the combat, inventory, equipment and
 prayer tabs, and with `spellbook` the spellbook tab, which lists the book's
 spells and autocasts the one clicked; clicking the minimap walks there and its
-orb toggles running. A staff's combat tab shows the autocast spell, and
-clicking it lists the spells to autocast. The pinned assets predate the magic
-presets: their items and the runes show their names instead of icons and are
-left off the player model, and the spells show their names, the casts and
-spell graphics the bundle lacks being skipped.
+orb toggles running. The combat tab shows the weapon's attack styles with the
+one the attacks use; a staff's also shows the autocast spell, and clicking it
+lists the spells to autocast. The pinned assets predate the magic and melee
+presets: their items (but the Barrows gloves) and the runes show their names
+instead of icons and are left off the player model, the spells show their
+names, and the casts, spell graphics, melee stances and melee attacks the
+bundle lacks are skipped, the human stance standing in.
 With `prayers = all` the prayer tab holds every prayer the policy can use,
 bright when a click would toggle it; Preserve, Chivalry, Deadeye, Mystic
 Vigour, Piety, Rigour and Augury show their names, as the pinned assets have

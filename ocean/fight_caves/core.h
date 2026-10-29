@@ -30,7 +30,11 @@ typedef enum {
     FC_LOADOUT_TBOW_MASORI_NO_RING = 8,
     FC_LOADOUT_SMOKE_STAFF_MYSTIC = 9,
     FC_LOADOUT_KODAI_VIRTUS = 11,
-    FC_LOADOUT_HARMONISED_ANCESTRAL = 12
+    FC_LOADOUT_HARMONISED_ANCESTRAL = 12,
+    FC_LOADOUT_DRAGON_SCIMITAR_TORSO = 13,
+    FC_LOADOUT_MACUAHUITL_BLOOD_MOON = 14,
+    FC_LOADOUT_FANG_BANDOS = 15,
+    FC_LOADOUT_SCYTHE_TORVA = 16
 } FcLoadoutId;
 
 #define FC_LOADOUT_EQUIP_MAX 12
@@ -72,6 +76,9 @@ typedef struct {
     const char* name;
     int id;                     /* FcLoadoutId */
     int combat_style_profile;   /* the viewer's combat-tab weapon category */
+    int attack_style;           /* RuneC's attack style index (0-3) the player's
+                                 * melee attacks use while it is worn
+                                 * (fc_player_melee_style) */
     int ammo;                   /* worn ammunition, or darts in a blowpipe */
     int equipment_count;
     int equipment[FC_LOADOUT_EQUIP_MAX];
@@ -100,14 +107,35 @@ typedef struct {
 
 /* Stored in the hashed FcPlayer.weapon_kind, so the values are fixed. A staff
  * is RuneC's autocasting weapon type (22, staves and wands): it casts its
- * autocast spell, and bashes in melee without one. */
+ * autocast spell, and bashes in melee without one. A melee weapon attacks only
+ * in melee, with the styles of its RuneC weapon type (FcItemDef.weapon_type). */
 typedef enum {
     FC_WEAPON_GENERIC_RANGED = 0,
     FC_WEAPON_TWISTED_BOW = 1,
     FC_WEAPON_BOW_OF_FAERDHINEN = 2,
     FC_WEAPON_UNARMED = 3,
-    FC_WEAPON_STAFF = 4
+    FC_WEAPON_STAFF = 4,
+    FC_WEAPON_MELEE = 5
 } FcWeaponKind;
+
+/* RuneC's weapon types (rc-core/combat_formula.c) of the weapons that attack
+ * in melee here, which decide their attack styles (fc_melee_style): unarmed,
+ * a staff's bash and the melee presets' weapons. */
+enum {
+    FC_WEAPON_TYPE_UNARMED = 0,
+    FC_WEAPON_TYPE_SCYTHE = 17,
+    FC_WEAPON_TYPE_SLASH_SWORD = 18,
+    FC_WEAPON_TYPE_SPIKED = 20,
+    FC_WEAPON_TYPE_STAB_SWORD = 21,
+    FC_WEAPON_TYPE_STAFF = 22
+};
+
+/* RuneC's melee stances (RcAttackStance), in its order: each adds invisible
+ * levels to the effective levels (fc_stance_levels). */
+typedef enum {
+    FC_STANCE_ACCURATE, FC_STANCE_AGGRESSIVE, FC_STANCE_DEFENSIVE,
+    FC_STANCE_CONTROLLED
+} FcStance;
 
 /* The spellbooks whose combat spells the player can cast. */
 typedef enum {
@@ -867,11 +895,12 @@ typedef struct {
  * set is worn, then what each set's weapon gives: the attack style one-hot,
  * as process_player_target attacks (Ranged with a ranged weapon, Magic with
  * a staff that autocasts the player's spellbook, which casts once a spell of
- * that book is autocast, melee with any other staff or none), then its range
- * and attack speed: a cast's 10 tiles and speed (fc_spell_cast_speed), or
- * the weapon's as recalculate_equipment sets them (1 and 4 unarmed). The
- * player features already hold the worn weapon's attack timer and the
- * ammunition left. */
+ * that book is autocast, melee with a melee weapon, any other staff or none),
+ * then its range and attack speed: a cast's 10 tiles and speed
+ * (fc_spell_cast_speed), or the weapon's as recalculate_equipment sets them
+ * (a melee weapon's reach of 1 and its speed; 1 and 4 unarmed). The player
+ * features already hold the worn weapon's attack timer and the ammunition
+ * left. */
 #define FC_OBS_GEAR_START       (FC_OBS_BOOK_START + FC_OBS_BOOK_SIZE)
 #define FC_OBS_GEAR_WORN        0   /* 0..N-1: 1 if gear set k + 1 is worn */
 #define FC_OBS_GEAR_WEAPONS     FC_CAP_GEAR_SETS  /* then one stride per set: */
@@ -1377,11 +1406,15 @@ typedef struct {
     int ranged_level, defence_level, hitpoints_level;
     int ranged_attack, ranged_strength;
     int defence[5];               /* stab, slash, crush, magic, ranged */
-    int prayer, melee_attack, melee_strength;
+    int prayer, melee_attack, melee_strength;   /* melee_attack: crush */
+    int stab_attack, slash_attack;   /* the stab and slash attack bonuses */
     int weapon_kind, speed, range, ammo_kind;
+    int weapon_type;              /* a melee weapon's FC_WEAPON_TYPE_* */
     int ammo_tier;                /* supported ammunition: 0 standard, 1 dragon */
     int crystal_piece;
-    int magic_level, attack_level;   /* Magic and Attack needed to wear it */
+    int magic_level, attack_level, strength_level;   /* Magic, Attack and
+                                                      * Strength needed to
+                                                      * wear it */
     int magic_attack;                /* Magic accuracy bonus */
     int magic_damage;                /* Magic damage bonus in percent */
     /* Staves: the FC_BOOK_BIT_* books it autocasts, the FC_RUNE_*_BIT
@@ -1500,10 +1533,64 @@ static int fc_prayer_strength_level(int level, int percent) {
     return fc_prayer_level(level, percent);
 }
 
+/* The invisible levels a stance adds, as RuneC's stance_attack_bonus,
+ * stance_strength_bonus and stance_defence_bonus give them: Accurate 3
+ * Attack, Aggressive 3 Strength, Defensive 3 Defence, Controlled 1 of each. */
+static void fc_stance_levels(int stance, int* attack, int* strength, int* defence) {
+    int controlled = stance == FC_STANCE_CONTROLLED;
+    *attack = stance == FC_STANCE_ACCURATE ? 3 : controlled;
+    *strength = stance == FC_STANCE_AGGRESSIVE ? 3 : controlled;
+    *defence = stance == FC_STANCE_DEFENSIVE ? 3 : controlled;
+}
+
+/* The attack type (FcAttackType) and stance (FcStance) of a melee attack. */
+typedef struct {
+    int attack_type, stance;
+} FcMeleeStyle;
+
+/* What attack style index `style` (RuneC's attack_style_idx, 0-3) of a
+ * weapon type attacks with, as rc_refresh_player_combat_style sets it for
+ * the weapon types here; 0 when the weapon has no such style, RuneC's
+ * unavailable style, which does not attack. Index 0 is Accurate, 1
+ * Aggressive, 2 Controlled and 3 Defensive (set_basic_melee_style), with the
+ * attack type of the weapon type, except: unarmed and staves (set_staff_style)
+ * crush, without index 2; the Scythe's type (set_axe_or_2h_style) slash, its
+ * index 2 Aggressive crush; slash swords slash, index 2 stab; stab swords
+ * stab, index 2 slash; spiked weapons crush, index 2 stab. */
+static int fc_melee_style(int weapon_type, int style, FcMeleeStyle* out) {
+    static const int stances[4] = {FC_STANCE_ACCURATE, FC_STANCE_AGGRESSIVE,
+                                   FC_STANCE_CONTROLLED, FC_STANCE_DEFENSIVE};
+    if (style < 0 || style > 3) return 0;
+    out->stance = stances[style];
+    switch (weapon_type) {
+        case FC_WEAPON_TYPE_UNARMED:
+        case FC_WEAPON_TYPE_STAFF:
+            if (style == 2) return 0;
+            out->attack_type = FC_ATTACK_TYPE_CRUSH;
+            return 1;
+        case FC_WEAPON_TYPE_SCYTHE:
+            if (style == 2) out->stance = FC_STANCE_AGGRESSIVE;
+            out->attack_type = style == 2 ? FC_ATTACK_TYPE_CRUSH : FC_ATTACK_TYPE_SLASH;
+            return 1;
+        case FC_WEAPON_TYPE_SLASH_SWORD:
+            out->attack_type = style == 2 ? FC_ATTACK_TYPE_STAB : FC_ATTACK_TYPE_SLASH;
+            return 1;
+        case FC_WEAPON_TYPE_STAB_SWORD:
+            out->attack_type = style == 2 ? FC_ATTACK_TYPE_SLASH : FC_ATTACK_TYPE_STAB;
+            return 1;
+        case FC_WEAPON_TYPE_SPIKED:
+            out->attack_type = style == 2 ? FC_ATTACK_TYPE_STAB : FC_ATTACK_TYPE_CRUSH;
+            return 1;
+        default:
+            return 0;
+    }
+}
+
 /* Player defence roll against one incoming attack type, with the book
- * prayers' Defence and Magic Defence percentages. */
+ * prayers' Defence and Magic Defence percentages and the Defence levels of
+ * the player's stance (fc_player_stance_defence). */
 static int fc_player_def_roll(const FcPlayer* p, const FcPrayerBonus* prayer,
-                              FcAttackType attack_type) {
+                              int stance_defence, FcAttackType attack_type) {
     int def_bonus;
     switch (attack_type) {
         case FC_ATTACK_TYPE_STAB:   def_bonus = p->defence_stab; break;
@@ -1520,9 +1607,10 @@ static int fc_player_def_roll(const FcPlayer* p, const FcPrayerBonus* prayer,
         /* OSRS truncates the Defence and Magic contributions separately,
          * each already raised by its prayer. */
         eff_def = 3 * defence / 10 +
-                  7 * fc_prayer_level(p->magic_level, prayer->magic_defence) / 10 + 8;
+                  7 * fc_prayer_level(p->magic_level, prayer->magic_defence) / 10 +
+                  stance_defence + 8;
     } else {
-        eff_def = defence + 8;
+        eff_def = defence + stance_defence + 8;
     }
     return eff_def * (def_bonus + 64);
 }
@@ -1597,16 +1685,28 @@ static void fc_player_ranged_rolls(const FcPlayer* p, const FcPrayerBonus* praye
     }
 }
 
-/* Player unarmed attack roll and max hit (whole HP). Punch is accurate/crush:
- * Attack, raised by the book prayers' attack percentage, + 3 + 8, and
- * Strength, raised by their strength percentage, + 8. */
-static void fc_player_melee_rolls(const FcPlayer* p, const FcPrayerBonus* prayer,
-                                  int* attack_roll, int* max_hit) {
-    *attack_roll = (fc_prayer_level(p->attack_level, prayer->attack) + 11) *
-                   (p->melee_attack_bonus + 64);
-    *max_hit = (320 + (fc_prayer_strength_level(p->strength_level,
-                                                prayer->strength) + 8) *
-                (p->melee_strength_bonus + 64)) / 640;
+/* A melee attack roll and max hit (whole HP), as RuneC's rc_calc_melee makes
+ * them (rc_player_offensive_roll, rc_player_max_hit_melee): Attack, raised by
+ * the book prayers' attack percentage, + the stance's Attack levels + 8,
+ * times the attack type's bonus + 64; and Strength, raised by their strength
+ * percentage, + the stance's Strength levels + 8, times the Strength bonus +
+ * 64, + 320, / 640. */
+static void fc_melee_rolls(int attack_level, int strength_level, int attack_bonus,
+                           int strength_bonus, int stance, const FcPrayerBonus* prayer,
+                           int* attack_roll, int* max_hit) {
+    int stance_attack, stance_strength, stance_defence;
+    fc_stance_levels(stance, &stance_attack, &stance_strength, &stance_defence);
+    *attack_roll = (fc_prayer_level(attack_level, prayer->attack) + stance_attack + 8) *
+                   (attack_bonus + 64);
+    *max_hit = (320 + (fc_prayer_strength_level(strength_level, prayer->strength) +
+                       stance_strength + 8) * (strength_bonus + 64)) / 640;
+}
+
+/* Whether the player attacks in melee when not casting: unarmed, with a
+ * staff (its bash) or with a melee weapon. */
+static int fc_player_melee(const FcPlayer* p) {
+    return p->weapon_kind == FC_WEAPON_UNARMED || p->weapon_kind == FC_WEAPON_STAFF ||
+           p->weapon_kind == FC_WEAPON_MELEE;
 }
 
 /* Damage of a successful hit in tenths: a uniform roll of 0..max_hit whole HP,
@@ -2004,16 +2104,18 @@ uint32_t fc_state_hash(const FcState* state) {
 
 /* The gear presets' equipment and the supplies, pinned to the presets'
  * existing balance: equipment switching must not rebalance training. The
- * magic presets' items, Barrows gloves' Magic attack and the runes are
- * RuneC_v4's b237 definitions (data/defs/items.bin): requirements, bonuses
- * (melee_attack is the crush bonus a staff bashes with), RuneC weapon type 22
- * as FC_WEAPON_STAFF with its speed and range, and from rc-content/combat
- * the books a staff autocasts (magic.c rc_content_can_autocast), the runes it
- * supplies (runes.c staff_elements) and Harmonised's Standard speed. RuneC
- * has no bonuses or weapon data for the Twinflame staff, Confliction
- * gauntlets and Avernic treads (max) (items.bin flags them without equipment
- * stats; DSA-031 lists the Twinflame staff), so they have none here and the
- * Twinflame staff fights like an empty hand, as in RuneC. */
+ * magic and melee presets' items, Barrows gloves' Magic attack, the stab and
+ * slash bonuses of the other items and the runes are RuneC_v4's b237 definitions
+ * (data/defs/items.bin): requirements, bonuses (melee_attack is the crush
+ * bonus, which a staff bashes with), RuneC weapon type 22 as FC_WEAPON_STAFF
+ * and the melee weapon types as FC_WEAPON_MELEE, with their speed and range,
+ * and from rc-content/combat the books a staff autocasts (magic.c
+ * rc_content_can_autocast), the runes it supplies (runes.c staff_elements)
+ * and Harmonised's Standard speed. RuneC has no bonuses or weapon data for
+ * the Twinflame staff, Confliction gauntlets and Avernic treads (max)
+ * (items.bin flags them without equipment stats; DSA-031 lists the Twinflame
+ * staff), so they have none here and the Twinflame staff fights like an
+ * empty hand, as in RuneC. */
 enum { AMMO_NONE, AMMO_ARROW, AMMO_BOLT, AMMO_LOADED_DART };
 static const FcItemDef ITEMS[] = {
     {.id=1169, .name="Coif", .slot=FC_EQUIP_SLOT_HEAD,
@@ -2036,7 +2138,8 @@ static const FcItemDef ITEMS[] = {
      .ranged_level=80, .defence_level=80, .hitpoints_level=0, .melee_attack=0, .melee_strength=0},
     {.id=26235, .name="Zaryte vambraces", .slot=FC_EQUIP_SLOT_HANDS,
      .ranged_attack=18, .ranged_strength=2, .defence={8,8,8,5,8}, .prayer=1,
-     .ranged_level=80, .defence_level=45, .hitpoints_level=0, .melee_attack=-8, .melee_strength=0},
+     .ranged_level=80, .defence_level=45, .hitpoints_level=0, .melee_attack=-8, .melee_strength=0,
+     .stab_attack=-8, .slash_attack=-8},
     {.id=13237, .name="Pegasian boots", .slot=FC_EQUIP_SLOT_FEET,
      .ranged_attack=12, .ranged_strength=0, .defence={5,5,5,5,5}, .prayer=0,
      .ranged_level=75, .defence_level=75, .hitpoints_level=0, .melee_attack=0, .melee_strength=0},
@@ -2063,7 +2166,8 @@ static const FcItemDef ITEMS[] = {
      .ranged_level=50, .defence_level=0, .hitpoints_level=0, .melee_attack=0, .melee_strength=0},
     {.id=1704, .name="Amulet of glory", .slot=FC_EQUIP_SLOT_NECK,
      .ranged_attack=10, .ranged_strength=0, .defence={3,3,3,3,3}, .prayer=3,
-     .ranged_level=0, .defence_level=0, .hitpoints_level=0, .melee_attack=10, .melee_strength=6},
+     .ranged_level=0, .defence_level=0, .hitpoints_level=0, .melee_attack=10, .melee_strength=6,
+     .stab_attack=10, .slash_attack=10},
     {.id=12596, .name="Rangers' tunic", .slot=FC_EQUIP_SLOT_BODY,
      .ranged_attack=15, .ranged_strength=0, .defence={6,9,12,6,6}, .prayer=0,
      .ranged_level=40, .defence_level=0, .hitpoints_level=0, .melee_attack=0, .melee_strength=0},
@@ -2075,23 +2179,27 @@ static const FcItemDef ITEMS[] = {
      .ranged_level=60, .defence_level=0, .hitpoints_level=0, .melee_attack=0, .melee_strength=0},
     {.id=11126, .name="Combat bracelet", .slot=FC_EQUIP_SLOT_HANDS,
      .ranged_attack=7, .ranged_strength=0, .defence={5,5,5,3,5}, .prayer=0,
-     .ranged_level=0, .defence_level=0, .hitpoints_level=0, .melee_attack=7, .melee_strength=6},
+     .ranged_level=0, .defence_level=0, .hitpoints_level=0, .melee_attack=7, .melee_strength=6,
+     .stab_attack=7, .slash_attack=7},
     {.id=2577, .name="Ranger boots", .slot=FC_EQUIP_SLOT_FEET,
      .ranged_attack=8, .ranged_strength=0, .defence={2,3,4,2,0}, .prayer=0,
      .ranged_level=40, .defence_level=0, .hitpoints_level=0, .melee_attack=0, .melee_strength=0},
     {.id=11826, .name="Armadyl helmet", .slot=FC_EQUIP_SLOT_HEAD,
      .ranged_attack=10, .ranged_strength=0, .defence={6,8,10,10,8}, .prayer=1,
-     .ranged_level=70, .defence_level=70, .hitpoints_level=0, .melee_attack=-5, .melee_strength=0},
+     .ranged_level=70, .defence_level=70, .hitpoints_level=0, .melee_attack=-5, .melee_strength=0,
+     .stab_attack=-5, .slash_attack=-5},
     {.id=11828, .name="Armadyl chestplate", .slot=FC_EQUIP_SLOT_BODY,
      .ranged_attack=33, .ranged_strength=0, .defence={56,48,61,70,57}, .prayer=1,
-     .ranged_level=70, .defence_level=70, .hitpoints_level=0, .melee_attack=-7, .melee_strength=0},
+     .ranged_level=70, .defence_level=70, .hitpoints_level=0, .melee_attack=-7, .melee_strength=0,
+     .stab_attack=-7, .slash_attack=-7},
     {.id=11830, .name="Armadyl chainskirt", .slot=FC_EQUIP_SLOT_LEGS,
      .ranged_attack=20, .ranged_strength=0, .defence={32,26,34,40,33}, .prayer=1,
-     .ranged_level=70, .defence_level=70, .hitpoints_level=0, .melee_attack=-6, .melee_strength=0},
+     .ranged_level=70, .defence_level=70, .hitpoints_level=0, .melee_attack=-6, .melee_strength=0,
+     .stab_attack=-6, .slash_attack=-6},
     {.id=7462, .name="Barrows gloves", .slot=FC_EQUIP_SLOT_HANDS,
      .ranged_attack=12, .ranged_strength=0, .defence={12,12,12,6,12}, .prayer=0,
      .ranged_level=0, .defence_level=0, .hitpoints_level=0, .melee_attack=12, .melee_strength=12,
-     .magic_attack=6},
+     .stab_attack=12, .slash_attack=12, .magic_attack=6},
     {.id=23971, .name="Crystal helm", .slot=FC_EQUIP_SLOT_HEAD,
      .ranged_attack=9, .ranged_strength=0, .defence={12,8,14,10,18}, .prayer=2,
      .ranged_level=70, .defence_level=70, .hitpoints_level=0, .melee_attack=0, .melee_strength=0, .crystal_piece=FC_CRYSTAL_PIECE_HELM},
@@ -2135,6 +2243,7 @@ static const FcItemDef ITEMS[] = {
     {.id=1727, .name="Amulet of magic", .slot=FC_EQUIP_SLOT_NECK, .magic_attack=10},
     {.id=12000, .name="Mystic smoke staff", .slot=FC_EQUIP_SLOT_WEAPON, .magic_level=40,
      .attack_level=40, .magic_attack=14, .melee_attack=40, .melee_strength=50,
+     .stab_attack=10, .slash_attack=-1,
      .defence={2,3,1,14,0}, .weapon_kind=FC_WEAPON_STAFF, .speed=5, .range=1,
      .autocast=FC_BOOK_BIT_STANDARD, .staff_runes=FC_RUNE_AIR_BIT | FC_RUNE_FIRE_BIT},
     {.id=4091, .name="Mystic robe top", .slot=FC_EQUIP_SLOT_BODY, .defence_level=20,
@@ -2201,6 +2310,83 @@ static const FcItemDef ITEMS[] = {
     {.id=31097, .name="Avernic treads (max)", .slot=FC_EQUIP_SLOT_FEET},
     {.id=28313, .name="Magus ring", .slot=FC_EQUIP_SLOT_RING, .magic_attack=15,
      .magic_damage=2},
+    /* The melee presets' equipment, in preset order; Barrows gloves, Rada's
+     * blessing 4 and Avernic treads (max) are above. */
+    {.id=10828, .name="Helm of neitiznot", .slot=FC_EQUIP_SLOT_HEAD, .defence_level=55,
+     .melee_strength=3, .prayer=3, .defence={31,29,34,3,30}},
+    {.id=6570, .name="Fire cape", .slot=FC_EQUIP_SLOT_CAPE, .stab_attack=1, .slash_attack=1,
+     .melee_attack=1, .melee_strength=4, .ranged_attack=1, .magic_attack=1, .prayer=2,
+     .defence={11,11,11,11,11}},
+    {.id=6585, .name="Amulet of fury", .slot=FC_EQUIP_SLOT_NECK, .stab_attack=10,
+     .slash_attack=10, .melee_attack=10, .melee_strength=8, .ranged_attack=10,
+     .magic_attack=10, .prayer=5, .defence={15,15,15,15,15}},
+    {.id=4587, .name="Dragon scimitar", .slot=FC_EQUIP_SLOT_WEAPON, .attack_level=60,
+     .stab_attack=8, .slash_attack=67, .melee_attack=-2, .melee_strength=66,
+     .defence={0,1,0,0,0}, .weapon_kind=FC_WEAPON_MELEE,
+     .weapon_type=FC_WEAPON_TYPE_SLASH_SWORD, .speed=4, .range=1},
+    {.id=10551, .name="Fighter torso", .slot=FC_EQUIP_SLOT_BODY, .defence_level=40,
+     .melee_strength=4, .magic_attack=-40, .defence={62,85,62,-10,67}},
+    {.id=12954, .name="Dragon defender", .slot=FC_EQUIP_SLOT_SHIELD, .defence_level=60,
+     .stab_attack=25, .slash_attack=24, .melee_attack=23, .melee_strength=6,
+     .ranged_attack=-2, .magic_attack=-3, .defence={25,24,23,-3,-2}},
+    {.id=4087, .name="Dragon platelegs", .slot=FC_EQUIP_SLOT_LEGS, .defence_level=60,
+     .ranged_attack=-11, .magic_attack=-21, .defence={68,66,63,-4,65}},
+    {.id=11840, .name="Dragon boots", .slot=FC_EQUIP_SLOT_FEET, .defence_level=60,
+     .melee_strength=4, .ranged_attack=-1, .magic_attack=-3, .defence={16,17,18,0,0}},
+    {.id=6737, .name="Berserker ring", .slot=FC_EQUIP_SLOT_RING, .melee_strength=4,
+     .defence={0,0,4,0,0}},
+    {.id=29028, .name="Blood moon helm", .slot=FC_EQUIP_SLOT_HEAD, .melee_strength=4,
+     .ranged_attack=-2, .magic_attack=-6, .defence={20,31,34,7,29}},
+    {.id=28997, .name="Dual macuahuitl", .slot=FC_EQUIP_SLOT_WEAPON, .two_handed=1,
+     .stab_attack=115, .slash_attack=-4, .melee_attack=121, .melee_strength=81,
+     .magic_attack=-4, .weapon_kind=FC_WEAPON_MELEE, .weapon_type=FC_WEAPON_TYPE_SPIKED,
+     .speed=4, .range=1},
+    {.id=29022, .name="Blood moon chestplate", .slot=FC_EQUIP_SLOT_BODY, .melee_strength=4,
+     .ranged_attack=-10, .magic_attack=-15, .defence={60,80,80,40,79}},
+    {.id=29025, .name="Blood moon tassets", .slot=FC_EQUIP_SLOT_LEGS, .melee_strength=2,
+     .ranged_attack=-7, .magic_attack=-21, .defence={30,50,49,32,46}},
+    {.id=11773, .name="Berserker ring (i)", .slot=FC_EQUIP_SLOT_RING, .melee_strength=8,
+     .defence={0,0,8,0,0}},
+    {.id=24271, .name="Neitiznot faceguard", .slot=FC_EQUIP_SLOT_HEAD, .defence_level=70,
+     .melee_strength=6, .prayer=3, .defence={36,34,38,3,34}},
+    {.id=19553, .name="Amulet of torture", .slot=FC_EQUIP_SLOT_NECK, .hitpoints_level=75,
+     .stab_attack=15, .slash_attack=15, .melee_attack=15, .melee_strength=10, .prayer=2},
+    {.id=26219, .name="Osmumten's fang", .slot=FC_EQUIP_SLOT_WEAPON, .stab_attack=105,
+     .slash_attack=75, .melee_strength=103, .weapon_kind=FC_WEAPON_MELEE,
+     .weapon_type=FC_WEAPON_TYPE_STAB_SWORD, .speed=5, .range=1},
+    {.id=11832, .name="Bandos chestplate", .slot=FC_EQUIP_SLOT_BODY, .defence_level=65,
+     .melee_strength=4, .ranged_attack=-10, .magic_attack=-15, .prayer=1,
+     .defence={98,93,105,-6,133}},
+    {.id=22322, .name="Avernic defender", .slot=FC_EQUIP_SLOT_SHIELD, .defence_level=70,
+     .attack_level=70, .stab_attack=30, .slash_attack=29, .melee_attack=28,
+     .melee_strength=8, .ranged_attack=-4, .magic_attack=-5, .defence={30,29,28,-5,-4}},
+    {.id=11834, .name="Bandos tassets", .slot=FC_EQUIP_SLOT_LEGS, .defence_level=65,
+     .melee_strength=2, .ranged_attack=-7, .magic_attack=-21, .prayer=1,
+     .defence={71,63,66,-4,93}},
+    {.id=22981, .name="Ferocious gloves", .slot=FC_EQUIP_SLOT_HANDS, .defence_level=80,
+     .attack_level=80, .stab_attack=16, .slash_attack=16, .melee_attack=16,
+     .melee_strength=14, .ranged_attack=-16, .magic_attack=-16},
+    {.id=13239, .name="Primordial boots", .slot=FC_EQUIP_SLOT_FEET, .defence_level=75,
+     .strength_level=75, .stab_attack=2, .slash_attack=2, .melee_attack=2,
+     .melee_strength=5, .ranged_attack=-1, .magic_attack=-4, .defence={22,22,22,0,0}},
+    {.id=26382, .name="Torva full helm", .slot=FC_EQUIP_SLOT_HEAD, .melee_strength=8,
+     .ranged_attack=-5, .magic_attack=-5, .prayer=1, .defence={59,60,62,-2,57}},
+    {.id=21295, .name="Infernal cape", .slot=FC_EQUIP_SLOT_CAPE, .stab_attack=4,
+     .slash_attack=4, .melee_attack=4, .melee_strength=8, .ranged_attack=1,
+     .magic_attack=1, .prayer=2, .defence={12,12,12,12,12}},
+    {.id=29801, .name="Amulet of rancour", .slot=FC_EQUIP_SLOT_NECK, .stab_attack=25,
+     .slash_attack=25, .melee_attack=25, .melee_strength=12, .ranged_attack=-8,
+     .magic_attack=-6, .prayer=2},
+    {.id=22325, .name="Scythe of vitur", .slot=FC_EQUIP_SLOT_WEAPON, .two_handed=1,
+     .attack_level=75, .strength_level=75, .stab_attack=70, .slash_attack=125,
+     .melee_attack=30, .melee_strength=75, .magic_attack=-6, .defence={-2,8,10,0,0},
+     .weapon_kind=FC_WEAPON_MELEE, .weapon_type=FC_WEAPON_TYPE_SCYTHE, .speed=5,
+     .range=1},
+    {.id=26384, .name="Torva platebody", .slot=FC_EQUIP_SLOT_BODY, .melee_strength=6,
+     .ranged_attack=-14, .magic_attack=-18, .prayer=1, .defence={117,111,117,-11,142}},
+    {.id=26386, .name="Torva platelegs", .slot=FC_EQUIP_SLOT_LEGS, .melee_strength=4,
+     .ranged_attack=-11, .magic_attack=-24, .prayer=1, .defence={87,78,79,-9,102}},
+    {.id=28307, .name="Ultor ring", .slot=FC_EQUIP_SLOT_RING, .melee_strength=12},
     /* Runes: stackable, carried in the inventory. */
     {.id=FC_RUNE_AIR, .name="Air rune", .slot=-1, .stackable=1},
     {.id=FC_RUNE_WATER, .name="Water rune", .slot=-1, .stackable=1},
@@ -2378,7 +2564,8 @@ static FcItemResult fc_equip_plan(const FcPlayer *p,
         (!item->stackable && incoming.quantity != 1)) return FC_ITEM_INVALID;
     if (p->ranged_level < item->ranged_level || p->defence_level < item->defence_level ||
         p->max_hp / 10 < item->hitpoints_level || p->magic_level < item->magic_level ||
-        p->attack_level < item->attack_level) return FC_ITEM_REQUIREMENTS;
+        p->attack_level < item->attack_level || p->strength_level < item->strength_level)
+        return FC_ITEM_REQUIREMENTS;
     FcItemStack *worn = &equipment[item->slot];
     if (item->stackable && worn->item_id == incoming.item_id) {
         int amount = INT_MAX - worn->quantity;
@@ -3147,6 +3334,84 @@ static const FcGearPreset FC_GEAR_PRESETS[] = {
         .autocast = FC_SPELL_WATER_SURGE + 1,
         .runes = FC_PRESET_RUNE_QUANTITY,
     },
+    /* The melee presets of fc-rl-4.0-dlc's tiered loadouts (low, medium, high
+     * and maxed), with RuneC's item definitions. Each attacks on its weapon's
+     * first style (attack style 0, Accurate), as fc-rl-4.0-dlc's melee does;
+     * the style names are those of RuneC's viewer, and RuneC's
+     * data/defs/combat_visuals.tsv rows for that style (stance_idx 0) have the
+     * attack type fc_melee_style gives it. */
+    {
+        .name = "dragon_scimitar_torso", .id = FC_LOADOUT_DRAGON_SCIMITAR_TORSO,
+        .combat_style_profile = FC_WEAPON_TYPE_SLASH_SWORD,
+        .attack_style = 0,            /* Chop: slash, Accurate */
+        .equipment_count = 10,
+        .equipment = {
+            10828,  /* Helm of neitiznot */
+            6570,   /* Fire cape */
+            6585,   /* Amulet of fury */
+            4587,   /* Dragon scimitar */
+            10551,  /* Fighter torso */
+            12954,  /* Dragon defender */
+            4087,   /* Dragon platelegs */
+            7462,   /* Barrows gloves */
+            11840,  /* Dragon boots */
+            6737,   /* Berserker ring */
+        },
+    },
+    {
+        .name = "macuahuitl_blood_moon", .id = FC_LOADOUT_MACUAHUITL_BLOOD_MOON,
+        .combat_style_profile = FC_WEAPON_TYPE_SPIKED,
+        .attack_style = 0,            /* Pound: crush, Accurate */
+        .equipment_count = 9,
+        .equipment = {
+            29028,  /* Blood moon helm */
+            6570,   /* Fire cape */
+            6585,   /* Amulet of fury */
+            28997,  /* Dual macuahuitl */
+            29022,  /* Blood moon chestplate */
+            29025,  /* Blood moon tassets */
+            7462,   /* Barrows gloves */
+            11840,  /* Dragon boots */
+            11773,  /* Berserker ring (i) */
+        },
+    },
+    {
+        .name = "fang_bandos", .id = FC_LOADOUT_FANG_BANDOS,
+        .combat_style_profile = FC_WEAPON_TYPE_STAB_SWORD,
+        .attack_style = 0,            /* Stab: stab, Accurate */
+        .equipment_count = 11,
+        .equipment = {
+            24271,  /* Neitiznot faceguard */
+            6570,   /* Fire cape */
+            19553,  /* Amulet of torture */
+            26219,  /* Osmumten's fang */
+            11832,  /* Bandos chestplate */
+            22322,  /* Avernic defender */
+            11834,  /* Bandos tassets */
+            22981,  /* Ferocious gloves */
+            13239,  /* Primordial boots */
+            11773,  /* Berserker ring (i) */
+            22947,  /* Rada's blessing 4 */
+        },
+    },
+    {
+        .name = "scythe_torva", .id = FC_LOADOUT_SCYTHE_TORVA,
+        .combat_style_profile = FC_WEAPON_TYPE_SCYTHE,
+        .attack_style = 0,            /* Reap: slash, Accurate */
+        .equipment_count = 10,
+        .equipment = {
+            26382,  /* Torva full helm */
+            21295,  /* Infernal cape */
+            29801,  /* Amulet of rancour */
+            22325,  /* Scythe of vitur */
+            26384,  /* Torva platebody */
+            26386,  /* Torva platelegs */
+            22981,  /* Ferocious gloves */
+            31097,  /* Avernic treads (max) */
+            28307,  /* Ultor ring */
+            22947,  /* Rada's blessing 4 */
+        },
+    },
 };
 #define FC_GEAR_PRESET_COUNT ((int)(sizeof(FC_GEAR_PRESETS) / sizeof(FC_GEAR_PRESETS[0])))
 
@@ -3165,6 +3430,82 @@ static const FcGearPreset* fc_gear_preset_by_id(int id) {
     for (int i = 0; i < FC_GEAR_PRESET_COUNT; i++)
         if (FC_GEAR_PRESETS[i].id == id) return &FC_GEAR_PRESETS[i];
     return &FC_GEAR_PRESETS[0];
+}
+
+/* The weapon a gear preset wears, or NULL. */
+static const FcItemDef* fc_gear_preset_weapon(const FcGearPreset* preset) {
+    for (int i = 0; i < preset->equipment_count; i++) {
+        const FcItemDef* item = fc_item_definition(preset->equipment[i]);
+        if (item->slot == FC_EQUIP_SLOT_WEAPON) return item;
+    }
+    return NULL;
+}
+
+/* Melee */
+
+/*
+ * Melee as RuneC_v4's combat_formula.c makes it: the worn weapon's RuneC
+ * weapon type gives its attack styles (fc_melee_style), and the attack style
+ * the worn gear preset names (FcGearPreset.attack_style; RuneC's
+ * attack_style_idx, a player setting) picks the attack type and stance; the
+ * rolls are fc_melee_rolls with the worn items' bonuses for that type.
+ * Weapon speed and reach are the item's (rc_player_attack_speed,
+ * rc_player_attack_range: 1 for every melee weapon here, which needs open
+ * cardinal contact, fc_npc_can_melee_player).
+ */
+
+/* The RuneC weapon type of the worn weapon: unarmed, a staff, or a melee
+ * weapon's own. Ranged weapons have none here (-1). */
+static int fc_player_weapon_type(const FcPlayer* p) {
+    if (p->weapon_kind == FC_WEAPON_UNARMED) return FC_WEAPON_TYPE_UNARMED;
+    if (p->weapon_kind == FC_WEAPON_STAFF) return FC_WEAPON_TYPE_STAFF;
+    if (p->weapon_kind != FC_WEAPON_MELEE) return -1;
+    return fc_item_definition(p->equipment[FC_EQUIP_SLOT_WEAPON].item_id)->weapon_type;
+}
+
+/* What the player's melee attacks attack with: fc_melee_style for the worn
+ * weapon and the worn gear preset's attack style. Returns 0 when the player
+ * does not attack in melee or the weapon has no such style. */
+static int fc_player_melee_style(const FcState* state, FcMeleeStyle* out) {
+    if (!fc_player_melee(&state->player)) return 0;
+    return fc_melee_style(fc_player_weapon_type(&state->player),
+                          fc_gear_preset_by_id(state->active_loadout)->attack_style, out);
+}
+
+/* The worn items' attack bonus for a melee attack type: the crush bonus is
+ * recalculate_equipment's melee_attack_bonus, the stab and slash bonuses are
+ * summed here, as RuneC's rc_recalc_bonuses sums every worn item. */
+static int fc_player_melee_bonus(const FcPlayer* p, int attack_type) {
+    if (attack_type == FC_ATTACK_TYPE_CRUSH) return p->melee_attack_bonus;
+    int bonus = 0;
+    for (int i = 0; i < FC_EQUIPMENT_SLOTS; i++) {
+        const FcItemDef* item = fc_item_definition(p->equipment[i].item_id);
+        if (item) bonus += attack_type == FC_ATTACK_TYPE_STAB ? item->stab_attack
+                                                               : item->slash_attack;
+    }
+    return bonus;
+}
+
+/* fc_melee_rolls for the player attacking in a melee style, with the worn
+ * items' bonuses. */
+static void fc_player_melee_rolls(const FcPlayer* p, const FcPrayerBonus* prayer,
+                                  const FcMeleeStyle* style,
+                                  int* attack_roll, int* max_hit) {
+    fc_melee_rolls(p->attack_level, p->strength_level,
+                   fc_player_melee_bonus(p, style->attack_type),
+                   p->melee_strength_bonus, style->stance, prayer, attack_roll, max_hit);
+}
+
+/* The Defence levels the player's stance adds to its defence rolls: a melee
+ * style's (fc_stance_levels). Every ranged weapon here fires on Rapid and a
+ * cast is RuneC's Cast stance, which add none. */
+static int fc_player_stance_defence(const FcState* state) {
+    FcMeleeStyle style;
+    if (fc_player_cast_spell(state) >= 0 || !fc_player_melee_style(state, &style))
+        return 0;
+    int attack, strength, defence;
+    fc_stance_levels(style.stance, &attack, &strength, &defence);
+    return defence;
 }
 
 /* gear_set_1 is the first preset; gear_set_2 .. gear_set_4 are not set. */
@@ -3264,6 +3605,7 @@ static int fc_scenario_check(const FcScenario* scenario, char* err, size_t err_s
                 {item->hitpoints_level, FC_SKILL_HITPOINTS},
                 {item->magic_level, FC_SKILL_MAGIC},
                 {item->attack_level, FC_SKILL_ATTACK},
+                {item->strength_level, FC_SKILL_STRENGTH},
             };
             for (unsigned r = 0; r < sizeof(reqs) / sizeof(reqs[0]); r++) {
                 if (scenario->levels[reqs[r].skill] < reqs[r].need) {
@@ -3307,15 +3649,6 @@ static int fc_scenario_check(const FcScenario* scenario, char* err, size_t err_s
 }
 
 #if FC_GEAR_SWITCHING
-/* The weapon a gear preset wears, or NULL. */
-static const FcItemDef* fc_gear_preset_weapon(const FcGearPreset* preset) {
-    for (int i = 0; i < preset->equipment_count; i++) {
-        const FcItemDef* item = fc_item_definition(preset->equipment[i]);
-        if (item->slot == FC_EQUIP_SLOT_WEAPON) return item;
-    }
-    return NULL;
-}
-
 /* Plan a switch to gear set `set` (0 for gear_set_1) on copies of the
  * player's inventory and equipment: each item of its preset that is not worn
  * is equipped in preset order from the first inventory slot holding it, as
@@ -3757,7 +4090,9 @@ static void npc_attack(FcState* state, FcNpc* npc, int npc_idx) {
                                   stats->attack_bonus[style]);
     FcPrayerBonus prayer = fc_prayer_bonus(state);
     float hit_chance = fc_hit_chance(attack_roll,
-                                     fc_player_def_roll(player, &prayer, attack_type));
+                                     fc_player_def_roll(player, &prayer,
+                                                        fc_player_stance_defence(state),
+                                                        attack_type));
     int hit = fc_rng_float(state) < hit_chance;
     int damage = hit ? fc_roll_damage_tenths(state, stats->max_hit[style], 0) : 0;
     int delay = fc_npc_hit_delay(npc->npc_type, style,
@@ -5813,7 +6148,8 @@ void fc_write_obs(const FcState* state, float* out) {
         int casts = weapon && weapon->weapon_kind == FC_WEAPON_STAFF &&
                     (weapon->autocast & (1 << FC_PLAYER_SPELLBOOK));
         int melee = !weapon || weapon->weapon_kind == FC_WEAPON_UNARMED ||
-                    weapon->weapon_kind == FC_WEAPON_STAFF;
+                    weapon->weapon_kind == FC_WEAPON_STAFF ||
+                    weapon->weapon_kind == FC_WEAPON_MELEE;
         set[casts ? FC_OBS_GEAR_MAGIC : melee ? FC_OBS_GEAR_MELEE : FC_OBS_GEAR_RANGED] = 1.0f;
         set[FC_OBS_GEAR_RANGE] =
             (float)(casts ? FC_SPELL_RANGE : weapon ? weapon->range : 1) / 10.0f;
@@ -6128,21 +6464,22 @@ static void prepare_player_interaction(FcState* state, int explicit_move,
     }
 }
 
-/* Whether the player attacks in melee without a spell: unarmed, or a staff
- * bashing (RuneC's staff styles, accurate crush like the punch). */
-static int fc_player_melee(const FcPlayer* p) {
-    return p->weapon_kind == FC_WEAPON_UNARMED || p->weapon_kind == FC_WEAPON_STAFF;
-}
-
+/* A melee attack or a ranged shot at the target. A melee attack rolls in the
+ * player's melee style (fc_player_melee_style, which process_player_target
+ * found available) against the NPC's Defence with a bonus of 0: NPC_STATS has
+ * no stab, slash or crush defence, and RuneC rolls every ordinary NPC's with
+ * 0 (DSA-027). A melee weapon's hit lands the tick after the attack, as RuneC's
+ * rc_content_player_hit_delay lands every melee hit; the punch and a staff's
+ * bash land in the attack's own tick, as they did before melee weapons. */
 static void launch_player_attack(FcState* state, FcNpc* target, int distance) {
     FcPlayer* player = &state->player;
     FcPrayerBonus prayer = fc_prayer_bonus(state);
     int melee = fc_player_melee(player);
     int att_roll, max_hit;
     if (melee) {
-        /* Fight Caves NPCs all have zero crush defence bonus, including the
-         * ranged-resistant healers. */
-        fc_player_melee_rolls(player, &prayer, &att_roll, &max_hit);
+        FcMeleeStyle style;
+        fc_player_melee_style(state, &style);
+        fc_player_melee_rolls(player, &prayer, &style, &att_roll, &max_hit);
     } else {
         fc_player_ranged_rolls(player, &prayer, target, &att_roll, &max_hit);
     }
@@ -6152,7 +6489,8 @@ static void launch_player_attack(FcState* state, FcNpc* target, int distance) {
     float chance = fc_hit_chance(att_roll, def_roll);
     int hit = fc_rng_float(state) < chance ? 1 : 0;
     int damage = hit ? fc_roll_damage_tenths(state, max_hit, 1) : 0;
-    int delay = melee ? 1 : fc_ranged_hit_delay(distance);
+    int delay = !melee ? fc_ranged_hit_delay(distance)
+              : player->weapon_kind == FC_WEAPON_MELEE ? 2 : 1;
 
     fc_queue_pending_hit(target->pending_hits, &target->num_pending_hits,
                          FC_MAX_PENDING_HITS, damage, delay,
@@ -6247,6 +6585,12 @@ static void process_player_target(FcState* state,
 
     int dist = fc_distance_to_npc(player->x, player->y, target);
     int spell = fc_player_cast_spell(state);
+    /* A melee style the weapon does not have neither approaches nor attacks,
+     * as RuneC's unavailable style. Every melee weapon here reaches 1 tile:
+     * open cardinal contact. */
+    FcMeleeStyle style;
+    if (spell < 0 && fc_player_melee(player) && !fc_player_melee_style(state, &style))
+        return;
     int weapon_range = spell >= 0 ? FC_SPELL_RANGE
         : fc_player_melee(player) ? FC_ROUTE_MELEE_RANGE : player->weapon_range;
     int target_can_fire = fc_can_attack_from(

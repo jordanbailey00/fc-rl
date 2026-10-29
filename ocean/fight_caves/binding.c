@@ -133,12 +133,20 @@ static void fc_print_summary(FILE* out, const FcScenario* scenario) {
                 FC_HEAD_NAMES[FC_PUFFER_ACTION_HEADS[h]], FC_PUFFER_ACTION_DIMS[h]);
     fprintf(out, " | obs %d + %d mask = %d\n", FC_POLICY_OBS_SIZE,
             FC_PUFFER_MASK_SIZE, FC_PUFFER_OBS_SIZE);
+    static const char* const stances[] = {"accurate", "aggressive", "defensive",
+                                          "controlled"};
+    static const char* const types[] = {"", "stab", "slash", "crush"};
     fprintf(out, "Fight Caves scenario:");
     for (int k = 0; k < FC_CAP_GEAR_SETS; k++) {
         const FcGearPreset* preset = &FC_GEAR_PRESETS[scenario->gear_set[k]];
+        const FcItemDef* weapon = fc_gear_preset_weapon(preset);
+        FcMeleeStyle style;
         fprintf(out, "%s gear_set_%d = %s", k ? "," : "", k + 1, preset->name);
         if (preset->autocast)
             fprintf(out, " (spell %s)", FC_SPELLS[preset->autocast - 1].name);
+        else if (weapon->weapon_kind == FC_WEAPON_MELEE &&
+                 fc_melee_style(weapon->weapon_type, preset->attack_style, &style))
+            fprintf(out, " (%s %s)", stances[style.stance], types[style.attack_type]);
     }
     fprintf(out, " | levels");
     for (int s = 0; s < FC_SKILL_COUNT; s++)
