@@ -1714,16 +1714,16 @@ int fc_player_appearance_load(FcPlayerAppearance *appearance) {
     for (uint32_t i = 0; r.ok && i < count; i++) {
         uint32_t item_id = fc_read_u32(&r);
         uint32_t hide_mask = fc_read_u32(&r);
-        fc_reader_require(&r, hide_mask <= 127, "bad hide mask");
-        /* The map also covers items the simulation does not offer. */
-        if (!fc_item_definition((int)item_id)) continue;
-        appearance->records[appearance->record_count].item_id = item_id;
-        appearance->records[appearance->record_count].hide_mask = hide_mask;
-        appearance->record_count++;
+        fc_reader_require(&r, fc_item_definition((int)item_id) != NULL
+                              && hide_mask <= 127,
+                          "unknown item or bad hide mask");
+        appearance->records[i].item_id = item_id;
+        appearance->records[i].hide_mask = hide_mask;
     }
     fc_reader_require(&r, r.pos == r.size, "unexpected data after the last item");
     fc_reader_close(&r);
     if (!r.ok) { fprintf(stderr, "Invalid player appearance map: %s\n", path); return 0; }
+    appearance->record_count = (int)count;
     appearance->parts = models_load("fc_player.models", (Texture2D){0});
     if (!appearance->parts || appearance->parts->has_textures) return 0;
     for (int i = 0; i < 7; i++)
@@ -1995,6 +1995,12 @@ static const char *const g_ui_asset_names[] = {
     "combaticons_14",
     "combaticons_15",
     "combaticons_16",
+    "combaticons2_5",
+    "combaticons2_6",
+    "combaticons2_7",
+    "combaticons2_10",
+    "combaticons2_11",
+    "combaticons2_12",
     "combaticons2_15",
     "combaticons2_16",
     "combaticons2_17",
@@ -2572,13 +2578,23 @@ static const char *g_worn_icon_names[FC_EQUIPMENT_SLOTS] = {
  * Joshua-F dump for the weapon categories the player can have
  * (FcGearPreset.combat_style_profile, or 0 when unarmed), so weapon tabs use the
  * same labels/icons as OSRS. Core has no style choice: it punches unarmed and
- * always fires the bow on Rapid.
+ * always fires ranged weapons on Rapid.
  */
 static const FcUiCombatProfile g_combat_profiles[] = {
     {0, 0, {    /* unarmed: OSRS category 0 */
         {"Punch", "Accurate", "combaticons_14"},
         {"Kick", "Aggressive", "combaticons_15"},
         {"Block", "Defensive", "combaticons_16"},
+    }},
+    {9, 1, {    /* crossbow: OSRS category 5 */
+        {"Accurate", "Accurate", "combaticons2_5"},
+        {"Rapid", "Rapid", "combaticons2_6"},
+        {"Longrange", "Longrange", "combaticons2_7"},
+    }},
+    {23, 1, {   /* thrown: OSRS category 19 */
+        {"Accurate", "Accurate", "combaticons2_10"},
+        {"Rapid", "Rapid", "combaticons2_11"},
+        {"Longrange", "Longrange", "combaticons2_12"},
     }},
     {25, 1, {   /* bow: OSRS category 3 */
         {"Accurate", "Accurate", "combaticons2_15"},
@@ -4031,6 +4047,11 @@ typedef struct {
 #define PLAYER_ANIM_HUMAN_TURN 823
 #define PLAYER_ANIM_HUMAN_RUN 824
 #define PLAYER_ANIM_BOW_ATTACK 426
+#define PLAYER_ANIM_XBOW_IDLE 4591
+#define PLAYER_ANIM_XBOW_WALK 4226
+#define PLAYER_ANIM_XBOW_RUN 4228
+#define PLAYER_ANIM_XBOW_ATTACK 7552
+#define PLAYER_ANIM_BLOWPIPE_ATTACK 5061
 #define PLAYER_ANIM_EAT 829
 #define PLAYER_ANIM_DEATH 836
 
@@ -4038,14 +4059,54 @@ typedef struct {
 #define JAD_ANIM_MELEE 2655
 #define JAD_ANIM_MAGIC 2656
 
-/* The Twisted bow's animations. Projectile columns follow
+/* Each ranged weapon's animations, by item id. Projectile columns follow
  * FcProjectileProfile. */
-static const FcPlayerVisualProfile TWISTED_BOW_VISUALS = {
-    PLAYER_ANIM_HUMAN_IDLE, PLAYER_ANIM_HUMAN_WALK,
-    PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
-    PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
-    PLAYER_ANIM_HUMAN_RUN, PLAYER_ANIM_BOW_ATTACK,
-    {1120, 1116, 0, 163.0f, 146.0f, 41.0f, 15.0f, 5.0f, 11.0f, 5.0f, 0},
+static const struct {
+    int item_id;
+    FcPlayerVisualProfile visuals;
+} WEAPON_VISUALS[] = {
+    {9185, {    /* Rune crossbow */
+        PLAYER_ANIM_XBOW_IDLE, PLAYER_ANIM_XBOW_WALK,
+        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
+        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
+        PLAYER_ANIM_XBOW_RUN, PLAYER_ANIM_XBOW_ATTACK,
+        {27, 0, 0, 155.0f, 146.0f, 41.0f, 5.0f, 5.0f, 11.0f, 5.0f, 0},
+    }},
+    {20997, {   /* Twisted bow */
+        PLAYER_ANIM_HUMAN_IDLE, PLAYER_ANIM_HUMAN_WALK,
+        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
+        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
+        PLAYER_ANIM_HUMAN_RUN, PLAYER_ANIM_BOW_ATTACK,
+        {1120, 1116, 0, 163.0f, 146.0f, 41.0f, 15.0f, 5.0f, 11.0f, 5.0f, 0},
+    }},
+    {12788, {   /* Magic shortbow (i) */
+        PLAYER_ANIM_HUMAN_IDLE, PLAYER_ANIM_HUMAN_WALK,
+        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
+        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
+        PLAYER_ANIM_HUMAN_RUN, PLAYER_ANIM_BOW_ATTACK,
+        {15, 24, 0, 163.0f, 146.0f, 41.0f, 15.0f, 5.0f, 11.0f, 5.0f, 0},
+    }},
+    {FC_ITEM_ID_TOXIC_BLOWPIPE, {
+        PLAYER_ANIM_HUMAN_IDLE, PLAYER_ANIM_HUMAN_WALK,
+        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
+        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
+        PLAYER_ANIM_HUMAN_RUN, PLAYER_ANIM_BLOWPIPE_ATTACK,
+        {230, 236, 0, 163.0f, 146.0f, 32.0f, 15.0f, 0.0f, 11.0f, 5.0f, 0},
+    }},
+    {11785, {   /* Armadyl crossbow */
+        PLAYER_ANIM_XBOW_IDLE, PLAYER_ANIM_XBOW_WALK,
+        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
+        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
+        PLAYER_ANIM_XBOW_RUN, PLAYER_ANIM_XBOW_ATTACK,
+        {1468, 0, 0, 155.0f, 146.0f, 41.0f, 5.0f, 5.0f, 11.0f, 5.0f, 0},
+    }},
+    {25867, {   /* Bow of faerdhinen (c) */
+        PLAYER_ANIM_HUMAN_IDLE, PLAYER_ANIM_HUMAN_WALK,
+        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
+        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
+        PLAYER_ANIM_HUMAN_RUN, PLAYER_ANIM_BOW_ATTACK,
+        {1922, 1923, 0, 163.0f, 146.0f, 41.0f, 15.0f, 5.0f, 11.0f, 5.0f, 0},
+    }},
 };
 
 typedef struct {
@@ -4073,16 +4134,17 @@ static const FcNpcAnims *npc_anims(int npc_type) {
     return &NPC_ANIMS[npc_type];
 }
 
-/* The wielded weapon's animations: the Twisted bow's, or unarmed (no
- * projectile). */
+/* The wielded weapon's animations, or unarmed ones (no projectile). */
 const FcPlayerVisualProfile *fc_player_visual_profile(const FcPlayer *player) {
     static const FcPlayerVisualProfile unarmed = {
         .idle_anim=808, .walk_anim=819, .walk_back_anim=820,
         .walk_left_anim=822, .walk_right_anim=821, .turn_anim=823,
         .run_anim=824, .attack_anim=422,
     };
-    return player->weapon_kind == FC_WEAPON_TWISTED_BOW
-        ? &TWISTED_BOW_VISUALS : &unarmed;
+    int weapon = player->equipment[FC_EQUIP_SLOT_WEAPON].item_id;
+    for (int i = 0; i < (int)(sizeof(WEAPON_VISUALS) / sizeof(WEAPON_VISUALS[0])); i++)
+        if (WEAPON_VISUALS[i].item_id == weapon) return &WEAPON_VISUALS[i].visuals;
+    return &unarmed;
 }
 
 ModelEntry *fc_actor_player_model_entry(ModelSet *player_models) {
@@ -6390,7 +6452,8 @@ static int load_ui_item_icon(FcUiState* ui, uint32_t item_id) {
     return 1;
 }
 
-/* Icons for every item the simulation knows: the loadout and the supplies. */
+/* Icons for every item the simulation knows: the gear presets' equipment and
+ * the supplies. */
 static int load_fc_ui_item_icons(ViewerState* v) {
     if (!v) return 0;
     int ready = 1;

@@ -39,7 +39,21 @@ The `[env]` section holds three kinds of settings:
 - **Scenario** settings are what an episode starts with and need no rebuild:
   `gear_set_1` names a gear preset, the `*_level` keys set skill levels, and
   `initial_sharks` and `initial_prayer_doses` fill the inventory. Gear must be
-  wearable at the configured levels.
+  wearable at the configured levels. Every preset is wearable at the shipped
+  levels; these are the levels each was made for, with Attack, Strength and
+  Magic at 1:
+
+  | `gear_set_1` | Main gear | Defence | Ranged | Prayer | Hitpoints |
+  | --- | --- | --- | --- | --- | --- |
+  | `tbow_masori` (default) | Twisted bow, dragon arrows, Masori (f), Venator ring | 99 | 99 | 99 | 99 |
+  | `rcb_black_dhide` | Rune crossbow, adamant bolts, black d'hide, coif | 70 | 70 | 43 | 70 |
+  | `rcb_pure` | Rune crossbow, adamant bolts, Robin hood hat, Book of law | 1 | 61 | 43 | 55 |
+  | `msb_pure` | Magic shortbow (i), rune arrows, Robin hood hat | 1 | 70 | 43 | 60 |
+  | `blowpipe_pure` | Toxic blowpipe with adamant darts, Robin hood hat, Necklace of anguish | 1 | 75 | 43 | 75 |
+  | `acb_armadyl` | Armadyl crossbow, diamond dragon bolts (e), Armadyl armour | 75 | 80 | 70 | 80 |
+  | `bowfa_crystal` | Bow of faerdhinen (c), crystal armour | 75 | 85 | 70 | 85 |
+  | `tbow_masori_no_ring` | `tbow_masori` without the ring | 80 | 99 | 77 | 99 |
+
 - **Rewards** and their shaping terms.
 
 Training and replay print the capabilities, policy heads and scenario at

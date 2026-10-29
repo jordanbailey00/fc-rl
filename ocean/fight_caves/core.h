@@ -16,11 +16,17 @@
  * training adapter and viewer. Combat bonuses are derived from item definitions.
  */
 
-/* Gear preset ids, stored in the hashed FcState.active_loadout. The default
- * preset, Masori (f) with a Twisted bow, keeps the id it had when the presets
- * were compiled-in loadouts. */
+/* Gear preset ids, stored in the hashed FcState.active_loadout, so the values
+ * are fixed; 2 was a duplicate of rcb_pure. */
 typedef enum {
-    FC_LOADOUT_SOTA_TBOW = 1
+    FC_LOADOUT_RCB_BLACK_DHIDE = 0,
+    FC_LOADOUT_SOTA_TBOW = 1,
+    FC_LOADOUT_RCB_PURE = 3,
+    FC_LOADOUT_MSB_PURE = 4,
+    FC_LOADOUT_BLOWPIPE_PURE = 5,
+    FC_LOADOUT_ACB_ARMADYL = 6,
+    FC_LOADOUT_BOWFA_CRYSTAL = 7,
+    FC_LOADOUT_TBOW_MASORI_NO_RING = 8
 } FcLoadoutId;
 
 #define FC_LOADOUT_EQUIP_MAX 12
@@ -39,12 +45,30 @@ typedef enum {
     FC_EQUIP_SLOT_RING = 12,
 } FcEquipmentSlot;
 
+typedef enum {
+    FC_CRYSTAL_PIECE_NONE = 0,
+    FC_CRYSTAL_PIECE_HELM = 1 << 0,
+    FC_CRYSTAL_PIECE_BODY = 1 << 1,
+    FC_CRYSTAL_PIECE_LEGS = 1 << 2,
+    FC_CRYSTAL_PIECE_ALL = FC_CRYSTAL_PIECE_HELM |
+                           FC_CRYSTAL_PIECE_BODY |
+                           FC_CRYSTAL_PIECE_LEGS
+} FcCrystalPieceMask;
+
+/* Exact per-piece modifiers. One percentage point is 100 basis points. */
+#define FC_CRYSTAL_HELM_ACCURACY_BP  500
+#define FC_CRYSTAL_HELM_DAMAGE_BP    250
+#define FC_CRYSTAL_BODY_ACCURACY_BP 1500
+#define FC_CRYSTAL_BODY_DAMAGE_BP    750
+#define FC_CRYSTAL_LEGS_ACCURACY_BP 1000
+#define FC_CRYSTAL_LEGS_DAMAGE_BP    500
+
 /* A named set of worn equipment: what [env] gear_set_1 selects. */
 typedef struct {
     const char* name;
     int id;                     /* FcLoadoutId */
     int combat_style_profile;   /* the viewer's combat-tab weapon category */
-    int ammo;
+    int ammo;                   /* worn ammunition, or darts in a blowpipe */
     int equipment_count;
     int equipment[FC_LOADOUT_EQUIP_MAX];
 } FcGearPreset;
@@ -62,9 +86,11 @@ typedef struct {
     int sharks, prayer_doses;
 } FcScenario;
 
-/* Stored in the hashed FcPlayer.weapon_kind, so the values stay as they were. */
+/* Stored in the hashed FcPlayer.weapon_kind, so the values are fixed. */
 typedef enum {
+    FC_WEAPON_GENERIC_RANGED = 0,
     FC_WEAPON_TWISTED_BOW = 1,
+    FC_WEAPON_BOW_OF_FAERDHINEN = 2,
     FC_WEAPON_UNARMED = 3
 } FcWeaponKind;
 
@@ -230,7 +256,7 @@ typedef struct {
 typedef struct {
     int item_id;                 /* 0 denotes an empty slot */
     int quantity;
-    int charges;                 /* always 0: no item holds charges */
+    int charges;                 /* loaded darts remain with the blowpipe */
 } FcItemStack;
 
 typedef struct {
@@ -274,7 +300,7 @@ typedef struct {
     int magic_level;
     int weapon_kind;
     int weapon_uses_ammo;
-    int crystal_piece_mask;     /* always 0: no crystal armour */
+    int crystal_piece_mask;
     int weapon_speed;
     int weapon_range;
 
@@ -473,7 +499,7 @@ typedef struct {
     FcPlayer player;
     FcNpc npcs[FC_MAX_NPCS];
 
-    /* Always FC_LOADOUT_SOTA_TBOW, the only loadout. */
+    /* The FcLoadoutId of the gear preset the episode started with. */
     int active_loadout;
 
     /* Viewer-facing transition facts for the most recently completed tick. */
@@ -1039,12 +1065,14 @@ typedef struct {
     int id;
     const char *name;
     int slot;                    /* -1 for inventory-only items */
-    int stackable;
+    int stackable, two_handed;
     int ranged_level, defence_level, hitpoints_level;
     int ranged_attack, ranged_strength;
     int defence[5];               /* stab, slash, crush, magic, ranged */
     int prayer, melee_attack, melee_strength;
-    int weapon_kind, speed, range;
+    int weapon_kind, speed, range, ammo_kind;
+    int ammo_tier;                /* supported ammunition: 0 standard, 1 dragon */
+    int crystal_piece;
 } FcItemDef;
 
 typedef enum {
@@ -1060,6 +1088,7 @@ enum {
     FC_ITEM_ID_PRAYER_POTION_2 = 141,
     FC_ITEM_ID_PRAYER_POTION_3 = 139,
     FC_ITEM_ID_PRAYER_POTION_4 = 2434,
+    FC_ITEM_ID_TOXIC_BLOWPIPE = 12926,
 };
 
 
@@ -1161,9 +1190,34 @@ static int fc_tbow_multiplier_pct(int target_magic_level, int cap, int center) {
     return (int)pct;
 }
 
+static void fc_crystal_modifiers_bp(int crystal_piece_mask,
+                                    int* accuracy_bp, int* damage_bp) {
+    int mask = crystal_piece_mask & FC_CRYSTAL_PIECE_ALL;
+    *accuracy_bp = 0;
+    *damage_bp = 0;
+
+    if (mask & FC_CRYSTAL_PIECE_HELM) {
+        *accuracy_bp += FC_CRYSTAL_HELM_ACCURACY_BP;
+        *damage_bp += FC_CRYSTAL_HELM_DAMAGE_BP;
+    }
+    if (mask & FC_CRYSTAL_PIECE_BODY) {
+        *accuracy_bp += FC_CRYSTAL_BODY_ACCURACY_BP;
+        *damage_bp += FC_CRYSTAL_BODY_DAMAGE_BP;
+    }
+    if (mask & FC_CRYSTAL_PIECE_LEGS) {
+        *accuracy_bp += FC_CRYSTAL_LEGS_ACCURACY_BP;
+        *damage_bp += FC_CRYSTAL_LEGS_DAMAGE_BP;
+    }
+}
+
+static int fc_apply_basis_points(int value, int bonus_bp) {
+    return (int)((int64_t)value * (10000 + bonus_bp) / 10000);
+}
+
 /* Player ranged attack roll and max hit (whole HP) against a target. Rapid is
- * the active style, so the effective level is Ranged + 8. The Twisted bow
- * scales both by the target's Magic level. */
+ * the active style for every ranged weapon here, so the effective level is
+ * Ranged + 8. The Twisted bow scales both by the target's Magic level and the
+ * Bow of faerdhinen by the crystal armour pieces worn. */
 static void fc_player_ranged_rolls(const FcPlayer* p, const FcNpc* target,
                                    int* attack_roll, int* max_hit) {
     int level = p->ranged_level + 8;
@@ -1177,6 +1231,11 @@ static void fc_player_ranged_rolls(const FcPlayer* p, const FcNpc* target,
                              fc_tbow_multiplier_pct(magic, 140, 100) / 100);
         *max_hit = (int)((int64_t)*max_hit *
                          fc_tbow_multiplier_pct(magic, 250, 140) / 100);
+    } else if (p->weapon_kind == FC_WEAPON_BOW_OF_FAERDHINEN) {
+        int accuracy_bp, damage_bp;
+        fc_crystal_modifiers_bp(p->crystal_piece_mask, &accuracy_bp, &damage_bp);
+        *attack_roll = fc_apply_basis_points(*attack_roll, accuracy_bp);
+        *max_hit = fc_apply_basis_points(*max_hit, damage_bp);
     }
 }
 
@@ -1542,9 +1601,13 @@ uint32_t fc_state_hash(const FcState* state) {
 
 /* Items */
 
-/* The loadout's equipment and the supplies, pinned to the loadout's
+/* The gear presets' equipment and the supplies, pinned to the presets'
  * existing balance: equipment switching must not rebalance training. */
+enum { AMMO_NONE, AMMO_ARROW, AMMO_BOLT, AMMO_LOADED_DART };
 static const FcItemDef ITEMS[] = {
+    {.id=1169, .name="Coif", .slot=FC_EQUIP_SLOT_HEAD,
+     .ranged_attack=2, .ranged_strength=0, .defence={4,6,8,4,4}, .prayer=0,
+     .ranged_level=20, .defence_level=0, .hitpoints_level=0, .melee_attack=0, .melee_strength=0},
     {.id=22109, .name="Ava's assembler", .slot=FC_EQUIP_SLOT_CAPE,
      .ranged_attack=8, .ranged_strength=2, .defence={1,1,1,8,2}, .prayer=0,
      .ranged_level=70, .defence_level=0, .hitpoints_level=0, .melee_attack=0, .melee_strength=0},
@@ -1569,11 +1632,89 @@ static const FcItemDef ITEMS[] = {
     {.id=28310, .name="Venator ring", .slot=FC_EQUIP_SLOT_RING,
      .ranged_attack=10, .ranged_strength=2, .defence={0,0,0,0,0}, .prayer=0,
      .ranged_level=0, .defence_level=0, .hitpoints_level=0, .melee_attack=0, .melee_strength=0},
+    {.id=2503, .name="Black d'hide body", .slot=FC_EQUIP_SLOT_BODY,
+     .ranged_attack=30, .ranged_strength=0, .defence={55,47,60,50,55}, .prayer=0,
+     .ranged_level=70, .defence_level=40, .hitpoints_level=0, .melee_attack=0, .melee_strength=0},
+    {.id=2497, .name="Black d'hide chaps", .slot=FC_EQUIP_SLOT_LEGS,
+     .ranged_attack=17, .ranged_strength=0, .defence={31,25,33,28,31}, .prayer=0,
+     .ranged_level=70, .defence_level=0, .hitpoints_level=0, .melee_attack=0, .melee_strength=0},
+    {.id=2491, .name="Black d'hide vambraces", .slot=FC_EQUIP_SLOT_HANDS,
+     .ranged_attack=11, .ranged_strength=0, .defence={6,5,7,8,0}, .prayer=0,
+     .ranged_level=70, .defence_level=0, .hitpoints_level=0, .melee_attack=0, .melee_strength=0},
+    {.id=6328, .name="Snakeskin boots", .slot=FC_EQUIP_SLOT_FEET,
+     .ranged_attack=3, .ranged_strength=0, .defence={1,1,2,1,0}, .prayer=0,
+     .ranged_level=30, .defence_level=30, .hitpoints_level=0, .melee_attack=0, .melee_strength=0},
+    {.id=2581, .name="Robin hood hat", .slot=FC_EQUIP_SLOT_HEAD,
+     .ranged_attack=8, .ranged_strength=0, .defence={4,6,8,4,4}, .prayer=0,
+     .ranged_level=40, .defence_level=0, .hitpoints_level=0, .melee_attack=0, .melee_strength=0},
+    {.id=10499, .name="Ava's accumulator", .slot=FC_EQUIP_SLOT_CAPE,
+     .ranged_attack=4, .ranged_strength=0, .defence={0,1,0,4,0}, .prayer=0,
+     .ranged_level=50, .defence_level=0, .hitpoints_level=0, .melee_attack=0, .melee_strength=0},
+    {.id=1704, .name="Amulet of glory", .slot=FC_EQUIP_SLOT_NECK,
+     .ranged_attack=10, .ranged_strength=0, .defence={3,3,3,3,3}, .prayer=3,
+     .ranged_level=0, .defence_level=0, .hitpoints_level=0, .melee_attack=10, .melee_strength=6},
+    {.id=12596, .name="Rangers' tunic", .slot=FC_EQUIP_SLOT_BODY,
+     .ranged_attack=15, .ranged_strength=0, .defence={6,9,12,6,6}, .prayer=0,
+     .ranged_level=40, .defence_level=0, .hitpoints_level=0, .melee_attack=0, .melee_strength=0},
+    {.id=12610, .name="Book of law", .slot=FC_EQUIP_SLOT_SHIELD,
+     .ranged_attack=10, .ranged_strength=0, .defence={0,0,0,0,0}, .prayer=5,
+     .ranged_level=0, .defence_level=0, .hitpoints_level=0, .melee_attack=0, .melee_strength=0},
+    {.id=2495, .name="Red d'hide chaps", .slot=FC_EQUIP_SLOT_LEGS,
+     .ranged_attack=14, .ranged_strength=0, .defence={28,22,30,20,28}, .prayer=0,
+     .ranged_level=60, .defence_level=0, .hitpoints_level=0, .melee_attack=0, .melee_strength=0},
+    {.id=11126, .name="Combat bracelet", .slot=FC_EQUIP_SLOT_HANDS,
+     .ranged_attack=7, .ranged_strength=0, .defence={5,5,5,3,5}, .prayer=0,
+     .ranged_level=0, .defence_level=0, .hitpoints_level=0, .melee_attack=7, .melee_strength=6},
+    {.id=2577, .name="Ranger boots", .slot=FC_EQUIP_SLOT_FEET,
+     .ranged_attack=8, .ranged_strength=0, .defence={2,3,4,2,0}, .prayer=0,
+     .ranged_level=40, .defence_level=0, .hitpoints_level=0, .melee_attack=0, .melee_strength=0},
+    {.id=11826, .name="Armadyl helmet", .slot=FC_EQUIP_SLOT_HEAD,
+     .ranged_attack=10, .ranged_strength=0, .defence={6,8,10,10,8}, .prayer=1,
+     .ranged_level=70, .defence_level=70, .hitpoints_level=0, .melee_attack=-5, .melee_strength=0},
+    {.id=11828, .name="Armadyl chestplate", .slot=FC_EQUIP_SLOT_BODY,
+     .ranged_attack=33, .ranged_strength=0, .defence={56,48,61,70,57}, .prayer=1,
+     .ranged_level=70, .defence_level=70, .hitpoints_level=0, .melee_attack=-7, .melee_strength=0},
+    {.id=11830, .name="Armadyl chainskirt", .slot=FC_EQUIP_SLOT_LEGS,
+     .ranged_attack=20, .ranged_strength=0, .defence={32,26,34,40,33}, .prayer=1,
+     .ranged_level=70, .defence_level=70, .hitpoints_level=0, .melee_attack=-6, .melee_strength=0},
+    {.id=7462, .name="Barrows gloves", .slot=FC_EQUIP_SLOT_HANDS,
+     .ranged_attack=12, .ranged_strength=0, .defence={12,12,12,6,12}, .prayer=0,
+     .ranged_level=0, .defence_level=0, .hitpoints_level=0, .melee_attack=12, .melee_strength=12},
+    {.id=23971, .name="Crystal helm", .slot=FC_EQUIP_SLOT_HEAD,
+     .ranged_attack=9, .ranged_strength=0, .defence={12,8,14,10,18}, .prayer=2,
+     .ranged_level=70, .defence_level=70, .hitpoints_level=0, .melee_attack=0, .melee_strength=0, .crystal_piece=FC_CRYSTAL_PIECE_HELM},
+    {.id=23975, .name="Crystal body", .slot=FC_EQUIP_SLOT_BODY,
+     .ranged_attack=31, .ranged_strength=0, .defence={46,38,48,44,68}, .prayer=3,
+     .ranged_level=70, .defence_level=70, .hitpoints_level=0, .melee_attack=0, .melee_strength=0, .crystal_piece=FC_CRYSTAL_PIECE_BODY},
+    {.id=23979, .name="Crystal legs", .slot=FC_EQUIP_SLOT_LEGS,
+     .ranged_attack=18, .ranged_strength=0, .defence={26,21,30,34,38}, .prayer=2,
+     .ranged_level=70, .defence_level=70, .hitpoints_level=0, .melee_attack=0, .melee_strength=0, .crystal_piece=FC_CRYSTAL_PIECE_LEGS},
+    {.id=9185, .name="Rune crossbow", .slot=FC_EQUIP_SLOT_WEAPON,
+     .ranged_attack=90, .ranged_strength=0, .two_handed=0, .ranged_level=61,
+     .weapon_kind=FC_WEAPON_GENERIC_RANGED, .speed=5, .range=7, .ammo_kind=AMMO_BOLT},
     {.id=20997, .name="Twisted bow", .slot=FC_EQUIP_SLOT_WEAPON,
-     .ranged_attack=70, .ranged_strength=20, .ranged_level=85,
-     .weapon_kind=FC_WEAPON_TWISTED_BOW, .speed=5, .range=10},
+     .ranged_attack=70, .ranged_strength=20, .two_handed=1, .ranged_level=85,
+     .weapon_kind=FC_WEAPON_TWISTED_BOW, .speed=5, .range=10, .ammo_kind=AMMO_ARROW, .ammo_tier=1},
+    {.id=12788, .name="Magic shortbow (i)", .slot=FC_EQUIP_SLOT_WEAPON,
+     .ranged_attack=75, .ranged_strength=0, .two_handed=1, .ranged_level=50,
+     .weapon_kind=FC_WEAPON_GENERIC_RANGED, .speed=3, .range=7, .ammo_kind=AMMO_ARROW},
+    {.id=FC_ITEM_ID_TOXIC_BLOWPIPE, .name="Toxic blowpipe", .slot=FC_EQUIP_SLOT_WEAPON,
+     .ranged_attack=30, .ranged_strength=20, .two_handed=1, .ranged_level=75,
+     .weapon_kind=FC_WEAPON_GENERIC_RANGED, .speed=2, .range=5, .ammo_kind=AMMO_LOADED_DART},
+    {.id=11785, .name="Armadyl crossbow", .slot=FC_EQUIP_SLOT_WEAPON,
+     .ranged_attack=100, .ranged_strength=0, .two_handed=0, .ranged_level=70,
+     .weapon_kind=FC_WEAPON_GENERIC_RANGED, .speed=5, .range=8, .ammo_kind=AMMO_BOLT, .ammo_tier=1, .prayer=1},
+    {.id=25867, .name="Bow of faerdhinen (c)", .slot=FC_EQUIP_SLOT_WEAPON,
+     .ranged_attack=128, .ranged_strength=106, .two_handed=1, .ranged_level=80,
+     .weapon_kind=FC_WEAPON_BOW_OF_FAERDHINEN, .speed=4, .range=10, .ammo_kind=AMMO_NONE},
+    {.id=9143, .name="Adamant bolts", .slot=FC_EQUIP_SLOT_AMMO,
+     .stackable=1, .ranged_strength=100, .ammo_kind=AMMO_BOLT},
     {.id=11212, .name="Dragon arrow", .slot=FC_EQUIP_SLOT_AMMO,
-     .stackable=1, .ranged_strength=60},
+     .stackable=1, .ranged_strength=60, .ammo_kind=AMMO_ARROW, .ammo_tier=1},
+    {.id=892, .name="Rune arrow", .slot=FC_EQUIP_SLOT_AMMO,
+     .stackable=1, .ranged_strength=49, .ammo_kind=AMMO_ARROW},
+    {.id=21946, .name="Diamond dragon bolts (e)", .slot=FC_EQUIP_SLOT_AMMO,
+     .stackable=1, .ranged_strength=122, .ammo_kind=AMMO_BOLT, .ammo_tier=1},
     {.id=FC_ITEM_ID_SHARK, .name="Shark", .slot=-1},
     {.id=FC_ITEM_ID_PRAYER_POTION_4, .name="Prayer potion(4)", .slot=-1},
     {.id=FC_ITEM_ID_PRAYER_POTION_3, .name="Prayer potion(3)", .slot=-1},
@@ -1592,12 +1733,13 @@ static void recalculate_equipment(FcPlayer *p) {
     p->ranged_attack_bonus = p->ranged_strength_bonus = 0;
     p->defence_stab = p->defence_slash = p->defence_crush = 0;
     p->defence_magic = p->defence_ranged = p->prayer_bonus = 0;
-    p->melee_attack_bonus = p->melee_strength_bonus = 0;
+    p->melee_attack_bonus = p->melee_strength_bonus = p->crystal_piece_mask = 0;
     const FcItemDef *weapon = fc_item_definition(p->equipment[FC_EQUIP_SLOT_WEAPON].item_id);
     const FcItemDef *ammo = fc_item_definition(p->equipment[FC_EQUIP_SLOT_AMMO].item_id);
-    /* The Twisted bow is the only weapon and dragon arrows the only ammunition,
-     * so worn arrows count only while the bow is wielded. */
-    int usable_ammo = weapon && ammo;
+    /* Quiver items may be worn with any weapon, but firing requires both the
+     * correct category and a supported tier (RSMod validateArrows/Bolts). */
+    int usable_ammo = weapon && ammo && weapon->ammo_kind == ammo->ammo_kind &&
+        ammo->ammo_tier <= weapon->ammo_tier;
     for (int i = 0; i < FC_EQUIPMENT_SLOTS; i++) {
         const FcItemDef *item = fc_item_definition(p->equipment[i].item_id);
         if (!item) continue;
@@ -1613,12 +1755,19 @@ static void recalculate_equipment(FcPlayer *p) {
         p->prayer_bonus += item->prayer;
         p->melee_attack_bonus += item->melee_attack;
         p->melee_strength_bonus += item->melee_strength;
+        p->crystal_piece_mask |= item->crystal_piece;
     }
     p->weapon_kind = weapon ? weapon->weapon_kind : FC_WEAPON_UNARMED;
     p->weapon_speed = weapon ? weapon->speed : 4;
     p->weapon_range = weapon ? weapon->range : 1;
-    p->weapon_uses_ammo = weapon != NULL;
-    p->ammo_count = usable_ammo ? p->equipment[FC_EQUIP_SLOT_AMMO].quantity : 0;
+    p->weapon_uses_ammo = weapon && weapon->ammo_kind != AMMO_NONE;
+    p->ammo_count = 0;
+    if (weapon && weapon->ammo_kind == AMMO_LOADED_DART) {
+        p->ammo_count = p->equipment[FC_EQUIP_SLOT_WEAPON].charges;
+        p->ranged_strength_bonus += 17; /* preset's loaded adamant darts */
+    } else if (usable_ammo) {
+        p->ammo_count = p->equipment[FC_EQUIP_SLOT_AMMO].quantity;
+    }
 }
 
 static int potion_doses(int id) {
@@ -1652,18 +1801,13 @@ static void reset_supplies(FcPlayer *p, int sharks, int doses) {
     p->selected_food_slot = p->selected_potion_slot = -1;
 }
 
-static void fc_set_initial_supplies(FcState *state, int sharks, int prayer_doses) {
-    /* Reset-time configuration only, not a gameplay inventory refill API. */
-    if (state && state->tick == 0)
-        reset_supplies(&state->player, sharks, prayer_doses);
-}
-
 static void fc_items_init(FcPlayer *p, const FcGearPreset *loadout) {
     memset(p->equipment, 0, sizeof(p->equipment));
     for (int i = 0; i < loadout->equipment_count; i++) {
         const FcItemDef *item = fc_item_definition(loadout->equipment[i]);
         p->equipment[item->slot] = (FcItemStack){
-            item->id, item->slot == FC_EQUIP_SLOT_AMMO ? loadout->ammo : 1, 0
+            item->id, item->slot == FC_EQUIP_SLOT_AMMO ? loadout->ammo : 1,
+            item->id == FC_ITEM_ID_TOXIC_BLOWPIPE ? loadout->ammo : 0
         };
     }
     recalculate_equipment(p);
@@ -1720,18 +1864,36 @@ static FcItemResult fc_equip_item(FcState *state, int index) {
         (!item->stackable && incoming.quantity != 1)) return FC_ITEM_INVALID;
     if (p->ranged_level < item->ranged_level || p->defence_level < item->defence_level ||
         p->max_hp / 10 < item->hitpoints_level) return FC_ITEM_REQUIREMENTS;
-    FcItemStack *worn = &p->equipment[item->slot];
+    /* Plan on copies, including both hands. A failed secondary transfer cannot
+     * partially equip an item, remove a shield, or interrupt combat. */
+    FcItemStack inventory[FC_INVENTORY_SLOTS], equipment[FC_EQUIPMENT_SLOTS];
+    memcpy(inventory, p->inventory, sizeof(inventory));
+    memcpy(equipment, p->equipment, sizeof(equipment));
+    FcItemStack *worn = &equipment[item->slot];
     if (item->stackable && worn->item_id == incoming.item_id) {
         int amount = INT_MAX - worn->quantity;
         if (amount > incoming.quantity) amount = incoming.quantity;
         if (!amount) return FC_ITEM_NO_SPACE;
         worn->quantity += amount;
-        p->inventory[index].quantity -= amount;
-        if (!p->inventory[index].quantity) p->inventory[index] = (FcItemStack){0};
+        inventory[index].quantity -= amount;
+        if (!inventory[index].quantity) inventory[index] = (FcItemStack){0};
     } else {
-        p->inventory[index] = *worn;
+        inventory[index] = *worn;
         *worn = incoming;
     }
+    const FcItemDef *weapon = fc_item_definition(equipment[FC_EQUIP_SLOT_WEAPON].item_id);
+    int displaced = item->two_handed ? FC_EQUIP_SLOT_SHIELD :
+        item->slot == FC_EQUIP_SLOT_SHIELD && weapon && weapon->two_handed ?
+        FC_EQUIP_SLOT_WEAPON : -1;
+    if (displaced >= 0 && equipment[displaced].item_id) {
+        /* RSMod returns the conflict to the source slot when it wasn't needed
+         * for a primary swap, otherwise to the first free inventory slot. */
+        if (!inventory[index].item_id) inventory[index] = equipment[displaced];
+        else if (!add_to_inventory(inventory, equipment[displaced])) return FC_ITEM_NO_SPACE;
+        equipment[displaced] = (FcItemStack){0};
+    }
+    memcpy(p->inventory, inventory, sizeof(inventory));
+    memcpy(p->equipment, equipment, sizeof(equipment));
     recalculate_equipment(p);
     set_player_target(p, -1); /* held-item action interrupts interaction */
     return FC_ITEM_OK;
@@ -1799,10 +1961,14 @@ static void fc_items_consume(FcPlayer *p, int potion) {
 
 static void fc_items_spend_ammo(FcPlayer *p) {
     p->ammo_count--;
-    FcItemStack *ammo = &p->equipment[FC_EQUIP_SLOT_AMMO];
-    if (ammo->quantity > 0 && --ammo->quantity == 0) {
-        *ammo = (FcItemStack){0};
-        recalculate_equipment(p);
+    FcItemStack *weapon = &p->equipment[FC_EQUIP_SLOT_WEAPON];
+    if (weapon->item_id == FC_ITEM_ID_TOXIC_BLOWPIPE) weapon->charges--;
+    else {
+        FcItemStack *ammo = &p->equipment[FC_EQUIP_SLOT_AMMO];
+        if (ammo->quantity > 0 && --ammo->quantity == 0) {
+            *ammo = (FcItemStack){0};
+            recalculate_equipment(p);
+        }
     }
 }
 
@@ -1827,6 +1993,123 @@ static const FcGearPreset FC_GEAR_PRESETS[] = {
             26235,  /* Zaryte vambraces */
             13237,  /* Pegasian boots */
             28310,  /* Venator ring */
+        },
+    },
+    {
+        .name = "rcb_black_dhide", .id = FC_LOADOUT_RCB_BLACK_DHIDE,
+        .combat_style_profile = 9,    /* crossbow */
+        .ammo = 50000,                /* adamant bolts */
+        .equipment_count = 7,
+        .equipment = {
+            1169,   /* Coif */
+            9185,   /* Rune crossbow */
+            2503,   /* Black d'hide body */
+            9143,   /* Adamant bolts */
+            2497,   /* Black d'hide chaps */
+            2491,   /* Black d'hide vambraces */
+            6328,   /* Snakeskin boots */
+        },
+    },
+    {
+        .name = "rcb_pure", .id = FC_LOADOUT_RCB_PURE,
+        .combat_style_profile = 9,    /* crossbow */
+        .ammo = 50000,                /* adamant bolts */
+        .equipment_count = 10,
+        .equipment = {
+            2581,   /* Robin hood hat */
+            10499,  /* Ava's accumulator */
+            1704,   /* Amulet of glory */
+            9185,   /* Rune crossbow */
+            12596,  /* Rangers' tunic */
+            12610,  /* Book of law */
+            9143,   /* Adamant bolts */
+            2495,   /* Red d'hide chaps */
+            11126,  /* Combat bracelet */
+            2577,   /* Ranger boots */
+        },
+    },
+    {
+        .name = "msb_pure", .id = FC_LOADOUT_MSB_PURE,
+        .combat_style_profile = 25,   /* bow */
+        .ammo = 50000,                /* rune arrows */
+        .equipment_count = 9,
+        .equipment = {
+            2581,   /* Robin hood hat */
+            10499,  /* Ava's accumulator */
+            1704,   /* Amulet of glory */
+            12788,  /* Magic shortbow (i) */
+            892,    /* Rune arrow */
+            12596,  /* Rangers' tunic */
+            2495,   /* Red d'hide chaps */
+            11126,  /* Combat bracelet */
+            2577,   /* Ranger boots */
+        },
+    },
+    {
+        .name = "blowpipe_pure", .id = FC_LOADOUT_BLOWPIPE_PURE,
+        .combat_style_profile = 23,   /* thrown */
+        .ammo = 50000,                /* adamant darts in the blowpipe */
+        .equipment_count = 8,
+        .equipment = {
+            2581,   /* Robin hood hat */
+            10499,  /* Ava's accumulator */
+            19547,  /* Necklace of anguish */
+            12926,  /* Toxic blowpipe */
+            12596,  /* Rangers' tunic */
+            2495,   /* Red d'hide chaps */
+            11126,  /* Combat bracelet */
+            2577,   /* Ranger boots */
+        },
+    },
+    {
+        .name = "acb_armadyl", .id = FC_LOADOUT_ACB_ARMADYL,
+        .combat_style_profile = 9,    /* crossbow */
+        .ammo = 50000,                /* diamond dragon bolts (e) */
+        .equipment_count = 10,
+        .equipment = {
+            11826,  /* Armadyl helmet */
+            22109,  /* Ava's assembler */
+            19547,  /* Necklace of anguish */
+            11785,  /* Armadyl crossbow */
+            11828,  /* Armadyl chestplate */
+            12610,  /* Book of law */
+            21946,  /* Diamond dragon bolts (e) */
+            11830,  /* Armadyl chainskirt */
+            7462,   /* Barrows gloves */
+            13237,  /* Pegasian boots */
+        },
+    },
+    {
+        .name = "bowfa_crystal", .id = FC_LOADOUT_BOWFA_CRYSTAL,
+        .combat_style_profile = 25,   /* bow */
+        .ammo = 0,                    /* the bow needs none */
+        .equipment_count = 8,
+        .equipment = {
+            23971,  /* Crystal helm */
+            22109,  /* Ava's assembler */
+            19547,  /* Necklace of anguish */
+            25867,  /* Bow of faerdhinen (c) */
+            23975,  /* Crystal body */
+            23979,  /* Crystal legs */
+            7462,   /* Barrows gloves */
+            13237,  /* Pegasian boots */
+        },
+    },
+    {
+        .name = "tbow_masori_no_ring", .id = FC_LOADOUT_TBOW_MASORI_NO_RING,
+        .combat_style_profile = 25,   /* bow */
+        .ammo = 50000,                /* dragon arrows */
+        .equipment_count = 9,
+        .equipment = {
+            27235,  /* Masori mask (f) */
+            22109,  /* Ava's assembler */
+            19547,  /* Necklace of anguish */
+            20997,  /* Twisted bow */
+            27238,  /* Masori body (f) */
+            11212,  /* Dragon arrow */
+            27241,  /* Masori chaps (f) */
+            26235,  /* Zaryte vambraces */
+            13237,  /* Pegasian boots */
         },
     },
 };

@@ -148,7 +148,7 @@ static int core_contract_test(void) {
 static void reset(FcState *s, int empty_inventory) {
     fc_init(s);
     fc_reset(s, 101);
-    if (empty_inventory) fc_set_initial_supplies(s, 0, 0);
+    if (empty_inventory) reset_supplies(&s->player, 0, 0);
 }
 
 static int item_slot(const FcPlayer *p, int id) {
@@ -224,36 +224,99 @@ static int episode_analytics_test(void) {
     return 0;
 }
 
-static int loadout_totals(void) {
-    /* Pre-cleanup totals of the loadout, independent of the item definitions. */
-    static const FcPlayer expected = {
-        .ranged_attack_bonus = 215, .ranged_strength_bonus = 99, .defence_stab = 116,
-        .defence_slash = 106, .defence_crush = 129, .defence_magic = 150,
-        .defence_ranged = 121, .prayer_bonus = 6, .weapon_kind = 1,
-        .weapon_speed = 5, .weapon_range = 10, .weapon_uses_ammo = 1,
-        .crystal_piece_mask = 0, .ammo_count = 50000,
+static int preset_totals(void) {
+    /* Each preset's totals by id, pinned independently of the item definitions. */
+    static const FcPlayer expected[] = {
+        [FC_LOADOUT_RCB_BLACK_DHIDE] = {
+            .ranged_attack_bonus = 153, .ranged_strength_bonus = 100, .defence_stab = 97,
+            .defence_slash = 84, .defence_crush = 110, .defence_magic = 91,
+            .defence_ranged = 90, .prayer_bonus = 0, .weapon_kind = FC_WEAPON_GENERIC_RANGED,
+            .weapon_speed = 5, .weapon_range = 7, .weapon_uses_ammo = 1,
+            .crystal_piece_mask = 0, .ammo_count = 50000,
+        },
+        [FC_LOADOUT_SOTA_TBOW] = {
+            .ranged_attack_bonus = 215, .ranged_strength_bonus = 99, .defence_stab = 116,
+            .defence_slash = 106, .defence_crush = 129, .defence_magic = 150,
+            .defence_ranged = 121, .prayer_bonus = 6, .weapon_kind = FC_WEAPON_TWISTED_BOW,
+            .weapon_speed = 5, .weapon_range = 10, .weapon_uses_ammo = 1,
+            .crystal_piece_mask = 0, .ammo_count = 50000,
+        },
+        [FC_LOADOUT_RCB_PURE] = {
+            .ranged_attack_bonus = 166, .ranged_strength_bonus = 100, .defence_stab = 48,
+            .defence_slash = 49, .defence_crush = 62, .defence_magic = 42,
+            .defence_ranged = 46, .prayer_bonus = 8, .weapon_kind = FC_WEAPON_GENERIC_RANGED,
+            .weapon_speed = 5, .weapon_range = 7, .weapon_uses_ammo = 1,
+            .crystal_piece_mask = 0, .ammo_count = 50000,
+        },
+        [FC_LOADOUT_MSB_PURE] = {
+            .ranged_attack_bonus = 141, .ranged_strength_bonus = 49, .defence_stab = 48,
+            .defence_slash = 49, .defence_crush = 62, .defence_magic = 42,
+            .defence_ranged = 46, .prayer_bonus = 3, .weapon_kind = FC_WEAPON_GENERIC_RANGED,
+            .weapon_speed = 3, .weapon_range = 7, .weapon_uses_ammo = 1,
+            .crystal_piece_mask = 0, .ammo_count = 50000,
+        },
+        [FC_LOADOUT_BLOWPIPE_PURE] = {
+            .ranged_attack_bonus = 101, .ranged_strength_bonus = 42, .defence_stab = 45,
+            .defence_slash = 46, .defence_crush = 59, .defence_magic = 39,
+            .defence_ranged = 43, .prayer_bonus = 2, .weapon_kind = FC_WEAPON_GENERIC_RANGED,
+            .weapon_speed = 2, .weapon_range = 5, .weapon_uses_ammo = 1,
+            .crystal_piece_mask = 0, .ammo_count = 50000,
+        },
+        [FC_LOADOUT_ACB_ARMADYL] = {
+            .ranged_attack_bonus = 220, .ranged_strength_bonus = 129, .defence_stab = 112,
+            .defence_slash = 100, .defence_crush = 123, .defence_magic = 139,
+            .defence_ranged = 117, .prayer_bonus = 11, .weapon_kind = FC_WEAPON_GENERIC_RANGED,
+            .weapon_speed = 5, .weapon_range = 8, .weapon_uses_ammo = 1,
+            .crystal_piece_mask = 0, .ammo_count = 50000,
+        },
+        [FC_LOADOUT_BOWFA_CRYSTAL] = {
+            .ranged_attack_bonus = 233, .ranged_strength_bonus = 113, .defence_stab = 102,
+            .defence_slash = 85, .defence_crush = 110, .defence_magic = 107,
+            .defence_ranged = 143, .prayer_bonus = 9, .weapon_kind = FC_WEAPON_BOW_OF_FAERDHINEN,
+            .weapon_speed = 4, .weapon_range = 10, .weapon_uses_ammo = 0,
+            .crystal_piece_mask = FC_CRYSTAL_PIECE_ALL, .ammo_count = 0,
+        },
+        [FC_LOADOUT_TBOW_MASORI_NO_RING] = {
+            .ranged_attack_bonus = 205, .ranged_strength_bonus = 97, .defence_stab = 116,
+            .defence_slash = 106, .defence_crush = 129, .defence_magic = 150,
+            .defence_ranged = 121, .prayer_bonus = 6, .weapon_kind = FC_WEAPON_TWISTED_BOW,
+            .weapon_speed = 5, .weapon_range = 10, .weapon_uses_ammo = 1,
+            .crystal_piece_mask = 0, .ammo_count = 50000,
+        },
     };
-    FcPlayer p = {0};
-    fc_items_init(&p, &FC_GEAR_PRESETS[0]);
-    CHECK(p.ranged_attack_bonus == expected.ranged_attack_bonus);
-    CHECK(p.ranged_strength_bonus == expected.ranged_strength_bonus);
-    CHECK(p.defence_stab == expected.defence_stab);
-    CHECK(p.defence_slash == expected.defence_slash);
-    CHECK(p.defence_crush == expected.defence_crush);
-    CHECK(p.defence_magic == expected.defence_magic);
-    CHECK(p.defence_ranged == expected.defence_ranged);
-    CHECK(p.prayer_bonus == expected.prayer_bonus);
-    CHECK(p.weapon_kind == expected.weapon_kind);
-    CHECK(p.weapon_speed == expected.weapon_speed);
-    CHECK(p.weapon_range == expected.weapon_range);
-    CHECK(p.weapon_uses_ammo == expected.weapon_uses_ammo);
-    CHECK(p.crystal_piece_mask == expected.crystal_piece_mask);
-    CHECK(p.ammo_count == expected.ammo_count);
+    int pinned = 0;
+    for (unsigned id = 0; id < sizeof(expected) / sizeof(expected[0]); id++)
+        pinned += expected[id].weapon_speed > 0;
+    CHECK(pinned == FC_GEAR_PRESET_COUNT);
+    for (int i = 0; i < FC_GEAR_PRESET_COUNT; i++) {
+        const FcGearPreset *preset = &FC_GEAR_PRESETS[i];
+        CHECK(preset->id >= 0 &&
+              preset->id < (int)(sizeof(expected) / sizeof(expected[0])));
+        const FcPlayer *e = &expected[preset->id];
+        FcPlayer p = {0};
+        apply_levels(&p, FC_DEFAULT_LEVELS);
+        fc_items_init(&p, preset);
+        CHECK(p.ranged_attack_bonus == e->ranged_attack_bonus);
+        CHECK(p.ranged_strength_bonus == e->ranged_strength_bonus);
+        CHECK(p.defence_stab == e->defence_stab);
+        CHECK(p.defence_slash == e->defence_slash);
+        CHECK(p.defence_crush == e->defence_crush);
+        CHECK(p.defence_magic == e->defence_magic);
+        CHECK(p.defence_ranged == e->defence_ranged);
+        CHECK(p.prayer_bonus == e->prayer_bonus);
+        CHECK(p.weapon_kind == e->weapon_kind);
+        CHECK(p.weapon_speed == e->weapon_speed);
+        CHECK(p.weapon_range == e->weapon_range);
+        CHECK(p.weapon_uses_ammo == e->weapon_uses_ammo);
+        CHECK(p.crystal_piece_mask == e->crystal_piece_mask);
+        CHECK(p.ammo_count == e->ammo_count);
+    }
     return 0;
 }
 
 /* The gear presets, default levels and NPC tables are compile-time constants,
- * checked here rather than on every fc_init. */
+ * checked here rather than on every fc_init. The viewer has each preset's
+ * combat tab and its weapon's animations. */
 static int constant_tables(void) {
     char err[256];
     FcScenario scenario = fc_default_scenario();
@@ -273,6 +336,9 @@ static int constant_tables(void) {
         FcPlayer player = {0};
         apply_levels(&player, FC_DEFAULT_LEVELS);
         fc_items_init(&player, preset);
+        CHECK(combat_profile_for_weapon_category(preset->combat_style_profile)
+                  ->weapon_category == preset->combat_style_profile);
+        CHECK(fc_player_visual_profile(&player)->projectile.travel_spot != 0);
         for (int type = NPC_TZ_KIH; type < NPC_TYPE_COUNT; type++) {
             FcNpc target = {.npc_type = type};
             int attack_roll, max_hit;
@@ -338,8 +404,28 @@ static int transactions(void) {
     return 0;
 }
 
-static int ammo_stacks(void) {
+static int two_handed_and_stacks(void) {
     FcState s;
+    reset(&s, 0);
+    /* Full inventory: a one-for-one shield swap may use the source slot for
+     * the two-handed bow when the old shield slot is empty. */
+    s.player.inventory[8] = (FcItemStack){12610, 1, 0};
+    CHECK(fc_equip_item(&s, 8) == FC_ITEM_OK);
+    CHECK(s.player.inventory[8].item_id == 20997);
+    CHECK(s.player.equipment[FC_EQUIP_SLOT_SHIELD].item_id == 12610);
+    CHECK(s.player.weapon_kind == FC_WEAPON_UNARMED);
+    /* With a crossbow AND shield worn, bow needs a second inventory slot. */
+    s.player.inventory[9] = (FcItemStack){9185, 1, 0};
+    CHECK(fc_equip_item(&s, 9) == FC_ITEM_OK);
+    s.player.inventory[9] = (FcItemStack){385, 1, 0};
+    uint32_t before = fc_state_hash(&s);
+    CHECK(fc_equip_item(&s, 8) == FC_ITEM_NO_SPACE);
+    CHECK(fc_state_hash(&s) == before);
+    s.player.inventory[14] = (FcItemStack){0};
+    CHECK(fc_equip_item(&s, 8) == FC_ITEM_OK);
+    CHECK(s.player.inventory[8].item_id == 9185);
+    CHECK(s.player.inventory[14].item_id == 12610);
+    CHECK(s.player.equipment[FC_EQUIP_SLOT_SHIELD].item_id == 0);
     reset(&s, 0);
     s.player.inventory[8] = (FcItemStack){11212, 7, 0};
     CHECK(fc_unequip_item(&s, 13) == FC_ITEM_OK); /* merge despite full inventory */
@@ -348,7 +434,7 @@ static int ammo_stacks(void) {
     CHECK(fc_equip_item(&s, 8) == FC_ITEM_OK);
     CHECK(s.player.ammo_count == 50007);
     s.player.inventory[8] = (FcItemStack){11212, INT_MAX - 50006, 0};
-    uint32_t before = fc_state_hash(&s);
+    before = fc_state_hash(&s);
     CHECK(fc_unequip_item(&s, 13) == FC_ITEM_NO_SPACE); /* whole-stack overflow */
     CHECK(fc_state_hash(&s) == before);
     CHECK(fc_equip_item(&s, 8) == FC_ITEM_OK); /* equip only the portion that fits */
@@ -357,13 +443,32 @@ static int ammo_stacks(void) {
     before = fc_state_hash(&s);
     CHECK(fc_equip_item(&s, 8) == FC_ITEM_NO_SPACE);
     CHECK(fc_state_hash(&s) == before);
+    s.player.inventory[8] = (FcItemStack){9143, 100, 0};
+    CHECK(fc_equip_item(&s, 8) == FC_ITEM_OK);
+    CHECK(s.player.ammo_count == 0); /* bolts do not work in a bow */
+    CHECK(s.player.inventory[8].item_id == 11212);
+    s.player.inventory[9] = (FcItemStack){12788, 1, 0};
+    CHECK(fc_equip_item(&s, 9) == FC_ITEM_OK);
+    CHECK(fc_equip_item(&s, 8) == FC_ITEM_OK); /* dragon arrows in quiver */
+    CHECK(s.player.ammo_count == 0); /* MSB cannot fire dragon arrows */
+    s.player.inventory[8] = (FcItemStack){892, 10, 0};
+    CHECK(fc_equip_item(&s, 8) == FC_ITEM_OK);
+    CHECK(s.player.ammo_count == 10);
+    s.player.inventory[9] = (FcItemStack){9185, 1, 0};
+    CHECK(fc_equip_item(&s, 9) == FC_ITEM_OK);
+    s.player.inventory[8] = (FcItemStack){21946, 10, 0};
+    CHECK(fc_equip_item(&s, 8) == FC_ITEM_OK);
+    CHECK(s.player.ammo_count == 0); /* rune crossbow cannot fire dragon bolts */
+    s.player.inventory[9] = (FcItemStack){11785, 1, 0};
+    CHECK(fc_equip_item(&s, 9) == FC_ITEM_OK);
+    CHECK(s.player.ammo_count == 10);
     return 0;
 }
 
-static int supplies(void) {
+static int supplies_and_loaded_weapon(void) {
     FcState s;
     reset(&s, 1);
-    fc_set_initial_supplies(&s, 2, 5);
+    reset_supplies(&s.player, 2, 5);
     CHECK(s.player.inventory[0].item_id == 2434 && s.player.inventory[1].item_id == 143);
     CHECK(s.player.inventory[2].item_id == 385 && s.player.inventory[3].item_id == 385);
     CHECK(fc_inventory_swap(&s, 1, 27) == FC_ITEM_OK);
@@ -380,6 +485,19 @@ static int supplies(void) {
     CHECK(s.player.inventory[3].item_id == 0 && s.player.inventory[2].item_id == 385);
     CHECK(s.player.sharks_remaining == 1 && s.player.prayer_doses_remaining == 4);
     CHECK(s.player.selected_food_slot == -1 && s.player.selected_potion_slot == -1);
+    FcScenario scenario = fc_default_scenario();
+    scenario.gear_set = fc_gear_preset_find("blowpipe_pure");
+    CHECK(scenario.gear_set >= 0);
+    reset(&s, 1);
+    fc_apply_scenario(&s, &scenario);
+    CHECK(s.active_loadout == FC_LOADOUT_BLOWPIPE_PURE);
+    fc_items_spend_ammo(&s.player);
+    CHECK(s.player.equipment[3].charges == 49999);
+    CHECK(s.player.equipment[13].item_id == 0);
+    CHECK(fc_unequip_item(&s, 3) == FC_ITEM_OK);
+    CHECK(s.player.inventory[0].charges == 49999);
+    CHECK(fc_equip_item(&s, 0) == FC_ITEM_OK);
+    CHECK(s.player.ammo_count == 49999);
     return 0;
 }
 
@@ -430,10 +548,74 @@ static int combat(void) {
     return 0;
 }
 
+/* Each preset is wearable at exactly its items' Ranged, Defence and Hitpoints
+ * requirements and not one level below any of them. At the default levels it
+ * fights: a few hundred ticks of attacking the nearest NPC land hits, and each
+ * shot spends one arrow, bolt or loaded dart. */
+static int gear_presets(void) {
+    const int skills[] = {FC_SKILL_RANGED, FC_SKILL_DEFENCE, FC_SKILL_HITPOINTS};
+    char err[256], prefix[64], expected[96];
+    for (int p = 0; p < FC_GEAR_PRESET_COUNT; p++) {
+        const FcGearPreset *preset = &FC_GEAR_PRESETS[p];
+        FcScenario scenario = fc_default_scenario();
+        scenario.gear_set = p;
+        FcScenario minimum = scenario;
+        for (int k = 0; k < 3; k++) minimum.levels[skills[k]] = 1;
+        for (int i = 0; i < preset->equipment_count; i++) {
+            const FcItemDef *item = fc_item_definition(preset->equipment[i]);
+            const int needs[] = {item->ranged_level, item->defence_level,
+                                 item->hitpoints_level};
+            for (int k = 0; k < 3; k++)
+                if (needs[k] > minimum.levels[skills[k]])
+                    minimum.levels[skills[k]] = needs[k];
+        }
+        CHECK(fc_scenario_check(&minimum, err, sizeof(err)) == 0);
+        snprintf(prefix, sizeof(prefix), "gear_set_1 = %s: ", preset->name);
+        for (int k = 0; k < 3; k++) {
+            int skill = skills[k], need = minimum.levels[skill];
+            if (need == 1) continue;
+            FcScenario below = minimum;
+            below.levels[skill] = need - 1;
+            CHECK(fc_scenario_check(&below, err, sizeof(err)) != 0);
+            snprintf(expected, sizeof(expected), " needs %d %s, but %s_level = %d",
+                     need, FC_SKILL_NAMES[skill], FC_SKILL_NAMES[skill], need - 1);
+            CHECK(strncmp(err, prefix, strlen(prefix)) == 0 && strstr(err, expected));
+        }
+
+        FcState s;
+        CHECK(fc_scenario_check(&scenario, err, sizeof(err)) == 0);
+        fc_init(&s);
+        fc_reset(&s, 101);
+        fc_apply_scenario(&s, &scenario);
+        CHECK(s.active_loadout == preset->id);
+        int actions[FC_NUM_ACTION_HEADS] = {0};
+        actions[FC_HEAD_ATTACK] = 1;
+        int ticks = 0, attacks = 0, hits = 0;
+        for (; ticks < 300 && !fc_is_terminal(&s); ticks++) {
+            fc_step(&s, actions);
+            attacks += s.render_events.player_attack_fired;
+            hits += s.hits_landed_this_tick;
+        }
+        CHECK(hits > 0);
+        const FcItemStack *weapon = &s.player.equipment[FC_EQUIP_SLOT_WEAPON];
+        int left = weapon->item_id == FC_ITEM_ID_TOXIC_BLOWPIPE
+            ? weapon->charges : s.player.equipment[FC_EQUIP_SLOT_AMMO].quantity;
+        CHECK(s.player.ammo_count == left);
+        CHECK(left == (s.player.weapon_uses_ammo ? preset->ammo - attacks : 0));
+        printf("gear preset %s: wearable from %d ranged, %d defence, %d hitpoints; "
+               "%d attacks and %d hits in %d ticks\n", preset->name,
+               minimum.levels[FC_SKILL_RANGED], minimum.levels[FC_SKILL_DEFENCE],
+               minimum.levels[FC_SKILL_HITPOINTS], attacks, hits, ticks);
+    }
+    return 0;
+}
+
 static int equipment_test(void) {
-    if (loadout_totals() || constant_tables() || transactions() ||
-        ammo_stacks() || supplies() || combat()) return 1;
-    puts("equipment: loadout totals, tables, atomic transfers, stacks, requirements, supplies and combat passed");
+    if (preset_totals() || constant_tables() || transactions() ||
+        two_handed_and_stacks() || supplies_and_loaded_weapon() || combat() ||
+        gear_presets()) return 1;
+    puts("equipment: preset totals, tables, atomic transfers, two-handed swaps, stacks, "
+         "ammunition, requirements, supplies, loaded darts and combat passed");
     return 0;
 }
 
@@ -644,8 +826,109 @@ static int model_picking_test(void) {
 
 #include <stdio.h>
 
+/* Draws the composed player into cell `cell` of a row of 300x320 cells, posed
+ * at `frame` of `sequence` and turned by `yaw` degrees, with a caption. */
+static void draw_player_cell(ModelEntry *entry, AnimCache *cache, int cell,
+                             int sequence, int frame, float yaw,
+                             const char *caption) {
+    AnimModelState *pose = NULL;
+    AnimTrack track = {0};
+    fc_model_animation_update(entry, cache, &pose, &track, sequence, 0, (float)frame);
+    /* One orthographic camera, 2.4 tiles over the 320-pixel height and so 2.25
+     * across a cell, moved over the cell. */
+    float x = (cell - 1.5f) * 2.25f;
+    Camera3D camera = {.position={x, 1.55f, -7}, .target={x, 0.95f, 0},
+                       .up={0, 1, 0}, .fovy=2.4f, .projection=CAMERA_ORTHOGRAPHIC};
+    BeginScissorMode(cell * 300, 0, 300, 320);
+    BeginMode3D(camera);
+    DrawModelEx(entry->model, (Vector3){0, 0, 0}, (Vector3){0, 1, 0},
+                yaw, (Vector3){1, 1, 1}, WHITE);
+    EndMode3D();
+    DrawText(caption, cell * 300 + 8, 8, 10, RAYWHITE);
+    EndScissorMode();
+    anim_model_state_free(pose);
+}
+
+/* Every gear preset composes from its equipment, and its weapon's animations
+ * and projectile spot animations ship. With FC_TEST_OUTPUT_DIR set, each is
+ * drawn to <preset>.png there: idle from the front and side, then two frames
+ * of its attack. */
+static int gear_preset_appearances(FcPlayerAppearance *appearance, AnimCache *cache) {
+    const char *dir = getenv("FC_TEST_OUTPUT_DIR");
+    SpotAnimSet *spots = spotanims_load("fc_spotanims.bin");
+    Image white = GenImageColor(1, 1, WHITE);
+    Texture2D atlas = LoadTextureFromImage(white); /* the models are only looked up */
+    UnloadImage(white);
+    ModelSet *projectiles = models_load("fc_projectiles.models", atlas);
+    if (!spots || !projectiles) return 1;
+    RenderTexture2D strip = LoadRenderTexture(1200, 320);
+    FcState state;
+    fc_init(&state);
+    for (int p = 0; p < FC_GEAR_PRESET_COUNT; p++) {
+        const FcGearPreset *preset = &FC_GEAR_PRESETS[p];
+        FcScenario scenario = fc_default_scenario();
+        scenario.gear_set = p;
+        fc_reset(&state, 101);
+        fc_apply_scenario(&state, &scenario);
+        if (fc_player_appearance_sync(appearance, &state.player, FC_PLAYER_MODEL_ID) < 0)
+            return 1;
+        ModelEntry *entry = appearance->model->entries;
+        const FcPlayerVisualProfile *profile = fc_player_visual_profile(&state.player);
+        const uint16_t sequences[] = {
+            profile->idle_anim, profile->walk_anim, profile->walk_back_anim,
+            profile->walk_left_anim, profile->walk_right_anim, profile->turn_anim,
+            profile->run_anim, profile->attack_anim,
+        };
+        for (int i = 0; i < (int)(sizeof(sequences) / sizeof(sequences[0])); i++)
+            if (!anim_get_sequence(cache, sequences[i])) return 1;
+        const FcProjectileProfile *shot = &profile->projectile;
+        const uint32_t spot_ids[] = {shot->travel_spot, shot->launch_spot, shot->impact_spot};
+        if (!shot->travel_spot) return 1;
+        for (int i = 0; i < 3; i++)
+            if (spot_ids[i] && (!spotanim_find(spots, (int)spot_ids[i]) ||
+                !model_find(projectiles, PROJ_SPOTANIM_MODEL_BASE + spot_ids[i])))
+                return 1;
+        if (dir) {
+            int frames = anim_get_sequence(cache, profile->attack_anim)->frame_count;
+            char captions[4][64], path[512];
+            snprintf(captions[0], sizeof(captions[0]), "%s: idle %d, front",
+                     preset->name, profile->idle_anim);
+            snprintf(captions[1], sizeof(captions[1]), "idle %d, side", profile->idle_anim);
+            snprintf(captions[2], sizeof(captions[2]), "attack %d, frame %d of %d",
+                     profile->attack_anim, frames / 3, frames);
+            snprintf(captions[3], sizeof(captions[3]), "attack %d, frame %d of %d",
+                     profile->attack_anim, 2 * frames / 3, frames);
+            BeginTextureMode(strip);
+            ClearBackground((Color){45, 45, 45, 255});
+            draw_player_cell(entry, cache, 0, profile->idle_anim, 0, 180, captions[0]);
+            draw_player_cell(entry, cache, 1, profile->idle_anim, 0, 270, captions[1]);
+            draw_player_cell(entry, cache, 2, profile->attack_anim, frames / 3, 225,
+                             captions[2]);
+            draw_player_cell(entry, cache, 3, profile->attack_anim, 2 * frames / 3, 270,
+                             captions[3]);
+            EndTextureMode();
+            Image image = LoadImageFromTexture(strip.texture);
+            ImageFlipVertical(&image);
+            snprintf(path, sizeof(path), "%s/%s.png", dir, preset->name);
+            int ok = ExportImage(image, path);
+            UnloadImage(image);
+            if (!ok) return 1;
+        }
+        printf("appearance preset %s: %d vertices, %d faces, idle %d, attack %d, "
+               "projectile %u\n", preset->name, entry->base_vert_count,
+               entry->face_count, profile->idle_anim, profile->attack_anim,
+               shot->travel_spot);
+    }
+    UnloadRenderTexture(strip);
+    models_free(projectiles);
+    UnloadTexture(atlas);
+    spotanims_free(spots);
+    return 0;
+}
+
 /* Explicit graphics test, enabled with --render. Captures a contact sheet
- * in the working directory: outfit, no helmet/body/legs/gloves/boots/bow, bare. */
+ * in the working directory: outfit, no helmet/body/legs/gloves/boots/bow, bare.
+ * Then checks every gear preset with gear_preset_appearances. */
 static int equipment_appearance_test(void) {
     SetTraceLogLevel(LOG_WARNING);
     SetConfigFlags(FLAG_WINDOW_HIDDEN);
@@ -663,7 +946,7 @@ static int equipment_appearance_test(void) {
     fc_init(&state);
     for (int variant = 0; variant < 8; variant++) {
         fc_reset(&state, 101);
-        fc_set_initial_supplies(&state, 0, 0);
+        reset_supplies(&state.player, 0, 0);
         if (removed[variant] == -2) {
             for (int slot = 0; slot < FC_EQUIPMENT_SLOTS; slot++)
                 if (state.player.equipment[slot].item_id &&
@@ -705,6 +988,7 @@ static int equipment_appearance_test(void) {
     int ok = ExportImage(image, getenv("FC_TEST_OUTPUT") ? getenv("FC_TEST_OUTPUT") : "equipment-appearance.png");
     UnloadImage(image);
     UnloadRenderTexture(target);
+    if (ok && gear_preset_appearances(&appearance, cache)) ok = 0;
     anim_cache_free(cache);
     fc_player_appearance_free(&appearance);
     CloseWindow();
@@ -991,7 +1275,9 @@ static void scenario_config_test(void) {
 
     puf_ini_set(&kwargs, "gear_set_1", "dragon_claws");
     expect_config_error(&kwargs, "gear_set_1 = dragon_claws: no such gear preset; "
-                        "the presets are tbow_masori");
+                        "the presets are tbow_masori rcb_black_dhide rcb_pure "
+                        "msb_pure blowpipe_pure acb_armadyl bowfa_crystal "
+                        "tbow_masori_no_ring");
     puf_ini_set(&kwargs, "gear_set_1", "tbow_masori");
     dict_set(&kwargs, "defence_level", 0);
     expect_config_error(&kwargs, "defence_level = 0: levels must be 1 to 99");
@@ -1011,6 +1297,21 @@ static void scenario_config_test(void) {
     assert(p->prayer_level == 70 && p->max_prayer == 700 && p->current_prayer == 700);
     assert(p->prayer_doses_remaining == 4 && p->sharks_remaining == 0);
     assert(env->state.active_loadout == FC_LOADOUT_SOTA_TBOW);
+    check_obs(env);
+    test_free(env);
+
+    /* Another preset by name, at the levels its gear needs. */
+    puf_ini_set(&kwargs, "gear_set_1", "blowpipe_pure");
+    dict_set(&kwargs, "defence_level", 1);
+    dict_set(&kwargs, "hitpoints_level", 74);
+    expect_config_error(&kwargs, "gear_set_1 = blowpipe_pure: Necklace of anguish "
+                        "needs 75 hitpoints, but hitpoints_level = 74");
+    dict_set(&kwargs, "hitpoints_level", 75);
+    env = test_env(&kwargs);
+    p = &env->state.player;
+    assert(env->state.active_loadout == FC_LOADOUT_BLOWPIPE_PURE);
+    assert(p->equipment[FC_EQUIP_SLOT_WEAPON].item_id == FC_ITEM_ID_TOXIC_BLOWPIPE);
+    assert(p->defence_level == 1 && p->max_hp == 750 && p->ammo_count == 50000);
     check_obs(env);
     test_free(env);
     dict_clear(&kwargs);
