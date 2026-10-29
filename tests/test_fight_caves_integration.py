@@ -239,12 +239,12 @@ def test_cflags_compile_in_the_configured_capabilities(tmp_path):
     config.write_text("[env]\nw_progress = 0.001\n")
     assert tools.capability_flags(config) == [
         "-DFC_CAP_CONSUMABLES=0", "-DFC_CAP_PRAYERS=0", "-DFC_CAP_GEAR_SETS=1",
-        "-DFC_CAP_SPELLBOOK=0"]
+        "-DFC_CAP_SPELLBOOK=0", "-DFC_CAP_SPECIAL_ATTACKS=0"]
     config.write_text("[env]\nconsumables = 1  # eat and drink\nprayers = All\n"
-                      "gear_sets = 4.0\nspellbook = Ancient\n")
+                      "gear_sets = 4.0\nspellbook = Ancient\nspecial_attacks = true\n")
     assert tools.capability_flags(config) == [
         "-DFC_CAP_CONSUMABLES=1", "-DFC_CAP_PRAYERS=1", "-DFC_CAP_GEAR_SETS=4",
-        "-DFC_CAP_SPELLBOOK=2"]
+        "-DFC_CAP_SPELLBOOK=2", "-DFC_CAP_SPECIAL_ATTACKS=1"]
     config.write_text("[env]\nconsumables = 2\n")
     with pytest.raises(tools.ConfigError, match="consumables = 2: must be 0 or 1"):
         tools.capability_flags(config)
@@ -258,6 +258,9 @@ def test_cflags_compile_in_the_configured_capabilities(tmp_path):
     config.write_text("[env]\nspellbook = lunar\n")
     with pytest.raises(tools.ConfigError,
                        match="spellbook = lunar: must be none or standard or ancient"):
+        tools.capability_flags(config)
+    config.write_text("[env]\nspecial_attacks = 2\n")
+    with pytest.raises(tools.ConfigError, match="special_attacks = 2: must be 0 or 1"):
         tools.capability_flags(config)
 
 

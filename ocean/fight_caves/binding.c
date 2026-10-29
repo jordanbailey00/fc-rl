@@ -25,6 +25,7 @@ static const struct {
     {"prayers", FC_CAP_PRAYERS, 0, {"protection", "all"}},
     {"gear_sets", FC_CAP_GEAR_SETS, 1, {"", "1", "2", "3", "4"}},
     {"spellbook", FC_CAP_SPELLBOOK, 0, {"none", "standard", "ancient"}},
+    {"special_attacks", FC_CAP_SPECIAL_ATTACKS, 1, {"0", "1"}},
 };
 #define FC_BUILT_CAPABILITY_COUNT \
     ((int)(sizeof(FC_BUILT_CAPABILITIES) / sizeof(FC_BUILT_CAPABILITIES[0])))

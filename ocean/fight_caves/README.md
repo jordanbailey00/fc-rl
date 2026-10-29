@@ -50,13 +50,8 @@ The `[env]` section holds three kinds of settings:
   prayers are on and what the active ones drain. Every prayer counts as
   unlocked, as in a members world; RuneC's unlock varbits are not modelled.
   In the cave Rapid Restore and Preserve only drain, since nothing lowers or
-  boosts the stats they act on. Not available until RuneC implements it:
-  - Protect Item, Retribution and Redemption: RuneC rejects them as not yet
-    implemented, pending player-death item retention and verified trigger
-    order.
-  - Smite: RuneC applies it only through boss encounter hooks; ordinary
-    NPCs, the cave's among them, have no Prayer to drain.
-  - The Ruinous Powers book, which RuneC leaves out.
+  boosts the stats they act on. The prayers RuneC does not implement are in
+  [Not yet in RuneC](#not-yet-in-runec).
 
   `gear_sets = 2` to `4` (default `1`) adds a `gear_set` head that switches
   between whole gear presets, `gear_set_1` to `gear_set_N`. Set 1 is worn at
@@ -88,6 +83,32 @@ The `[env]` section holds three kinds of settings:
   switch and before the attack, keeping the target. The observation adds the
   autocast spell (one-hot) and, with the Ancient book, each visible NPC's
   remaining freeze, freeze immunity, poison damage and Attack drain.
+
+  `special_attacks = 1` (default `0`) adds special attack energy and a
+  `special_attack` head that arms the worn weapon's special for its next
+  attack: 0 leaves it as it is, 1 toggles it, as RuneC's special attack
+  button does. The energy follows RuneC: full at the start, then 10% back
+  every 50 ticks while it is below full, counted after the hits on the
+  player land. Arming is masked unless the worn weapon has a special RuneC
+  implements and the energy covers its cost; disarming never is. The next
+  attack that launches fires it: the attack rolls as usual, the special
+  scales its damage, rounding down, and the cost is paid and the special
+  disarms as it launches. If the weapon worn by then has no special or the
+  energy is short, that attack does not launch, the special disarms and the
+  attack target is dropped, as RuneC rejects the launch. Two preset weapons
+  have one in RuneC, and both cost 50% and change only the damage: the Toxic
+  blowpipe's hits deal 150% (`blowpipe_pure`; RuneC itself cannot fire its
+  blowpipe yet) and the Armadyl crossbow's 100% (`acb_armadyl`), so its
+  special spends energy for an ordinary shot. The head applies after a gear
+  switch and the autocast spell, before the attack, as RuneC takes the switch
+  and the toggle as input before its attack phase, which fires the special
+  of the weapon worn then: switching from one weapon with a special to
+  another and arming in one tick arms the new one's, and arming in the tick
+  that switches to a weapon without one does nothing. The mask, made before
+  the switch, offers arming only when the weapon worn then has a special, so
+  arming for a weapon a switch wields takes the next tick. The observation
+  adds the energy, whether the special is armed and what the worn weapon's
+  special costs (0 without one).
 - **Scenario** settings are what an episode starts with and need no rebuild:
   `gear_set_1` names a gear preset, the `*_level` keys set skill levels, and
   `initial_sharks` and `initial_prayer_doses` fill the inventory. With
@@ -128,11 +149,10 @@ The `[env]` section holds three kinds of settings:
   RuneC does, the staff supplying its elements (the Mystic smoke staff air and
   fire, the Kodai wand water) and combination runes, which no preset carries,
   paying two elements at once; out of runes the autocast spell clears and the
-  staff bashes, like a ranged weapon out of ammunition. RuneC has no bonuses
-  or weapon data yet for the Twinflame staff, Confliction gauntlets and
-  Avernic treads (max): the medium Magic preset, built around the Twinflame
-  staff, waits for that data, and `harmonised_ancestral` wears the gloves and
-  boots without their bonuses.
+  staff bashes, like a ranged weapon out of ammunition. The medium Magic
+  preset, built around the Twinflame staff, waits for RuneC's data for it,
+  and `harmonised_ancestral` wears the Confliction gauntlets and Avernic
+  treads (max) without bonuses (see [Not yet in RuneC](#not-yet-in-runec)).
 
   Magic follows RuneC: a staff with an autocast spell of the player's book
   casts at its target from up to 10 tiles in line of sight, every 5 ticks (4
@@ -147,18 +167,13 @@ The `[env]` section holds three kinds of settings:
   lowers Attack (Shadow) or heals a quarter of its damage (Blood); the cave's
   NPCs do not regenerate, so a drain lasts, as RuneC treats an NPC without a
   regeneration interval. Without an autocast spell a staff bashes in melee.
-  Not available until RuneC implements it: area damage of the Burst and
-  Barrage spells (single-target in RuneC), poison and freeze immunities,
-  elemental weaknesses, and the Twinflame staff's, Confliction gauntlets' and
-  Virtus robes' effects. RuneC's manual casts, defensive autocast (which
+  RuneC's manual casts, defensive autocast (which
   changes only experience), rune pouches, tomes and powered or charged staves
   are not ported, as no preset uses them.
 
   The last four are the low, medium, high and maxed melee presets of the
-  fc-rl 4.0 loadouts, with RuneC v4's item definitions and requirements:
-  RuneC's items data has no requirements for the Osmumten's fang, Dual
-  macuahuitl, Blood moon and Torva armour, Amulet of rancour and Ultor ring,
-  and `scythe_torva` wears the Avernic treads (max) without bonuses.
+  fc-rl 4.0 loadouts, with RuneC v4's item definitions and requirements,
+  where RuneC has them (see [Not yet in RuneC](#not-yet-in-runec)).
 
   Melee follows RuneC: a melee weapon attacks from open cardinal contact
   (reach 1), every 4 ticks (Dragon scimitar, Dual macuahuitl) or 5
@@ -175,12 +190,8 @@ The `[env]` section holds three kinds of settings:
   Attack levels, Aggressive 3 Strength, Defensive 3 Defence (to the player's
   defence rolls) and Controlled 1 of each. The unarmed punch and a staff's
   bash roll the same way on accurate crush and still land in the attack's
-  tick. Not available until RuneC implements them: weapon passives and set
-  effects (the Scythe of vitur's extra hits, Osmumten's fang's accuracy and
-  damage rules, the Dual macuahuitl's second hit, the Blood moon set's
-  faster attacks, and any Bandos, Torva, Ultor ring or Amulet of rancour
-  effect) and special attacks. RuneC's 2-tile polearm reach is not ported,
-  as no preset wields a polearm.
+  tick. RuneC's 2-tile polearm reach is not ported, as no preset wields a
+  polearm.
 
 - **Rewards** and their shaping terms.
 
@@ -194,6 +205,66 @@ The environment reports episode averages for `zero_progress_ticks`,
 `npc_healing_total`, `jad_healing_total` and `episode_length`. Puffer's `perf`
 and `score` are both the Jad kill rate. Prayer uptimes are fractions of episode
 ticks; healing totals count HP restored.
+
+### Not yet in RuneC
+
+The rules here are RuneC v4's. What RuneC does not implement yet is left out,
+except three ranged rules the ranged presets had before this port followed
+RuneC, which stay so that their training does not change. Revisit each when
+RuneC implements it:
+
+- **Prayers**
+  - Protect Item, Retribution and Redemption: RuneC rejects them, pending
+    player-death item retention and a verified trigger order.
+  - Smite: RuneC applies it only through boss encounter hooks; the cave's
+    NPCs have no Prayer to drain.
+  - The Ruinous Powers book: RuneC leaves it out.
+- **Magic**
+  - Burst and Barrage area damage: RuneC's spells are single-target.
+  - Poison and freeze immunities and elemental weaknesses: RuneC has no rules
+    for them yet.
+  - The Twinflame staff, Confliction gauntlets and Avernic treads (max):
+    RuneC's item data has no bonuses or weapon data for them, so the medium
+    magic preset waits, the Twinflame staff fights like an empty hand,
+    `harmonised_ancestral` wears the gauntlets and treads without bonuses and
+    `scythe_torva` the treads.
+  - The Twinflame staff's, Confliction gauntlets' and Virtus robes' effects:
+    no RuneC rules.
+- **Melee**
+  - The Scythe of vitur's extra hits by target size, Osmumten's fang's
+    accuracy and damage rules and the Dual macuahuitl's second hit: RuneC has
+    no weapon passives.
+  - The Blood moon set's faster attacks and any Bandos, Torva, Ultor ring or
+    Amulet of rancour effect: RuneC has no set or item effects.
+  - Requirements for Osmumten's fang, the Dual macuahuitl, Blood moon and
+    Torva armour, the Amulet of rancour and the Ultor ring: RuneC's item data
+    has none, so any level wears them.
+- **Ranged items**
+  - The Twisted bow's scaling by the target's Magic level: RuneC waits for
+    verified NPC bonus inputs. The bow keeps the scaling it had here.
+  - Crystal armour's accuracy and damage bonus to the Bow of faerdhinen:
+    not in RuneC. Kept here as before.
+  - The Toxic blowpipe's dart container: RuneC rejects blowpipe attacks until
+    it has one. Here the blowpipe fires its loaded adamant darts as before.
+  - Enchanted bolt effects, such as the diamond dragon bolts (e)'s: RuneC
+    checks only that the ammunition fits the weapon.
+  - Ava's assembler and accumulator saving ammunition: not in RuneC.
+- **Special attacks**
+  - The Magic shortbow (i), Dragon scimitar, Osmumten's fang and Dual
+    macuahuitl specials: RuneC has only their catalog text
+    (`content/specials`), no rules, so arming is masked with them. The other
+    preset weapons have no special in RuneC.
+  - The Toxic blowpipe special's higher accuracy and healing and the Armadyl
+    crossbow special's higher accuracy and enchanted bolt chance, which that
+    catalog text describes: RuneC's specials apply only their cost and damage
+    percentage.
+- **Item effects**
+  - No worn-item passive or set effect of a preset's items is in RuneC. The
+    item rules RuneC does apply to them are here: the Harmonised nightmare
+    staff's faster Standard spells, the staves' runes and autocast books, and
+    the Bow of faerdhinen (c) needing no ammunition. The other rows of RuneC's
+    item effect table for the presets' items and supplies are the shark's and
+    prayer potion's stat changes, for the consumables capability.
 
 ## Play
 
@@ -218,7 +289,13 @@ bundle lacks are skipped, the human stance standing in.
 With `prayers = all` the prayer tab holds every prayer the policy can use,
 bright when a click would toggle it; Preserve, Chivalry, Deadeye, Mystic
 Vigour, Piety, Rigour and Augury show their names, as the pinned assets have
-no icons for them. The console in the chat box lists targets, jumps to a wave,
+no icons for them. With `special_attacks = 1` the special attack orb under the
+run orb and the bar in the combat tab show the energy, green while the special
+is armed, and clicking either arms or disarms it. The pinned assets lack the
+Armadyl crossbow's special animation and both specials' graphics (RuneC's
+sequence 427 and spot animations 301 and 1043), so a special looks like the
+weapon's normal attack, which for the blowpipe is also RuneC's special one.
+The console in the chat box lists targets, jumps to a wave,
 sets the tick rate, toggles god mode and debug overlays, and shows player
 state, observations, the action mask, rewards and the event log. The full key
 list is at the top of `viewer.c`.

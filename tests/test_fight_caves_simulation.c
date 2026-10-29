@@ -92,22 +92,25 @@ static int core_contract_test(void) {
     _Static_assert(FC_STATE_HASH_VERSION == 6, "analytics state hash version drifted");
     /* 286 + 34 = 320 floats and three heads with the default capabilities;
      * spellbook = standard adds 20 floats and a 21-value head, ancient 48
-     * floats and a 17-value head. */
+     * floats and a 17-value head; special_attacks = 1 3 floats and a
+     * 2-value head. */
     _Static_assert(FC_POLICY_OBS_SIZE ==
                        286 + 3 * FC_CAP_CONSUMABLES + 25 * FC_CAP_PRAYERS +
                        6 * FC_GEAR_SWITCHING * FC_CAP_GEAR_SETS +
-                       (FC_CAP_SPELLBOOK == 1 ? 20 : FC_CAP_SPELLBOOK == 2 ? 48 : 0),
+                       (FC_CAP_SPELLBOOK == 1 ? 20 : FC_CAP_SPELLBOOK == 2 ? 48 : 0) +
+                       3 * FC_CAP_SPECIAL_ATTACKS,
                    "policy observation contract drifted");
     _Static_assert(FC_PUFFER_MASK_SIZE ==
                        34 + 5 * FC_CAP_CONSUMABLES + 25 * FC_CAP_PRAYERS +
                        FC_GEAR_SWITCHING * (1 + FC_CAP_GEAR_SETS) +
-                       (FC_CAP_SPELLBOOK == 1 ? 21 : FC_CAP_SPELLBOOK == 2 ? 17 : 0),
+                       (FC_CAP_SPELLBOOK == 1 ? 21 : FC_CAP_SPELLBOOK == 2 ? 17 : 0) +
+                       2 * FC_CAP_SPECIAL_ATTACKS,
                    "Puffer mask contract drifted");
     _Static_assert(FC_PUFFER_OBS_SIZE == FC_POLICY_OBS_SIZE + FC_PUFFER_MASK_SIZE,
                    "Puffer observation contract drifted");
     _Static_assert(FC_PUFFER_NUM_ATNS ==
                        3 + 2 * FC_CAP_CONSUMABLES + FC_CAP_PRAYERS + FC_GEAR_SWITCHING +
-                       FC_SPELLBOOK_HEAD,
+                       FC_SPELLBOOK_HEAD + FC_CAP_SPECIAL_ATTACKS,
                    "Puffer action-head count drifted");
 
     FcState first;
@@ -1473,6 +1476,13 @@ static void scenario_config_test(void) {
     puf_ini_set(&kwargs, "spellbook", "2");
     expect_config_error(&kwargs, "spellbook = 2: must be none or standard or ancient");
     puf_ini_set(&kwargs, "spellbook", FC_CAP_SPELLBOOK == 2 ? "Ancient" : books[FC_CAP_SPELLBOOK]);
+    dict_set(&kwargs, "special_attacks", !FC_CAP_SPECIAL_ATTACKS);
+    expect_config_error(&kwargs, FC_CAP_SPECIAL_ATTACKS
+        ? "special_attacks = 0, but this build has special_attacks = 1"
+        : "special_attacks = 1, but this build has special_attacks = 0");
+    dict_set(&kwargs, "special_attacks", 2);
+    expect_config_error(&kwargs, "special_attacks = 2: must be 0 or 1");
+    dict_set(&kwargs, "special_attacks", FC_CAP_SPECIAL_ATTACKS);
 
     /* Every gear set up to gear_sets names a preset, and no other is set. */
     Dict gear = {0};
@@ -1811,12 +1821,14 @@ static void prayer_book_test(void) {
  * and the active prayers and their drain are observed. */
 static void prayer_book_adapter_test(void) {
     enum { PRAYER = 2 };
-    /* The book is the last policy head but for the gear set and autocast
-     * heads. */
-    const int book = FC_PUFFER_NUM_ATNS - 1 - FC_GEAR_SWITCHING - FC_SPELLBOOK_HEAD;
+    /* The book is the last policy head but for the gear set, autocast and
+     * special attack heads. */
+    const int book = FC_PUFFER_NUM_ATNS - 1 - FC_GEAR_SWITCHING - FC_SPELLBOOK_HEAD -
+                     FC_CAP_SPECIAL_ATTACKS;
     const int book_mask = FC_PUFFER_MASK_SIZE - FC_PRAYER_BOOK_DIM -
                           FC_GEAR_SWITCHING * FC_GEAR_SET_DIM -
-                          FC_SPELLBOOK_HEAD * FC_AUTOCAST_DIM;
+                          FC_SPELLBOOK_HEAD * FC_AUTOCAST_DIM -
+                          FC_CAP_SPECIAL_ATTACKS * FC_SPECIAL_ATTACK_DIM;
     assert(FC_PUFFER_ACTION_HEADS[PRAYER] == FC_HEAD_PRAYER &&
            FC_PUFFER_ACTION_HEADS[book] == FC_HEAD_PRAYER_BOOK);
     Dict kwargs = {0};
@@ -2137,9 +2149,10 @@ static void gear_episode_test(void) {
 /* The gear_set head reaches the core through the policy actions; its mask
  * and the gear block are observed. */
 static void gear_adapter_test(void) {
-    const int head = FC_PUFFER_NUM_ATNS - 1 - FC_SPELLBOOK_HEAD;
+    const int head = FC_PUFFER_NUM_ATNS - 1 - FC_SPELLBOOK_HEAD - FC_CAP_SPECIAL_ATTACKS;
     const int mask = FC_PUFFER_MASK_SIZE - FC_GEAR_SET_DIM -
-                     FC_SPELLBOOK_HEAD * FC_AUTOCAST_DIM;
+                     FC_SPELLBOOK_HEAD * FC_AUTOCAST_DIM -
+                     FC_CAP_SPECIAL_ATTACKS * FC_SPECIAL_ATTACK_DIM;
     assert(FC_PUFFER_ACTION_HEADS[head] == FC_HEAD_GEAR_SET &&
            strcmp(FC_HEAD_NAMES[FC_HEAD_GEAR_SET], "gear_set") == 0 &&
            FC_PUFFER_ACTION_DIMS[head] == FC_CAP_GEAR_SETS + 1);
@@ -2750,8 +2763,9 @@ static void magic_gear_switch_test(void) {
 /* The autocast head reaches the core through the policy actions; its mask
  * and the spellbook block are observed. */
 static void spellbook_adapter_test(void) {
-    const int head = FC_PUFFER_NUM_ATNS - 1;
-    const int mask = FC_PUFFER_MASK_SIZE - FC_AUTOCAST_DIM;
+    const int head = FC_PUFFER_NUM_ATNS - 1 - FC_CAP_SPECIAL_ATTACKS;
+    const int mask = FC_PUFFER_MASK_SIZE - FC_AUTOCAST_DIM -
+                     FC_CAP_SPECIAL_ATTACKS * FC_SPECIAL_ATTACK_DIM;
     assert(FC_PUFFER_ACTION_HEADS[head] == FC_HEAD_AUTOCAST &&
            strcmp(FC_HEAD_NAMES[FC_HEAD_AUTOCAST], "autocast") == 0 &&
            FC_PUFFER_ACTION_DIMS[head] == FC_AUTOCAST_DIM);
@@ -3271,6 +3285,383 @@ static void melee_config_test(void) {
     puts("melee config: Attack and Strength requirements and a melee preset passed");
 }
 
+#if FC_CAP_SPECIAL_ATTACKS
+/* Special attacks, against RuneC_v4: rc-core/combat.h's energy constants;
+ * rc-core/combat.c's rc_combat_toggle_special, the special check and payment
+ * of rc_combat_tick_player's launch and the recovery of
+ * rc_combat_tick_player_status; rc-content/combat/regular_npc_combat.c's
+ * g_player_specials rows for the Toxic blowpipe (5000 energy, 150%) and the
+ * Armadyl crossbow (5000, 100%) and regular_modify_player_special_damage;
+ * and the expected values of tests/test_combat_phase10_resources_specials.c's
+ * test_special_spends_energy_and_recovers (a special spends 10000 down to
+ * 5000 and disarms; 49 recovery ticks leave 5000, the 50th makes 6000) and
+ * test_content_specials_spend_energy_and_modify_damage (a content special
+ * spends 5000, disarms and scales the hit by its percentage). RuneC has no
+ * test of these two weapons' specials. */
+
+/* Whether the SPECIAL_ATTACK toggle takes effect now, by the mask. */
+static int special_mask(const FcState *s) {
+    float mask[FC_ACTION_MASK_SIZE];
+    fc_write_mask(s, mask);
+    assert(mask[FC_MASK_SPECIAL_START + FC_SPECIAL_NO_CHANGE] == 1.0f);
+    return mask[FC_MASK_SPECIAL_START + FC_SPECIAL_TOGGLE] != 0.0f;
+}
+
+/* magic_fixture for a preset in every gear set, with a Tz-Kih at (x, 20)
+ * that does not attack or die. */
+static void special_fixture(FcState *s, const char *preset, int x) {
+    FcScenario scenario = preset_scenario(fc_gear_preset_find(preset));
+    magic_fixture(s, &scenario, NPC_TZ_KIH, x, 20);
+    s->npcs[0].current_hp = s->npcs[0].max_hp = 100000;
+}
+
+/* One step of a copy of s that attacks the NPC, arming the special in the
+ * same step or not. Returns the Hitpoints (tenths) the NPC lost. */
+static int special_shot(const FcState *s, int arm, FcState *after) {
+    *after = *s;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+    actions[FC_HEAD_ATTACK] = 1;
+    actions[FC_HEAD_SPECIAL_ATTACK] = arm ? FC_SPECIAL_TOGGLE : FC_SPECIAL_NO_CHANGE;
+    int hp = after->npcs[0].current_hp;
+    fc_step(after, actions);
+    assert(after->render_events.player_attack_fired);
+    return hp - after->npcs[0].current_hp;
+}
+
+/* The energy: full at the start, the cost of a special, and RuneC's
+ * recovery and its count. */
+static void special_energy_test(void) {
+    FcState s;
+    special_fixture(&s, "acb_armadyl", 25);
+    assert(s.caps.special_energy == FC_SPECIAL_ENERGY_MAX && !s.caps.special_armed &&
+           s.caps.special_recover_ticks == 0);
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+    fc_step(&s, actions);   /* full: the count stays 0 */
+    assert(s.caps.special_energy == FC_SPECIAL_ENERGY_MAX && s.caps.special_recover_ticks == 0);
+    /* Arm and attack in one tick: the special fires, spends 5000 and
+     * disarms, and the recovery counts that tick, after the attack. */
+    actions[FC_HEAD_ATTACK] = 1;
+    actions[FC_HEAD_SPECIAL_ATTACK] = FC_SPECIAL_TOGGLE;
+    fc_step(&s, actions);
+    assert(s.render_events.player_attack_fired);
+    assert(s.caps.special_energy == 5000 && !s.caps.special_armed &&
+           s.caps.special_recover_ticks == 1);
+    actions[FC_HEAD_ATTACK] = FC_ATTACK_NONE;
+    actions[FC_HEAD_SPECIAL_ATTACK] = FC_SPECIAL_NO_CHANGE;
+    for (int i = 0; i < FC_SPECIAL_RECOVER_TICKS - 2; i++) fc_step(&s, actions);
+    assert(s.caps.special_energy == 5000 &&
+           s.caps.special_recover_ticks == FC_SPECIAL_RECOVER_TICKS - 1);
+    fc_step(&s, actions);
+    assert(s.caps.special_energy == 6000 && s.caps.special_recover_ticks == 0);
+    /* Spending does not restart the count. */
+    s.caps.special_energy = 7000;
+    s.caps.special_recover_ticks = 20;
+    s.player.attack_timer = 0;
+    actions[FC_HEAD_ATTACK] = 1;
+    actions[FC_HEAD_SPECIAL_ATTACK] = FC_SPECIAL_TOGGLE;
+    fc_step(&s, actions);
+    assert(s.render_events.player_attack_fired);
+    assert(s.caps.special_energy == 2000 && s.caps.special_recover_ticks == 21);
+    /* Recovery stops at full, where the count restarts. */
+    actions[FC_HEAD_ATTACK] = FC_ATTACK_NONE;
+    actions[FC_HEAD_SPECIAL_ATTACK] = FC_SPECIAL_NO_CHANGE;
+    s.caps.special_energy = 9500;
+    s.caps.special_recover_ticks = FC_SPECIAL_RECOVER_TICKS - 1;
+    fc_step(&s, actions);
+    assert(s.caps.special_energy == FC_SPECIAL_ENERGY_MAX && s.caps.special_recover_ticks == 0);
+    fc_step(&s, actions);
+    assert(s.caps.special_energy == FC_SPECIAL_ENERGY_MAX && s.caps.special_recover_ticks == 0);
+    /* Nothing recovers without Hitpoints, as RuneC's status tick skips a dead
+     * player. */
+    s.caps.special_energy = 5000;
+    s.caps.special_recover_ticks = 10;
+    s.player.current_hp = 0;
+    fc_special_recover(&s);
+    assert(s.caps.special_energy == 5000 && s.caps.special_recover_ticks == 10);
+    puts("special attacks: full start, cost, recovery every 50 ticks and its count passed");
+}
+
+/* Which weapons have a special, arming and its mask, and the observation. */
+static void special_mask_test(void) {
+    /* Of the presets' weapons, only the Toxic blowpipe and Armadyl crossbow
+     * have a g_player_specials row. */
+    for (int i = 0; i < FC_GEAR_PRESET_COUNT; i++) {
+        const FcItemDef *weapon = fc_gear_preset_weapon(&FC_GEAR_PRESETS[i]);
+        const FcSpecialDef *def = fc_special_def(weapon->id);
+        if (weapon->id == FC_ITEM_ID_TOXIC_BLOWPIPE)
+            assert(def && def->cost == 5000 && def->damage_pct == 150);
+        else if (weapon->id == 11785)
+            assert(def && def->cost == 5000 && def->damage_pct == 100);
+        else
+            assert(def == NULL);
+    }
+    FcState s;
+    float obs[FC_POLICY_OBS_SIZE];
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+    actions[FC_HEAD_SPECIAL_ATTACK] = FC_SPECIAL_TOGGLE;
+    /* The Twisted bow has none: arming is masked and does nothing. */
+    special_fixture(&s, "tbow_masori", 25);
+    assert(!special_mask(&s) && fc_special_cost(&s.player) == 0);
+    fc_write_obs(&s, obs);
+    assert(obs[FC_OBS_SPECIAL_START + FC_OBS_SPECIAL_ENERGY] == 1.0f &&
+           obs[FC_OBS_SPECIAL_START + FC_OBS_SPECIAL_ARMED] == 0.0f &&
+           obs[FC_OBS_SPECIAL_START + FC_OBS_SPECIAL_COST] == 0.0f);
+    fc_step(&s, actions);
+    assert(!s.caps.special_armed);
+    /* The Armadyl crossbow arms while the energy covers its 5000. */
+    special_fixture(&s, "acb_armadyl", 25);
+    assert(special_mask(&s) && fc_special_cost(&s.player) == 5000);
+    s.caps.special_energy = 4999;
+    assert(!special_mask(&s));
+    fc_step(&s, actions);
+    assert(!s.caps.special_armed);
+    s.caps.special_energy = 5000;
+    assert(special_mask(&s));
+    fc_step(&s, actions);
+    assert(s.caps.special_armed && s.caps.special_energy == 5000);
+    fc_write_obs(&s, obs);
+    assert(obs[FC_OBS_SPECIAL_START + FC_OBS_SPECIAL_ENERGY] == 0.5f &&
+           obs[FC_OBS_SPECIAL_START + FC_OBS_SPECIAL_ARMED] == 1.0f &&
+           obs[FC_OBS_SPECIAL_START + FC_OBS_SPECIAL_COST] == 0.5f);
+    /* Disarming always takes effect. */
+    s.caps.special_energy = 0;
+    assert(special_mask(&s));
+    fc_step(&s, actions);
+    assert(!s.caps.special_armed);
+    assert(!fc_special_action_valid(&s, FC_SPECIAL_ATTACK_DIM));
+    puts("special attacks: weapons with a special, arming, its mask and the observation passed");
+}
+
+/* Each special against an ordinary attack from the same state: the same
+ * rolls, the damage scaled by the special's percentage, the cost paid, the
+ * special disarmed and one piece of ammunition spent either way. An armed
+ * special the worn weapon does not have stops the attack. */
+static void special_attack_test(void) {
+    static const struct { const char *preset; int weapon, x, pct; } cases[] = {
+        {"acb_armadyl", 11785, 25, 100},
+        {"blowpipe_pure", FC_ITEM_ID_TOXIC_BLOWPIPE, 24, 150},
+    };
+    for (int c = 0; c < 2; c++) {
+        FcState s, normal, special;
+        special_fixture(&s, cases[c].preset, cases[c].x);
+        assert(s.player.equipment[FC_EQUIP_SLOT_WEAPON].item_id == cases[c].weapon);
+        int hits = 0, scaled = 0;
+        for (int trial = 0; trial < 200; trial++) {
+            s.rng_state = 0x9e3779b9u * (uint32_t)(trial + 1);
+            int plain = special_shot(&s, 0, &normal);
+            int dealt = special_shot(&s, 1, &special);
+            assert(special.rng_state == normal.rng_state);
+            assert(dealt == plain / 10 * cases[c].pct / 100 * 10);
+            assert(normal.caps.special_energy == FC_SPECIAL_ENERGY_MAX &&
+                   special.caps.special_energy == FC_SPECIAL_ENERGY_MAX - 5000 &&
+                   !special.caps.special_armed);
+            assert(special.player.ammo_count == s.player.ammo_count - 1 &&
+                   normal.player.ammo_count == s.player.ammo_count - 1);
+            assert(special.player.attack_timer == normal.player.attack_timer);
+            hits += plain > 0;
+            scaled += dealt != plain;
+        }
+        assert(hits > 0 && (cases[c].pct == 100 ? scaled == 0 : scaled > 0));
+    }
+
+    /* reject_launch: armed with the crossbow, then unarmed beside the NPC.
+     * The punch does not launch, the special disarms, the target goes and
+     * the energy stays; the next punch is an ordinary one. */
+    FcState s;
+    special_fixture(&s, "acb_armadyl", 21);
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+    actions[FC_HEAD_SPECIAL_ATTACK] = FC_SPECIAL_TOGGLE;
+    fc_step(&s, actions);
+    assert(s.caps.special_armed);
+    assert(fc_unequip_item(&s, FC_EQUIP_SLOT_WEAPON) == FC_ITEM_OK &&
+           s.player.weapon_kind == FC_WEAPON_UNARMED);
+    actions[FC_HEAD_SPECIAL_ATTACK] = FC_SPECIAL_NO_CHANGE;
+    actions[FC_HEAD_ATTACK] = 1;
+    int hp = s.npcs[0].current_hp;
+    fc_step(&s, actions);
+    assert(!s.render_events.player_attack_fired && !s.caps.special_armed &&
+           s.player.attack_target_idx == -1 && s.npcs[0].current_hp == hp &&
+           s.caps.special_energy == FC_SPECIAL_ENERGY_MAX && s.player.attack_timer == 0);
+    fc_step(&s, actions);
+    assert(s.render_events.player_attack_fired &&
+           s.caps.special_energy == FC_SPECIAL_ENERGY_MAX);
+    puts("special attacks: Armadyl crossbow and Toxic blowpipe specials against the "
+         "same attacks, and a special the weapon lacks, passed");
+}
+
+/* An acb_armadyl episode that arms the special whenever it can while
+ * attacking the nearest NPC, deterministically. */
+static void special_episode_test(void) {
+    FcScenario scenario = preset_scenario(fc_gear_preset_find("acb_armadyl"));
+    FcState s, again;
+    fc_init(&s);
+    fc_reset(&s, 7);
+    fc_apply_scenario(&s, &scenario);
+    again = s;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+    actions[FC_HEAD_ATTACK] = 1;
+    int specials = 0, attacks = 0, ticks = 0;
+    for (; ticks < 600 && !fc_is_terminal(&s); ticks++) {
+        actions[FC_HEAD_SPECIAL_ATTACK] = !s.caps.special_armed && special_mask(&s)
+            ? FC_SPECIAL_TOGGLE : FC_SPECIAL_NO_CHANGE;
+        int energy = s.caps.special_energy;
+        fc_step(&s, actions);
+        fc_step(&again, actions);
+        assert(fc_state_hash(&s) == fc_state_hash(&again));
+        assert(s.caps.special_energy >= 0 && s.caps.special_energy <= FC_SPECIAL_ENERGY_MAX);
+        specials += s.caps.special_energy < energy;
+        attacks += s.render_events.player_attack_fired;
+    }
+    assert(specials >= 2 && attacks > specials);
+    printf("special attacks: %d specials in %d attacks over %d ticks with acb_armadyl passed\n",
+           specials, attacks, ticks);
+}
+
+#if FC_GEAR_SWITCHING
+/* Switching and the special in one tick, as RuneC orders them: the switch
+ * and the toggle are input before the attack, whose launch checks the
+ * weapon worn then. GEAR_LINEUP's sets: tbow_masori worn, acb_armadyl, then
+ * bowfa_crystal and blowpipe_pure as far as gear_sets goes. */
+static void special_gear_switch_test(void) {
+    FcScenario scenario = gear_scenario(0, 0);
+    FcState s, normal, special;
+    gear_fixture(&s, &scenario);
+    memset(s.npcs, 0, sizeof(s.npcs));
+    memset(s.walkable, 1, sizeof(s.walkable));
+    memset(s.movement_flags, 0, sizeof(s.movement_flags));
+    memset(s.los_flags, 0, sizeof(s.los_flags));
+    s.player.x = 20;
+    s.player.y = 20;
+    fc_npc_spawn(&s.npcs[0], NPC_TZ_KIH, 24, 20, 1);
+    s.npcs_remaining = 1;
+    s.npcs[0].attack_timer = 100000;
+    s.npcs[0].current_hp = s.npcs[0].max_hp = 100000;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+
+    /* The Twisted bow worn: arming is masked. Switch to the crossbow, then
+     * arm and attack: its special fires. */
+    assert(!special_mask(&s));
+    actions[FC_HEAD_GEAR_SET] = 2;
+    fc_step(&s, actions);
+    assert(wears_preset(&s.player, "acb_armadyl") && special_mask(&s));
+    actions[FC_HEAD_GEAR_SET] = FC_GEAR_SET_NO_CHANGE;
+    actions[FC_HEAD_ATTACK] = 1;
+    actions[FC_HEAD_SPECIAL_ATTACK] = FC_SPECIAL_TOGGLE;
+    s.player.attack_timer = 0;
+    fc_step(&s, actions);
+    assert(s.render_events.player_attack_fired && !s.caps.special_armed &&
+           s.caps.special_energy == 5000);
+
+    /* Armed with the crossbow, then switching to the bow while attacking:
+     * the bow has no special, so the attack stops (reject_launch). */
+    actions[FC_HEAD_ATTACK] = FC_ATTACK_NONE;
+    fc_step(&s, actions);
+    assert(s.caps.special_armed);
+    actions[FC_HEAD_GEAR_SET] = 1;
+    actions[FC_HEAD_ATTACK] = 1;
+    actions[FC_HEAD_SPECIAL_ATTACK] = FC_SPECIAL_NO_CHANGE;
+    s.player.attack_timer = 0;
+    fc_step(&s, actions);
+    assert(wears_preset(&s.player, "tbow_masori") && !s.render_events.player_attack_fired &&
+           !s.caps.special_armed && s.player.attack_target_idx == -1 &&
+           s.caps.special_energy == 5000);
+
+    /* Arming in the tick that switches from the crossbow to the bow arms
+     * nothing, the toggle applying after the switch; the bow shoots as
+     * usual. */
+    s.caps.special_energy = FC_SPECIAL_ENERGY_MAX;
+    actions[FC_HEAD_GEAR_SET] = 2;
+    actions[FC_HEAD_ATTACK] = FC_ATTACK_NONE;
+    fc_step(&s, actions);
+    assert(wears_preset(&s.player, "acb_armadyl") && special_mask(&s));
+    actions[FC_HEAD_GEAR_SET] = 1;
+    actions[FC_HEAD_ATTACK] = 1;
+    actions[FC_HEAD_SPECIAL_ATTACK] = FC_SPECIAL_TOGGLE;
+    s.player.attack_timer = 0;
+    fc_step(&s, actions);
+    assert(wears_preset(&s.player, "tbow_masori") && s.render_events.player_attack_fired &&
+           !s.caps.special_armed && s.caps.special_energy == FC_SPECIAL_ENERGY_MAX);
+
+    /* From the crossbow to the blowpipe with the toggle and an attack in one
+     * tick: the blowpipe's special arms and fires, against the same tick
+     * without the toggle. */
+    if (FC_CAP_GEAR_SETS >= 4) {
+        actions[FC_HEAD_GEAR_SET] = 2;
+        actions[FC_HEAD_ATTACK] = FC_ATTACK_NONE;
+        actions[FC_HEAD_SPECIAL_ATTACK] = FC_SPECIAL_NO_CHANGE;
+        fc_step(&s, actions);
+        assert(wears_preset(&s.player, "acb_armadyl") && special_mask(&s));
+        s.player.attack_timer = 0;
+        int hits = 0, scaled = 0;
+        for (int trial = 0; trial < 200; trial++) {
+            s.rng_state = 0x9e3779b9u * (uint32_t)(trial + 1);
+            int dealt[2];
+            for (int arm = 0; arm < 2; arm++) {
+                FcState *after = arm ? &special : &normal;
+                *after = s;
+                actions[FC_HEAD_GEAR_SET] = 4;
+                actions[FC_HEAD_ATTACK] = 1;
+                actions[FC_HEAD_SPECIAL_ATTACK] = arm ? FC_SPECIAL_TOGGLE
+                                                      : FC_SPECIAL_NO_CHANGE;
+                int hp = after->npcs[0].current_hp;
+                fc_step(after, actions);
+                assert(wears_preset(&after->player, "blowpipe_pure") &&
+                       after->render_events.player_attack_fired);
+                dealt[arm] = hp - after->npcs[0].current_hp;
+            }
+            assert(special.rng_state == normal.rng_state &&
+                   dealt[1] == dealt[0] / 10 * 150 / 100 * 10 &&
+                   !special.caps.special_armed &&
+                   special.caps.special_energy == FC_SPECIAL_ENERGY_MAX - 5000 &&
+                   normal.caps.special_energy == FC_SPECIAL_ENERGY_MAX);
+            hits += dealt[0] > 0;
+            scaled += dealt[1] != dealt[0];
+        }
+        assert(hits > 0 && scaled > 0);
+    }
+    puts("special attacks: switching then arming, a switch away from an armed special, "
+         "arming while switching and switching to another special passed");
+}
+#endif
+
+/* The special attack head reaches the core through the policy actions; its
+ * mask and the special block are observed. */
+static void special_adapter_test(void) {
+    const int head = FC_PUFFER_NUM_ATNS - 1;
+    const int mask = FC_PUFFER_MASK_SIZE - FC_SPECIAL_ATTACK_DIM;
+    assert(FC_PUFFER_ACTION_HEADS[head] == FC_HEAD_SPECIAL_ATTACK &&
+           strcmp(FC_HEAD_NAMES[FC_HEAD_SPECIAL_ATTACK], "special_attack") == 0 &&
+           FC_PUFFER_ACTION_DIMS[head] == FC_SPECIAL_ATTACK_DIM);
+    Dict kwargs = {0};
+    puf_ini_set(&kwargs, "gear_set_1", "acb_armadyl");
+    other_gear_sets(&kwargs, "acb_armadyl");
+    FightCaves* env = test_env(&kwargs);
+    Agent* a = &env->agents[0];
+    const float* obs = a->observations + FC_OBS_SPECIAL_START;
+    assert(obs[FC_OBS_SPECIAL_ENERGY] == 1.0f && obs[FC_OBS_SPECIAL_ARMED] == 0.0f &&
+           obs[FC_OBS_SPECIAL_COST] == 0.5f);
+    assert(a->action_mask[mask + FC_SPECIAL_NO_CHANGE] == 1 &&
+           a->action_mask[mask + FC_SPECIAL_TOGGLE] == 1);
+    a->actions[head] = FC_SPECIAL_TOGGLE;
+    checked_step(env);
+    assert(env->state.caps.special_armed && obs[FC_OBS_SPECIAL_ARMED] == 1.0f &&
+           a->action_mask[mask + FC_SPECIAL_TOGGLE] == 1);
+    checked_step(env);
+    assert(!env->state.caps.special_armed && obs[FC_OBS_SPECIAL_ARMED] == 0.0f);
+    /* Short of the crossbow's 5000, arming is masked. */
+    env->state.caps.special_energy = 4000;
+    fc_puffer_write_obs(env);
+    check_obs(env);
+    assert(obs[FC_OBS_SPECIAL_ENERGY] == 0.4f &&
+           a->action_mask[mask + FC_SPECIAL_TOGGLE] == 0);
+    a->actions[head] = FC_SPECIAL_NO_CHANGE;
+    checked_step(env);
+    test_free(env);
+    dict_clear(&kwargs);
+    puts("special attacks: head, masks, energy, armed flag and cost observed passed");
+}
+#endif
+
 /* README.md's presets table has one row per preset, with levels that wear it
  * and, for the magic and melee presets, those of PRESET_LEVELS. Columns: the
  * preset, its main gear, then the levels in FcSkill order. */
@@ -3361,6 +3752,9 @@ static int adapter_test(int graphical) {
 #if FC_SPELLBOOK_HEAD
     spellbook_adapter_test();
 #endif
+#if FC_CAP_SPECIAL_ATTACKS
+    special_adapter_test();
+#endif
     magic_config_test();
     melee_config_test();
     terminal_and_log_test();
@@ -3369,16 +3763,18 @@ static int adapter_test(int graphical) {
      * first, which a gear_sets build needs, go into the section; the trace
      * never switches. */
     char consumables[] = "--env.consumables=1", prayers[] = "--env.prayers=all";
+    char special_attacks[] = "--env.special_attacks=1";
     char gear_sets[32], spellbook[32];
     snprintf(gear_sets, sizeof(gear_sets), "--env.gear_sets=%d", FC_CAP_GEAR_SETS);
     snprintf(spellbook, sizeof(spellbook), "--env.spellbook=%s",
              FC_CAP_SPELLBOOK == 2 ? "ancient" : "standard");
-    char* overrides[4] = {0};
+    char* overrides[5] = {0};
     int override_count = 0;
     if (FC_CAP_CONSUMABLES) overrides[override_count++] = consumables;
     if (FC_CAP_PRAYERS) overrides[override_count++] = prayers;
     if (FC_GEAR_SWITCHING) overrides[override_count++] = gear_sets;
     if (FC_SPELLBOOK_HEAD) overrides[override_count++] = spellbook;
+    if (FC_CAP_SPECIAL_ATTACKS) overrides[override_count++] = special_attacks;
     Ini ini = {0};
     puf_ini_load_env(&ini, "fight_caves", override_count, overrides);
     Dict* kwargs = puf_ini_section(&ini, "env", 0);
@@ -3527,6 +3923,15 @@ int main(int argc, char** argv) {
     melee_formula_test();
     melee_attack_test();
     melee_preset_episodes();
+#if FC_CAP_SPECIAL_ATTACKS
+    special_energy_test();
+    special_mask_test();
+    special_attack_test();
+    special_episode_test();
+#if FC_GEAR_SWITCHING
+    special_gear_switch_test();
+#endif
+#endif
     readme_presets_test();
     if (core_contract_test() || equipment_test() || episode_analytics_test() ||
         context_menu_test() || click_feedback_test() || model_picking_test() ||

@@ -18,6 +18,8 @@
  *   X           — toggle run                R          — reset episode
  *   4/5         — camera presets            F9         — toggle god mode
  *   F1-F4       — switch to gear set 1-4 (gear_sets above 1)
+ *   The special attack orb or the combat tab's special attack bar arms the
+ *   special (special_attacks = 1)
  *
  * Policy replay (./puffer eval, ./fight_caves eval) adds:
  *   1/2/4/0     — 1x/2x/4x/10x speed        Up/Down    — faster/slower
@@ -1888,6 +1890,8 @@ void fc_player_appearance_free(FcPlayerAppearance *appearance) {
 #define FC_OSRS_PRAYER_Y 71.0f
 #define FC_OSRS_RUN_X 10.0f
 #define FC_OSRS_RUN_Y 103.0f
+#define FC_OSRS_SPEC_X 32.0f      /* RuneC's RUNEC_OSRS_SPEC_X/Y */
+#define FC_OSRS_SPEC_Y 128.0f
 #define FC_OSRS_WORLDMAP_X 177.0f
 #define FC_OSRS_WORLDMAP_Y 137.0f
 
@@ -1958,6 +1962,10 @@ static const Rectangle FC_OSRS_COMBAT_CATEGORY = {0, 233, 190, 28};
 /* RuneC's autocast box, beside the third style where a melee weapon has its
  * fourth. */
 static const Rectangle FC_OSRS_COMBAT_AUTOCAST = {102, 99, 68, 47};
+#if FC_CAP_SPECIAL_ATTACKS
+/* RuneC's special attack bar (RUNEC_OSRS_COMBAT_SPECIAL_BAR). */
+static const Rectangle FC_OSRS_COMBAT_SPECIAL_BAR = {20, 200, 150, 26};
+#endif
 
 /* Ui Assets */
 
@@ -2050,6 +2058,11 @@ static const char *const g_ui_asset_names[] = {
     "combaticons2_16",
     "combaticons2_17",
     "sideicons_interface_6",
+#if FC_CAP_SPECIAL_ATTACKS
+    "orb_filler_9",
+    "orb_icon_6",
+    "combatboxes_special_attack",
+#endif
 };
 
 #define FC_UI_ASSET_COUNT \
@@ -2469,7 +2482,8 @@ typedef enum FcUiIntentKind {
     FC_UI_INTENT_WORLD_ACTION,
     FC_UI_INTENT_INVENTORY_ACTION,
     FC_UI_INTENT_EQUIPMENT_ACTION,
-    FC_UI_INTENT_INVENTORY_DRAG
+    FC_UI_INTENT_INVENTORY_DRAG,
+    FC_UI_INTENT_SPECIAL_TOGGLE   /* the special orb or bar (special_attacks = 1) */
 } FcUiIntentKind;
 
 typedef struct FcUiIntent {
@@ -2558,6 +2572,9 @@ typedef struct FcUiState {
     int run_energy;
     int run_enabled;
     int combat_level;
+    /* special_attacks = 1: the energy in percent and whether it is armed. */
+    int special_energy;
+    int special_armed;
 
     int context_open;
     Vector2 context_pos;
@@ -2599,6 +2616,7 @@ typedef struct FcUiLayout {
     Rectangle hp_orb;
     Rectangle prayer_orb;
     Rectangle run_orb;
+    Rectangle spec_orb;           /* special_attacks = 1 */
     Rectangle side;
     Rectangle side_content;
     Rectangle tab[FC_UI_TAB_COUNT];
@@ -2739,6 +2757,8 @@ static void ui_layout(int screen_w, int screen_h, FcUiLayout *out) {
                                   out->map.y + FC_OSRS_ORBS_Y + FC_OSRS_PRAYER_Y, 57, 34};
     out->run_orb = (Rectangle){out->map.x + FC_OSRS_ORBS_X + FC_OSRS_RUN_X,
                                out->map.y + FC_OSRS_ORBS_Y + FC_OSRS_RUN_Y, 57, 34};
+    out->spec_orb = (Rectangle){out->map.x + FC_OSRS_ORBS_X + FC_OSRS_SPEC_X,
+                                out->map.y + FC_OSRS_ORBS_Y + FC_OSRS_SPEC_Y, 57, 34};
     out->worldmap_button = (Rectangle){out->map.x + FC_OSRS_ORBS_X + FC_OSRS_WORLDMAP_X,
                                        out->map.y + FC_OSRS_ORBS_Y + FC_OSRS_WORLDMAP_Y,
                                        30, 30};
@@ -3103,6 +3123,13 @@ static int handle_orb_or_minimap_click(FcUiState *ui,
                   "Quick-prayer");
         return 1;
     }
+#if FC_CAP_SPECIAL_ATTACKS
+    Rectangle spec_button = {layout->spec_orb.x + 3, layout->spec_orb.y + 5, 50, 26};
+    if (CheckCollisionPointRec(mouse, spec_button)) {
+        set_intent(ui, FC_UI_INTENT_SPECIAL_TOGGLE, 0, 0, mouse);
+        return 1;
+    }
+#endif
 
     Vector2 center = {
         layout->minimap.x + layout->minimap.width * 0.5f,
@@ -3148,6 +3175,13 @@ static int handle_equipment_click(FcUiState *ui,
 static int handle_active_tab_click(FcUiState *ui,
                                    const FcUiLayout *layout,
                                    Vector2 mouse) {
+#if FC_CAP_SPECIAL_ATTACKS
+    if (ui->active_tab == FC_UI_TAB_COMBAT &&
+        CheckCollisionPointRec(mouse, side_ref_rect(layout, FC_OSRS_COMBAT_SPECIAL_BAR))) {
+        set_intent(ui, FC_UI_INTENT_SPECIAL_TOGGLE, 0, 0, mouse);
+        return 1;
+    }
+#endif
     switch (ui->active_tab) {
     case FC_UI_TAB_INVENTORY:
         return handle_inventory_click(ui, layout, mouse);
@@ -3402,6 +3436,44 @@ static void draw_run_orb(const FcUiState *ui, Rectangle rect) {
                        12, orb_value_color(energy, 100));
 }
 
+#if FC_CAP_SPECIAL_ATTACKS
+/* The special attack orb, as RuneC draws it (orb_filler_9, orb_icon_6),
+ * emptied from the top like the run orb; a green ring shows it armed. */
+static void draw_special_orb(const FcUiState *ui, Rectangle rect) {
+    Rectangle button = {rect.x + 3, rect.y + 5, 50, 26};
+    const char *frame = CheckCollisionPointRec(GetMousePosition(), button)
+        ? "orb_frame_1" : "orb_frame_0";
+    fc_ui_draw_asset(&ui->assets, frame, rect, WHITE);
+
+    Rectangle fill = {rect.x + 27, rect.y + 4, 26, 26};
+    fc_ui_draw_asset(&ui->assets, "orb_filler_9", fill, WHITE);
+    int energy = ui->special_energy;
+    if (energy < 0) energy = 0;
+    if (energy > 100) energy = 100;
+    int empty_height = 26 * (100 - energy) / 100;
+    const Texture2D *empty = fc_ui_asset(&ui->assets, "orb_filler_0");
+    if (empty_height > 0) {
+        float source_height = (float)empty->height * (float)empty_height /
+                              fill.height;
+        DrawTexturePro(*empty,
+                       (Rectangle){0, 0, (float)empty->width, source_height},
+                       (Rectangle){fill.x, fill.y, fill.width,
+                                   (float)empty_height},
+                       (Vector2){0, 0}, 0.0f, WHITE);
+    }
+    draw_asset_centered(ui, "orb_icon_6", fill, 26, 26, WHITE);
+    if (ui->special_armed)
+        DrawRing((Vector2){fill.x + 13, fill.y + 13}, 12.0f, 14.0f, 0.0f, 360.0f,
+                 32, OSRS_GREEN);
+
+    char text[16];
+    snprintf(text, sizeof(text), "%d", energy);
+    draw_centered_text(ui, text,
+                       (Rectangle){rect.x + 3, rect.y + 14, 24, 13},
+                       12, orb_value_color(energy, 100));
+}
+#endif
+
 static void draw_minimap(const FcUiState *ui, const FcUiLayout *layout) {
     Vector2 center = {layout->minimap.x + layout->minimap.width * 0.5f,
                       layout->minimap.y + layout->minimap.height * 0.5f};
@@ -3455,6 +3527,9 @@ static void draw_minimap(const FcUiState *ui, const FcUiLayout *layout) {
     draw_orb(ui, layout->prayer_orb, "orb_filler_4", "orb_icon_1",
              ui->prayer_points, ui->prayer_points_max);
     draw_run_orb(ui, layout->run_orb);
+#if FC_CAP_SPECIAL_ATTACKS
+    draw_special_orb(ui, layout->spec_orb);
+#endif
 
     fc_ui_draw_asset(&ui->assets, "ring_30", layout->worldmap_button, WHITE);
     draw_asset_centered(ui, "worldmap_icon_0", layout->worldmap_button, 22, 22, WHITE);
@@ -3627,6 +3702,23 @@ static void draw_combat(const FcUiState *ui, const FcUiLayout *layout) {
         draw_centered_text(ui, "Spell", (Rectangle){box.x, box.y + 29, box.width, 15},
                            12, OSRS_ORANGE);
     }
+
+#if FC_CAP_SPECIAL_ATTACKS
+    /* RuneC's special attack bar: the energy in a red bar, filled bright
+     * green while armed. */
+    Rectangle spec = side_ref_rect(layout, FC_OSRS_COMBAT_SPECIAL_BAR);
+    fc_ui_draw_asset(&ui->assets, "combatboxes_special_attack", spec, WHITE);
+    Rectangle bar = {spec.x + 2, spec.y + 7, spec.width - 4, 12};
+    DrawRectangleRec(bar, (Color){115, 6, 6, 255});
+    Rectangle filled = bar;
+    filled.width *= (float)ui->special_energy / 100.0f;
+    DrawRectangleRec(filled, ui->special_armed ? OSRS_GREEN : (Color){57, 125, 59, 255});
+    DrawRectangleLinesEx((Rectangle){spec.x + 2, spec.y + 6, spec.width - 4, 14}, 1,
+                         (Color){44, 42, 35, 255});
+    char spec_text[32];
+    snprintf(spec_text, sizeof(spec_text), "Special Attack: %d%%", ui->special_energy);
+    draw_centered_text(ui, spec_text, spec, 10, OSRS_YELLOW);
+#endif
 
     char category[64];
     snprintf(category, sizeof(category), "Attack style: %s", ui->casting ? "Casting"
@@ -6429,6 +6521,12 @@ int dbg_draw_panel_tabs(const FcState* state,
                            fc_player_cast_spell(state) >= 0 ? " (casting)" : "",
                            p->magic_level);
         }
+#if FC_CAP_SPECIAL_ATTACKS
+        dbg_print_line(x, &by, lh, DBG_COL_LABEL, "Spec:%d/%d%s cost:%d recover:%d",
+                       state->caps.special_energy, FC_SPECIAL_ENERGY_MAX,
+                       state->caps.special_armed ? " armed" : "",
+                       fc_special_cost(p), state->caps.special_recover_ticks);
+#endif
         dbg_print_line(x, &by, lh, DBG_COL_LABEL,
                        "Tgt:%d Appr:%d Route:%d/%d", p->attack_target_idx,
                        p->approach_target, p->route_idx, p->route_len);
@@ -6538,6 +6636,13 @@ int dbg_draw_panel_tabs(const FcState* state,
 #endif
         }
 #endif
+#if FC_CAP_SPECIAL_ATTACKS
+        /* The special attack block: energy, armed and the weapon's cost. */
+        dbg_print_line(x, &by, lh, DBG_COL_LABEL, "Spec E%.2f A%.0f C%.2f",
+                       obs[FC_OBS_SPECIAL_START + FC_OBS_SPECIAL_ENERGY],
+                       obs[FC_OBS_SPECIAL_START + FC_OBS_SPECIAL_ARMED],
+                       obs[FC_OBS_SPECIAL_START + FC_OBS_SPECIAL_COST]);
+#endif
 
         by += 2;
         dbg_print_line(x, &by, lh - 1, DBG_COL_DIM, "NPC slots:");
@@ -6564,7 +6669,8 @@ int dbg_draw_panel_tabs(const FcState* state,
         /* Action mask, one bit per action. Heads 0-6 are move, attack,
          * prayer, eat, drink and the two move-target coordinates; then come
          * the prayer book with prayers = all, the gear set head with
-         * gear_sets above 1 and the autocast head with a spellbook. */
+         * gear_sets above 1, the autocast head with a spellbook and the
+         * special attack head with special_attacks = 1. */
         static const char* labels[] = { "MOVE:", "ATK:", "PRAY:" };
         float mask[FC_ACTION_MASK_SIZE];
         char bits[FC_ACTION_MASK_SIZE + 1];
@@ -6595,6 +6701,10 @@ int dbg_draw_panel_tabs(const FcState* state,
 #if FC_SPELLBOOK_HEAD
         dbg_mask_bits(mask, FC_HEAD_AUTOCAST, bits);
         dbg_print_line(x, &by, lh, DBG_COL_LABEL, "CAST:%s", bits);
+#endif
+#if FC_CAP_SPECIAL_ATTACKS
+        dbg_mask_bits(mask, FC_HEAD_SPECIAL_ATTACK, bits);
+        dbg_print_line(x, &by, lh, DBG_COL_LABEL, "SPEC:%s", bits);
 #endif
 
     } else if (dbg_tab == 3) {
@@ -6803,6 +6913,9 @@ typedef struct ViewerState {
 #if FC_SPELLBOOK_HEAD
     int pending_autocast;         /* AUTOCAST action for the next tick */
 #endif
+#if FC_CAP_SPECIAL_ATTACKS
+    int pending_special;          /* SPECIAL_ATTACK action for the next tick */
+#endif
     int autocast_picker;          /* the combat tab lists spells to autocast */
     int pending_attack_npc;
     int pending_tile_x, pending_tile_y;
@@ -6888,6 +7001,23 @@ static void queue_viewer_gear_switch(ViewerState* v, int set) {
     if (!v || !fc_gear_action_valid(&v->state, set + 1))
         return;
     v->pending_gear = set + 1;
+}
+#endif
+
+#if FC_CAP_SPECIAL_ATTACKS
+/* Arm or disarm the special on the next tick, if that takes effect now, or
+ * say why it does not. */
+static void queue_viewer_special(ViewerState* v) {
+    if (!v || v->policy_replay) return;
+    if (fc_special_action_valid(&v->state, FC_SPECIAL_TOGGLE)) {
+        v->pending_special = FC_SPECIAL_TOGGLE;
+        return;
+    }
+    snprintf(v->item_message, sizeof(v->item_message), "%s",
+             fc_special_cost(&v->state.player) > 0
+                 ? "You do not have enough special attack energy."
+                 : "Your weapon has no special attack here.");
+    v->item_message_seconds = 4.0f;
 }
 #endif
 
@@ -6996,6 +7126,10 @@ static void sync_fc_ui_status(ViewerState* v) {
     snprintf(v->ui.autocast_name, sizeof(v->ui.autocast_name), "%s",
              autocast >= 0 && autocast < FC_SPELL_COUNT ? FC_SPELLS[autocast].name : "");
     if (!v->ui.autocast_box) v->autocast_picker = 0;
+#if FC_CAP_SPECIAL_ATTACKS
+    v->ui.special_energy = v->state.caps.special_energy / 100;
+    v->ui.special_armed = v->state.caps.special_armed;
+#endif
 }
 
 /* Where the minimap centres the player: the drawn position, or the tile
@@ -7188,6 +7322,11 @@ static void handle_fc_ui_intent(ViewerState* v) {
                 v->ui.run_enabled = p->is_running != 0;
             }
             break;
+#if FC_CAP_SPECIAL_ATTACKS
+        case FC_UI_INTENT_SPECIAL_TOGGLE:
+            queue_viewer_special(v);
+            break;
+#endif
         case FC_UI_INTENT_MINIMAP_CLICK: {
             Vector2 player = minimap_player_position(v);
             int tile_x = -1;
@@ -7345,6 +7484,9 @@ static void fc_viewer_reset_presentation(ViewerState* v) {
 #endif
 #if FC_SPELLBOOK_HEAD
     v->pending_autocast = 0;
+#endif
+#if FC_CAP_SPECIAL_ATTACKS
+    v->pending_special = 0;
 #endif
     v->autocast_picker = 0;
     v->pending_eat = 0;
@@ -7538,6 +7680,10 @@ static void build_human_actions(ViewerState* v) {
 #if FC_SPELLBOOK_HEAD
     v->actions[FC_HEAD_AUTOCAST] = v->pending_autocast;
     v->pending_autocast = 0;
+#endif
+#if FC_CAP_SPECIAL_ATTACKS
+    v->actions[FC_HEAD_SPECIAL_ATTACK] = v->pending_special;
+    v->pending_special = 0;
 #endif
     /* Clear buffers */
     v->pending_prayer = 0;

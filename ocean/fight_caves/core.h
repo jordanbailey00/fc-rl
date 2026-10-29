@@ -594,6 +594,12 @@ typedef struct {
     int gear_set;
     int gear_set_loadouts[FC_MAX_GEAR_SETS];
     int autocast;       /* the FcSpell + 1 the player autocasts, or 0 */
+    /* special_attacks = 1: the special attack energy, 0 to
+     * FC_SPECIAL_ENERGY_MAX, the ticks counted toward its next recovery, and
+     * 1 while the special is armed for the next attack. */
+    int special_energy;
+    int special_recover_ticks;
+    int special_armed;
     FcNpcSpellEffects npc_spells[FC_MAX_NPCS];   /* by NPC index */
 } FcCapabilityState;
 
@@ -707,6 +713,9 @@ typedef struct {
 #ifndef FC_CAP_SPELLBOOK
 #define FC_CAP_SPELLBOOK 0     /* 0 none, 1 standard, 2 ancient: the autocast head */
 #endif
+#ifndef FC_CAP_SPECIAL_ATTACKS
+#define FC_CAP_SPECIAL_ATTACKS 0  /* special energy and the special_attack head */
+#endif
 
 #if FC_CAP_CONSUMABLES != 0 && FC_CAP_CONSUMABLES != 1
 #error "FC_CAP_CONSUMABLES must be 0 or 1"
@@ -719,6 +728,9 @@ typedef struct {
 #endif
 #if FC_CAP_SPELLBOOK < 0 || FC_CAP_SPELLBOOK > 2
 #error "FC_CAP_SPELLBOOK must be 0 (none), 1 (standard) or 2 (ancient)"
+#endif
+#if FC_CAP_SPECIAL_ATTACKS != 0 && FC_CAP_SPECIAL_ATTACKS != 1
+#error "FC_CAP_SPECIAL_ATTACKS must be 0 or 1"
 #endif
 
 /* 1 with gear_sets > 1: the gear_set head, its observation block and the
@@ -739,9 +751,17 @@ typedef struct {
 #define FC_BOOK_FIRST_SPELL \
     (FC_CAP_SPELLBOOK == 2 ? FC_SPELL_SMOKE_RUSH : FC_SPELL_WIND_STRIKE)
 
+/* Special attack energy as RuneC's rc-core/combat.h has it (special_attacks =
+ * 1): in hundredths of a percent, full at the start, recovering
+ * FC_SPECIAL_RECOVER_AMOUNT every FC_SPECIAL_RECOVER_TICKS ticks below full. */
+#define FC_SPECIAL_ENERGY_MAX     10000  /* RC_SPECIAL_ENERGY_MAX */
+#define FC_SPECIAL_RECOVER_AMOUNT  1000  /* RC_SPECIAL_RECOVER_AMOUNT */
+#define FC_SPECIAL_RECOVER_TICKS     50  /* RC_SPECIAL_RECOVER_TICKS */
+
 /* 1 when every capability has its default, the shipped layout. */
 #define FC_DEFAULT_CAPABILITIES (FC_CAP_CONSUMABLES == 0 && FC_CAP_PRAYERS == 0 && \
-                                 FC_CAP_GEAR_SETS == 1 && FC_CAP_SPELLBOOK == 0)
+                                 FC_CAP_GEAR_SETS == 1 && FC_CAP_SPELLBOOK == 0 && \
+                                 FC_CAP_SPECIAL_ATTACKS == 0)
 
 
 /* Contracts */
@@ -929,31 +949,43 @@ typedef struct {
 #define FC_OBS_SPELL_SIZE       (FC_BOOK_SPELL_COUNT + (FC_CAP_SPELLBOOK == 2) * \
                                  FC_OBS_SPELL_STRIDE * FC_OBS_NPC_SLOTS)
 
+/* Special attacks (special_attacks = 1, 3 floats): the energy, whether the
+ * special is armed and what the worn weapon's special costs, 0 for a weapon
+ * without one here. The mask says whether arming takes effect now. */
+#define FC_OBS_SPECIAL_START    (FC_OBS_SPELL_START + FC_OBS_SPELL_SIZE)
+#define FC_OBS_SPECIAL_ENERGY   0   /* special energy / FC_SPECIAL_ENERGY_MAX */
+#define FC_OBS_SPECIAL_ARMED    1   /* 1 while the special is armed */
+#define FC_OBS_SPECIAL_COST     2   /* the worn weapon's cost / FC_SPECIAL_ENERGY_MAX */
+#define FC_OBS_SPECIAL_SIZE     (3 * FC_CAP_SPECIAL_ATTACKS)
+
 /* --- Policy observation total --- */
 #define FC_POLICY_OBS_SIZE      (FC_OBS_PLAYER_SIZE + FC_OBS_NPC_TOTAL + \
                                  FC_OBS_META_SIZE + FC_OBS_SUPPLY_SIZE + \
                                  FC_OBS_BOOK_SIZE + FC_OBS_GEAR_SIZE + \
-                                 FC_OBS_SPELL_SIZE)  /* 286 by default */
+                                 FC_OBS_SPELL_SIZE + FC_OBS_SPECIAL_SIZE)  /* 286 by default */
 
 /*
  * Action space: 7 canonical core heads, then the prayer book head with
- * prayers = all, the gear set head with gear_sets > 1 and the autocast head
- * with spellbook = standard or ancient, shared by headless training, policy
- * replay and the playable viewer. The viewer translates human input into
- * these heads: a clicked tile becomes heads 5 and 6, a clicked NPC its head 1
- * slot. Equipment and inventory changes between ticks use the item
- * transactions (fc_equip_item and friends) instead.
+ * prayers = all, the gear set head with gear_sets > 1, the autocast head
+ * with spellbook = standard or ancient and the special attack head with
+ * special_attacks = 1, shared by headless training, policy replay and the
+ * playable viewer. The viewer translates human input into these heads: a
+ * clicked tile becomes heads 5 and 6, a clicked NPC its head 1 slot.
+ * Equipment and inventory changes between ticks use the item transactions
+ * (fc_equip_item and friends) instead.
  */
 
 #define FC_NUM_ACTION_HEADS     (7 + FC_CAP_PRAYERS + FC_GEAR_SWITCHING + \
-                                 FC_SPELLBOOK_HEAD)
+                                 FC_SPELLBOOK_HEAD + FC_CAP_SPECIAL_ATTACKS)
 
 enum {
     FC_HEAD_MOVE, FC_HEAD_ATTACK, FC_HEAD_PRAYER, FC_HEAD_EAT, FC_HEAD_DRINK,
     FC_HEAD_TARGET_X, FC_HEAD_TARGET_Y,
     FC_HEAD_PRAYER_BOOK = 7,                    /* prayers = all only */
     FC_HEAD_GEAR_SET = 7 + FC_CAP_PRAYERS,      /* gear_sets > 1 only */
-    FC_HEAD_AUTOCAST = 7 + FC_CAP_PRAYERS + FC_GEAR_SWITCHING  /* spellbook only */
+    FC_HEAD_AUTOCAST = 7 + FC_CAP_PRAYERS + FC_GEAR_SWITCHING,  /* spellbook only */
+    FC_HEAD_SPECIAL_ATTACK = 7 + FC_CAP_PRAYERS + FC_GEAR_SWITCHING +
+                             FC_SPELLBOOK_HEAD  /* special_attacks = 1 only */
 };
 
 /* Head 0: MOVE — directional tile movement (low-level) */
@@ -1080,8 +1112,8 @@ typedef enum {
 #define FC_GEAR_SET_DIM         (1 + FC_CAP_GEAR_SETS)  /* 0=no change, 1-N=set */
 #define FC_GEAR_SET_NO_CHANGE   0
 
-/* The last head: AUTOCAST (spellbook = standard or ancient) — set the
- * autocast spell */
+/* After the gear set head: AUTOCAST (spellbook = standard or ancient) — set
+ * the autocast spell */
 /*
  *   0     = keep the autocast spell
  *   1-N   = autocast the book's spell N - 1, FcSpell FC_BOOK_FIRST_SPELL + N - 1
@@ -1097,6 +1129,23 @@ typedef enum {
  */
 #define FC_AUTOCAST_DIM         (1 + FC_BOOK_SPELL_COUNT)
 #define FC_AUTOCAST_KEEP        0
+
+/* The last head: SPECIAL_ATTACK (special_attacks = 1) — arm the special */
+/*
+ *   0 = no change
+ *   1 = toggle: arm the worn weapon's special for the next attack, or disarm
+ *       an armed one
+ *
+ * RuneC's rc_combat_toggle_special flips an armed flag, and the next attack
+ * that launches fires the special of the weapon worn then (fc_special_ready).
+ * Arming is masked unless the worn weapon has a special here and the energy
+ * covers its cost; disarming never is. It applies after a gear switch and the
+ * autocast spell and before the attack, so the switch's weapon is the one
+ * whose special arms and fires.
+ */
+#define FC_SPECIAL_ATTACK_DIM   2
+#define FC_SPECIAL_NO_CHANGE    0
+#define FC_SPECIAL_TOGGLE       1
 
 /* Head dimensions; a capability's head is there only with it. */
 #if FC_CAP_PRAYERS
@@ -1114,8 +1163,14 @@ typedef enum {
 #else
 #define FC_AUTOCAST_ACT_SIZE
 #endif
+#if FC_CAP_SPECIAL_ATTACKS
+#define FC_SPECIAL_ACT_SIZE     , FC_SPECIAL_ATTACK_DIM
+#else
+#define FC_SPECIAL_ACT_SIZE
+#endif
 #define FC_ACT_SIZES { FC_MOVE_DIM, FC_ATTACK_DIM, FC_PRAYER_DIM, FC_EAT_DIM, FC_DRINK_DIM, FC_MOVE_TARGET_X_DIM, FC_MOVE_TARGET_Y_DIM \
-                       FC_BOOK_ACT_SIZE FC_GEAR_ACT_SIZE FC_AUTOCAST_ACT_SIZE }
+                       FC_BOOK_ACT_SIZE FC_GEAR_ACT_SIZE FC_AUTOCAST_ACT_SIZE \
+                       FC_SPECIAL_ACT_SIZE }
 
 /* Action head dimensions as a static array (for iteration in viewer/binding) */
 static const int FC_ACTION_DIMS[FC_NUM_ACTION_HEADS] = FC_ACT_SIZES;
@@ -1130,6 +1185,9 @@ static const char* const FC_HEAD_NAMES[FC_NUM_ACTION_HEADS] = {
 #if FC_SPELLBOOK_HEAD
     "autocast",
 #endif
+#if FC_CAP_SPECIAL_ATTACKS
+    "special_attack",
+#endif
 };
 
 /*
@@ -1138,13 +1196,14 @@ static const char* const FC_HEAD_NAMES[FC_NUM_ACTION_HEADS] = {
  *
  * Layout: [MOVE(17)] [ATTACK(9)] [PRAYER(8)] [EAT(3)] [DRINK(2)] [TARGET_X(65)] [TARGET_Y(65)],
  * then [PRAYER_BOOK(25)] with prayers = all, [GEAR_SET(1 + N)] with
- * gear_sets = N > 1 and [AUTOCAST(21 or 17)] with spellbook = standard or
- * ancient
+ * gear_sets = N > 1, [AUTOCAST(21 or 17)] with spellbook = standard or
+ * ancient and [SPECIAL_ATTACK(2)] with special_attacks = 1
  */
 #define FC_ACTION_MASK_SIZE     (FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM + FC_EAT_DIM + FC_DRINK_DIM + FC_MOVE_TARGET_X_DIM + FC_MOVE_TARGET_Y_DIM + \
                                  FC_CAP_PRAYERS * FC_PRAYER_BOOK_DIM + \
                                  FC_GEAR_SWITCHING * FC_GEAR_SET_DIM + \
-                                 FC_SPELLBOOK_HEAD * FC_AUTOCAST_DIM)  /* 169 by default */
+                                 FC_SPELLBOOK_HEAD * FC_AUTOCAST_DIM + \
+                                 FC_CAP_SPECIAL_ATTACKS * FC_SPECIAL_ATTACK_DIM)  /* 169 by default */
 
 /* Mask region offsets within the mask buffer */
 #define FC_MASK_MOVE_START       0
@@ -1157,6 +1216,7 @@ static const char* const FC_HEAD_NAMES[FC_NUM_ACTION_HEADS] = {
 #define FC_MASK_BOOK_START       (FC_MASK_TARGET_Y_START + FC_MOVE_TARGET_Y_DIM) /* 169 */
 #define FC_MASK_GEAR_START       (FC_MASK_BOOK_START + FC_CAP_PRAYERS * FC_PRAYER_BOOK_DIM)
 #define FC_MASK_AUTOCAST_START   (FC_MASK_GEAR_START + FC_GEAR_SWITCHING * FC_GEAR_SET_DIM)
+#define FC_MASK_SPECIAL_START    (FC_MASK_AUTOCAST_START + FC_SPELLBOOK_HEAD * FC_AUTOCAST_DIM)
 
 static const int FC_MASK_HEAD_START[FC_NUM_ACTION_HEADS] = {
     FC_MASK_MOVE_START, FC_MASK_ATTACK_START, FC_MASK_PRAYER_START,
@@ -1170,6 +1230,9 @@ static const int FC_MASK_HEAD_START[FC_NUM_ACTION_HEADS] = {
 #endif
 #if FC_SPELLBOOK_HEAD
     FC_MASK_AUTOCAST_START,
+#endif
+#if FC_CAP_SPECIAL_ATTACKS
+    FC_MASK_SPECIAL_START,
 #endif
 };
 
@@ -1206,20 +1269,31 @@ static const int FC_MASK_HEAD_START[FC_NUM_ACTION_HEADS] = {
 #define FC_PUFFER_SPELL_HEADS
 #define FC_PUFFER_SPELL_DIMS
 #endif
+#if FC_CAP_SPECIAL_ATTACKS
+#define FC_PUFFER_SPECIAL_HEADS , FC_HEAD_SPECIAL_ATTACK
+#define FC_PUFFER_SPECIAL_DIMS  , FC_SPECIAL_ATTACK_DIM
+#else
+#define FC_PUFFER_SPECIAL_HEADS
+#define FC_PUFFER_SPECIAL_DIMS
+#endif
 
 #define FC_PUFFER_NUM_ATNS      (3 + 2 * FC_CAP_CONSUMABLES + FC_CAP_PRAYERS + \
-                                 FC_GEAR_SWITCHING + FC_SPELLBOOK_HEAD)
+                                 FC_GEAR_SWITCHING + FC_SPELLBOOK_HEAD + \
+                                 FC_CAP_SPECIAL_ATTACKS)
 #define FC_PUFFER_HEADS \
     { FC_HEAD_MOVE, FC_HEAD_ATTACK, FC_HEAD_PRAYER FC_PUFFER_SUPPLY_HEADS \
-      FC_PUFFER_BOOK_HEADS FC_PUFFER_GEAR_HEADS FC_PUFFER_SPELL_HEADS }
+      FC_PUFFER_BOOK_HEADS FC_PUFFER_GEAR_HEADS FC_PUFFER_SPELL_HEADS \
+      FC_PUFFER_SPECIAL_HEADS }
 #define FC_PUFFER_ACT_SIZES \
     { FC_MOVE_DIM, FC_ATTACK_DIM, FC_PRAYER_DIM FC_PUFFER_SUPPLY_DIMS \
-      FC_PUFFER_BOOK_DIMS FC_PUFFER_GEAR_DIMS FC_PUFFER_SPELL_DIMS }
+      FC_PUFFER_BOOK_DIMS FC_PUFFER_GEAR_DIMS FC_PUFFER_SPELL_DIMS \
+      FC_PUFFER_SPECIAL_DIMS }
 #define FC_PUFFER_MASK_SIZE     (FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM + \
                                  FC_CAP_CONSUMABLES * (FC_EAT_DIM + FC_DRINK_DIM) + \
                                  FC_CAP_PRAYERS * FC_PRAYER_BOOK_DIM + \
                                  FC_GEAR_SWITCHING * FC_GEAR_SET_DIM + \
-                                 FC_SPELLBOOK_HEAD * FC_AUTOCAST_DIM)
+                                 FC_SPELLBOOK_HEAD * FC_AUTOCAST_DIM + \
+                                 FC_CAP_SPECIAL_ATTACKS * FC_SPECIAL_ATTACK_DIM)
 #define FC_PUFFER_OBS_SIZE      (FC_POLICY_OBS_SIZE + FC_PUFFER_MASK_SIZE)
 
 static const int FC_PUFFER_ACTION_DIMS[FC_PUFFER_NUM_ATNS] = FC_PUFFER_ACT_SIZES;
@@ -2062,9 +2136,9 @@ _Static_assert(offsetof(FcState, caps) - offsetof(FcState, current_wave) ==
                "FcState from current_wave: 46 4-byte fields and 3 arena maps");
 _Static_assert(sizeof(FcNpcSpellEffects) == 5 * 4 &&
                sizeof(FcCapabilityState) ==
-                   (3 + FC_MAX_GEAR_SETS) * 4 + FC_MAX_NPCS * sizeof(FcNpcSpellEffects) &&
+                   (6 + FC_MAX_GEAR_SETS) * 4 + FC_MAX_NPCS * sizeof(FcNpcSpellEffects) &&
                sizeof(FcState) == offsetof(FcState, caps) + sizeof(FcCapabilityState),
-               "FcState ends with caps: 7 4-byte fields and 5 per NPC");
+               "FcState ends with caps: 10 4-byte fields and 5 per NPC");
 
 static uint32_t fc_hash_bytes(uint32_t hash, const void* data, size_t size) {
     const uint8_t* bytes = data;
@@ -3707,6 +3781,126 @@ static int fc_gear_apply_action(FcState* state, int action) {
     const FcGearPreset* preset = fc_gear_preset_by_id(state->active_loadout);
     if (preset->autocast) fc_spell_set_autocast(state, preset->autocast - 1);
     return 1;
+}
+#endif
+
+
+/* Special Attacks */
+
+#if FC_CAP_SPECIAL_ATTACKS
+/*
+ * Special attacks as RuneC_v4 implements them (special_attacks = 1). The
+ * energy starts full (rc-core/world.c) and recovers after the hits on the
+ * player resolve (rc_combat_tick_player_status, fc_special_recover). Arming
+ * flips a flag (rc_combat_toggle_special). When an attack is about to launch,
+ * rc_combat_tick_player checks the armed special against the weapon worn
+ * then (fc_special_ready): without a special or the energy for it the attack
+ * does not launch, the special disarms and the player stops attacking
+ * (reject_launch); otherwise the attack rolls as usual, its damage is scaled
+ * (fc_special_damage) and, once it launches, the cost is paid and the special
+ * disarms (fc_special_spend). The specials are the rows of
+ * rc-content/combat/regular_npc_combat.c's g_player_specials whose weapon a
+ * gear preset wields; neither has a flag there, so they change only the
+ * damage, and no RuneC hook changes their accuracy or their launch.
+ */
+typedef struct {
+    int item_id;
+    int cost;         /* energy, of FC_SPECIAL_ENERGY_MAX */
+    int damage_pct;   /* the damage of a hit, in percent */
+} FcSpecialDef;
+
+static const FcSpecialDef FC_SPECIALS[] = {
+    {FC_ITEM_ID_TOXIC_BLOWPIPE, 5000, 150},
+    {11785, 5000, 100},   /* Armadyl crossbow */
+};
+#define FC_SPECIAL_COUNT ((int)(sizeof(FC_SPECIALS) / sizeof(FC_SPECIALS[0])))
+
+/* The special of a weapon, or NULL when it has none here. */
+static const FcSpecialDef* fc_special_def(int weapon_id) {
+    for (int i = 0; i < FC_SPECIAL_COUNT; i++)
+        if (FC_SPECIALS[i].item_id == weapon_id) return &FC_SPECIALS[i];
+    return NULL;
+}
+
+/* What the worn weapon's special costs (regular_player_special_energy_cost),
+ * or 0 without one. */
+static int fc_special_cost(const FcPlayer* p) {
+    const FcSpecialDef* def = fc_special_def(p->equipment[FC_EQUIP_SLOT_WEAPON].item_id);
+    return def ? def->cost : 0;
+}
+
+/* Whether a SPECIAL_ATTACK action takes effect: no change always does, and
+ * the toggle disarms an armed special or arms the worn weapon's special when
+ * the energy covers its cost. */
+static int fc_special_action_valid(const FcState* state, int action) {
+    if (action == FC_SPECIAL_NO_CHANGE) return 1;
+    if (action != FC_SPECIAL_TOGGLE) return 0;
+    if (state->caps.special_armed) return 1;
+    int cost = fc_special_cost(&state->player);
+    return cost > 0 && state->caps.special_energy >= cost;
+}
+
+/* Apply a SPECIAL_ATTACK action that takes effect. Returns whether it did. */
+static int fc_special_apply_action(FcState* state, int action) {
+    if (action != FC_SPECIAL_TOGGLE || !fc_special_action_valid(state, action))
+        return 0;
+    state->caps.special_armed = !state->caps.special_armed;
+    return 1;
+}
+
+/* The special check of an attack about to launch. Returns 1 and sets *special
+ * to the armed special the worn weapon fires, or to NULL when none is armed;
+ * or returns 0 when the armed special cannot fire, having disarmed it and
+ * dropped the attack target, so that the attack does not launch. It uses no
+ * RNG, as RuneC checks the special before it rolls. */
+static int fc_special_ready(FcState* state, const FcSpecialDef** special) {
+    *special = NULL;
+    if (!state->caps.special_armed) return 1;
+    const FcSpecialDef* def =
+        fc_special_def(state->player.equipment[FC_EQUIP_SLOT_WEAPON].item_id);
+    if (!def || state->caps.special_energy < def->cost) {
+        state->caps.special_armed = 0;
+        set_player_target(&state->player, -1);
+        return 0;
+    }
+    *special = def;
+    return 1;
+}
+
+/* A special hit's damage in tenths: regular_modify_player_special_damage
+ * scales a hit of whole Hitpoints by the special's percentage, rounding
+ * down; a miss stays 0. */
+static int fc_special_damage(const FcSpecialDef* special, int damage_tenths) {
+    int damage = damage_tenths / 10;
+    if (damage > 0 && special->damage_pct != 100)
+        damage = damage * special->damage_pct / 100;
+    return damage * 10;
+}
+
+/* Pay for a special whose attack launched, and disarm it. */
+static void fc_special_spend(FcState* state, const FcSpecialDef* special) {
+    state->caps.special_energy -= special->cost;
+    state->caps.special_armed = 0;
+}
+
+/* rc_combat_tick_player_status's recovery, for a player with Hitpoints left:
+ * below full, every FC_SPECIAL_RECOVER_TICKS ticks add
+ * FC_SPECIAL_RECOVER_AMOUNT up to full; at full the count restarts. Spending
+ * does not restart it. */
+static void fc_special_recover(FcState* state) {
+    FcCapabilityState* caps = &state->caps;
+    if (state->player.current_hp <= 0) return;
+    if (caps->special_energy < FC_SPECIAL_ENERGY_MAX) {
+        if (++caps->special_recover_ticks >= FC_SPECIAL_RECOVER_TICKS) {
+            caps->special_recover_ticks = 0;
+            caps->special_energy += FC_SPECIAL_RECOVER_AMOUNT;
+            if (caps->special_energy > FC_SPECIAL_ENERGY_MAX)
+                caps->special_energy = FC_SPECIAL_ENERGY_MAX;
+        }
+    } else {
+        caps->special_energy = FC_SPECIAL_ENERGY_MAX;
+        caps->special_recover_ticks = 0;
+    }
 }
 #endif
 
@@ -5701,6 +5895,9 @@ static void fc_reset(FcState* state, uint32_t seed) {
     /* Initialize player */
     init_player(&state->player);
     fc_default_loadout(state);
+#if FC_CAP_SPECIAL_ATTACKS
+    state->caps.special_energy = FC_SPECIAL_ENERGY_MAX;   /* RuneC's start */
+#endif
     state->render_events.player_attack_target_npc_slot = -1;
     state->render_events.player_move_start_x = state->player.x;
     state->render_events.player_move_start_y = state->player.y;
@@ -6179,6 +6376,15 @@ void fc_write_obs(const FcState* state, float* out) {
     }
 #endif
 #endif
+
+#if FC_CAP_SPECIAL_ATTACKS
+    float* special = out + FC_OBS_SPECIAL_START;
+    special[FC_OBS_SPECIAL_ENERGY] =
+        clamp01((float)state->caps.special_energy / (float)FC_SPECIAL_ENERGY_MAX);
+    special[FC_OBS_SPECIAL_ARMED] = state->caps.special_armed ? 1.0f : 0.0f;
+    special[FC_OBS_SPECIAL_COST] =
+        (float)fc_special_cost(p) / (float)FC_SPECIAL_ENERGY_MAX;
+#endif
 }
 
 void fc_write_mask(const FcState* state, float* out) {
@@ -6243,6 +6449,13 @@ void fc_write_mask(const FcState* state, float* out) {
             out[FC_MASK_AUTOCAST_START + action] = 0.0f;
     }
 #endif
+
+#if FC_CAP_SPECIAL_ATTACKS
+    /* SPECIAL_ATTACK: arming without a special or its energy is masked;
+     * disarming never is. */
+    if (!fc_special_action_valid(state, FC_SPECIAL_TOGGLE))
+        out[FC_MASK_SPECIAL_START + FC_SPECIAL_TOGGLE] = 0.0f;
+#endif
 }
 
 static int fc_is_terminal(const FcState* state) {
@@ -6303,7 +6516,8 @@ static void fc_fill_render_events(const FcState* state, FcRenderEvents* events) 
  *   2. Process player actions:
  *      a. Prayer toggles (instant): the overhead, then the prayer book
  *      b. Eat food / drink potion (if timer ready)
- *      c. Gear set switch (gear_sets > 1), then the autocast spell (spellbook)
+ *      c. Gear set switch (gear_sets > 1), then the autocast spell (spellbook),
+ *         then arming the special (special_attacks = 1)
  *      d. Attack initiation from the pre-movement tile: a cast, a ranged
  *         attack or melee
  *      e. Movement (route or directional head), unless an attack fired
@@ -6312,8 +6526,9 @@ static void fc_fill_render_events(const FcState* state, FcRenderEvents* events) 
  *   4. Prayer drain (only if prayer stayed active across the tick boundary),
  *      then HP regeneration
  *   5. NPC AI tick (movement + attack) for all active NPCs
- *   6. Resolve pending hits (NPC → player, then for each NPC its poison and
- *      the player's hits on it), then death timers
+ *   6. Resolve pending hits (NPC → player, then special energy recovery with
+ *      special_attacks = 1, then for each NPC its poison and the player's
+ *      hits on it), then death timers
  *   7. Check terminal conditions, wave advancement and Jad healer spawns
  *   8. Episode analytics
  *   9. Increment tick and lock prayer snapshots due at the new boundary
@@ -6470,9 +6685,15 @@ static void prepare_player_interaction(FcState* state, int explicit_move,
  * no stab, slash or crush defence, and RuneC rolls every ordinary NPC's with
  * 0 (DSA-027). A melee weapon's hit lands the tick after the attack, as RuneC's
  * rc_content_player_hit_delay lands every melee hit; the punch and a staff's
- * bash land in the attack's own tick, as they did before melee weapons. */
+ * bash land in the attack's own tick, as they did before melee weapons. With
+ * special_attacks = 1 an armed special that cannot fire stops the attack
+ * first, and one that fires scales the hit and is paid for. */
 static void launch_player_attack(FcState* state, FcNpc* target, int distance) {
     FcPlayer* player = &state->player;
+#if FC_CAP_SPECIAL_ATTACKS
+    const FcSpecialDef* special;
+    if (!fc_special_ready(state, &special)) return;
+#endif
     FcPrayerBonus prayer = fc_prayer_bonus(state);
     int melee = fc_player_melee(player);
     int att_roll, max_hit;
@@ -6489,6 +6710,9 @@ static void launch_player_attack(FcState* state, FcNpc* target, int distance) {
     float chance = fc_hit_chance(att_roll, def_roll);
     int hit = fc_rng_float(state) < chance ? 1 : 0;
     int damage = hit ? fc_roll_damage_tenths(state, max_hit, 1) : 0;
+#if FC_CAP_SPECIAL_ATTACKS
+    if (special) damage = fc_special_damage(special, damage);
+#endif
     int delay = !melee ? fc_ranged_hit_delay(distance)
               : player->weapon_kind == FC_WEAPON_MELEE ? 2 : 1;
 
@@ -6511,6 +6735,9 @@ static void launch_player_attack(FcState* state, FcNpc* target, int distance) {
     if (player->weapon_uses_ammo && player->ammo_count > 0) {
         fc_items_spend_ammo(player);
     }
+#if FC_CAP_SPECIAL_ATTACKS
+    if (special) fc_special_spend(state, special);
+#endif
     player->hit_landed_this_tick = 1;
 }
 
@@ -6521,7 +6748,9 @@ static void launch_player_attack(FcState* state, FcNpc* target, int distance) {
  * level with a magic defence bonus of 0, NPC_STATS having none (RuneC rolls
  * every ordinary NPC with 0, DSA-027), FC's damage roll as for the other
  * attacks, the hit queued with the spell for its effects, the runes paid and
- * the cast's attack speed. Returns whether it cast. */
+ * the cast's attack speed. With special_attacks = 1 an armed special is
+ * checked after the spell, as RuneC checks it; no staff here has a special,
+ * so an armed one stops the cast. Returns whether it cast. */
 static int launch_player_spell(FcState* state, FcNpc* target, int spell) {
     FcPlayer* player = &state->player;
     FcCastResult result = fc_spell_check(state, spell);
@@ -6530,6 +6759,10 @@ static int launch_player_spell(FcState* state, FcNpc* target, int spell) {
         return 0;
     }
     if (target->num_pending_hits >= FC_MAX_PENDING_HITS) return 0;
+#if FC_CAP_SPECIAL_ATTACKS
+    const FcSpecialDef* special;
+    if (!fc_special_ready(state, &special)) return 0;
+#endif
     FcItemStack inventory[FC_INVENTORY_SLOTS];
     fc_spell_rune_plan(player, &FC_SPELLS[spell], inventory);
     FcPrayerBonus prayer = fc_prayer_bonus(state);
@@ -6787,6 +7020,12 @@ static void process_player_actions(FcState* state,
     /* After a switch that may wield another staff, before the attack. */
     fc_autocast_apply_action(state, actions[FC_HEAD_AUTOCAST]);
 #endif
+#if FC_CAP_SPECIAL_ATTACKS
+    /* After a switch too: RuneC takes the toggle and the equips as input
+     * before its attack phase, whose launch fires the special of the weapon
+     * worn then. */
+    fc_special_apply_action(state, actions[FC_HEAD_SPECIAL_ATTACK]);
+#endif
 
     prepare_player_interaction(state, explicit_move, explicit_attack,
                                requested_attack_idx);
@@ -6960,6 +7199,10 @@ static void fc_tick(FcState* state, const int actions[FC_NUM_ACTION_HEADS]) {
 
     /* 6. Resolve pending hits */
     fc_resolve_player_pending_hits(state);
+#if FC_CAP_SPECIAL_ATTACKS
+    /* RuneC recovers special energy after the hits on the player. */
+    fc_special_recover(state);
+#endif
     for (int i = 0; i < FC_MAX_NPCS; i++) {
         if (state->npcs[i].active) {
             fc_npc_poison_tick(state, i);
