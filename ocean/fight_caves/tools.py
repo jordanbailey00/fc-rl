@@ -33,7 +33,8 @@ STAMP = ".archive-sha256"
 # FC_BUILT_CAPABILITIES has the same names, and puf_init checks the INI it
 # trains with against the build.
 CAPABILITIES = {"consumables": {"0": 0, "1": 1},
-                "prayers": {"protection": 0, "all": 1}}
+                "prayers": {"protection": 0, "all": 1},
+                "gear_sets": {"1": 1, "2": 2, "3": 3, "4": 4}}
 
 
 class AssetError(RuntimeError):

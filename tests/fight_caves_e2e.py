@@ -102,7 +102,7 @@ def read_run(path, steps):
 
 
 # Every capability at its largest: the simulation suite's second build.
-ALL_CAPABILITIES = ["-DFC_CAP_CONSUMABLES=1", "-DFC_CAP_PRAYERS=1"]
+ALL_CAPABILITIES = ["-DFC_CAP_CONSUMABLES=1", "-DFC_CAP_PRAYERS=1", "-DFC_CAP_GEAR_SETS=4"]
 
 
 def build_native_tests(root, output, run, *, cuda=False):

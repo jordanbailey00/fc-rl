@@ -23,6 +23,7 @@ static const struct {
 } FC_BUILT_CAPABILITIES[] = {
     {"consumables", FC_CAP_CONSUMABLES, 1, {"0", "1"}},
     {"prayers", FC_CAP_PRAYERS, 0, {"protection", "all"}},
+    {"gear_sets", FC_CAP_GEAR_SETS, 1, {"", "1", "2", "3", "4"}},
 };
 #define FC_BUILT_CAPABILITY_COUNT \
     ((int)(sizeof(FC_BUILT_CAPABILITIES) / sizeof(FC_BUILT_CAPABILITIES[0])))
@@ -74,13 +75,17 @@ static int fc_read_env_config(Dict* kwargs, FcRewardParams* reward,
     }
 
     *scenario = fc_default_scenario();
-    DictItem* item = dict_find(kwargs, "gear_set_1");
-    if (item != NULL) {
+    DictItem* item;
+    for (int k = 0; k < FC_MAX_GEAR_SETS; k++) {
+        char key[32];
+        snprintf(key, sizeof(key), "gear_set_%d", k + 1);
+        item = dict_find(kwargs, key);
+        if (item == NULL) continue;
         const char* name = item->str ? item->str : "";
-        scenario->gear_set = fc_gear_preset_find(name);
-        if (scenario->gear_set < 0) {
-            int n = snprintf(err, err_size, "gear_set_1 = %s: no such gear preset; "
-                             "the presets are", name);
+        scenario->gear_set[k] = fc_gear_preset_find(name);
+        if (scenario->gear_set[k] < 0) {
+            int n = snprintf(err, err_size, "%s = %s: no such gear preset; "
+                             "the presets are", key, name);
             for (int i = 0; i < FC_GEAR_PRESET_COUNT && n > 0 && (size_t)n < err_size; i++)
                 n += snprintf(err + n, err_size - n, " %s", FC_GEAR_PRESETS[i].name);
             return -1;
@@ -127,8 +132,11 @@ static void fc_print_summary(FILE* out, const FcScenario* scenario) {
                 FC_HEAD_NAMES[FC_PUFFER_ACTION_HEADS[h]], FC_PUFFER_ACTION_DIMS[h]);
     fprintf(out, " | obs %d + %d mask = %d\n", FC_POLICY_OBS_SIZE,
             FC_PUFFER_MASK_SIZE, FC_PUFFER_OBS_SIZE);
-    fprintf(out, "Fight Caves scenario: gear_set_1 = %s | levels",
-            FC_GEAR_PRESETS[scenario->gear_set].name);
+    fprintf(out, "Fight Caves scenario:");
+    for (int k = 0; k < FC_CAP_GEAR_SETS; k++)
+        fprintf(out, "%s gear_set_%d = %s", k ? "," : "", k + 1,
+                FC_GEAR_PRESETS[scenario->gear_set[k]].name);
+    fprintf(out, " | levels");
     for (int s = 0; s < FC_SKILL_COUNT; s++)
         fprintf(out, "%s %s %d", s ? "," : "", FC_SKILL_NAMES[s], scenario->levels[s]);
     fprintf(out, " | %d sharks, %d prayer doses\n", scenario->sharks,

@@ -57,12 +57,29 @@ The `[env]` section holds three kinds of settings:
   - Smite: RuneC applies it only through boss encounter hooks; ordinary
     NPCs, the cave's among them, have no Prayer to drain.
   - The Ruinous Powers book, which RuneC leaves out.
+
+  `gear_sets = 2` to `4` (default `1`) adds a `gear_set` head that switches
+  between whole gear presets, `gear_set_1` to `gear_set_N`. Set 1 is worn at
+  the start, and the items of the other sets that it does not wear start in
+  the inventory ahead of the supplies, each once and ammunition as one stack.
+  Choosing set k equips, in that tick before the attack, every item of set k
+  that is not worn, the way clicking each item in the inventory equips it:
+  the two-handed and shield rules apply, the attack timer and attacks in
+  flight are untouched, and the attack target is dropped as after any equip,
+  so the attack head picks it again (in the same tick if it is chosen with
+  the switch). The switch is all or nothing and masked when set k is worn or
+  one of its items cannot be equipped. The observation adds which set is
+  worn and, for each set, its weapon's attack style, range and attack speed.
 - **Scenario** settings are what an episode starts with and need no rebuild:
   `gear_set_1` names a gear preset, the `*_level` keys set skill levels, and
-  `initial_sharks` and `initial_prayer_doses` fill the inventory. Gear must be
-  wearable at the configured levels. Every preset is wearable at the shipped
-  levels; these are the levels each was made for, with Attack, Strength and
-  Magic at 1:
+  `initial_sharks` and `initial_prayer_doses` fill the inventory. With
+  `gear_sets = N`, `gear_set_2` to `gear_set_N` name the other gear sets:
+  each must be set and no higher one may be, and since `--env` overrides only
+  replace keys the INI has, add their lines to it. Every gear set must be
+  wearable at the configured levels, and the other sets' items and the
+  supplies must fit in the 28 inventory slots. Every preset is wearable at the
+  shipped levels; these are the levels each was made for, with Attack,
+  Strength and Magic at 1:
 
   | `gear_set_1` | Main gear | Defence | Ranged | Prayer | Hitpoints |
   | --- | --- | --- | --- | --- | --- |
@@ -97,7 +114,8 @@ ticks; healing totals count HP restored.
 Manual play needs no CUDA or checkpoint. Space starts and pauses, Right Arrow
 steps one tick, R resets and Q quits. Left-click walks or attacks, right-click
 opens menus, right-drag orbits the camera and the wheel zooms; 1/2/3 toggle the
-protection prayers. The side panel has the combat, inventory, equipment and
+protection prayers, and with `gear_sets` above 1, F1 to F4 switch to gear sets 1
+to 4. The side panel has the combat, inventory, equipment and
 prayer tabs; clicking the minimap walks there and its orb toggles running.
 With `prayers = all` the prayer tab holds every prayer the policy can use,
 bright when a click would toggle it; Preserve, Chivalry, Deadeye, Mystic

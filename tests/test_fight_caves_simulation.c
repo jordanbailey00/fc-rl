@@ -92,14 +92,17 @@ static int core_contract_test(void) {
     _Static_assert(FC_STATE_HASH_VERSION == 6, "analytics state hash version drifted");
     /* 286 + 34 = 320 floats and three heads with the default capabilities. */
     _Static_assert(FC_POLICY_OBS_SIZE ==
-                       286 + 3 * FC_CAP_CONSUMABLES + 25 * FC_CAP_PRAYERS,
+                       286 + 3 * FC_CAP_CONSUMABLES + 25 * FC_CAP_PRAYERS +
+                       6 * FC_GEAR_SWITCHING * FC_CAP_GEAR_SETS,
                    "policy observation contract drifted");
     _Static_assert(FC_PUFFER_MASK_SIZE ==
-                       34 + 5 * FC_CAP_CONSUMABLES + 25 * FC_CAP_PRAYERS,
+                       34 + 5 * FC_CAP_CONSUMABLES + 25 * FC_CAP_PRAYERS +
+                       FC_GEAR_SWITCHING * (1 + FC_CAP_GEAR_SETS),
                    "Puffer mask contract drifted");
     _Static_assert(FC_PUFFER_OBS_SIZE == FC_POLICY_OBS_SIZE + FC_PUFFER_MASK_SIZE,
                    "Puffer observation contract drifted");
-    _Static_assert(FC_PUFFER_NUM_ATNS == 3 + 2 * FC_CAP_CONSUMABLES + FC_CAP_PRAYERS,
+    _Static_assert(FC_PUFFER_NUM_ATNS ==
+                       3 + 2 * FC_CAP_CONSUMABLES + FC_CAP_PRAYERS + FC_GEAR_SWITCHING,
                    "Puffer action-head count drifted");
 
     FcState first;
@@ -158,6 +161,13 @@ static int item_slot(const FcPlayer *p, int id) {
     for (int i = 0; i < FC_INVENTORY_SLOTS; i++)
         if (p->inventory[i].item_id == id) return i;
     return -1;
+}
+
+/* A scenario with preset `preset` in every gear set this build has. */
+static FcScenario preset_scenario(int preset) {
+    FcScenario scenario = fc_default_scenario();
+    for (int k = 0; k < FC_CAP_GEAR_SETS; k++) scenario.gear_set[k] = preset;
+    return scenario;
 }
 
 static int episode_analytics_test(void) {
@@ -322,7 +332,7 @@ static int preset_totals(void) {
  * combat tab and its weapon's animations. */
 static int constant_tables(void) {
     char err[256];
-    FcScenario scenario = fc_default_scenario();
+    FcScenario scenario = preset_scenario(0);
     CHECK(fc_scenario_check(&scenario, err, sizeof(err)) == 0);
     for (int p = 0; p < FC_GEAR_PRESET_COUNT; p++) {
         const FcGearPreset *preset = &FC_GEAR_PRESETS[p];
@@ -489,9 +499,8 @@ static int supplies_and_loaded_weapon(void) {
     CHECK(s.player.inventory[3].item_id == 0 && s.player.inventory[2].item_id == 385);
     CHECK(s.player.sharks_remaining == 1 && s.player.prayer_doses_remaining == 4);
     CHECK(s.player.selected_food_slot == -1 && s.player.selected_potion_slot == -1);
-    FcScenario scenario = fc_default_scenario();
-    scenario.gear_set = fc_gear_preset_find("blowpipe_pure");
-    CHECK(scenario.gear_set >= 0);
+    FcScenario scenario = preset_scenario(fc_gear_preset_find("blowpipe_pure"));
+    CHECK(scenario.gear_set[0] >= 0);
     reset(&s, 1);
     fc_apply_scenario(&s, &scenario);
     CHECK(s.active_loadout == FC_LOADOUT_BLOWPIPE_PURE);
@@ -561,8 +570,7 @@ static int gear_presets(void) {
     char err[256], prefix[64], expected[96];
     for (int p = 0; p < FC_GEAR_PRESET_COUNT; p++) {
         const FcGearPreset *preset = &FC_GEAR_PRESETS[p];
-        FcScenario scenario = fc_default_scenario();
-        scenario.gear_set = p;
+        FcScenario scenario = preset_scenario(p);
         FcScenario minimum = scenario;
         for (int k = 0; k < 3; k++) minimum.levels[skills[k]] = 1;
         for (int i = 0; i < preset->equipment_count; i++) {
@@ -870,8 +878,7 @@ static int gear_preset_appearances(FcPlayerAppearance *appearance, AnimCache *ca
     fc_init(&state);
     for (int p = 0; p < FC_GEAR_PRESET_COUNT; p++) {
         const FcGearPreset *preset = &FC_GEAR_PRESETS[p];
-        FcScenario scenario = fc_default_scenario();
-        scenario.gear_set = p;
+        FcScenario scenario = preset_scenario(p);
         fc_reset(&state, 101);
         fc_apply_scenario(&state, &scenario);
         if (fc_player_appearance_sync(appearance, &state.player, FC_PLAYER_MODEL_ID) < 0)
@@ -1010,6 +1017,16 @@ _Static_assert(NUM_ATNS == 3, "action head count changed");
 #endif
 _Static_assert(sizeof(obs_t) == sizeof(float), "observations must be floats");
 _Static_assert(offsetof(Log, n) + sizeof(float) == sizeof(Log), "n must be last");
+
+/* Set gear_set_2 .. gear_set_N, which a build with gear_sets = N needs, to
+ * preset; without gear sets this sets nothing. */
+static void other_gear_sets(Dict* kwargs, const char* preset) {
+    for (int k = 2; k <= FC_CAP_GEAR_SETS; k++) {
+        char key[32];
+        snprintf(key, sizeof(key), "gear_set_%d", k);
+        puf_ini_set(kwargs, key, preset);
+    }
+}
 
 static FightCaves* test_env(Dict* kwargs) {
     FightCaves* env = calloc(1, sizeof(*env));
@@ -1152,7 +1169,9 @@ static void native_config_test(void) {
 }
 
 static void init_and_config_test(void) {
+    /* No settings but the gear sets past the first, which gear_sets needs. */
     Dict empty = {0};
+    other_gear_sets(&empty, FC_GEAR_PRESETS[0].name);
     Env* probe = calloc(1, sizeof(*probe));
     assert(probe);
     puf_init(probe, &empty);
@@ -1167,8 +1186,10 @@ static void init_and_config_test(void) {
     assert(env->scenario.sharks == 0 && env->scenario.prayer_doses == 0);
     check_obs(env);
     test_free(env);
+    dict_clear(&empty);
 
     Dict overrides = {0};
+    other_gear_sets(&overrides, FC_GEAR_PRESETS[0].name);
     dict_set(&overrides, "w_progress", 0.25);
     dict_set(&overrides, "shape_no_attack_start", 17);
     dict_set(&overrides, "initial_sharks", FC_MAX_SHARKS + 1);
@@ -1188,6 +1209,7 @@ static void init_and_config_test(void) {
 
 static void terminal_and_log_test(void) {
     Dict empty = {0};
+    other_gear_sets(&empty, FC_GEAR_PRESETS[0].name);
     Env* env = test_env(&empty);
     env->viewer = calloc(1, sizeof(*env->viewer));
     assert(env->viewer);
@@ -1226,6 +1248,7 @@ static void terminal_and_log_test(void) {
     free(env->viewer);
     env->viewer = NULL;
     test_free(env);
+    dict_clear(&empty);
     puts("adapter terminals/logs: death, completion, autoreset, snapshots and perf/score passed");
 }
 
@@ -1286,6 +1309,32 @@ static void scenario_config_test(void) {
     puf_ini_set(&kwargs, "prayers", "1");
     expect_config_error(&kwargs, "prayers = 1: must be protection or all");
     puf_ini_set(&kwargs, "prayers", FC_CAP_PRAYERS ? "all" : "protection");
+    dict_set(&kwargs, "gear_sets", FC_CAP_GEAR_SETS == 1 ? 2 : 1);
+    expect_config_error(&kwargs, FC_CAP_GEAR_SETS == 1
+        ? "gear_sets = 2, but this build has gear_sets = 1"
+        : "gear_sets = 1, but this build has gear_sets = ");
+    dict_set(&kwargs, "gear_sets", 5);
+    expect_config_error(&kwargs, "gear_sets = 5: must be 1 or 2 or 3 or 4");
+    dict_set(&kwargs, "gear_sets", FC_CAP_GEAR_SETS);
+
+    /* Every gear set up to gear_sets names a preset, and no other is set. */
+    Dict gear = {0};
+    if (FC_CAP_GEAR_SETS > 1)
+        expect_config_error(&gear, "gear_set_2 is missing: gear_sets = ");
+    other_gear_sets(&gear, "tbow_masori");
+    if (FC_CAP_GEAR_SETS < FC_MAX_GEAR_SETS) {
+        char key[32], expected[96];
+        snprintf(key, sizeof(key), "gear_set_%d", FC_CAP_GEAR_SETS + 1);
+        snprintf(expected, sizeof(expected), "%s is set, but this build has "
+                 "gear_sets = %d", key, FC_CAP_GEAR_SETS);
+        puf_ini_set(&gear, key, "tbow_masori");
+        expect_config_error(&gear, expected);
+    }
+    dict_clear(&gear);
+    puf_ini_set(&gear, "gear_set_4", "dragon_claws");
+    expect_config_error(&gear, "gear_set_4 = dragon_claws: no such gear preset");
+    dict_clear(&gear);
+    other_gear_sets(&kwargs, "tbow_masori");
 
     puf_ini_set(&kwargs, "gear_set_1", "dragon_claws");
     expect_config_error(&kwargs, "gear_set_1 = dragon_claws: no such gear preset; "
@@ -1316,6 +1365,7 @@ static void scenario_config_test(void) {
 
     /* Another preset by name, at the levels its gear needs. */
     puf_ini_set(&kwargs, "gear_set_1", "blowpipe_pure");
+    other_gear_sets(&kwargs, "blowpipe_pure");
     dict_set(&kwargs, "defence_level", 1);
     dict_set(&kwargs, "hitpoints_level", 74);
     expect_config_error(&kwargs, "gear_set_1 = blowpipe_pure: Necklace of anguish "
@@ -1597,11 +1647,14 @@ static void prayer_book_test(void) {
  * and the active prayers and their drain are observed. */
 static void prayer_book_adapter_test(void) {
     enum { PRAYER = 2 };
-    const int book = FC_PUFFER_NUM_ATNS - 1;
-    const int book_mask = FC_PUFFER_MASK_SIZE - FC_PRAYER_BOOK_DIM;
+    /* The book is the last policy head but for the gear set head. */
+    const int book = FC_PUFFER_NUM_ATNS - 1 - FC_GEAR_SWITCHING;
+    const int book_mask = FC_PUFFER_MASK_SIZE - FC_PRAYER_BOOK_DIM -
+                          FC_GEAR_SWITCHING * FC_GEAR_SET_DIM;
     assert(FC_PUFFER_ACTION_HEADS[PRAYER] == FC_HEAD_PRAYER &&
            FC_PUFFER_ACTION_HEADS[book] == FC_HEAD_PRAYER_BOOK);
     Dict kwargs = {0};
+    other_gear_sets(&kwargs, FC_GEAR_PRESETS[0].name);
     dict_set(&kwargs, "prayer_level", 70);
     FightCaves* env = test_env(&kwargs);
     FcPlayer* p = &env->state.player;
@@ -1644,6 +1697,322 @@ static void prayer_book_adapter_test(void) {
 #undef BOOK
 #endif
 
+#if FC_GEAR_SWITCHING
+/* The switching tests' gear sets as far as gear_sets goes: tbow_masori worn,
+ * then acb_armadyl, bowfa_crystal and blowpipe_pure. */
+static const char* const GEAR_LINEUP[FC_MAX_GEAR_SETS] =
+    {"tbow_masori", "acb_armadyl", "bowfa_crystal", "blowpipe_pure"};
+
+/* The items each of those sets adds to the inventory, in order: what
+ * tbow_masori and an earlier set do not have. */
+static const int GEAR_SWITCH_ITEMS[FC_MAX_GEAR_SETS][8] = {
+    {0},
+    {11826, 11785, 11828, 12610, 21946, 11830, 7462},   /* Armadyl, book, bolts, gloves */
+    {23971, 25867, 23975, 23979},                       /* crystal; acb's gloves */
+    {2581, 10499, FC_ITEM_ID_TOXIC_BLOWPIPE, 12596, 2495, 11126, 2577},
+};
+enum { DRAGON_ARROW = 11212, DIAMOND_BOLTS = 21946, BOOK_OF_LAW = 12610 };
+
+static FcScenario gear_scenario(int sharks, int doses) {
+    FcScenario scenario = fc_default_scenario();
+    for (int k = 0; k < FC_CAP_GEAR_SETS; k++)
+        scenario.gear_set[k] = fc_gear_preset_find(GEAR_LINEUP[k]);
+    scenario.sharks = sharks;
+    scenario.prayer_doses = doses;
+    return scenario;
+}
+
+static void gear_fixture(FcState* s, const FcScenario* scenario) {
+    fc_init(s);
+    fc_reset(s, 101);
+    fc_apply_scenario(s, scenario);
+}
+
+/* Whether the player wears every item of preset `name`. */
+static int wears_preset(const FcPlayer* p, const char* name) {
+    const FcGearPreset* preset = &FC_GEAR_PRESETS[fc_gear_preset_find(name)];
+    for (int i = 0; i < preset->equipment_count; i++) {
+        const FcItemDef* item = fc_item_definition(preset->equipment[i]);
+        if (p->equipment[item->slot].item_id != item->id) return 0;
+    }
+    return 1;
+}
+
+/* The gear_set mask: bit a for GEAR_SET action a. */
+static unsigned gear_mask(const FcState* s) {
+    float mask[FC_ACTION_MASK_SIZE];
+    fc_write_mask(s, mask);
+    unsigned bits = 0;
+    for (int a = 0; a < FC_GEAR_SET_DIM; a++)
+        if (mask[FC_MASK_GEAR_START + a] != 0.0f) bits |= 1u << a;
+    return bits;
+}
+
+/* How many of item id the player has, worn and in the inventory. */
+static int item_total(const FcPlayer* p, int id) {
+    int total = 0;
+    for (int i = 0; i < FC_EQUIPMENT_SLOTS; i++)
+        if (p->equipment[i].item_id == id) total += p->equipment[i].quantity;
+    for (int i = 0; i < FC_INVENTORY_SLOTS; i++)
+        if (p->inventory[i].item_id == id) total += p->inventory[i].quantity;
+    return total;
+}
+
+/* The scenario checks, the inventory at reset, a switch and back, the mask
+ * and the switch's place in the tick. */
+static void gear_switch_test(void) {
+    const unsigned all = (1u << FC_GEAR_SET_DIM) - 1;
+    char err[256], expected[160];
+    FcState s;
+
+    /* Each set's items must be wearable, and the error names the set. */
+    for (int k = 0; k < FC_CAP_GEAR_SETS; k++) {
+        FcScenario scenario = preset_scenario(fc_gear_preset_find("rcb_pure"));
+        scenario.gear_set[k] = fc_gear_preset_find("blowpipe_pure");
+        scenario.levels[FC_SKILL_DEFENCE] = 1;
+        scenario.levels[FC_SKILL_RANGED] = 75;
+        scenario.levels[FC_SKILL_HITPOINTS] = 74;
+        assert(fc_scenario_check(&scenario, err, sizeof(err)) != 0);
+        snprintf(expected, sizeof(expected), "gear_set_%d = blowpipe_pure: Necklace of "
+                 "anguish needs 75 hitpoints, but hitpoints_level = 74", k + 1);
+        assert(strcmp(err, expected) == 0);
+        scenario.levels[FC_SKILL_HITPOINTS] = 75;
+        assert(fc_scenario_check(&scenario, err, sizeof(err)) == 0);
+    }
+    FcScenario missing = gear_scenario(0, 0);
+    missing.gear_set[FC_CAP_GEAR_SETS - 1] = -1;
+    assert(fc_scenario_check(&missing, err, sizeof(err)) != 0);
+    snprintf(expected, sizeof(expected), "gear_set_%d is missing: gear_sets = %d needs a "
+             "gear preset for each set", FC_CAP_GEAR_SETS, FC_CAP_GEAR_SETS);
+    assert(strcmp(err, expected) == 0);
+
+    /* The switch items and the supplies must fit in the inventory. */
+    FcScenario scenario = gear_scenario(0, 8);   /* two potions */
+    FcItemStack items[FC_MAX_SWITCH_ITEMS];
+    int switch_items = fc_gear_switch_items(&scenario, items), listed = 0;
+    for (int k = 1; k < FC_CAP_GEAR_SETS; k++)
+        for (int i = 0; i < 8; i++) listed += GEAR_SWITCH_ITEMS[k][i] != 0;
+    assert(switch_items == listed && (FC_CAP_GEAR_SETS < 4 || switch_items == 18));
+    scenario.sharks = FC_INVENTORY_SLOTS - switch_items - 2;
+    assert(scenario.sharks <= FC_MAX_SHARKS);
+    assert(fc_scenario_check(&scenario, err, sizeof(err)) == 0);
+    scenario.sharks++;
+    assert(fc_scenario_check(&scenario, err, sizeof(err)) != 0);
+    snprintf(expected, sizeof(expected), "gear sets 2-%d put %d items in the inventory and "
+             "the supplies take %d slots: %d is more than its 28", FC_CAP_GEAR_SETS,
+             switch_items, scenario.sharks + 2, switch_items + scenario.sharks + 2);
+    assert(strcmp(err, expected) == 0);
+
+    /* At reset set 1 is worn, and the other sets' items lead the inventory,
+     * each once, ammunition as one stack, then the supplies. */
+    scenario = gear_scenario(3, 6);
+    gear_fixture(&s, &scenario);
+    FcPlayer* p = &s.player;
+    int slot = 0;
+    for (int k = 1; k < FC_CAP_GEAR_SETS; k++) {
+        for (int i = 0; i < 8 && GEAR_SWITCH_ITEMS[k][i]; i++, slot++) {
+            int id = GEAR_SWITCH_ITEMS[k][i];
+            assert(p->inventory[slot].item_id == id);
+            assert(p->inventory[slot].quantity == (id == DIAMOND_BOLTS ? 50000 : 1));
+            assert(p->inventory[slot].charges ==
+                   (id == FC_ITEM_ID_TOXIC_BLOWPIPE ? 50000 : 0));
+        }
+        assert(s.caps.gear_set_loadouts[k] ==
+               FC_GEAR_PRESETS[fc_gear_preset_find(GEAR_LINEUP[k])].id);
+    }
+    assert(slot == switch_items);
+    assert(p->inventory[slot].item_id == FC_ITEM_ID_PRAYER_POTION_4 &&
+           p->inventory[slot + 1].item_id == FC_ITEM_ID_PRAYER_POTION_2);
+    for (int i = slot + 2; i < FC_INVENTORY_SLOTS; i++)
+        assert(p->inventory[i].item_id == (i < slot + 5 ? FC_ITEM_ID_SHARK : 0));
+    assert(p->sharks_remaining == 3 && p->prayer_doses_remaining == 6);
+    assert(wears_preset(p, "tbow_masori") && p->ranged_attack_bonus == 215);
+    assert(s.active_loadout == FC_LOADOUT_SOTA_TBOW && s.caps.gear_set == 0 &&
+           s.caps.gear_set_loadouts[0] == FC_LOADOUT_SOTA_TBOW);
+    /* The worn set is masked, every other one can be switched to. */
+    assert(gear_mask(&s) == (all & ~(1u << 1)));
+
+    /* Switch to acb_armadyl: its items go on where they lie and what they
+     * replace takes their slots. A switch keeps the attack timer, the attacks
+     * in flight and the RNG, and drops the target as an equip does. */
+    FcItemStack reset_inventory[FC_INVENTORY_SLOTS];
+    memcpy(reset_inventory, p->inventory, sizeof(reset_inventory));
+    s.npcs[0].pending_hits[0] = (FcPendingHit){1, 100, 2, ATTACK_RANGED, -1, 0, PRAYER_NONE, -1};
+    s.npcs[0].num_pending_hits = 1;
+    FcNpc target = s.npcs[0];
+    p->attack_target_idx = 0;
+    p->attack_timer = 3;
+    uint32_t rng = s.rng_state;
+    assert(fc_gear_apply_action(&s, 2));
+    assert(wears_preset(p, "acb_armadyl") &&
+           p->equipment[FC_EQUIP_SLOT_RING].item_id == 28310);   /* the Venator ring stays */
+    /* acb_armadyl's totals and the ring's +10 ranged attack, +2 strength. */
+    assert(p->ranged_attack_bonus == 230 && p->ranged_strength_bonus == 131);
+    assert(p->defence_stab == 112 && p->defence_magic == 139 && p->prayer_bonus == 11);
+    assert(p->weapon_speed == 5 && p->weapon_range == 8 && p->ammo_count == 50000);
+    static const int displaced[] = {27235, 20997, 27238, 0, DRAGON_ARROW, 27241, 26235};
+    for (int i = 0; i < 7; i++) assert(p->inventory[i].item_id == displaced[i]);
+    assert(p->inventory[4].quantity == 50000);
+    assert(memcmp(p->inventory + 7, reset_inventory + 7,
+                  sizeof(FcItemStack) * (FC_INVENTORY_SLOTS - 7)) == 0);
+    assert(s.active_loadout == FC_LOADOUT_ACB_ARMADYL && s.caps.gear_set == 1);
+    assert(p->attack_timer == 3 && p->attack_target_idx == -1 && s.rng_state == rng);
+    assert(memcmp(&target, &s.npcs[0], sizeof(target)) == 0 && s.tick == 0);
+    assert(gear_mask(&s) == (all & ~(1u << 2)));
+    /* And back: the inventory is as it was at reset, the book going to the
+     * first free slot when the two-handed bow takes both hands. */
+    assert(fc_gear_apply_action(&s, 1));
+    assert(memcmp(p->inventory, reset_inventory, sizeof(reset_inventory)) == 0);
+    assert(wears_preset(p, "tbow_masori") &&
+           p->equipment[FC_EQUIP_SLOT_SHIELD].item_id == 0);
+    assert(p->ranged_attack_bonus == 215 && p->ranged_strength_bonus == 99 &&
+           p->prayer_bonus == 6 && p->weapon_speed == 5 && p->weapon_range == 10);
+    assert(s.active_loadout == FC_LOADOUT_SOTA_TBOW && s.caps.gear_set == 0);
+    assert(gear_mask(&s) == (all & ~(1u << 1)));
+
+    /* A masked switch changes nothing. */
+    uint32_t hash = fc_state_hash(&s);
+    assert(!fc_gear_apply_action(&s, 1) && fc_state_hash(&s) == hash);
+    if (FC_CAP_GEAR_SETS >= 3) {
+        /* A set with an item missing cannot be switched to. */
+        FcState lost = s;
+        lost.player.inventory[item_slot(&lost.player, 25867)] = (FcItemStack){0};
+        assert(!(gear_mask(&lost) & (1u << 3)) && (gear_mask(&lost) & (1u << 2)));
+        /* From acb_armadyl to bowfa_crystal the two-handed bow takes both
+         * hands, so the book needs a free slot: with none the switch is
+         * masked, with one it goes there. */
+        FcState full = s;
+        assert(fc_gear_apply_action(&full, 2));
+        for (int i = 0; i < FC_INVENTORY_SLOTS; i++)
+            if (!full.player.inventory[i].item_id)
+                full.player.inventory[i] = (FcItemStack){FC_ITEM_ID_SHARK, 1, 0};
+        hash = fc_state_hash(&full);
+        assert(!(gear_mask(&full) & (1u << 3)));
+        assert(!fc_gear_apply_action(&full, 3) && fc_state_hash(&full) == hash);
+        full.player.inventory[20] = (FcItemStack){0};
+        assert(gear_mask(&full) & (1u << 3));
+        assert(fc_gear_apply_action(&full, 3) && wears_preset(&full.player, "bowfa_crystal"));
+        assert(full.player.inventory[20].item_id == BOOK_OF_LAW &&
+               full.player.equipment[FC_EQUIP_SLOT_SHIELD].item_id == 0);
+        assert(full.active_loadout == FC_LOADOUT_BOWFA_CRYSTAL && full.caps.gear_set == 2);
+    }
+    /* Nothing changes once the episode is over. */
+    s.terminal = TERMINAL_PLAYER_DEATH;
+    assert(gear_mask(&s) == 1u);
+    s.terminal = TERMINAL_NONE;
+
+    /* Through fc_step the switch precedes the attack: chosen together, the
+     * attack fires with the new crossbow and its bolts. */
+    gear_fixture(&s, &scenario);
+    memset(s.npcs, 0, sizeof(s.npcs));
+    memset(s.walkable, 1, sizeof(s.walkable));
+    memset(s.movement_flags, 0, sizeof(s.movement_flags));
+    memset(s.los_flags, 0, sizeof(s.los_flags));
+    p->x = 20; p->y = 20;
+    fc_npc_spawn(&s.npcs[0], NPC_YT_MEJKOT, 20, 25, 1);
+    s.npcs_remaining = 1;
+    s.npcs[0].attack_timer = 100;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+    actions[FC_HEAD_ATTACK] = 1;
+    actions[FC_HEAD_GEAR_SET] = 2;
+    fc_step(&s, actions);
+    assert(s.caps.gear_set == 1 && s.render_events.player_attack_fired);
+    assert(p->attack_target_idx == 0 && p->attack_timer == 5 - 1);
+    assert(item_total(p, DIAMOND_BOLTS) == 49999 && item_total(p, DRAGON_ARROW) == 50000);
+    /* Switching back without the attack head drops the target: no attack
+     * follows, and the cooldown runs on. */
+    actions[FC_HEAD_ATTACK] = FC_ATTACK_NONE;
+    actions[FC_HEAD_GEAR_SET] = 1;
+    fc_step(&s, actions);
+    assert(s.caps.gear_set == 0 && p->attack_target_idx == -1 && p->attack_timer == 3);
+    actions[FC_HEAD_GEAR_SET] = FC_GEAR_SET_NO_CHANGE;
+    for (int t = 0; t < 6; t++) {
+        fc_step(&s, actions);
+        assert(!s.render_events.player_attack_fired);
+    }
+    fc_destroy(&s);
+    puts("gear sets: requirements per set, missing set, inventory overflow, reset "
+         "inventory, switch and back, masks and tick order passed");
+}
+
+/* An episode that switches between tbow_masori and acb_armadyl every 25
+ * ticks while attacking the nearest NPC, deterministically: both sets
+ * attack, and each spends its own ammunition. */
+static void gear_episode_test(void) {
+    FcScenario scenario = gear_scenario(0, 0);
+    FcState s, again;
+    gear_fixture(&s, &scenario);
+    gear_fixture(&again, &scenario);
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+    actions[FC_HEAD_ATTACK] = 1;
+    int attacks[2] = {0}, hits = 0, switches = 0, ticks = 0;
+    for (; ticks < 400 && !fc_is_terminal(&s); ticks++) {
+        int set = ticks / 25 % 2;
+        actions[FC_HEAD_GEAR_SET] = s.caps.gear_set != set ? set + 1 : FC_GEAR_SET_NO_CHANGE;
+        assert(gear_mask(&s) & (1u << actions[FC_HEAD_GEAR_SET]));
+        fc_step(&s, actions);
+        fc_step(&again, actions);
+        assert(fc_state_hash(&s) == fc_state_hash(&again));
+        assert(s.caps.gear_set == set);
+        assert(wears_preset(&s.player, GEAR_LINEUP[set]));
+        switches += actions[FC_HEAD_GEAR_SET] != FC_GEAR_SET_NO_CHANGE;
+        attacks[set] += s.render_events.player_attack_fired;
+        hits += s.hits_landed_this_tick;
+    }
+    assert(ticks == 400 && switches == 15);
+    assert(attacks[0] > 0 && attacks[1] > 0 && hits > 0);
+    assert(item_total(&s.player, DRAGON_ARROW) == 50000 - attacks[0]);
+    assert(item_total(&s.player, DIAMOND_BOLTS) == 50000 - attacks[1]);
+    printf("gear sets: %d switches in %d ticks, %d attacks with tbow_masori and %d "
+           "with acb_armadyl, %d hits passed\n", switches, ticks, attacks[0],
+           attacks[1], hits);
+}
+
+/* The gear_set head reaches the core through the policy actions; its mask
+ * and the gear block are observed. */
+static void gear_adapter_test(void) {
+    const int head = FC_PUFFER_NUM_ATNS - 1;
+    const int mask = FC_PUFFER_MASK_SIZE - FC_GEAR_SET_DIM;
+    assert(FC_PUFFER_ACTION_HEADS[head] == FC_HEAD_GEAR_SET &&
+           strcmp(FC_HEAD_NAMES[FC_HEAD_GEAR_SET], "gear_set") == 0 &&
+           FC_PUFFER_ACTION_DIMS[head] == FC_CAP_GEAR_SETS + 1);
+    Dict kwargs = {0};
+    for (int k = 0; k < FC_CAP_GEAR_SETS; k++) {
+        char key[32];
+        snprintf(key, sizeof(key), "gear_set_%d", k + 1);
+        puf_ini_set(&kwargs, key, GEAR_LINEUP[k]);
+    }
+    FightCaves* env = test_env(&kwargs);
+    Agent* a = &env->agents[0];
+    const float* obs = a->observations + FC_OBS_GEAR_START;
+    /* Every set's weapon shoots: the Twisted bow, Armadyl crossbow, Bow of
+     * faerdhinen and blowpipe reach 10, 8, 10 and 5 tiles every 5, 5, 4 and
+     * 2 ticks. */
+    static const int range[FC_MAX_GEAR_SETS] = {10, 8, 10, 5};
+    static const int speed[FC_MAX_GEAR_SETS] = {5, 5, 4, 2};
+    for (int step = 0; step < 2; step++) {
+        int worn = step;   /* gear_set_1, then gear_set_2 */
+        for (int k = 0; k < FC_CAP_GEAR_SETS; k++) {
+            const float* set = obs + FC_OBS_GEAR_WEAPONS + k * FC_OBS_GEAR_STRIDE;
+            assert(obs[FC_OBS_GEAR_WORN + k] == (k == worn ? 1.0f : 0.0f));
+            assert(set[FC_OBS_GEAR_RANGED] == 1.0f && set[FC_OBS_GEAR_MAGIC] == 0.0f &&
+                   set[FC_OBS_GEAR_MELEE] == 0.0f);
+            assert(set[FC_OBS_GEAR_RANGE] == (float)range[k] / 10.0f &&
+                   set[FC_OBS_GEAR_SPEED] == (float)speed[k] / 10.0f);
+        }
+        for (int v = 0; v < FC_GEAR_SET_DIM; v++)
+            assert(a->action_mask[mask + v] == (v != worn + 1));
+        a->actions[head] = 2;
+        checked_step(env);
+    }
+    assert(env->state.caps.gear_set == 1 &&
+           env->state.active_loadout == FC_LOADOUT_ACB_ARMADYL);
+    test_free(env);
+    dict_clear(&kwargs);
+    puts("gear sets: head, masks, worn set and weapons observed passed");
+}
+#endif
+
 #if FC_CAP_CONSUMABLES
 /* The eat and drink heads reach the core through the policy actions, and
  * their masks and cooldowns are observed. */
@@ -1653,6 +2022,7 @@ static void consumables_test(void) {
     assert(FC_PUFFER_ACTION_HEADS[EAT] == FC_HEAD_EAT &&
            FC_PUFFER_ACTION_HEADS[DRINK] == FC_HEAD_DRINK);
     Dict kwargs = {0};
+    other_gear_sets(&kwargs, FC_GEAR_PRESETS[0].name);
     dict_set(&kwargs, "initial_sharks", 2);
     dict_set(&kwargs, "initial_prayer_doses", 4);
     FightCaves* env = test_env(&kwargs);
@@ -1688,16 +2058,32 @@ static int adapter_test(int graphical) {
 #if FC_CAP_PRAYERS
     prayer_book_adapter_test();
 #endif
+#if FC_GEAR_SWITCHING
+    gear_adapter_test();
+#endif
     terminal_and_log_test();
-    /* The shipped INI with this build's capabilities, as on the command line. */
+    /* The shipped INI with this build's capabilities, as on the command line.
+     * Puffer's overrides replace only keys the INI has, so gear sets past the
+     * first, which a gear_sets build needs, go into the section; the trace
+     * never switches. */
     char consumables[] = "--env.consumables=1", prayers[] = "--env.prayers=all";
-    char* overrides[2] = {0};
+    char gear_sets[32];
+    snprintf(gear_sets, sizeof(gear_sets), "--env.gear_sets=%d", FC_CAP_GEAR_SETS);
+    char* overrides[3] = {0};
     int override_count = 0;
     if (FC_CAP_CONSUMABLES) overrides[override_count++] = consumables;
     if (FC_CAP_PRAYERS) overrides[override_count++] = prayers;
+    if (FC_GEAR_SWITCHING) overrides[override_count++] = gear_sets;
     Ini ini = {0};
     puf_ini_load_env(&ini, "fight_caves", override_count, overrides);
     Dict* kwargs = puf_ini_section(&ini, "env", 0);
+    static const char* const other_sets[FC_MAX_GEAR_SETS] =
+        {NULL, "acb_armadyl", "bowfa_crystal", "blowpipe_pure"};
+    for (int k = 1; k < FC_CAP_GEAR_SETS; k++) {
+        char key[32];
+        snprintf(key, sizeof(key), "gear_set_%d", k + 1);
+        puf_ini_set(kwargs, key, other_sets[k]);
+    }
     FightCaves* env = test_env(kwargs);
     FightCaves* rendered = test_env(kwargs);
     assert(env->reward_params.w_progress == (float)dict_get(kwargs, "w_progress"));
@@ -1820,6 +2206,10 @@ int main(int argc, char** argv) {
     cpu_policy_test();
 #if FC_CAP_PRAYERS
     prayer_book_test();
+#endif
+#if FC_GEAR_SWITCHING
+    gear_switch_test();
+    gear_episode_test();
 #endif
     if (core_contract_test() || equipment_test() || episode_analytics_test() ||
         context_menu_test() || click_feedback_test() || model_picking_test() ||

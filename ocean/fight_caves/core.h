@@ -63,7 +63,7 @@ typedef enum {
 #define FC_CRYSTAL_LEGS_ACCURACY_BP 1000
 #define FC_CRYSTAL_LEGS_DAMAGE_BP    500
 
-/* A named set of worn equipment: what [env] gear_set_1 selects. */
+/* A named set of worn equipment: what [env] gear_set_1 to gear_set_4 select. */
 typedef struct {
     const char* name;
     int id;                     /* FcLoadoutId */
@@ -78,10 +78,15 @@ typedef enum {
     FC_SKILL_MAGIC, FC_SKILL_PRAYER, FC_SKILL_HITPOINTS, FC_SKILL_COUNT
 } FcSkill;
 
-/* What an episode starts with, set in [env]: the gear preset, skill levels
+/* The most gear sets the gear_sets capability can have. */
+#define FC_MAX_GEAR_SETS 4
+
+/* What an episode starts with, set in [env]: the gear presets, skill levels
  * and supplies. Unlike the capabilities below, these need no rebuild. */
 typedef struct {
-    int gear_set;                    /* index into FC_GEAR_PRESETS */
+    /* gear_set_1 .. gear_set_4: an index into FC_GEAR_PRESETS, or -1 when
+     * not set. Sets 1 to gear_sets are used, and set 1 is worn at the start. */
+    int gear_set[FC_MAX_GEAR_SETS];
     int levels[FC_SKILL_COUNT];
     int sharks, prayer_doses;
 } FcScenario;
@@ -500,6 +505,10 @@ typedef struct {
  * capability, so the default contract hash is the shipped one. */
 typedef struct {
     uint32_t prayers;   /* active book prayers, bit FcBookPrayer (prayers = all) */
+    /* gear_sets > 1: the gear set worn, 0 for gear_set_1 (the last one
+     * switched to), and each set's FcLoadoutId; sets past gear_sets stay 0. */
+    int gear_set;
+    int gear_set_loadouts[FC_MAX_GEAR_SETS];
 } FcCapabilityState;
 
 /* Top-level simulation state */
@@ -507,7 +516,8 @@ typedef struct {
     FcPlayer player;
     FcNpc npcs[FC_MAX_NPCS];
 
-    /* The FcLoadoutId of the gear preset the episode started with. */
+    /* The FcLoadoutId of the gear preset the episode started with, or with
+     * gear_sets > 1 of the gear set worn. */
     int active_loadout;
 
     /* Viewer-facing transition facts for the most recently completed tick. */
@@ -605,6 +615,9 @@ typedef struct {
 #ifndef FC_CAP_PRAYERS
 #define FC_CAP_PRAYERS 0       /* 0 protection, 1 all: the prayer book head */
 #endif
+#ifndef FC_CAP_GEAR_SETS
+#define FC_CAP_GEAR_SETS 1     /* 1-4 gear sets; more than 1 adds the gear_set head */
+#endif
 
 #if FC_CAP_CONSUMABLES != 0 && FC_CAP_CONSUMABLES != 1
 #error "FC_CAP_CONSUMABLES must be 0 or 1"
@@ -612,9 +625,17 @@ typedef struct {
 #if FC_CAP_PRAYERS != 0 && FC_CAP_PRAYERS != 1
 #error "FC_CAP_PRAYERS must be 0 (protection) or 1 (all)"
 #endif
+#if FC_CAP_GEAR_SETS < 1 || FC_CAP_GEAR_SETS > FC_MAX_GEAR_SETS
+#error "FC_CAP_GEAR_SETS must be 1 to 4"
+#endif
+
+/* 1 with gear_sets > 1: the gear_set head, its observation block and the
+ * switch items in the inventory. */
+#define FC_GEAR_SWITCHING (FC_CAP_GEAR_SETS > 1)
 
 /* 1 when every capability has its default, the shipped layout. */
-#define FC_DEFAULT_CAPABILITIES (FC_CAP_CONSUMABLES == 0 && FC_CAP_PRAYERS == 0)
+#define FC_DEFAULT_CAPABILITIES (FC_CAP_CONSUMABLES == 0 && FC_CAP_PRAYERS == 0 && \
+                                 FC_CAP_GEAR_SETS == 1)
 
 
 /* Contracts */
@@ -764,26 +785,45 @@ typedef struct {
                                      * points they cost per tick */
 #define FC_OBS_BOOK_SIZE        (25 * FC_CAP_PRAYERS)
 
+/* Gear sets (gear_sets > 1, 6 floats per set: 12, 18 or 24). First which
+ * set is worn, then what each set's weapon gives: the attack style one-hot,
+ * as launch_player_attack attacks (Ranged with a weapon, unarmed melee
+ * without; no weapon here casts Magic), then its range and attack speed, as
+ * recalculate_equipment sets them (1 and 4 unarmed). The player features
+ * already hold the worn weapon's attack timer and the ammunition left. */
+#define FC_OBS_GEAR_START       (FC_OBS_BOOK_START + FC_OBS_BOOK_SIZE)
+#define FC_OBS_GEAR_WORN        0   /* 0..N-1: 1 if gear set k + 1 is worn */
+#define FC_OBS_GEAR_WEAPONS     FC_CAP_GEAR_SETS  /* then one stride per set: */
+#define FC_OBS_GEAR_STRIDE      5
+#define FC_OBS_GEAR_RANGED      0   /*   one-hot: the weapon attacks with Ranged */
+#define FC_OBS_GEAR_MAGIC       1   /*   one-hot: with Magic */
+#define FC_OBS_GEAR_MELEE       2   /*   one-hot: in melee */
+#define FC_OBS_GEAR_RANGE       3   /*   weapon range in tiles / 10 */
+#define FC_OBS_GEAR_SPEED       4   /*   attack speed in ticks / 10 */
+#define FC_OBS_GEAR_SIZE        (FC_GEAR_SWITCHING * (1 + FC_OBS_GEAR_STRIDE) * \
+                                 FC_CAP_GEAR_SETS)
+
 /* --- Policy observation total --- */
 #define FC_POLICY_OBS_SIZE      (FC_OBS_PLAYER_SIZE + FC_OBS_NPC_TOTAL + \
                                  FC_OBS_META_SIZE + FC_OBS_SUPPLY_SIZE + \
-                                 FC_OBS_BOOK_SIZE)  /* 286 by default */
+                                 FC_OBS_BOOK_SIZE + FC_OBS_GEAR_SIZE)  /* 286 by default */
 
 /*
- * Action space: 7 canonical core heads, and the prayer book head 7 with
- * prayers = all, shared by headless training, policy replay and the playable
- * viewer. The viewer translates human input into these heads: a clicked tile
- * becomes heads 5 and 6, a clicked NPC its head 1 slot. Equipment and
- * inventory changes between ticks use the item transactions (fc_equip_item
- * and friends) instead.
+ * Action space: 7 canonical core heads, then the prayer book head with
+ * prayers = all and the gear set head with gear_sets > 1, shared by headless
+ * training, policy replay and the playable viewer. The viewer translates
+ * human input into these heads: a clicked tile becomes heads 5 and 6, a
+ * clicked NPC its head 1 slot. Equipment and inventory changes between
+ * ticks use the item transactions (fc_equip_item and friends) instead.
  */
 
-#define FC_NUM_ACTION_HEADS     (7 + FC_CAP_PRAYERS)
+#define FC_NUM_ACTION_HEADS     (7 + FC_CAP_PRAYERS + FC_GEAR_SWITCHING)
 
 enum {
     FC_HEAD_MOVE, FC_HEAD_ATTACK, FC_HEAD_PRAYER, FC_HEAD_EAT, FC_HEAD_DRINK,
     FC_HEAD_TARGET_X, FC_HEAD_TARGET_Y,
-    FC_HEAD_PRAYER_BOOK   /* prayers = all only */
+    FC_HEAD_PRAYER_BOOK = 7,                    /* prayers = all only */
+    FC_HEAD_GEAR_SET = 7 + FC_CAP_PRAYERS       /* gear_sets > 1 only */
 };
 
 /* Head 0: MOVE — directional tile movement (low-level) */
@@ -896,12 +936,33 @@ typedef enum {
 #define FC_PRAYER_BOOK_DIM      25  /* 0=no change, 1-24=FcBookPrayer 0-23 */
 #define FC_PRAYER_BOOK_NO_CHANGE 0
 
-/* Head dimensions */
+/* Head 8, or 7 without the prayer book: GEAR_SET (gear_sets > 1) — switch
+ * gear sets */
+/*
+ *   0     = no change
+ *   1-N   = switch to gear set N (gear_set_N), N = gear_sets
+ *
+ * A switch equips every item of the set that is not worn, in its preset's
+ * order, from the inventory, the way fc_equip_item equips one clicked item,
+ * all or nothing, after the supplies and before the attack. It is masked when
+ * every item of the set is worn or one of them cannot be equipped.
+ */
+#define FC_GEAR_SET_DIM         (1 + FC_CAP_GEAR_SETS)  /* 0=no change, 1-N=set */
+#define FC_GEAR_SET_NO_CHANGE   0
+
+/* Head dimensions; a capability's head is there only with it. */
 #if FC_CAP_PRAYERS
-#define FC_ACT_SIZES { FC_MOVE_DIM, FC_ATTACK_DIM, FC_PRAYER_DIM, FC_EAT_DIM, FC_DRINK_DIM, FC_MOVE_TARGET_X_DIM, FC_MOVE_TARGET_Y_DIM, FC_PRAYER_BOOK_DIM }
+#define FC_BOOK_ACT_SIZE        , FC_PRAYER_BOOK_DIM
 #else
-#define FC_ACT_SIZES { FC_MOVE_DIM, FC_ATTACK_DIM, FC_PRAYER_DIM, FC_EAT_DIM, FC_DRINK_DIM, FC_MOVE_TARGET_X_DIM, FC_MOVE_TARGET_Y_DIM }
+#define FC_BOOK_ACT_SIZE
 #endif
+#if FC_GEAR_SWITCHING
+#define FC_GEAR_ACT_SIZE        , FC_GEAR_SET_DIM
+#else
+#define FC_GEAR_ACT_SIZE
+#endif
+#define FC_ACT_SIZES { FC_MOVE_DIM, FC_ATTACK_DIM, FC_PRAYER_DIM, FC_EAT_DIM, FC_DRINK_DIM, FC_MOVE_TARGET_X_DIM, FC_MOVE_TARGET_Y_DIM \
+                       FC_BOOK_ACT_SIZE FC_GEAR_ACT_SIZE }
 
 /* Action head dimensions as a static array (for iteration in viewer/binding) */
 static const int FC_ACTION_DIMS[FC_NUM_ACTION_HEADS] = FC_ACT_SIZES;
@@ -910,6 +971,9 @@ static const char* const FC_HEAD_NAMES[FC_NUM_ACTION_HEADS] = {
 #if FC_CAP_PRAYERS
     "prayer_book",
 #endif
+#if FC_GEAR_SWITCHING
+    "gear_set",
+#endif
 };
 
 /*
@@ -917,10 +981,12 @@ static const char* const FC_HEAD_NAMES[FC_NUM_ACTION_HEADS] = {
  * One float per action value per head.
  *
  * Layout: [MOVE(17)] [ATTACK(9)] [PRAYER(8)] [EAT(3)] [DRINK(2)] [TARGET_X(65)] [TARGET_Y(65)],
- * then [PRAYER_BOOK(25)] with prayers = all
+ * then [PRAYER_BOOK(25)] with prayers = all and [GEAR_SET(1 + N)] with
+ * gear_sets = N > 1
  */
 #define FC_ACTION_MASK_SIZE     (FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM + FC_EAT_DIM + FC_DRINK_DIM + FC_MOVE_TARGET_X_DIM + FC_MOVE_TARGET_Y_DIM + \
-                                 FC_CAP_PRAYERS * FC_PRAYER_BOOK_DIM)  /* 169 by default */
+                                 FC_CAP_PRAYERS * FC_PRAYER_BOOK_DIM + \
+                                 FC_GEAR_SWITCHING * FC_GEAR_SET_DIM)  /* 169 by default */
 
 /* Mask region offsets within the mask buffer */
 #define FC_MASK_MOVE_START       0
@@ -931,6 +997,7 @@ static const char* const FC_HEAD_NAMES[FC_NUM_ACTION_HEADS] = {
 #define FC_MASK_TARGET_X_START   (FC_MASK_DRINK_START + FC_DRINK_DIM)           /* 39 */
 #define FC_MASK_TARGET_Y_START   (FC_MASK_TARGET_X_START + FC_MOVE_TARGET_X_DIM) /* 104 */
 #define FC_MASK_BOOK_START       (FC_MASK_TARGET_Y_START + FC_MOVE_TARGET_Y_DIM) /* 169 */
+#define FC_MASK_GEAR_START       (FC_MASK_BOOK_START + FC_CAP_PRAYERS * FC_PRAYER_BOOK_DIM)
 
 static const int FC_MASK_HEAD_START[FC_NUM_ACTION_HEADS] = {
     FC_MASK_MOVE_START, FC_MASK_ATTACK_START, FC_MASK_PRAYER_START,
@@ -938,6 +1005,9 @@ static const int FC_MASK_HEAD_START[FC_NUM_ACTION_HEADS] = {
     FC_MASK_TARGET_Y_START,
 #if FC_CAP_PRAYERS
     FC_MASK_BOOK_START,
+#endif
+#if FC_GEAR_SWITCHING
+    FC_MASK_GEAR_START,
 #endif
 };
 
@@ -960,17 +1030,26 @@ static const int FC_MASK_HEAD_START[FC_NUM_ACTION_HEADS] = {
 #define FC_PUFFER_BOOK_HEADS
 #define FC_PUFFER_BOOK_DIMS
 #endif
+#if FC_GEAR_SWITCHING
+#define FC_PUFFER_GEAR_HEADS    , FC_HEAD_GEAR_SET
+#define FC_PUFFER_GEAR_DIMS     , FC_GEAR_SET_DIM
+#else
+#define FC_PUFFER_GEAR_HEADS
+#define FC_PUFFER_GEAR_DIMS
+#endif
 
-#define FC_PUFFER_NUM_ATNS      (3 + 2 * FC_CAP_CONSUMABLES + FC_CAP_PRAYERS)
+#define FC_PUFFER_NUM_ATNS      (3 + 2 * FC_CAP_CONSUMABLES + FC_CAP_PRAYERS + \
+                                 FC_GEAR_SWITCHING)
 #define FC_PUFFER_HEADS \
     { FC_HEAD_MOVE, FC_HEAD_ATTACK, FC_HEAD_PRAYER FC_PUFFER_SUPPLY_HEADS \
-      FC_PUFFER_BOOK_HEADS }
+      FC_PUFFER_BOOK_HEADS FC_PUFFER_GEAR_HEADS }
 #define FC_PUFFER_ACT_SIZES \
     { FC_MOVE_DIM, FC_ATTACK_DIM, FC_PRAYER_DIM FC_PUFFER_SUPPLY_DIMS \
-      FC_PUFFER_BOOK_DIMS }
+      FC_PUFFER_BOOK_DIMS FC_PUFFER_GEAR_DIMS }
 #define FC_PUFFER_MASK_SIZE     (FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM + \
                                  FC_CAP_CONSUMABLES * (FC_EAT_DIM + FC_DRINK_DIM) + \
-                                 FC_CAP_PRAYERS * FC_PRAYER_BOOK_DIM)
+                                 FC_CAP_PRAYERS * FC_PRAYER_BOOK_DIM + \
+                                 FC_GEAR_SWITCHING * FC_GEAR_SET_DIM)
 #define FC_PUFFER_OBS_SIZE      (FC_POLICY_OBS_SIZE + FC_PUFFER_MASK_SIZE)
 
 static const int FC_PUFFER_ACTION_DIMS[FC_PUFFER_NUM_ATNS] = FC_PUFFER_ACT_SIZES;
@@ -1697,9 +1776,9 @@ _Static_assert(offsetof(FcState, npcs) == sizeof(FcPlayer) &&
 _Static_assert(offsetof(FcState, caps) - offsetof(FcState, current_wave) ==
                    46 * 4 + 3 * FC_ARENA_WIDTH * FC_ARENA_HEIGHT,
                "FcState from current_wave: 46 4-byte fields and 3 arena maps");
-_Static_assert(sizeof(FcCapabilityState) == 1 * 4 &&
+_Static_assert(sizeof(FcCapabilityState) == (2 + FC_MAX_GEAR_SETS) * 4 &&
                sizeof(FcState) == offsetof(FcState, caps) + sizeof(FcCapabilityState),
-               "FcState ends with caps: 1 4-byte field");
+               "FcState ends with caps: 6 4-byte fields");
 
 static uint32_t fc_hash_bytes(uint32_t hash, const void* data, size_t size) {
     const uint8_t* bytes = data;
@@ -1929,14 +2008,21 @@ static void reset_supplies(FcPlayer *p, int sharks, int doses) {
     p->selected_food_slot = p->selected_potion_slot = -1;
 }
 
+/* A preset's item as a stack: its ammunition as one stack of the preset's
+ * ammo, a blowpipe loaded with it, anything else one item. */
+static FcItemStack fc_preset_item_stack(const FcGearPreset *loadout,
+                                        const FcItemDef *item) {
+    return (FcItemStack){
+        item->id, item->slot == FC_EQUIP_SLOT_AMMO ? loadout->ammo : 1,
+        item->id == FC_ITEM_ID_TOXIC_BLOWPIPE ? loadout->ammo : 0
+    };
+}
+
 static void fc_items_init(FcPlayer *p, const FcGearPreset *loadout) {
     memset(p->equipment, 0, sizeof(p->equipment));
     for (int i = 0; i < loadout->equipment_count; i++) {
         const FcItemDef *item = fc_item_definition(loadout->equipment[i]);
-        p->equipment[item->slot] = (FcItemStack){
-            item->id, item->slot == FC_EQUIP_SLOT_AMMO ? loadout->ammo : 1,
-            item->id == FC_ITEM_ID_TOXIC_BLOWPIPE ? loadout->ammo : 0
-        };
+        p->equipment[item->slot] = fc_preset_item_stack(loadout, item);
     }
     recalculate_equipment(p);
     reset_supplies(p, FC_MAX_SHARKS, FC_MAX_PRAYER_DOSES);
@@ -1980,23 +2066,20 @@ static int can_change_items(const FcState *state) {
     return state && !state->terminal && state->player.current_hp > 0;
 }
 
-/* Immediate inventory transactions between ticks. They do not advance time,
- * reset cooldowns, roll RNG, or alter already-launched attacks. */
-static FcItemResult fc_equip_item(FcState *state, int index) {
-    if (!can_change_items(state)) return FC_ITEM_BUSY;
-    FcPlayer *p = &state->player;
+/* fc_equip_item's transfer, made on the caller's copies of p's inventory and
+ * equipment: the item in inventory slot index goes on and whatever it
+ * displaces comes off. The copies are left part-changed on failure. */
+static FcItemResult fc_equip_plan(const FcPlayer *p,
+                                  FcItemStack inventory[FC_INVENTORY_SLOTS],
+                                  FcItemStack equipment[FC_EQUIPMENT_SLOTS],
+                                  int index) {
     if (index < 0 || index >= FC_INVENTORY_SLOTS) return FC_ITEM_INVALID;
-    FcItemStack incoming = p->inventory[index];
+    FcItemStack incoming = inventory[index];
     const FcItemDef *item = fc_item_definition(incoming.item_id);
     if (!item || item->slot < 0 || incoming.quantity <= 0 ||
         (!item->stackable && incoming.quantity != 1)) return FC_ITEM_INVALID;
     if (p->ranged_level < item->ranged_level || p->defence_level < item->defence_level ||
         p->max_hp / 10 < item->hitpoints_level) return FC_ITEM_REQUIREMENTS;
-    /* Plan on copies, including both hands. A failed secondary transfer cannot
-     * partially equip an item, remove a shield, or interrupt combat. */
-    FcItemStack inventory[FC_INVENTORY_SLOTS], equipment[FC_EQUIPMENT_SLOTS];
-    memcpy(inventory, p->inventory, sizeof(inventory));
-    memcpy(equipment, p->equipment, sizeof(equipment));
     FcItemStack *worn = &equipment[item->slot];
     if (item->stackable && worn->item_id == incoming.item_id) {
         int amount = INT_MAX - worn->quantity;
@@ -2020,6 +2103,21 @@ static FcItemResult fc_equip_item(FcState *state, int index) {
         else if (!add_to_inventory(inventory, equipment[displaced])) return FC_ITEM_NO_SPACE;
         equipment[displaced] = (FcItemStack){0};
     }
+    return FC_ITEM_OK;
+}
+
+/* Immediate inventory transactions between ticks. They do not advance time,
+ * reset cooldowns, roll RNG, or alter already-launched attacks. */
+static FcItemResult fc_equip_item(FcState *state, int index) {
+    if (!can_change_items(state)) return FC_ITEM_BUSY;
+    FcPlayer *p = &state->player;
+    /* Plan on copies, including both hands. A failed secondary transfer cannot
+     * partially equip an item, remove a shield, or interrupt combat. */
+    FcItemStack inventory[FC_INVENTORY_SLOTS], equipment[FC_EQUIPMENT_SLOTS];
+    memcpy(inventory, p->inventory, sizeof(inventory));
+    memcpy(equipment, p->equipment, sizeof(equipment));
+    FcItemResult result = fc_equip_plan(p, inventory, equipment, index);
+    if (result != FC_ITEM_OK) return result;
     memcpy(p->inventory, inventory, sizeof(inventory));
     memcpy(p->equipment, equipment, sizeof(equipment));
     recalculate_equipment(p);
@@ -2103,7 +2201,7 @@ static void fc_items_spend_ammo(FcPlayer *p) {
 
 /* Loadout */
 
-/* Gear presets by [env] gear_set_1 name. The first is the default. */
+/* Gear presets by [env] gear_set_N name. The first is gear_set_1's default. */
 static const FcGearPreset FC_GEAR_PRESETS[] = {
     {
         .name = "tbow_masori", .id = FC_LOADOUT_SOTA_TBOW,
@@ -2260,13 +2358,51 @@ static const FcGearPreset* fc_gear_preset_by_id(int id) {
     return &FC_GEAR_PRESETS[0];
 }
 
+/* gear_set_1 is the first preset; gear_set_2 .. gear_set_4 are not set. */
 static FcScenario fc_default_scenario(void) {
     FcScenario scenario = {0};
+    for (int k = 1; k < FC_MAX_GEAR_SETS; k++) scenario.gear_set[k] = -1;
     memcpy(scenario.levels, FC_DEFAULT_LEVELS, sizeof(scenario.levels));
     return scenario;
 }
 
-/* Every level is 1-99 and gear set 1's items are wearable at those levels.
+/* The inventory slots reset_supplies fills, with its clamps: one per four
+ * prayer doses and one per shark. */
+static int fc_supply_slots(int sharks, int doses) {
+    if (sharks < 0) sharks = 0;
+    if (sharks > FC_MAX_SHARKS) sharks = FC_MAX_SHARKS;
+    if (doses < 0) doses = 0;
+    if (doses > FC_MAX_PRAYER_DOSES) doses = FC_MAX_PRAYER_DOSES;
+    return (doses + 3) / 4 + sharks;
+}
+
+#define FC_MAX_SWITCH_ITEMS ((FC_MAX_GEAR_SETS - 1) * FC_LOADOUT_EQUIP_MAX)
+
+/* The items of gear sets 2 .. gear_sets that gear set 1 does not wear, each
+ * once, in set and preset order, as fc_preset_item_stack makes them (an item
+ * two sets share takes the first one's stack): what the inventory holds for
+ * switching besides the supplies. The used sets must be valid presets.
+ * Returns the count. */
+static int fc_gear_switch_items(const FcScenario* scenario,
+                                FcItemStack items[FC_MAX_SWITCH_ITEMS]) {
+    const FcGearPreset* worn = &FC_GEAR_PRESETS[scenario->gear_set[0]];
+    int count = 0;
+    for (int k = 1; k < FC_CAP_GEAR_SETS; k++) {
+        const FcGearPreset* preset = &FC_GEAR_PRESETS[scenario->gear_set[k]];
+        for (int i = 0; i < preset->equipment_count; i++) {
+            int id = preset->equipment[i], held = 0;
+            for (int w = 0; w < worn->equipment_count; w++)
+                held |= worn->equipment[w] == id;
+            for (int n = 0; n < count; n++) held |= items[n].item_id == id;
+            if (!held) items[count++] = fc_preset_item_stack(preset, fc_item_definition(id));
+        }
+    }
+    return count;
+}
+
+/* Every level is 1-99; gear sets 1 .. gear_sets name presets and no other
+ * set is set; each set's items are wearable at those levels; and the
+ * inventory holds the switch items (fc_gear_switch_items) and the supplies.
  * Returns 0, or -1 with the reason in err. Supplies are clamped instead. */
 static int fc_scenario_check(const FcScenario* scenario, char* err, size_t err_size) {
     for (int s = 0; s < FC_SKILL_COUNT; s++) {
@@ -2276,33 +2412,123 @@ static int fc_scenario_check(const FcScenario* scenario, char* err, size_t err_s
             return -1;
         }
     }
-    if (scenario->gear_set < 0 || scenario->gear_set >= FC_GEAR_PRESET_COUNT) {
-        snprintf(err, err_size, "gear_set_1: unknown gear preset index %d",
-                 scenario->gear_set);
-        return -1;
-    }
-    const FcGearPreset* preset = &FC_GEAR_PRESETS[scenario->gear_set];
-    for (int i = 0; i < preset->equipment_count; i++) {
-        const FcItemDef* item = fc_item_definition(preset->equipment[i]);
-        const struct { int need, skill; } reqs[] = {
-            {item->ranged_level, FC_SKILL_RANGED},
-            {item->defence_level, FC_SKILL_DEFENCE},
-            {item->hitpoints_level, FC_SKILL_HITPOINTS},
-        };
-        for (unsigned r = 0; r < sizeof(reqs) / sizeof(reqs[0]); r++) {
-            if (scenario->levels[reqs[r].skill] < reqs[r].need) {
-                snprintf(err, err_size,
-                         "gear_set_1 = %s: %s needs %d %s, but %s_level = %d",
-                         preset->name, item->name, reqs[r].need,
-                         FC_SKILL_NAMES[reqs[r].skill], FC_SKILL_NAMES[reqs[r].skill],
-                         scenario->levels[reqs[r].skill]);
-                return -1;
+    for (int k = 0; k < FC_MAX_GEAR_SETS; k++) {
+        int index = scenario->gear_set[k];
+        if (k >= FC_CAP_GEAR_SETS) {
+            if (index == -1) continue;
+            snprintf(err, err_size, "gear_set_%d is set, but this build has gear_sets = %d",
+                     k + 1, FC_CAP_GEAR_SETS);
+            return -1;
+        }
+        if (index == -1) {
+            snprintf(err, err_size, "gear_set_%d is missing: gear_sets = %d needs a "
+                     "gear preset for each set", k + 1, FC_CAP_GEAR_SETS);
+            return -1;
+        }
+        if (index < 0 || index >= FC_GEAR_PRESET_COUNT) {
+            snprintf(err, err_size, "gear_set_%d: unknown gear preset index %d",
+                     k + 1, index);
+            return -1;
+        }
+        const FcGearPreset* preset = &FC_GEAR_PRESETS[index];
+        for (int i = 0; i < preset->equipment_count; i++) {
+            const FcItemDef* item = fc_item_definition(preset->equipment[i]);
+            const struct { int need, skill; } reqs[] = {
+                {item->ranged_level, FC_SKILL_RANGED},
+                {item->defence_level, FC_SKILL_DEFENCE},
+                {item->hitpoints_level, FC_SKILL_HITPOINTS},
+            };
+            for (unsigned r = 0; r < sizeof(reqs) / sizeof(reqs[0]); r++) {
+                if (scenario->levels[reqs[r].skill] < reqs[r].need) {
+                    snprintf(err, err_size,
+                             "gear_set_%d = %s: %s needs %d %s, but %s_level = %d",
+                             k + 1, preset->name, item->name, reqs[r].need,
+                             FC_SKILL_NAMES[reqs[r].skill],
+                             FC_SKILL_NAMES[reqs[r].skill],
+                             scenario->levels[reqs[r].skill]);
+                    return -1;
+                }
             }
         }
+    }
+    FcItemStack items[FC_MAX_SWITCH_ITEMS];
+    int switch_items = fc_gear_switch_items(scenario, items);
+    int supplies = fc_supply_slots(scenario->sharks, scenario->prayer_doses);
+    if (switch_items + supplies > FC_INVENTORY_SLOTS) {
+        snprintf(err, err_size, "gear sets 2-%d put %d items in the inventory and "
+                 "the supplies take %d slots: %d is more than its %d",
+                 FC_CAP_GEAR_SETS, switch_items, supplies, switch_items + supplies,
+                 FC_INVENTORY_SLOTS);
+        return -1;
     }
     return 0;
 }
 
+#if FC_GEAR_SWITCHING
+/* The weapon a gear preset wears, or NULL. */
+static const FcItemDef* fc_gear_preset_weapon(const FcGearPreset* preset) {
+    for (int i = 0; i < preset->equipment_count; i++) {
+        const FcItemDef* item = fc_item_definition(preset->equipment[i]);
+        if (item->slot == FC_EQUIP_SLOT_WEAPON) return item;
+    }
+    return NULL;
+}
+
+/* Plan a switch to gear set `set` (0 for gear_set_1) on copies of the
+ * player's inventory and equipment: each item of its preset that is not worn
+ * is equipped in preset order from the first inventory slot holding it, as
+ * fc_equip_item equips a clicked item. Returns how many items it equips, or
+ * -1 when items cannot change now or one is not in the inventory or cannot
+ * be equipped. */
+static int fc_gear_switch_plan(const FcState* state, int set,
+                               FcItemStack inventory[FC_INVENTORY_SLOTS],
+                               FcItemStack equipment[FC_EQUIPMENT_SLOTS]) {
+    if (set < 0 || set >= FC_CAP_GEAR_SETS || !can_change_items(state)) return -1;
+    const FcPlayer* p = &state->player;
+    const FcGearPreset* preset = fc_gear_preset_by_id(state->caps.gear_set_loadouts[set]);
+    memcpy(inventory, p->inventory, sizeof(p->inventory));
+    memcpy(equipment, p->equipment, sizeof(p->equipment));
+    int equipped = 0;
+    for (int i = 0; i < preset->equipment_count; i++) {
+        const FcItemDef* item = fc_item_definition(preset->equipment[i]);
+        if (equipment[item->slot].item_id == item->id) continue;
+        int slot = -1;
+        for (int s = 0; s < FC_INVENTORY_SLOTS && slot < 0; s++)
+            if (inventory[s].item_id == item->id) slot = s;
+        if (slot < 0 || fc_equip_plan(p, inventory, equipment, slot) != FC_ITEM_OK)
+            return -1;
+        equipped++;
+    }
+    return equipped;
+}
+
+/* Whether a GEAR_SET action takes effect: no change always does; a switch
+ * needs an item of the set off and every such item equippable. */
+static int fc_gear_action_valid(const FcState* state, int action) {
+    if (action < 0 || action >= FC_GEAR_SET_DIM) return 0;
+    if (action == FC_GEAR_SET_NO_CHANGE) return 1;
+    FcItemStack inventory[FC_INVENTORY_SLOTS], equipment[FC_EQUIPMENT_SLOTS];
+    return fc_gear_switch_plan(state, action - 1, inventory, equipment) > 0;
+}
+
+/* Apply a GEAR_SET action that takes effect: the planned items go on at
+ * once, which, as after fc_equip_item, recalculates the bonuses and ends the
+ * current interaction, and the set is worn. The attack timer and the attacks
+ * in flight are left alone. Returns whether it switched. */
+static int fc_gear_apply_action(FcState* state, int action) {
+    if (action <= FC_GEAR_SET_NO_CHANGE || action >= FC_GEAR_SET_DIM) return 0;
+    FcItemStack inventory[FC_INVENTORY_SLOTS], equipment[FC_EQUIPMENT_SLOTS];
+    if (fc_gear_switch_plan(state, action - 1, inventory, equipment) <= 0) return 0;
+    FcPlayer* p = &state->player;
+    memcpy(p->inventory, inventory, sizeof(inventory));
+    memcpy(p->equipment, equipment, sizeof(equipment));
+    recalculate_equipment(p);
+    set_player_target(p, -1); /* held-item action interrupts interaction */
+    state->caps.gear_set = action - 1;
+    state->active_loadout = state->caps.gear_set_loadouts[action - 1];
+    return 1;
+}
+#endif
 
 /* Npc */
 
@@ -4221,24 +4447,47 @@ static void init_player(FcPlayer* p) {
     set_player_target(p, -1);
 }
 
-/* Reset-time configuration from [env], applied after fc_reset: the scenario's
- * levels, gear set 1 and supplies, at full hitpoints and prayer. With the
- * default scenario this only empties the inventory. */
+/* Reset-time configuration from [env], applied after fc_reset to a scenario
+ * that passes fc_scenario_check: the scenario's levels, gear set 1 worn,
+ * with gear_sets > 1 the other sets' switch items in the inventory, then the
+ * supplies, at full hitpoints and prayer. With the default scenario this only
+ * empties the inventory. */
 static void fc_apply_scenario(FcState* state, const FcScenario* scenario) {
     if (!state || state->tick != 0) return;
     FcPlayer* p = &state->player;
-    const FcGearPreset* preset = &FC_GEAR_PRESETS[scenario->gear_set];
+    const FcGearPreset* preset = &FC_GEAR_PRESETS[scenario->gear_set[0]];
     apply_levels(p, scenario->levels);
     fc_items_init(p, preset);
     reset_supplies(p, scenario->sharks, scenario->prayer_doses);
     p->current_hp = p->max_hp;
     p->current_prayer = p->max_prayer;
     state->active_loadout = preset->id;
+#if FC_GEAR_SWITCHING
+    /* The switch items go ahead of the supplies; the check made room. */
+    FcItemStack items[FC_MAX_SWITCH_ITEMS];
+    int count = fc_gear_switch_items(scenario, items);
+    memmove(p->inventory + count, p->inventory,
+            (size_t)(FC_INVENTORY_SLOTS - count) * sizeof(FcItemStack));
+    memcpy(p->inventory, items, (size_t)count * sizeof(FcItemStack));
+    state->caps.gear_set = 0;
+    for (int k = 0; k < FC_CAP_GEAR_SETS; k++)
+        state->caps.gear_set_loadouts[k] = FC_GEAR_PRESETS[scenario->gear_set[k]].id;
+#endif
+}
+
+/* The loadout fc_reset wears: the first preset, and with gear_sets > 1 that
+ * preset for every gear set until fc_apply_scenario. */
+static void fc_default_loadout(FcState* state) {
+    state->active_loadout = FC_GEAR_PRESETS[0].id;
+#if FC_GEAR_SWITCHING
+    for (int k = 0; k < FC_CAP_GEAR_SETS; k++)
+        state->caps.gear_set_loadouts[k] = FC_GEAR_PRESETS[0].id;
+#endif
 }
 
 void fc_init(FcState* state) {
     memset(state, 0, sizeof(FcState));
-    state->active_loadout = FC_GEAR_PRESETS[0].id;
+    fc_default_loadout(state);
 }
 
 /* Start an episode from the seed: seeds the RNG, selects a random wave
@@ -4258,7 +4507,7 @@ static void fc_reset(FcState* state, uint32_t seed) {
 
     /* Initialize player */
     init_player(&state->player);
-    state->active_loadout = FC_GEAR_PRESETS[0].id;
+    fc_default_loadout(state);
     state->render_events.player_attack_target_npc_slot = -1;
     state->render_events.player_move_start_x = state->player.x;
     state->render_events.player_move_start_y = state->player.y;
@@ -4563,8 +4812,10 @@ void fc_write_obs(const FcState* state, float* out) {
     player[FC_OBS_PLAYER_PRAYER]    = (p->max_prayer > 0) ? (float)p->current_prayer / (float)p->max_prayer : 0.0f;
     player[FC_OBS_PLAYER_X]         = (float)p->x / (float)FC_ARENA_WIDTH;
     player[FC_OBS_PLAYER_Y]         = (float)p->y / (float)FC_ARENA_HEIGHT;
+    /* Clamped: switching to a faster weapon mid-cooldown leaves a timer
+     * longer than the new weapon's speed. */
     player[FC_OBS_PLAYER_ATK_TIMER] = (p->weapon_speed > 0)
-        ? (float)p->attack_timer / (float)p->weapon_speed : 0.0f;
+        ? clamp01((float)p->attack_timer / (float)p->weapon_speed) : 0.0f;
     player[FC_OBS_PLAYER_PRAY_MEL]  = (p->prayer == PRAYER_PROTECT_MELEE) ? 1.0f : 0.0f;
     player[FC_OBS_PLAYER_PRAY_RNG]  = (p->prayer == PRAYER_PROTECT_RANGE) ? 1.0f : 0.0f;
     player[FC_OBS_PLAYER_PRAY_MAG]  = (p->prayer == PRAYER_PROTECT_MAGIC) ? 1.0f : 0.0f;
@@ -4691,6 +4942,21 @@ void fc_write_obs(const FcState* state, float* out) {
     book[FC_OBS_BOOK_DRAIN] = resistance > 0
         ? clamp01((float)fc_prayer_active_drain(state) / (float)resistance) : 0.0f;
 #endif
+
+#if FC_GEAR_SWITCHING
+    float* gear = out + FC_OBS_GEAR_START;
+    if (state->caps.gear_set >= 0 && state->caps.gear_set < FC_CAP_GEAR_SETS)
+        gear[FC_OBS_GEAR_WORN + state->caps.gear_set] = 1.0f;
+    for (int k = 0; k < FC_CAP_GEAR_SETS; k++) {
+        const FcItemDef* weapon = fc_gear_preset_weapon(
+            fc_gear_preset_by_id(state->caps.gear_set_loadouts[k]));
+        float* set = gear + FC_OBS_GEAR_WEAPONS + k * FC_OBS_GEAR_STRIDE;
+        int unarmed = !weapon || weapon->weapon_kind == FC_WEAPON_UNARMED;
+        set[unarmed ? FC_OBS_GEAR_MELEE : FC_OBS_GEAR_RANGED] = 1.0f;
+        set[FC_OBS_GEAR_RANGE] = (float)(weapon ? weapon->range : 1) / 10.0f;
+        set[FC_OBS_GEAR_SPEED] = (float)(weapon ? weapon->speed : 4) / 10.0f;
+    }
+#endif
 }
 
 void fc_write_mask(const FcState* state, float* out) {
@@ -4737,6 +5003,14 @@ void fc_write_mask(const FcState* state, float* out) {
     for (int action = 1; action < FC_PRAYER_BOOK_DIM; action++) {
         if (!fc_book_action_valid(state, action))
             out[FC_MASK_BOOK_START + action] = 0.0f;
+    }
+#endif
+
+#if FC_GEAR_SWITCHING
+    /* GEAR_SET: a set that is worn or cannot be switched to is masked. */
+    for (int action = 1; action < FC_GEAR_SET_DIM; action++) {
+        if (!fc_gear_action_valid(state, action))
+            out[FC_MASK_GEAR_START + action] = 0.0f;
     }
 #endif
 }
@@ -4799,9 +5073,10 @@ static void fc_fill_render_events(const FcState* state, FcRenderEvents* events) 
  *   2. Process player actions:
  *      a. Prayer toggles (instant): the overhead, then the prayer book
  *      b. Eat food / drink potion (if timer ready)
- *      c. Attack initiation from the pre-movement tile
- *      d. Movement (route or directional head), unless an attack fired
- *      e. Run-energy drain or restoration from actual movement
+ *      c. Gear set switch (gear_sets > 1)
+ *      d. Attack initiation from the pre-movement tile
+ *      e. Movement (route or directional head), unless an attack fired
+ *      f. Run-energy drain or restoration from actual movement
  *   3. Decrement player timers (attack, food, potion, combo)
  *   4. Prayer drain (only if prayer stayed active across the tick boundary),
  *      then HP regeneration
@@ -5203,6 +5478,11 @@ static void process_player_actions(FcState* state,
         p->prayer_changed_this_tick = 1;
 #endif
     apply_player_supplies(state, act_eat, act_drink);
+#if FC_GEAR_SWITCHING
+    /* A switch ends the interaction as an equip does, before this tick's
+     * attack action picks its target. */
+    fc_gear_apply_action(state, actions[FC_HEAD_GEAR_SET]);
+#endif
 
     prepare_player_interaction(state, explicit_move, explicit_attack,
                                requested_attack_idx);

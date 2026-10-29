@@ -221,9 +221,12 @@ def test_config_contains_only_supported_native_settings():
     capability_keys = set(re.findall(r'\{"(\w+)",\s*FC_CAP_\w+,', binding))
     skills = re.search(r"FC_SKILL_NAMES\[FC_SKILL_COUNT\] = \{([^}]*)\}", core).group(1)
     level_keys = {f"{skill}_level" for skill in re.findall(r'"(\w+)"', skills)}
+    max_gear_sets = int(re.search(r"#define FC_MAX_GEAR_SETS (\d+)", core).group(1))
+    gear_keys = {f"gear_set_{k}" for k in range(1, max_gear_sets + 1)}
     # The build (tools.py cflags) and puf_init's check know the same capabilities.
     assert capability_keys == set(load_module(TOOLS).CAPABILITIES)
-    assert set(config["env"]) <= env_keys | reward_keys | capability_keys | level_keys
+    assert set(config["env"]) <= (env_keys | reward_keys | capability_keys |
+                                  level_keys | gear_keys)
     for section in config.sections():
         if section == "env":
             continue
@@ -234,15 +237,21 @@ def test_cflags_compile_in_the_configured_capabilities(tmp_path):
     tools = load_module(TOOLS)
     config = tmp_path / "fight_caves.ini"
     config.write_text("[env]\nw_progress = 0.001\n")
-    assert tools.capability_flags(config) == ["-DFC_CAP_CONSUMABLES=0", "-DFC_CAP_PRAYERS=0"]
-    config.write_text("[env]\nconsumables = 1  # eat and drink\nprayers = All\n")
-    assert tools.capability_flags(config) == ["-DFC_CAP_CONSUMABLES=1", "-DFC_CAP_PRAYERS=1"]
+    assert tools.capability_flags(config) == [
+        "-DFC_CAP_CONSUMABLES=0", "-DFC_CAP_PRAYERS=0", "-DFC_CAP_GEAR_SETS=1"]
+    config.write_text("[env]\nconsumables = 1  # eat and drink\nprayers = All\n"
+                      "gear_sets = 4.0\n")
+    assert tools.capability_flags(config) == [
+        "-DFC_CAP_CONSUMABLES=1", "-DFC_CAP_PRAYERS=1", "-DFC_CAP_GEAR_SETS=4"]
     config.write_text("[env]\nconsumables = 2\n")
     with pytest.raises(tools.ConfigError, match="consumables = 2: must be 0 or 1"):
         tools.capability_flags(config)
     # Named values: a number is not a name.
     config.write_text("[env]\nprayers = 1\n")
     with pytest.raises(tools.ConfigError, match="prayers = 1: must be protection or all"):
+        tools.capability_flags(config)
+    config.write_text("[env]\ngear_sets = 5\n")
+    with pytest.raises(tools.ConfigError, match="gear_sets = 5: must be 1 or 2 or 3 or 4"):
         tools.capability_flags(config)
 
 

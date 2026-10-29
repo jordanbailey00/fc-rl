@@ -17,6 +17,7 @@
  *   F           — eat shark                 P          — drink prayer potion
  *   X           — toggle run                R          — reset episode
  *   4/5         — camera presets            F9         — toggle god mode
+ *   F1-F4       — switch to gear set 1-4 (gear_sets above 1)
  *
  * Policy replay (./puffer eval, ./fight_caves eval) adds:
  *   1/2/4/0     — 1x/2x/4x/10x speed        Up/Down    — faster/slower
@@ -6163,6 +6164,11 @@ int dbg_draw_panel_tabs(const FcState* state,
                                              sizeof(book)));
         }
 #endif
+#if FC_GEAR_SWITCHING
+        dbg_print_line(x, &by, lh, DBG_COL_LABEL, "Gear set:%d %s",
+                       state->caps.gear_set + 1,
+                       fc_gear_preset_by_id(state->active_loadout)->name);
+#endif
         dbg_print_line(x, &by, lh, DBG_COL_LABEL, "Shark:%d Dose:%d Ammo:%d",
                        p->sharks_remaining, p->prayer_doses_remaining,
                        p->ammo_count);
@@ -6237,6 +6243,21 @@ int dbg_draw_panel_tabs(const FcState* state,
                            obs[FC_OBS_BOOK_START + FC_OBS_BOOK_DRAIN]);
         }
 #endif
+#if FC_GEAR_SWITCHING
+        /* The gear set block: worn, then each set's weapon style (R, A for
+         * Magic, M), range and speed. */
+        for (int k = 0; k < FC_CAP_GEAR_SETS; k++) {
+            const float* set = obs + FC_OBS_GEAR_START + FC_OBS_GEAR_WEAPONS +
+                               k * FC_OBS_GEAR_STRIDE;
+            char style = set[FC_OBS_GEAR_RANGED] > 0.5f ? 'R'
+                : set[FC_OBS_GEAR_MAGIC] > 0.5f ? 'A'
+                : set[FC_OBS_GEAR_MELEE] > 0.5f ? 'M' : '-';
+            dbg_print_line(x, &by, lh, DBG_COL_LABEL,
+                           "Gear %d worn:%.0f style:%c rng:%.1f spd:%.1f", k + 1,
+                           obs[FC_OBS_GEAR_START + FC_OBS_GEAR_WORN + k], style,
+                           set[FC_OBS_GEAR_RANGE], set[FC_OBS_GEAR_SPEED]);
+        }
+#endif
 
         by += 2;
         dbg_print_line(x, &by, lh - 1, DBG_COL_DIM, "NPC slots:");
@@ -6261,8 +6282,9 @@ int dbg_draw_panel_tabs(const FcState* state,
 
     } else if (dbg_tab == 2) {
         /* Action mask, one bit per action. Heads 0-6 are move, attack,
-         * prayer, eat, drink and the two move-target coordinates; head 7 is
-         * the prayer book with prayers = all. */
+         * prayer, eat, drink and the two move-target coordinates; then come
+         * the prayer book with prayers = all and the gear set head with
+         * gear_sets above 1. */
         static const char* labels[] = { "MOVE:", "ATK:", "PRAY:" };
         float mask[FC_ACTION_MASK_SIZE];
         char bits[FC_ACTION_MASK_SIZE + 1];
@@ -6285,6 +6307,10 @@ int dbg_draw_panel_tabs(const FcState* state,
 #if FC_CAP_PRAYERS
         dbg_mask_bits(mask, FC_HEAD_PRAYER_BOOK, bits);
         dbg_print_line(x, &by, lh, DBG_COL_LABEL, "BOOK:%s", bits);
+#endif
+#if FC_GEAR_SWITCHING
+        dbg_mask_bits(mask, FC_HEAD_GEAR_SET, bits);
+        dbg_print_line(x, &by, lh, DBG_COL_LABEL, "GEAR:%s", bits);
 #endif
 
     } else if (dbg_tab == 3) {
@@ -6487,6 +6513,9 @@ typedef struct ViewerState {
 #if FC_CAP_PRAYERS
     int pending_book;             /* PRAYER_BOOK action for the next tick */
 #endif
+#if FC_GEAR_SWITCHING
+    int pending_gear;             /* GEAR_SET action for the next tick */
+#endif
     int pending_attack_npc;
     int pending_tile_x, pending_tile_y;
     FcClickFeedback click_feedback;
@@ -6561,6 +6590,16 @@ static void queue_viewer_book_button(ViewerState* v, int book) {
     if (!v || !fc_book_action_valid(&v->state, book + 1))
         return;
     v->pending_book = book + 1;
+}
+#endif
+
+#if FC_GEAR_SWITCHING
+/* Switch to gear set `set` (0 for gear_set_1) on the next tick, if the
+ * switch can be made now. */
+static void queue_viewer_gear_switch(ViewerState* v, int set) {
+    if (!v || !fc_gear_action_valid(&v->state, set + 1))
+        return;
+    v->pending_gear = set + 1;
 }
 #endif
 
@@ -6978,6 +7017,9 @@ static void fc_viewer_reset_presentation(ViewerState* v) {
 #if FC_CAP_PRAYERS
     v->pending_book = 0;
 #endif
+#if FC_GEAR_SWITCHING
+    v->pending_gear = 0;
+#endif
     v->pending_eat = 0;
     v->pending_drink = 0;
     v->pending_attack_npc = -1;
@@ -7125,6 +7167,10 @@ static void process_human_keys(ViewerState* v) {
     if (IsKeyPressed(KEY_P))     v->pending_drink = FC_DRINK_PRAYER_POT;
     if (IsKeyPressed(KEY_X))
         fc_request_set_running(&v->state, !p->is_running);
+#if FC_GEAR_SWITCHING
+    for (int set = 0; set < FC_CAP_GEAR_SETS; set++)
+        if (IsKeyPressed(KEY_F1 + set)) queue_viewer_gear_switch(v, set);
+#endif
 
     /* --- Debug toggles (testing only) --- */
     /* F9: toggle godmode (player can't die) */
@@ -7157,6 +7203,10 @@ static void build_human_actions(ViewerState* v) {
 #if FC_CAP_PRAYERS
     v->actions[FC_HEAD_PRAYER_BOOK] = v->pending_book;
     v->pending_book = 0;
+#endif
+#if FC_GEAR_SWITCHING
+    v->actions[FC_HEAD_GEAR_SET] = v->pending_gear;
+    v->pending_gear = 0;
 #endif
     /* Clear buffers */
     v->pending_prayer = 0;
