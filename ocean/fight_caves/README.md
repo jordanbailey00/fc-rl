@@ -70,6 +70,24 @@ The `[env]` section holds three kinds of settings:
   the switch). The switch is all or nothing and masked when set k is worn or
   one of its items cannot be equipped. The observation adds which set is
   worn and, for each set, its weapon's attack style, range and attack speed.
+  A switch to a magic set also sets its autocast spell, when that can be set.
+
+  `spellbook = standard` or `ancient` (default `none`) adds an `autocast`
+  head that sets the autocast spell: 0 keeps it, k autocasts the book's spell
+  k in spellbook order, the 20 Standard Strike to Surge spells (21 values) or
+  the 16 Ancient Rush to Barrage spells (17 values). These are the combat
+  spells RuneC lets a staff of the presets autocast; RuneC's manual one-off
+  casts (the curses, Bind, Snare and Entangle) and the spells that need a
+  staff no preset has (Iban Blast, Magic Dart, the god spells, Crumble Undead)
+  are not here, nor the Arceuus and Lunar books. The value is the player's
+  spellbook; without the capability it is the Standard book, RuneC's at the
+  start. A spell is masked unless RuneC would accept it as the autocast spell
+  now: the player alive, the Magic level, a staff that autocasts the book (the
+  Kodai wand either book, the other staves Standard spells only) and the
+  runes, the staff supplying its elements. The head applies after a gear
+  switch and before the attack, keeping the target. The observation adds the
+  autocast spell (one-hot) and, with the Ancient book, each visible NPC's
+  remaining freeze, freeze immunity, poison damage and Attack drain.
 - **Scenario** settings are what an episode starts with and need no rebuild:
   `gear_set_1` names a gear preset, the `*_level` keys set skill levels, and
   `initial_sharks` and `initial_prayer_doses` fill the inventory. With
@@ -78,19 +96,58 @@ The `[env]` section holds three kinds of settings:
   replace keys the INI has, add their lines to it. Every gear set must be
   wearable at the configured levels, and the other sets' items and the
   supplies must fit in the 28 inventory slots. Every preset is wearable at the
-  shipped levels; these are the levels each was made for, with Attack,
-  Strength and Magic at 1:
+  levels it was made for:
 
-  | `gear_set_1` | Main gear | Defence | Ranged | Prayer | Hitpoints |
-  | --- | --- | --- | --- | --- | --- |
-  | `tbow_masori` (default) | Twisted bow, dragon arrows, Masori (f), Venator ring | 99 | 99 | 99 | 99 |
-  | `rcb_black_dhide` | Rune crossbow, adamant bolts, black d'hide, coif | 70 | 70 | 43 | 70 |
-  | `rcb_pure` | Rune crossbow, adamant bolts, Robin hood hat, Book of law | 1 | 61 | 43 | 55 |
-  | `msb_pure` | Magic shortbow (i), rune arrows, Robin hood hat | 1 | 70 | 43 | 60 |
-  | `blowpipe_pure` | Toxic blowpipe with adamant darts, Robin hood hat, Necklace of anguish | 1 | 75 | 43 | 75 |
-  | `acb_armadyl` | Armadyl crossbow, diamond dragon bolts (e), Armadyl armour | 75 | 80 | 70 | 80 |
-  | `bowfa_crystal` | Bow of faerdhinen (c), crystal armour | 75 | 85 | 70 | 85 |
-  | `tbow_masori_no_ring` | `tbow_masori` without the ring | 80 | 99 | 77 | 99 |
+  | `gear_set_1` | Main gear | Attack | Strength | Defence | Ranged | Magic | Prayer | Hitpoints |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | `tbow_masori` (default) | Twisted bow, dragon arrows, Masori (f), Venator ring | 1 | 1 | 99 | 99 | 1 | 99 | 99 |
+  | `rcb_black_dhide` | Rune crossbow, adamant bolts, black d'hide, coif | 1 | 1 | 70 | 70 | 1 | 43 | 70 |
+  | `rcb_pure` | Rune crossbow, adamant bolts, Robin hood hat, Book of law | 1 | 1 | 1 | 61 | 1 | 43 | 55 |
+  | `msb_pure` | Magic shortbow (i), rune arrows, Robin hood hat | 1 | 1 | 1 | 70 | 1 | 43 | 60 |
+  | `blowpipe_pure` | Toxic blowpipe with adamant darts, Robin hood hat, Necklace of anguish | 1 | 1 | 1 | 75 | 1 | 43 | 75 |
+  | `acb_armadyl` | Armadyl crossbow, diamond dragon bolts (e), Armadyl armour | 1 | 1 | 75 | 80 | 1 | 70 | 80 |
+  | `bowfa_crystal` | Bow of faerdhinen (c), crystal armour | 1 | 1 | 75 | 85 | 1 | 70 | 85 |
+  | `tbow_masori_no_ring` | `tbow_masori` without the ring | 1 | 1 | 80 | 99 | 1 | 77 | 99 |
+  | `smoke_staff_mystic` | Mystic smoke staff casting Water Blast, Mystic robes, Mage's book | 60 | 60 | 60 | 60 | 60 | 43 | 65 |
+  | `kodai_virtus` | Kodai wand casting Water Surge, Virtus robes, Elidinis' ward | 80 | 80 | 80 | 80 | 94 | 80 | 90 |
+  | `harmonised_ancestral` | Harmonised nightmare staff casting Water Surge, Ancestral robes, Elidinis' ward (f) | 99 | 99 | 99 | 99 | 99 | 99 | 99 |
+
+  The last four are the low, medium, high and maxed magic presets of the
+  fc-rl 4.0 loadouts, with RuneC v4's item definitions. Worn at the start or
+  switched to, a magic preset sets its spell as the autocast spell when RuneC
+  would accept it (with `spellbook = ancient` its Standard spell cannot be;
+  the autocast head sets an Ancient one). Each carries 50,000 of every rune
+  the Standard and Ancient spells use, air, water, earth, fire, mind, chaos,
+  death, blood, soul and wrath runes, ten inventory slots after any switch
+  items and before the supplies. A cast spends its runes from those stacks as
+  RuneC does, the staff supplying its elements (the Mystic smoke staff air and
+  fire, the Kodai wand water) and combination runes, which no preset carries,
+  paying two elements at once; out of runes the autocast spell clears and the
+  staff bashes, like a ranged weapon out of ammunition. RuneC has no bonuses
+  or weapon data yet for the Twinflame staff, Confliction gauntlets and
+  Avernic treads (max): the medium Magic preset, built around the Twinflame
+  staff, waits for that data, and `harmonised_ancestral` wears the gloves and
+  boots without their bonuses.
+
+  Magic follows RuneC: a staff with an autocast spell of the player's book
+  casts at its target from up to 10 tiles in line of sight, every 5 ticks (4
+  for the Harmonised nightmare staff's Standard spells), the hit landing
+  2 + (d + 1) / 3 ticks later for a distance d to the target's centre. A
+  Standard spell hits as hard as the strongest spell of its tier the Magic
+  level reaches. Accuracy is (Magic, raised by the magic prayers' percentage,
+  + 9) × (Magic attack bonus + 64) against (the NPC's Magic level + 9) × 64:
+  the NPCs here have no magic defence bonus, which RuneC also rolls as 0 for
+  every ordinary NPC. The max hit adds the Magic damage bonus and the
+  prayers' percentage. A hit that lands also freezes (Ice), poisons (Smoke),
+  lowers Attack (Shadow) or heals a quarter of its damage (Blood); the cave's
+  NPCs do not regenerate, so a drain lasts, as RuneC treats an NPC without a
+  regeneration interval. Without an autocast spell a staff bashes in melee.
+  Not available until RuneC implements it: area damage of the Burst and
+  Barrage spells (single-target in RuneC), poison and freeze immunities,
+  elemental weaknesses, and the Twinflame staff's, Confliction gauntlets' and
+  Virtus robes' effects. RuneC's manual casts, defensive autocast (which
+  changes only experience), rune pouches, tomes and powered or charged staves
+  are not ported, as no preset uses them.
 
 - **Rewards** and their shaping terms.
 
@@ -116,7 +173,13 @@ steps one tick, R resets and Q quits. Left-click walks or attacks, right-click
 opens menus, right-drag orbits the camera and the wheel zooms; 1/2/3 toggle the
 protection prayers, and with `gear_sets` above 1, F1 to F4 switch to gear sets 1
 to 4. The side panel has the combat, inventory, equipment and
-prayer tabs; clicking the minimap walks there and its orb toggles running.
+prayer tabs, and with `spellbook` the spellbook tab, which lists the book's
+spells and autocasts the one clicked; clicking the minimap walks there and its
+orb toggles running. A staff's combat tab shows the autocast spell, and
+clicking it lists the spells to autocast. The pinned assets predate the magic
+presets: their items and the runes show their names instead of icons and are
+left off the player model, and the spells show their names, the casts and
+spell graphics the bundle lacks being skipped.
 With `prayers = all` the prayer tab holds every prayer the policy can use,
 bright when a click would toggle it; Preserve, Chivalry, Deadeye, Mystic
 Vigour, Piety, Rigour and Augury show their names, as the pinned assets have

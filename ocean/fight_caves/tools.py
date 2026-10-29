@@ -34,7 +34,8 @@ STAMP = ".archive-sha256"
 # trains with against the build.
 CAPABILITIES = {"consumables": {"0": 0, "1": 1},
                 "prayers": {"protection": 0, "all": 1},
-                "gear_sets": {"1": 1, "2": 2, "3": 3, "4": 4}}
+                "gear_sets": {"1": 1, "2": 2, "3": 3, "4": 4},
+                "spellbook": {"none": 0, "standard": 1, "ancient": 2}}
 
 
 class AssetError(RuntimeError):

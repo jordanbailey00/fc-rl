@@ -24,6 +24,7 @@ static const struct {
     {"consumables", FC_CAP_CONSUMABLES, 1, {"0", "1"}},
     {"prayers", FC_CAP_PRAYERS, 0, {"protection", "all"}},
     {"gear_sets", FC_CAP_GEAR_SETS, 1, {"", "1", "2", "3", "4"}},
+    {"spellbook", FC_CAP_SPELLBOOK, 0, {"none", "standard", "ancient"}},
 };
 #define FC_BUILT_CAPABILITY_COUNT \
     ((int)(sizeof(FC_BUILT_CAPABILITIES) / sizeof(FC_BUILT_CAPABILITIES[0])))
@@ -133,9 +134,12 @@ static void fc_print_summary(FILE* out, const FcScenario* scenario) {
     fprintf(out, " | obs %d + %d mask = %d\n", FC_POLICY_OBS_SIZE,
             FC_PUFFER_MASK_SIZE, FC_PUFFER_OBS_SIZE);
     fprintf(out, "Fight Caves scenario:");
-    for (int k = 0; k < FC_CAP_GEAR_SETS; k++)
-        fprintf(out, "%s gear_set_%d = %s", k ? "," : "", k + 1,
-                FC_GEAR_PRESETS[scenario->gear_set[k]].name);
+    for (int k = 0; k < FC_CAP_GEAR_SETS; k++) {
+        const FcGearPreset* preset = &FC_GEAR_PRESETS[scenario->gear_set[k]];
+        fprintf(out, "%s gear_set_%d = %s", k ? "," : "", k + 1, preset->name);
+        if (preset->autocast)
+            fprintf(out, " (spell %s)", FC_SPELLS[preset->autocast - 1].name);
+    }
     fprintf(out, " | levels");
     for (int s = 0; s < FC_SKILL_COUNT; s++)
         fprintf(out, "%s %s %d", s ? "," : "", FC_SKILL_NAMES[s], scenario->levels[s]);

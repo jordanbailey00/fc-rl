@@ -101,6 +101,20 @@ unsigned char* fc_asset_read_all(const char* logical_path, size_t* out_size) {
     return data;
 }
 
+/* Whether an asset file is there, found as fc_asset_read_all finds it,
+ * without reporting a missing one: for the graphics the pinned bundle may
+ * not have, which fall back instead. */
+int fc_asset_present(const char* logical_path) {
+    const char* root = getenv("FC_ASSET_ROOT");
+    char path[1024];
+    if (!root || !root[0]) root = "resources/fight_caves/viewer";
+    snprintf(path, sizeof(path), "%s/%s", root, logical_path);
+    FILE* f = fopen(path, "rb");
+    if (!f) return 0;
+    fclose(f);
+    return 1;
+}
+
 /* Asset Reader */
 
 /* Bounds-checked reader over a whole asset file. The first failure (a short
@@ -1790,7 +1804,17 @@ static ModelSet *compose(ModelEntry *parts[], int count, uint32_t id) {
     return set;
 }
 
-/* 1 = rebuilt, 0 = unchanged, -1 = missing/invalid asset or allocation failure. */
+/* The fc_player.parts record of a worn item, or -1. The pinned bundle has
+ * none for the magic presets' items but the Barrows gloves. */
+static int appearance_record(const FcPlayerAppearance *appearance, int item_id) {
+    for (int record = 0; record < appearance->record_count; record++)
+        if (appearance->records[record].item_id == (uint32_t)item_id) return record;
+    return -1;
+}
+
+/* 1 = rebuilt, 0 = unchanged, -1 = missing/invalid asset or allocation
+ * failure. A worn item without a model in the bundle is left out, hiding
+ * nothing of the body. */
 int fc_player_appearance_sync(FcPlayerAppearance *appearance,
                                const FcPlayer *player, uint32_t model_id) {
     int ids[FC_EQUIPMENT_SLOTS];
@@ -1803,18 +1827,16 @@ int fc_player_appearance_sync(FcPlayerAppearance *appearance,
     uint32_t hidden = 0;
     for (int slot = 0; slot < FC_EQUIPMENT_SLOTS; slot++) {
         if (!ids[slot] || slot == FC_EQUIP_SLOT_AMMO || slot == FC_EQUIP_SLOT_RING) continue;
-        int record = 0;
-        while (record < appearance->record_count &&
-               appearance->records[record].item_id != (uint32_t)ids[slot]) record++;
-        if (record == appearance->record_count) return -1;
-        hidden |= appearance->records[record].hide_mask;
+        int record = appearance_record(appearance, ids[slot]);
+        if (record >= 0) hidden |= appearance->records[record].hide_mask;
     }
     /* Identity kits precede equipped models, matching client composition. */
     for (int body = 0; body < 7; body++)
         if (!(hidden & (1u << body)))
             selected[count++] = model_find(appearance->parts, 0xFC100000u + (uint32_t)body);
     for (int slot = 0; slot < FC_EQUIPMENT_SLOTS; slot++)
-        if (ids[slot] && slot != FC_EQUIP_SLOT_AMMO && slot != FC_EQUIP_SLOT_RING)
+        if (ids[slot] && slot != FC_EQUIP_SLOT_AMMO && slot != FC_EQUIP_SLOT_RING &&
+            appearance_record(appearance, ids[slot]) >= 0)
             selected[count++] = model_find(appearance->parts, (uint32_t)ids[slot]);
     for (int i = 0; i < count; i++) if (!selected[i]) return -1;
     ModelSet *model = compose(selected, count, model_id);
@@ -1902,7 +1924,9 @@ static const FcUiStoneRef FC_OSRS_SIDE_STONES[] = {
     {1, "side_stone_highlights_4", "side_icon_inventory", {104, 0, 33, 36}, {104, 0, 33, 36}},
     {2, "side_stone_highlights_4", "side_icon_equipment", {137, 0, 33, 36}, {137, 0, 33, 36}},
     {3, "side_stone_highlights_4", "side_icon_prayer",    {170, 0, 33, 36}, {170, 0, 33, 36}},
-    {-1, "side_stone_highlights_1", "side_icon_magic",    {203, 0, 38, 36}, {204, 0, 33, 36}},
+    /* The spellbook tab (FC_UI_TAB_SPELLBOOK), with the spellbook capability. */
+    {FC_SPELLBOOK_HEAD ? 4 : -1, "side_stone_highlights_1", "side_icon_magic",
+     {203, 0, 38, 36}, {204, 0, 33, 36}},
     {-1, "side_stone_highlights_2", "side_icon_clan",     {0,   0, 38, 36}, {4,   0, 33, 36}},
     {-1, "side_stone_highlights_4", "side_icon_friends",  {38,  0, 33, 36}, {38,  0, 33, 36}},
     {-1, "side_stone_highlights_4", "side_icon_grouping", {71,  0, 33, 36}, {71,  0, 33, 36}},
@@ -1929,6 +1953,8 @@ static const Rectangle FC_OSRS_COMBAT_HEADER = {10, 0, 170, 44};
 static const Rectangle FC_OSRS_COMBAT_TITLE = {10, 6, 170, 14};
 static const Rectangle FC_OSRS_COMBAT_LEVEL = {10, 26, 170, 12};
 static const Rectangle FC_OSRS_COMBAT_CATEGORY = {0, 233, 190, 28};
+/* RuneC's autocast box, beside the third style. */
+static const Rectangle FC_OSRS_COMBAT_AUTOCAST = {102, 99, 68, 47};
 
 /* Ui Assets */
 
@@ -1996,6 +2022,9 @@ static const char *const g_ui_asset_names[] = {
     "combaticons_14",
     "combaticons_15",
     "combaticons_16",
+    "combaticons_19",
+    "combaticons2_13",
+    "combaticons2_14",
     "combaticons2_5",
     "combaticons2_6",
     "combaticons2_7",
@@ -2005,6 +2034,7 @@ static const char *const g_ui_asset_names[] = {
     "combaticons2_15",
     "combaticons2_16",
     "combaticons2_17",
+    "sideicons_interface_6",
 };
 
 #define FC_UI_ASSET_COUNT \
@@ -2408,6 +2438,7 @@ typedef enum FcUiTab {
     FC_UI_TAB_INVENTORY,
     FC_UI_TAB_EQUIPMENT,
     FC_UI_TAB_PRAYER,
+    FC_UI_TAB_SPELLBOOK,          /* spellbook capability only */
     FC_UI_TAB_COUNT
 } FcUiTab;
 
@@ -2497,6 +2528,10 @@ typedef struct FcUiState {
     FcUiSlot equipment[FC_EQUIPMENT_SLOTS];
     char combat_weapon_name[64];
     const FcUiCombatProfile *combat_profile;
+    /* A staff's autocast box: shown with autocast_box, selected while the
+     * attacks cast autocast_name. */
+    int autocast_box, casting;
+    char autocast_name[32];
 
     int hitpoints;
     int hitpoints_max;
@@ -2578,8 +2613,9 @@ static const char *g_worn_icon_names[FC_EQUIPMENT_SLOTS] = {
  * Exact b237 combat_interface_weapon_category DB rows from the local
  * Joshua-F dump for the weapon categories the player can have
  * (FcGearPreset.combat_style_profile, or 0 when unarmed), so weapon tabs use the
- * same labels/icons as OSRS. Core has no style choice: it punches unarmed and
- * always fires ranged weapons on Rapid.
+ * same labels/icons as OSRS. Core has no style choice: it punches unarmed,
+ * always fires ranged weapons on Rapid and bashes with a staff that is not
+ * casting.
  */
 static const FcUiCombatProfile g_combat_profiles[] = {
     {0, 0, {    /* unarmed: OSRS category 0 */
@@ -2601,6 +2637,11 @@ static const FcUiCombatProfile g_combat_profiles[] = {
         {"Accurate", "Accurate", "combaticons2_15"},
         {"Rapid", "Rapid", "combaticons2_16"},
         {"Longrange", "Longrange", "combaticons2_17"},
+    }},
+    {22, 0, {   /* staff: OSRS category 18, as RuneC's viewer shows it */
+        {"Bash", "Accurate", "combaticons2_13"},
+        {"Pound", "Aggressive", "combaticons2_14"},
+        {"Focus", "Defensive", "combaticons_19"},
     }},
 };
 
@@ -3410,10 +3451,34 @@ static const Texture2D *ui_item_icon_texture(const FcUiState *ui,
     return NULL;
 }
 
+/* An item the pinned assets have no icon for: the start of each of the
+ * first three words of its name, one per line, at the bottom of the slot
+ * below a stack's quantity. */
+static void draw_item_name(const FcUiState *ui, const char *name, Rectangle r) {
+    char words[3][8];
+    int count = 0;
+    for (const char *s = name; *s && count < 3;) {
+        while (*s == ' ') s++;
+        if (!*s) break;
+        size_t n = strcspn(s, " ");
+        size_t keep = n < 4 ? n : 4;
+        memcpy(words[count], s, keep);
+        words[count++][keep] = '\0';
+        s += n;
+    }
+    const float line = 10.0f;
+    float y = r.y + r.height - line * (float)count;
+    for (int i = 0; i < count; i++, y += line)
+        draw_centered_text(ui, words[i], (Rectangle){r.x, y, r.width, line}, 12,
+                           (Color){230, 220, 200, 255});
+}
+
 static void draw_inventory_item(const FcUiState *ui, const FcUiSlot *slot, Rectangle r) {
     const Texture2D *icon = ui_item_icon_texture(ui, slot->item_id);
-    if (!icon)
+    if (!icon) {
+        draw_item_name(ui, slot->label, r);
         return;
+    }
     float sx = r.width / (float)icon->width;
     float sy = r.height / (float)icon->height;
     float scale = sx < sy ? sx : sy;
@@ -3493,7 +3558,7 @@ static void draw_combat(const FcUiState *ui, const FcUiLayout *layout) {
     for (int i = 0; i < FC_UI_COMBAT_STYLE_COUNT; i++) {
         const FcUiCombatStyleDef *option = &profile->styles[i];
         const FcUiCombatStyleRef *style = &FC_OSRS_COMBAT_STYLES[i];
-        int active = i == profile->active_style;
+        int active = i == profile->active_style && !ui->casting;
         Rectangle button = side_ref_rect(layout, style->rect);
         draw_combat_box(ui, button, active);
         draw_asset_centered(ui, option->icon_asset, side_ref_rect(layout, style->icon_rect),
@@ -3501,10 +3566,25 @@ static void draw_combat(const FcUiState *ui, const FcUiLayout *layout) {
         draw_centered_text(ui, option->label, side_ref_rect(layout, style->text_rect),
                            10, active ? OSRS_YELLOW : OSRS_ORANGE);
     }
+    if (ui->autocast_box) {
+        /* RuneC's autocast box: the spell's name, the pinned assets having
+         * no spell icons, or the empty-spell icon. Clicking it picks one. */
+        Rectangle box = side_ref_rect(layout, FC_OSRS_COMBAT_AUTOCAST);
+        draw_combat_box(ui, box, ui->casting);
+        if (ui->autocast_name[0])
+            draw_centered_text(ui, ui->autocast_name,
+                               (Rectangle){box.x, box.y + 8, box.width, 14}, 10,
+                               ui->casting ? OSRS_YELLOW : OSRS_ORANGE);
+        else
+            draw_asset_centered(ui, "sideicons_interface_6",
+                                (Rectangle){box.x + 22, box.y + 3, 24, 24}, 24, 24, WHITE);
+        draw_centered_text(ui, "Spell", (Rectangle){box.x, box.y + 29, box.width, 15},
+                           12, OSRS_ORANGE);
+    }
 
     char category[64];
-    snprintf(category, sizeof(category), "Attack style: %s",
-             profile->styles[profile->active_style].mode);
+    snprintf(category, sizeof(category), "Attack style: %s", ui->casting ? "Casting"
+             : profile->styles[profile->active_style].mode);
     draw_centered_text(ui, category, side_ref_rect(layout, FC_OSRS_COMBAT_CATEGORY),
                        12, OSRS_ORANGE);
 }
@@ -4108,7 +4188,77 @@ static const struct {
         PLAYER_ANIM_HUMAN_RUN, PLAYER_ANIM_BOW_ATTACK,
         {1922, 1923, 0, 163.0f, 146.0f, 41.0f, 15.0f, 5.0f, 11.0f, 5.0f, 0},
     }},
+    /* The staves' stances (RuneC content/items/player_pose_sets.toml; it
+     * keeps the human ones for the Mystic smoke staff and for the movements
+     * it does not list) and bash (data/defs/combat_visuals.tsv, stance 1).
+     * Their casts take the spell's visuals (FC_SPELL_VISUALS). */
+    {12000, {   /* Mystic smoke staff */
+        PLAYER_ANIM_HUMAN_IDLE, PLAYER_ANIM_HUMAN_WALK,
+        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
+        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
+        PLAYER_ANIM_HUMAN_RUN, 419, {0},
+    }},
+    {21006, {   /* Kodai wand: staff-and-polearm */
+        813, 1205,
+        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
+        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
+        1210, 414, {0},
+    }},
+    {24423, {   /* Harmonised nightmare staff: nightmare-staff */
+        4504, 1205,
+        PLAYER_ANIM_HUMAN_WALK_BACK, PLAYER_ANIM_HUMAN_WALK_LEFT,
+        PLAYER_ANIM_HUMAN_WALK_RIGHT, PLAYER_ANIM_HUMAN_TURN,
+        1210, 4505, {0},
+    }},
 };
+
+/* Each spell's cast, by RuneC's data/defs/combat_visuals.tsv: the attack
+ * animation, then the launch, travel and impact spot animations (0 for
+ * none) with RuneC's projectile heights, delay, angle, length adjustment,
+ * progress and step multiplier in FcProjectileProfile's columns. */
+#define FC_SPELL_FLIGHT(end) 172.0f, end, 51.0f, 16.0f, -5.0f, 64.0f, 10.0f, 0
+static const struct {
+    uint16_t cast_anim;
+    FcProjectileProfile projectile;
+} FC_SPELL_VISUALS[FC_SPELL_COUNT] = {
+    [FC_SPELL_WIND_STRIKE] = {1162, {91, 90, 92, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_WATER_STRIKE] = {1162, {94, 93, 95, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_EARTH_STRIKE] = {1162, {97, 96, 98, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_FIRE_STRIKE] = {1162, {100, 99, 101, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_WIND_BOLT] = {1162, {118, 117, 119, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_WATER_BOLT] = {1162, {121, 120, 122, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_EARTH_BOLT] = {1162, {124, 123, 125, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_FIRE_BOLT] = {1162, {127, 126, 128, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_WIND_BLAST] = {1162, {133, 132, 134, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_WATER_BLAST] = {1162, {136, 135, 137, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_EARTH_BLAST] = {1162, {139, 138, 140, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_FIRE_BLAST] = {1162, {130, 129, 131, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_WIND_WAVE] = {1167, {159, 158, 160, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_WATER_WAVE] = {1167, {162, 161, 163, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_EARTH_WAVE] = {1167, {165, 164, 166, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_FIRE_WAVE] = {1167, {156, 155, 157, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_WIND_SURGE] = {7855, {1456, 1455, 1457, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_WATER_SURGE] = {7855, {1459, 1458, 1460, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_EARTH_SURGE] = {7855, {1462, 1461, 1463, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_FIRE_SURGE] = {7855, {1465, 1464, 1466, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_SMOKE_RUSH] = {1978, {384, 0, 385, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_SHADOW_RUSH] = {1978, {378, 0, 379, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_BLOOD_RUSH] = {1978, {372, 0, 373, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_ICE_RUSH] = {1978, {360, 0, 361, FC_SPELL_FLIGHT(0.0f)}},
+    [FC_SPELL_SMOKE_BURST] = {1979, {388, 0, 389, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_SHADOW_BURST] = {1979, {0, 0, 382, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_BLOOD_BURST] = {1979, {0, 0, 376, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_ICE_BURST] = {1979, {366, 0, 367, FC_SPELL_FLIGHT(0.0f)}},
+    [FC_SPELL_SMOKE_BLITZ] = {1978, {386, 0, 387, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_SHADOW_BLITZ] = {1978, {380, 0, 381, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_BLOOD_BLITZ] = {1978, {374, 0, 375, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_ICE_BLITZ] = {1978, {362, 0, 363, FC_SPELL_FLIGHT(0.0f)}},
+    [FC_SPELL_SMOKE_BARRAGE] = {1979, {390, 0, 391, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_SHADOW_BARRAGE] = {1979, {0, 0, 383, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_BLOOD_BARRAGE] = {1979, {0, 0, 377, FC_SPELL_FLIGHT(124.0f)}},
+    [FC_SPELL_ICE_BARRAGE] = {1979, {368, 0, 369, FC_SPELL_FLIGHT(0.0f)}},
+};
+#undef FC_SPELL_FLIGHT
 
 typedef struct {
     uint16_t idle;
@@ -4364,9 +4514,12 @@ void fc_actor_animation_ingest_events(FcActorAnimation *animation,
                                       float tps) {
     if (!animation || !events) return;
     if (events->player_attack_fired) {
+        uint16_t attack_anim = events->player_attack_spell > 0
+            ? FC_SPELL_VISUALS[events->player_attack_spell - 1].cast_anim
+            : profile->attack_anim;
         AnimSequence *sequence = cache
-            ? anim_get_sequence(cache, profile->attack_anim) : NULL;
-        animation->player_lock_sequence = profile->attack_anim;
+            ? anim_get_sequence(cache, attack_anim) : NULL;
+        animation->player_lock_sequence = attack_anim;
         animation->player_lock_timer = fc_actor_animation_scaled_duration(
             tps, sequence_duration(sequence));
         animation->player_attack_target =
@@ -4456,8 +4609,8 @@ void fc_actor_animation_update_scene(FcActorAnimation *animation,
     }
 }
 
-static uint16_t player_pose_sequence(const FcPlayerVisualProfile *profile,
-                                     FcVisualLocomotion locomotion) {
+static uint16_t profile_pose_sequence(const FcPlayerVisualProfile *profile,
+                                      FcVisualLocomotion locomotion) {
     switch (locomotion) {
         case FC_VISUAL_LOCOMOTION_TURN: return profile->turn_anim;
         case FC_VISUAL_LOCOMOTION_WALK_BACK: return profile->walk_back_anim;
@@ -4467,6 +4620,17 @@ static uint16_t player_pose_sequence(const FcPlayerVisualProfile *profile,
         case FC_VISUAL_LOCOMOTION_WALK_FORWARD: return profile->walk_anim;
         default: return profile->idle_anim;
     }
+}
+
+/* The weapon's stance sequence, or the human one when the pinned assets
+ * lack it (the staves' stances). */
+static uint16_t player_pose_sequence(AnimCache *cache,
+                                     const FcPlayerVisualProfile *profile,
+                                     FcVisualLocomotion locomotion) {
+    uint16_t sequence = profile_pose_sequence(profile, locomotion);
+    if (anim_get_sequence(cache, sequence)) return sequence;
+    FcPlayer unarmed = {0};
+    return profile_pose_sequence(fc_player_visual_profile(&unarmed), locomotion);
 }
 
 void fc_actor_animation_update_models(FcActorAnimation *animation,
@@ -4485,7 +4649,7 @@ void fc_actor_animation_update_models(FcActorAnimation *animation,
         const FcPlayerVisualProfile *profile =
             fc_player_visual_profile(&state->player);
         FcVisualPose pose = fc_visual_scene_player_pose(&animation->scene);
-        uint16_t pose_sequence = player_pose_sequence(profile, pose.locomotion);
+        uint16_t pose_sequence = player_pose_sequence(cache, profile, pose.locomotion);
         uint16_t action_sequence = player_action_sequence(animation, state);
         AnimSequence *pose_track = advance_track(cache, pose_sequence,
             &animation->player_pose, anim_dt, 0);
@@ -5284,11 +5448,15 @@ void fc_combat_presentation_deferred_deaths(
     }
 }
 
+/* The player's projectile: a spell's (FC_SPELL_VISUALS), or the weapon's,
+ * none for melee. */
 static void ingest_player_attack(FcCombatPresentation *presentation,
     const FcCombatPresentationContext *context) {
     const FcRenderEvents *events = context->events;
-    launch_projectile(presentation, context,
-        &context->player_profile->projectile, ATTACK_RANGED,
+    const FcProjectileProfile *profile = events->player_attack_spell > 0
+        ? &FC_SPELL_VISUALS[events->player_attack_spell - 1].projectile
+        : &context->player_profile->projectile;
+    launch_projectile(presentation, context, profile, events->player_attack_style,
         FC_VISUAL_TARGET_PLAYER, 0,
         events->player_attack_source_x, events->player_attack_source_y,
         FC_VISUAL_TARGET_NPC, events->player_attack_target_npc_slot,
@@ -5880,9 +6048,15 @@ void dbg_log_tick(const FcState* state) {
     /* Player attack attempt */
     if (state->attack_attempt_this_tick && p->attack_target_idx >= 0) {
         const FcNpc* tgt = &state->npcs[p->attack_target_idx];
-        dbg_log_event(t, CLITERAL(Color){200,200,200,255},
-                      "Attacked %s [%d]", npc_short_name(tgt->npc_type),
-                      p->attack_target_idx);
+        int spell = state->render_events.player_attack_spell - 1;
+        if (spell >= 0 && spell < FC_SPELL_COUNT)
+            dbg_log_event(t, CLITERAL(Color){170,190,255,255}, "Cast %s at %s [%d]",
+                          FC_SPELLS[spell].name, npc_short_name(tgt->npc_type),
+                          p->attack_target_idx);
+        else
+            dbg_log_event(t, CLITERAL(Color){200,200,200,255},
+                          "Attacked %s [%d]", npc_short_name(tgt->npc_type),
+                          p->attack_target_idx);
     }
 
     /* NPC events */
@@ -6056,7 +6230,7 @@ static void dbg_draw_path_2d(const FcState* state, Camera3D cam) {
  * weapon's range */
 static void dbg_draw_range_2d(const FcState* state, Camera3D cam) {
     const FcPlayer* p = &state->player;
-    int range = p->weapon_range;
+    int range = fc_player_cast_spell(state) >= 0 ? FC_SPELL_RANGE : p->weapon_range;
 
     for (int dx = -range; dx <= range; dx++) {
         for (int dy = -range; dy <= range; dy++) {
@@ -6172,6 +6346,14 @@ int dbg_draw_panel_tabs(const FcState* state,
         dbg_print_line(x, &by, lh, DBG_COL_LABEL, "Shark:%d Dose:%d Ammo:%d",
                        p->sharks_remaining, p->prayer_doses_remaining,
                        p->ammo_count);
+        {
+            int autocast = state->caps.autocast - 1;
+            dbg_print_line(x, &by, lh, DBG_COL_LABEL, "Autocast:%s%s Magic:%d",
+                           autocast >= 0 && autocast < FC_SPELL_COUNT
+                               ? FC_SPELLS[autocast].name : "none",
+                           fc_player_cast_spell(state) >= 0 ? " (casting)" : "",
+                           p->magic_level);
+        }
         dbg_print_line(x, &by, lh, DBG_COL_LABEL,
                        "Tgt:%d Appr:%d Route:%d/%d", p->attack_target_idx,
                        p->approach_target, p->route_idx, p->route_len);
@@ -6258,6 +6440,29 @@ int dbg_draw_panel_tabs(const FcState* state,
                            set[FC_OBS_GEAR_RANGE], set[FC_OBS_GEAR_SPEED]);
         }
 #endif
+#if FC_SPELLBOOK_HEAD
+        {
+            /* The spellbook block: the autocast one-hot, then with the
+             * Ancient book each slot's frozen, immunity, poison and drain. */
+            char on[FC_BOOK_SPELL_COUNT + 1];
+            for (int i = 0; i < FC_BOOK_SPELL_COUNT; i++)
+                on[i] = obs[FC_OBS_SPELL_START + FC_OBS_SPELL_AUTOCAST + i] > 0.5f
+                    ? '1' : '0';
+            on[FC_BOOK_SPELL_COUNT] = '\0';
+            dbg_print_line(x, &by, lh, DBG_COL_LABEL, "Cast %s", on);
+#if FC_CAP_SPELLBOOK == 2
+            for (int s = 0; s < FC_OBS_NPC_SLOTS; s++) {
+                const float* e = obs + FC_OBS_SPELL_START + FC_OBS_SPELL_EFFECTS +
+                                 s * FC_OBS_SPELL_STRIDE;
+                if (e[0] + e[1] + e[2] + e[3] <= 0.0f) continue;
+                dbg_print_line(x, &by, lh - 2, DBG_COL_LABEL,
+                               "[%d] frz:%.2f imm:%.2f psn:%.2f drn:%.2f", s,
+                               e[FC_OBS_SPELL_FROZEN], e[FC_OBS_SPELL_FREEZE_IMMUNE],
+                               e[FC_OBS_SPELL_POISON], e[FC_OBS_SPELL_DRAIN]);
+            }
+#endif
+        }
+#endif
 
         by += 2;
         dbg_print_line(x, &by, lh - 1, DBG_COL_DIM, "NPC slots:");
@@ -6283,8 +6488,8 @@ int dbg_draw_panel_tabs(const FcState* state,
     } else if (dbg_tab == 2) {
         /* Action mask, one bit per action. Heads 0-6 are move, attack,
          * prayer, eat, drink and the two move-target coordinates; then come
-         * the prayer book with prayers = all and the gear set head with
-         * gear_sets above 1. */
+         * the prayer book with prayers = all, the gear set head with
+         * gear_sets above 1 and the autocast head with a spellbook. */
         static const char* labels[] = { "MOVE:", "ATK:", "PRAY:" };
         float mask[FC_ACTION_MASK_SIZE];
         char bits[FC_ACTION_MASK_SIZE + 1];
@@ -6311,6 +6516,10 @@ int dbg_draw_panel_tabs(const FcState* state,
 #if FC_GEAR_SWITCHING
         dbg_mask_bits(mask, FC_HEAD_GEAR_SET, bits);
         dbg_print_line(x, &by, lh, DBG_COL_LABEL, "GEAR:%s", bits);
+#endif
+#if FC_SPELLBOOK_HEAD
+        dbg_mask_bits(mask, FC_HEAD_AUTOCAST, bits);
+        dbg_print_line(x, &by, lh, DBG_COL_LABEL, "CAST:%s", bits);
 #endif
 
     } else if (dbg_tab == 3) {
@@ -6516,6 +6725,10 @@ typedef struct ViewerState {
 #if FC_GEAR_SWITCHING
     int pending_gear;             /* GEAR_SET action for the next tick */
 #endif
+#if FC_SPELLBOOK_HEAD
+    int pending_autocast;         /* AUTOCAST action for the next tick */
+#endif
+    int autocast_picker;          /* the combat tab lists spells to autocast */
     int pending_attack_npc;
     int pending_tile_x, pending_tile_y;
     FcClickFeedback click_feedback;
@@ -6614,13 +6827,37 @@ static int load_ui_item_icon(FcUiState* ui, uint32_t item_id) {
     return 1;
 }
 
-/* Icons for every item the simulation knows: the gear presets' equipment and
- * the supplies. */
+/* Whether the pinned viewer bundle was made with an item's icon and worn
+ * model: the ranged gear presets' equipment and the supplies, not the magic
+ * presets' equipment or the runes, which it predates. */
+static int fc_viewer_bundle_has_item(int item_id) {
+    for (int p = 0; p < FC_GEAR_PRESET_COUNT; p++) {
+        const FcGearPreset *preset = &FC_GEAR_PRESETS[p];
+        if (preset->autocast) continue;
+        for (int i = 0; i < preset->equipment_count; i++)
+            if (preset->equipment[i] == item_id) return 1;
+    }
+    const FcItemDef *item = fc_item_definition(item_id);
+    return item && item->slot < 0 && !item->stackable;
+}
+
+/* Icons for every item the simulation knows: the gear presets' equipment,
+ * the runes and the supplies. Those of fc_viewer_bundle_has_item are
+ * required; the others show their names until a bundle has them. */
 static int load_fc_ui_item_icons(ViewerState* v) {
     if (!v) return 0;
-    int ready = 1;
-    for (int i = 0; i < (int)(sizeof(ITEMS) / sizeof(ITEMS[0])); i++)
-        ready &= load_ui_item_icon(&v->ui, (uint32_t)ITEMS[i].id);
+    int ready = 1, missing = 0;
+    for (int i = 0; i < (int)(sizeof(ITEMS) / sizeof(ITEMS[0])); i++) {
+        char path[128];
+        snprintf(path, sizeof(path), "data/sprites/items/item_%d.png", ITEMS[i].id);
+        if (fc_viewer_bundle_has_item(ITEMS[i].id))
+            ready &= load_ui_item_icon(&v->ui, (uint32_t)ITEMS[i].id);
+        else if (!fc_asset_present(path) || !load_ui_item_icon(&v->ui, (uint32_t)ITEMS[i].id))
+            missing++;
+    }
+    if (missing)
+        fprintf(stderr, "%d magic item and rune icons are not in the viewer assets; "
+                "those items show their names\n", missing);
     return ready;
 }
 
@@ -6638,7 +6875,7 @@ static void sync_item_slots(FcUiSlot *slots, const FcItemStack *items, int count
         }
         slot->action = item->slot == FC_EQUIP_SLOT_WEAPON ? "Wield" :
             item->slot >= 0 ? "Wear" : item->id == FC_ITEM_ID_SHARK ? "Eat" :
-            item->id == FC_ITEM_ID_VIAL ? "Use" : "Drink";
+            potion_doses(item->id) ? "Drink" : "Use";
     }
 }
 
@@ -6673,6 +6910,13 @@ static void sync_fc_ui_status(ViewerState* v) {
     fc_ui_set_combat_weapon_name(&v->ui, weapon ? weapon->name : "Unarmed");
     v->ui.combat_profile = combat_profile_for_weapon_category(
         weapon ? fc_gear_preset_by_id(v->state.active_loadout)->combat_style_profile : 0);
+    /* A staff's autocast box and spell. */
+    v->ui.autocast_box = weapon && weapon->weapon_kind == FC_WEAPON_STAFF;
+    v->ui.casting = fc_player_cast_spell(&v->state) >= 0;
+    int autocast = v->state.caps.autocast - 1;
+    snprintf(v->ui.autocast_name, sizeof(v->ui.autocast_name), "%s",
+             autocast >= 0 && autocast < FC_SPELL_COUNT ? FC_SPELLS[autocast].name : "");
+    if (!v->ui.autocast_box) v->autocast_picker = 0;
 }
 
 /* Where the minimap centres the player: the drawn position, or the tile
@@ -7020,6 +7264,10 @@ static void fc_viewer_reset_presentation(ViewerState* v) {
 #if FC_GEAR_SWITCHING
     v->pending_gear = 0;
 #endif
+#if FC_SPELLBOOK_HEAD
+    v->pending_autocast = 0;
+#endif
+    v->autocast_picker = 0;
     v->pending_eat = 0;
     v->pending_drink = 0;
     v->pending_attack_npc = -1;
@@ -7207,6 +7455,10 @@ static void build_human_actions(ViewerState* v) {
 #if FC_GEAR_SWITCHING
     v->actions[FC_HEAD_GEAR_SET] = v->pending_gear;
     v->pending_gear = 0;
+#endif
+#if FC_SPELLBOOK_HEAD
+    v->actions[FC_HEAD_AUTOCAST] = v->pending_autocast;
+    v->pending_autocast = 0;
 #endif
     /* Clear buffers */
     v->pending_prayer = 0;
@@ -8150,10 +8402,152 @@ static void draw_fc_prayer_tab(ViewerState* v, Rectangle content) {
 }
 #endif
 
+/* Magic: the spellbook tab with the spellbook capability and the combat
+ * tab's autocast picker for a staff. Both list the player's spellbook's
+ * spells in two columns by name, the pinned assets having no spell icons:
+ * bright when the spell can be autocast now (fc_spell_check), dark when not,
+ * the autocast spell highlighted. Clicking one autocasts it, through the
+ * autocast head on the next tick with the capability, else at once, as
+ * RuneC's rc_player_set_autocast_spell sets it. */
+#define FC_VIEWER_BOOK_FIRST (FC_PLAYER_SPELLBOOK == FC_SPELLBOOK_ANCIENT \
+                              ? FC_SPELL_SMOKE_RUSH : FC_SPELL_WIND_STRIKE)
+#define FC_VIEWER_BOOK_COUNT (FC_PLAYER_SPELLBOOK == FC_SPELLBOOK_ANCIENT \
+                              ? FC_ANCIENT_SPELL_COUNT : FC_STANDARD_SPELL_COUNT)
+#define FC_SPELL_GRID_TOP 34
+#define FC_SPELL_GRID_ROW 20
+
+/* The cell of the book's spell i, below the two header lines. */
+static Rectangle fc_spell_cell_rect(Rectangle content, int i) {
+    float width = (content.width - 8.0f) / 2.0f;
+    return (Rectangle){content.x + 4.0f + (float)(i % 2) * width,
+                       content.y + FC_SPELL_GRID_TOP + (float)(i / 2) * FC_SPELL_GRID_ROW,
+                       width - 2.0f, FC_SPELL_GRID_ROW - 2.0f};
+}
+
+/* The book's spell under pos, or -1. */
+static int fc_spell_cell_at(Rectangle content, Vector2 pos) {
+    for (int i = 0; i < FC_VIEWER_BOOK_COUNT; i++)
+        if (CheckCollisionPointRec(pos, fc_spell_cell_rect(content, i))) return i;
+    return -1;
+}
+
+/* The combat tab's autocast box (FC_OSRS_COMBAT_AUTOCAST). */
+static Rectangle fc_autocast_box_rect(Rectangle content) {
+    return (Rectangle){content.x + FC_OSRS_COMBAT_AUTOCAST.x,
+                       content.y + FC_OSRS_COMBAT_AUTOCAST.y,
+                       FC_OSRS_COMBAT_AUTOCAST.width, FC_OSRS_COMBAT_AUTOCAST.height};
+}
+
+/* The picker's Cancel row. */
+static Rectangle fc_autocast_cancel_rect(Rectangle content) {
+    return (Rectangle){content.x + 4.0f, content.y + content.height - 20.0f,
+                       content.width - 8.0f, 18.0f};
+}
+
+/* Autocast spell from the viewer, or say why it cannot be. */
+static void viewer_set_autocast(ViewerState* v, int spell) {
+    if (!v || v->policy_replay) return;
+    FcCastResult result = fc_spell_check(&v->state, spell);
+    if (result != FC_CAST_OK) {
+        snprintf(v->item_message, sizeof(v->item_message), "%s",
+                 fc_cast_result_message(result));
+        v->item_message_seconds = 4.0f;
+        return;
+    }
+#if FC_SPELLBOOK_HEAD
+    v->pending_autocast = spell - FC_BOOK_FIRST_SPELL + 1;
+#else
+    fc_spell_set_autocast(&v->state, spell);
+#endif
+}
+
+/* A header line, the hovered spell's level and max hit, or why it cannot
+ * be autocast, then the book's spells. */
+static void draw_fc_spell_list(ViewerState* v, Rectangle content, const char* title) {
+    BeginScissorMode((int)content.x, (int)content.y,
+                     (int)content.width, (int)content.height);
+    DrawRectangleRec(content, COL_PANEL);
+    int x = (int)content.x + 8;
+    int by = (int)content.y + 4;
+    char b[96];
+    text_s(title, x, by, COL_TEXT_YELLOW);
+    by += 14;
+    int hovered = fc_spell_cell_at(content, GetMousePosition());
+    if (hovered >= 0) {
+        int spell = FC_VIEWER_BOOK_FIRST + hovered;
+        FcCastResult result = fc_spell_check(&v->state, spell);
+        FcPrayerBonus prayer = fc_prayer_bonus(&v->state);
+        int roll, max_hit;
+        fc_player_magic_rolls(&v->state.player, &prayer, spell, &roll, &max_hit);
+        if (result == FC_CAST_OK)
+            snprintf(b, sizeof(b), "Magic %d, max hit %d", FC_SPELLS[spell].level, max_hit);
+        else
+            snprintf(b, sizeof(b), "%s", fc_cast_result_message(result));
+        text_s(b, x, by, result == FC_CAST_OK ? COL_TEXT_WHITE : COL_TEXT_DIM);
+    } else {
+        int autocast = v->state.caps.autocast - 1;
+        snprintf(b, sizeof(b), "Autocast: %s", autocast >= 0 && autocast < FC_SPELL_COUNT
+                 ? FC_SPELLS[autocast].name : "none");
+        text_s(b, x, by, COL_TEXT_DIM);
+    }
+    const Color autocast_bg = CLITERAL(Color){60, 120, 200, 200};
+    const Color hover_bg = CLITERAL(Color){72, 63, 51, 255};
+    for (int i = 0; i < FC_VIEWER_BOOK_COUNT; i++) {
+        int spell = FC_VIEWER_BOOK_FIRST + i;
+        Rectangle r = fc_spell_cell_rect(content, i);
+        int usable = fc_spell_check(&v->state, spell) == FC_CAST_OK;
+        int active = v->state.caps.autocast == spell + 1;
+        if (active) DrawRectangleRec(r, autocast_bg);
+        else if (i == hovered && usable) DrawRectangleRec(r, hover_bg);
+        DrawRectangleLinesEx(r, 1, COL_PANEL_BORDER);
+        text_s(FC_SPELLS[spell].name, (int)r.x + 3, (int)r.y + 3,
+               active ? COL_TEXT_WHITE : usable ? COL_TEXT_YELLOW : COL_TEXT_DIM);
+    }
+    EndScissorMode();
+}
+
+static void draw_fc_autocast_picker(ViewerState* v, Rectangle content) {
+    draw_fc_spell_list(v, content, "Choose a spell to autocast");
+    Rectangle cancel = fc_autocast_cancel_rect(content);
+    DrawRectangleLinesEx(cancel, 1, COL_PANEL_BORDER);
+    text_s("Cancel", (int)cancel.x + 3, (int)cancel.y + 3, COL_TEXT_YELLOW);
+}
+
+/* Clicks on the spellbook tab, the autocast box and the picker. */
+static int process_fc_magic_click(ViewerState* v) {
+    if (!v || !IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) return 0;
+    Rectangle content = fc_ui_side_content_rect(GetScreenWidth(), GetScreenHeight());
+    Vector2 mouse = GetMousePosition();
+    if (!CheckCollisionPointRec(mouse, content)) return 0;
+    if (v->ui.active_tab == FC_UI_TAB_SPELLBOOK) {
+        int cell = fc_spell_cell_at(content, mouse);
+        if (cell >= 0) viewer_set_autocast(v, FC_VIEWER_BOOK_FIRST + cell);
+        return 1;
+    }
+    if (v->ui.active_tab != FC_UI_TAB_COMBAT || !v->ui.autocast_box) return 0;
+    if (v->autocast_picker) {
+        int cell = fc_spell_cell_at(content, mouse);
+        if (cell >= 0) viewer_set_autocast(v, FC_VIEWER_BOOK_FIRST + cell);
+        if (cell >= 0 || CheckCollisionPointRec(mouse, fc_autocast_cancel_rect(content)))
+            v->autocast_picker = 0;
+        return 1;
+    }
+    if (CheckCollisionPointRec(mouse, fc_autocast_box_rect(content)) && !v->policy_replay) {
+        v->autocast_picker = 1;
+        return 1;
+    }
+    return 0;
+}
+
 static void draw_fc_side_overrides(ViewerState* v) {
     Rectangle content = fc_ui_side_content_rect(GetScreenWidth(), GetScreenHeight());
     if (v->ui.active_tab == FC_UI_TAB_PRAYER)
         draw_fc_prayer_tab(v, content);
+    if (v->ui.active_tab == FC_UI_TAB_SPELLBOOK)
+        draw_fc_spell_list(v, content, FC_PLAYER_SPELLBOOK == FC_SPELLBOOK_ANCIENT
+                           ? "Ancient Magicks" : "Standard spellbook");
+    if (v->ui.active_tab == FC_UI_TAB_COMBAT && v->autocast_picker)
+        draw_fc_autocast_picker(v, content);
 }
 
 static int process_fc_prayer_click(ViewerState* v) {
@@ -8567,6 +8961,8 @@ static int fc_viewer_frame(ViewerState* v) {
         handle_fc_ui_intent(v);
     } else {
         ui_capture = process_fc_prayer_click(v);
+        if (!ui_capture)
+            ui_capture = process_fc_magic_click(v);
         if (!ui_capture)
             ui_capture = process_fc_console_input(v);
         if (!ui_capture) {

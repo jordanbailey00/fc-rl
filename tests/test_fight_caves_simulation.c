@@ -90,19 +90,24 @@ static void check_observation(const FcState* state) {
 
 static int core_contract_test(void) {
     _Static_assert(FC_STATE_HASH_VERSION == 6, "analytics state hash version drifted");
-    /* 286 + 34 = 320 floats and three heads with the default capabilities. */
+    /* 286 + 34 = 320 floats and three heads with the default capabilities;
+     * spellbook = standard adds 20 floats and a 21-value head, ancient 48
+     * floats and a 17-value head. */
     _Static_assert(FC_POLICY_OBS_SIZE ==
                        286 + 3 * FC_CAP_CONSUMABLES + 25 * FC_CAP_PRAYERS +
-                       6 * FC_GEAR_SWITCHING * FC_CAP_GEAR_SETS,
+                       6 * FC_GEAR_SWITCHING * FC_CAP_GEAR_SETS +
+                       (FC_CAP_SPELLBOOK == 1 ? 20 : FC_CAP_SPELLBOOK == 2 ? 48 : 0),
                    "policy observation contract drifted");
     _Static_assert(FC_PUFFER_MASK_SIZE ==
                        34 + 5 * FC_CAP_CONSUMABLES + 25 * FC_CAP_PRAYERS +
-                       FC_GEAR_SWITCHING * (1 + FC_CAP_GEAR_SETS),
+                       FC_GEAR_SWITCHING * (1 + FC_CAP_GEAR_SETS) +
+                       (FC_CAP_SPELLBOOK == 1 ? 21 : FC_CAP_SPELLBOOK == 2 ? 17 : 0),
                    "Puffer mask contract drifted");
     _Static_assert(FC_PUFFER_OBS_SIZE == FC_POLICY_OBS_SIZE + FC_PUFFER_MASK_SIZE,
                    "Puffer observation contract drifted");
     _Static_assert(FC_PUFFER_NUM_ATNS ==
-                       3 + 2 * FC_CAP_CONSUMABLES + FC_CAP_PRAYERS + FC_GEAR_SWITCHING,
+                       3 + 2 * FC_CAP_CONSUMABLES + FC_CAP_PRAYERS + FC_GEAR_SWITCHING +
+                       FC_SPELLBOOK_HEAD,
                    "Puffer action-head count drifted");
 
     FcState first;
@@ -167,6 +172,25 @@ static int item_slot(const FcPlayer *p, int id) {
 static FcScenario preset_scenario(int preset) {
     FcScenario scenario = fc_default_scenario();
     for (int k = 0; k < FC_CAP_GEAR_SETS; k++) scenario.gear_set[k] = preset;
+    return scenario;
+}
+
+/* The levels each magic preset was made for, as fc-rl-4.0-dlc's loadouts
+ * table gives them, in FcSkill order: Attack, Strength, Defence, Ranged,
+ * Magic, Prayer, Hitpoints. */
+static const struct { const char *name; int levels[FC_SKILL_COUNT]; } MAGIC_LEVELS[] = {
+    {"smoke_staff_mystic", {60, 60, 60, 60, 60, 43, 65}},
+    {"kodai_virtus", {80, 80, 80, 80, 94, 80, 90}},
+    {"harmonised_ancestral", {99, 99, 99, 99, 99, 99, 99}},
+};
+#define MAGIC_PRESET_COUNT ((int)(sizeof(MAGIC_LEVELS) / sizeof(MAGIC_LEVELS[0])))
+
+/* preset_scenario for a magic preset, at its levels. */
+static FcScenario magic_scenario(const char *name) {
+    FcScenario scenario = preset_scenario(fc_gear_preset_find(name));
+    for (int i = 0; i < MAGIC_PRESET_COUNT; i++)
+        if (strcmp(MAGIC_LEVELS[i].name, name) == 0)
+            memcpy(scenario.levels, MAGIC_LEVELS[i].levels, sizeof(scenario.levels));
     return scenario;
 }
 
@@ -296,6 +320,29 @@ static int preset_totals(void) {
             .weapon_speed = 5, .weapon_range = 10, .weapon_uses_ammo = 1,
             .crystal_piece_mask = 0, .ammo_count = 50000,
         },
+        /* The magic presets, from RuneC's items.bin rows; the staves' speed
+         * and range are their bash's. */
+        [FC_LOADOUT_SMOKE_STAFF_MYSTIC] = {
+            .ranged_attack_bonus = 0, .ranged_strength_bonus = 0, .defence_stab = 3,
+            .defence_slash = 4, .defence_crush = 3, .defence_magic = 90,
+            .defence_ranged = 0, .prayer_bonus = 0, .weapon_kind = FC_WEAPON_STAFF,
+            .weapon_speed = 5, .weapon_range = 1, .weapon_uses_ammo = 0,
+            .crystal_piece_mask = 0, .ammo_count = 0,
+        },
+        [FC_LOADOUT_KODAI_VIRTUS] = {
+            .ranged_attack_bonus = -23, .ranged_strength_bonus = 0, .defence_stab = 106,
+            .defence_slash = 92, .defence_crush = 126, .defence_magic = 114,
+            .defence_ranged = 11, .prayer_bonus = 11, .weapon_kind = FC_WEAPON_STAFF,
+            .weapon_speed = 4, .weapon_range = 1, .weapon_uses_ammo = 0,
+            .crystal_piece_mask = 0, .ammo_count = 0,
+        },
+        [FC_LOADOUT_HARMONISED_ANCESTRAL] = {
+            .ranged_attack_bonus = -17, .ranged_strength_bonus = 0, .defence_stab = 137,
+            .defence_slash = 124, .defence_crush = 170, .defence_magic = 84,
+            .defence_ranged = 52, .prayer_bonus = 8, .weapon_kind = FC_WEAPON_STAFF,
+            .weapon_speed = 5, .weapon_range = 1, .weapon_uses_ammo = 0,
+            .crystal_piece_mask = 0, .ammo_count = 0,
+        },
     };
     int pinned = 0;
     for (unsigned id = 0; id < sizeof(expected) / sizeof(expected[0]); id++)
@@ -351,7 +398,11 @@ static int constant_tables(void) {
         fc_items_init(&player, preset);
         CHECK(combat_profile_for_weapon_category(preset->combat_style_profile)
                   ->weapon_category == preset->combat_style_profile);
-        CHECK(fc_player_visual_profile(&player)->projectile.travel_spot != 0);
+        /* A magic preset's projectile is its spell's. */
+        CHECK((preset->autocast
+               ? FC_SPELL_VISUALS[preset->autocast - 1].projectile.travel_spot
+               : fc_player_visual_profile(&player)->projectile.travel_spot) != 0);
+        CHECK(!preset->runes || (preset->autocast && preset->runes == FC_PRESET_RUNE_QUANTITY));
         for (int type = NPC_TZ_KIH; type < NPC_TYPE_COUNT; type++) {
             FcNpc target = {.npc_type = type};
             FcPrayerBonus no_prayer = {0};
@@ -561,29 +612,34 @@ static int combat(void) {
     return 0;
 }
 
-/* Each preset is wearable at exactly its items' Ranged, Defence and Hitpoints
- * requirements and not one level below any of them. At the default levels it
- * fights: a few hundred ticks of attacking the nearest NPC land hits, and each
- * shot spends one arrow, bolt or loaded dart. */
+/* Each preset is wearable at exactly its items' Ranged, Defence, Hitpoints,
+ * Magic and Attack requirements and not one level below any of them. At the
+ * default levels, or a magic preset's own, it fights: a few hundred ticks of
+ * attacking the nearest NPC land hits, and each shot spends one arrow, bolt
+ * or loaded dart (the magic tests check the casts and runes). */
 static int gear_presets(void) {
-    const int skills[] = {FC_SKILL_RANGED, FC_SKILL_DEFENCE, FC_SKILL_HITPOINTS};
+    const int skills[] = {FC_SKILL_RANGED, FC_SKILL_DEFENCE, FC_SKILL_HITPOINTS,
+                          FC_SKILL_MAGIC, FC_SKILL_ATTACK};
+    const int skill_count = (int)(sizeof(skills) / sizeof(skills[0]));
     char err[256], prefix[64], expected[96];
     for (int p = 0; p < FC_GEAR_PRESET_COUNT; p++) {
         const FcGearPreset *preset = &FC_GEAR_PRESETS[p];
-        FcScenario scenario = preset_scenario(p);
-        FcScenario minimum = scenario;
-        for (int k = 0; k < 3; k++) minimum.levels[skills[k]] = 1;
+        FcScenario scenario = preset->runes ? magic_scenario(preset->name)
+                                            : preset_scenario(p);
+        FcScenario minimum = preset_scenario(p);
+        for (int k = 0; k < skill_count; k++) minimum.levels[skills[k]] = 1;
         for (int i = 0; i < preset->equipment_count; i++) {
             const FcItemDef *item = fc_item_definition(preset->equipment[i]);
             const int needs[] = {item->ranged_level, item->defence_level,
-                                 item->hitpoints_level};
-            for (int k = 0; k < 3; k++)
+                                 item->hitpoints_level, item->magic_level,
+                                 item->attack_level};
+            for (int k = 0; k < skill_count; k++)
                 if (needs[k] > minimum.levels[skills[k]])
                     minimum.levels[skills[k]] = needs[k];
         }
         CHECK(fc_scenario_check(&minimum, err, sizeof(err)) == 0);
         snprintf(prefix, sizeof(prefix), "gear_set_1 = %s: ", preset->name);
-        for (int k = 0; k < 3; k++) {
+        for (int k = 0; k < skill_count; k++) {
             int skill = skills[k], need = minimum.levels[skill];
             if (need == 1) continue;
             FcScenario below = minimum;
@@ -612,12 +668,17 @@ static int gear_presets(void) {
         const FcItemStack *weapon = &s.player.equipment[FC_EQUIP_SLOT_WEAPON];
         int left = weapon->item_id == FC_ITEM_ID_TOXIC_BLOWPIPE
             ? weapon->charges : s.player.equipment[FC_EQUIP_SLOT_AMMO].quantity;
-        CHECK(s.player.ammo_count == left);
-        CHECK(left == (s.player.weapon_uses_ammo ? preset->ammo - attacks : 0));
-        printf("gear preset %s: wearable from %d ranged, %d defence, %d hitpoints; "
-               "%d attacks and %d hits in %d ticks\n", preset->name,
+        if (preset->runes) {
+            CHECK(!s.player.weapon_uses_ammo && s.player.ammo_count == 0);
+        } else {
+            CHECK(s.player.ammo_count == left);
+            CHECK(left == (s.player.weapon_uses_ammo ? preset->ammo - attacks : 0));
+        }
+        printf("gear preset %s: wearable from %d ranged, %d defence, %d hitpoints, "
+               "%d magic, %d attack; %d attacks and %d hits in %d ticks\n", preset->name,
                minimum.levels[FC_SKILL_RANGED], minimum.levels[FC_SKILL_DEFENCE],
-               minimum.levels[FC_SKILL_HITPOINTS], attacks, hits, ticks);
+               minimum.levels[FC_SKILL_HITPOINTS], minimum.levels[FC_SKILL_MAGIC],
+               minimum.levels[FC_SKILL_ATTACK], attacks, hits, ticks);
     }
     return 0;
 }
@@ -861,10 +922,12 @@ static void draw_player_cell(ModelEntry *entry, AnimCache *cache, int cell,
     anim_model_state_free(pose);
 }
 
-/* Every gear preset composes from its equipment, and its weapon's animations
- * and projectile spot animations ship. With FC_TEST_OUTPUT_DIR set, each is
- * drawn to <preset>.png there: idle from the front and side, then two frames
- * of its attack. */
+/* Every gear preset composes from its equipment, and a ranged preset's
+ * weapon animations and projectile spot animations ship. The pinned assets
+ * predate the magic presets: their items without models are left out of the
+ * figure, and their missing stances, casts and spell graphics are listed. With
+ * FC_TEST_OUTPUT_DIR set, each is drawn to <preset>.png there: idle from the
+ * front and side, then two frames of its attack. */
 static int gear_preset_appearances(FcPlayerAppearance *appearance, AnimCache *cache) {
     const char *dir = getenv("FC_TEST_OUTPUT_DIR");
     SpotAnimSet *spots = spotanims_load("fc_spotanims.bin");
@@ -884,23 +947,50 @@ static int gear_preset_appearances(FcPlayerAppearance *appearance, AnimCache *ca
         if (fc_player_appearance_sync(appearance, &state.player, FC_PLAYER_MODEL_ID) < 0)
             return 1;
         ModelEntry *entry = appearance->model->entries;
+        FcPlayerVisualProfile magic_profile;
         const FcPlayerVisualProfile *profile = fc_player_visual_profile(&state.player);
+        if (preset->autocast) {
+            /* The spell's cast and projectile with the staff's stance. */
+            magic_profile = *profile;
+            magic_profile.attack_anim = FC_SPELL_VISUALS[preset->autocast - 1].cast_anim;
+            magic_profile.projectile = FC_SPELL_VISUALS[preset->autocast - 1].projectile;
+            profile = &magic_profile;
+        }
         const uint16_t sequences[] = {
             profile->idle_anim, profile->walk_anim, profile->walk_back_anim,
             profile->walk_left_anim, profile->walk_right_anim, profile->turn_anim,
             profile->run_anim, profile->attack_anim,
         };
-        for (int i = 0; i < (int)(sizeof(sequences) / sizeof(sequences[0])); i++)
-            if (!anim_get_sequence(cache, sequences[i])) return 1;
         const FcProjectileProfile *shot = &profile->projectile;
         const uint32_t spot_ids[] = {shot->travel_spot, shot->launch_spot, shot->impact_spot};
         if (!shot->travel_spot) return 1;
-        for (int i = 0; i < 3; i++)
-            if (spot_ids[i] && (!spotanim_find(spots, (int)spot_ids[i]) ||
-                !model_find(projectiles, PROJ_SPOTANIM_MODEL_BASE + spot_ids[i])))
-                return 1;
+        char missing[256] = "";
+        for (int i = 0; i < (int)(sizeof(sequences) / sizeof(sequences[0])); i++) {
+            if (anim_get_sequence(cache, sequences[i])) continue;
+            if (!preset->autocast) return 1;
+            snprintf(missing + strlen(missing), sizeof(missing) - strlen(missing),
+                     " sequence %d", sequences[i]);
+        }
+        for (int i = 0; i < 3; i++) {
+            if (!spot_ids[i] || (spotanim_find(spots, (int)spot_ids[i]) &&
+                model_find(projectiles, PROJ_SPOTANIM_MODEL_BASE + spot_ids[i]))) continue;
+            if (!preset->autocast) return 1;
+            snprintf(missing + strlen(missing), sizeof(missing) - strlen(missing),
+                     " spot %u", spot_ids[i]);
+        }
+        for (int i = 0; i < preset->equipment_count; i++) {
+            if (appearance_record(appearance, preset->equipment[i]) >= 0 ||
+                fc_item_definition(preset->equipment[i])->slot == FC_EQUIP_SLOT_AMMO ||
+                fc_item_definition(preset->equipment[i])->slot == FC_EQUIP_SLOT_RING)
+                continue;
+            if (!preset->autocast) return 1;
+            snprintf(missing + strlen(missing), sizeof(missing) - strlen(missing),
+                     " item %d", preset->equipment[i]);
+        }
+        if (missing[0]) printf("appearance preset %s lacks:%s\n", preset->name, missing);
         if (dir) {
-            int frames = anim_get_sequence(cache, profile->attack_anim)->frame_count;
+            const AnimSequence *attack = anim_get_sequence(cache, profile->attack_anim);
+            int frames = attack ? attack->frame_count : 0;
             char captions[4][64], path[512];
             snprintf(captions[0], sizeof(captions[0]), "%s: idle %d, front",
                      preset->name, profile->idle_anim);
@@ -1316,6 +1406,15 @@ static void scenario_config_test(void) {
     dict_set(&kwargs, "gear_sets", 5);
     expect_config_error(&kwargs, "gear_sets = 5: must be 1 or 2 or 3 or 4");
     dict_set(&kwargs, "gear_sets", FC_CAP_GEAR_SETS);
+    static const char *const books[] = {"none", "standard", "ancient"};
+    char wrong_book[96];
+    puf_ini_set(&kwargs, "spellbook", books[(FC_CAP_SPELLBOOK + 1) % 3]);
+    snprintf(wrong_book, sizeof(wrong_book), "spellbook = %s, but this build has spellbook = %s",
+             books[(FC_CAP_SPELLBOOK + 1) % 3], books[FC_CAP_SPELLBOOK]);
+    expect_config_error(&kwargs, wrong_book);
+    puf_ini_set(&kwargs, "spellbook", "2");
+    expect_config_error(&kwargs, "spellbook = 2: must be none or standard or ancient");
+    puf_ini_set(&kwargs, "spellbook", FC_CAP_SPELLBOOK == 2 ? "Ancient" : books[FC_CAP_SPELLBOOK]);
 
     /* Every gear set up to gear_sets names a preset, and no other is set. */
     Dict gear = {0};
@@ -1340,7 +1439,8 @@ static void scenario_config_test(void) {
     expect_config_error(&kwargs, "gear_set_1 = dragon_claws: no such gear preset; "
                         "the presets are tbow_masori rcb_black_dhide rcb_pure "
                         "msb_pure blowpipe_pure acb_armadyl bowfa_crystal "
-                        "tbow_masori_no_ring");
+                        "tbow_masori_no_ring smoke_staff_mystic "
+                        "kodai_virtus harmonised_ancestral");
     puf_ini_set(&kwargs, "gear_set_1", "tbow_masori");
     dict_set(&kwargs, "defence_level", 0);
     expect_config_error(&kwargs, "defence_level = 0: levels must be 1 to 99");
@@ -1647,10 +1747,12 @@ static void prayer_book_test(void) {
  * and the active prayers and their drain are observed. */
 static void prayer_book_adapter_test(void) {
     enum { PRAYER = 2 };
-    /* The book is the last policy head but for the gear set head. */
-    const int book = FC_PUFFER_NUM_ATNS - 1 - FC_GEAR_SWITCHING;
+    /* The book is the last policy head but for the gear set and autocast
+     * heads. */
+    const int book = FC_PUFFER_NUM_ATNS - 1 - FC_GEAR_SWITCHING - FC_SPELLBOOK_HEAD;
     const int book_mask = FC_PUFFER_MASK_SIZE - FC_PRAYER_BOOK_DIM -
-                          FC_GEAR_SWITCHING * FC_GEAR_SET_DIM;
+                          FC_GEAR_SWITCHING * FC_GEAR_SET_DIM -
+                          FC_SPELLBOOK_HEAD * FC_AUTOCAST_DIM;
     assert(FC_PUFFER_ACTION_HEADS[PRAYER] == FC_HEAD_PRAYER &&
            FC_PUFFER_ACTION_HEADS[book] == FC_HEAD_PRAYER_BOOK);
     Dict kwargs = {0};
@@ -1971,8 +2073,9 @@ static void gear_episode_test(void) {
 /* The gear_set head reaches the core through the policy actions; its mask
  * and the gear block are observed. */
 static void gear_adapter_test(void) {
-    const int head = FC_PUFFER_NUM_ATNS - 1;
-    const int mask = FC_PUFFER_MASK_SIZE - FC_GEAR_SET_DIM;
+    const int head = FC_PUFFER_NUM_ATNS - 1 - FC_SPELLBOOK_HEAD;
+    const int mask = FC_PUFFER_MASK_SIZE - FC_GEAR_SET_DIM -
+                     FC_SPELLBOOK_HEAD * FC_AUTOCAST_DIM;
     assert(FC_PUFFER_ACTION_HEADS[head] == FC_HEAD_GEAR_SET &&
            strcmp(FC_HEAD_NAMES[FC_HEAD_GEAR_SET], "gear_set") == 0 &&
            FC_PUFFER_ACTION_DIMS[head] == FC_CAP_GEAR_SETS + 1);
@@ -2012,6 +2115,686 @@ static void gear_adapter_test(void) {
     puts("gear sets: head, masks, worn set and weapons observed passed");
 }
 #endif
+
+/* Magic, against RuneC_v4: the definitions of data/defs/spells.bin (SPEL
+ * v2) and data/defs/items.bin, rc-core's spells.c, combat.c and
+ * combat_formula.c, rc-content/combat's magic.c and runes.c, and the expected
+ * values of tests/test_combat_phase5_formula_core.c (formula core) and
+ * tests/test_magic_runtime.c (magic runtime). */
+
+/* A cave without walls: the player at (20, 20) in scenario's gear set 1 and
+ * one NPC of npc_type at (x, y) that does not attack. */
+static void magic_fixture(FcState *s, const FcScenario *scenario, int npc_type,
+                          int x, int y) {
+    fc_init(s);
+    fc_reset(s, 101);
+    fc_apply_scenario(s, scenario);
+    memset(s->npcs, 0, sizeof(s->npcs));
+    memset(s->caps.npc_spells, 0, sizeof(s->caps.npc_spells));
+    memset(s->walkable, 1, sizeof(s->walkable));
+    memset(s->movement_flags, 0, sizeof(s->movement_flags));
+    memset(s->los_flags, 0, sizeof(s->los_flags));
+    s->player.x = 20;
+    s->player.y = 20;
+    fc_npc_spawn(&s->npcs[0], npc_type, x, y, 1);
+    s->npcs_remaining = 1;
+    s->npcs[0].attack_timer = 100000;
+}
+
+/* How many of a rune the inventory holds. */
+static int rune_total(const FcPlayer *p, int rune) {
+    int total = 0;
+    for (int i = 0; i < FC_INVENTORY_SLOTS; i++)
+        if (p->inventory[i].item_id == rune) total += p->inventory[i].quantity;
+    return total;
+}
+
+/* The runes one cast spends, the worn staff supplying its elements. */
+static int cast_cost(const FcPlayer *p, int spell, int rune) {
+    const FcItemDef *weapon = fc_item_definition(p->equipment[FC_EQUIP_SLOT_WEAPON].item_id);
+    for (int r = 0; r < FC_SPELLS[spell].rune_count; r++)
+        if (FC_SPELLS[spell].runes[r].id == rune)
+            return weapon && (weapon->staff_runes & fc_rune_element(rune))
+                ? 0 : FC_SPELLS[spell].runes[r].quantity;
+    return 0;
+}
+
+static void magic_definitions_test(void) {
+    /* spells.bin rows 29, 158, 27, 96, 117 and 3: book, level, max hit and
+     * runes in RuneC's order. */
+    const FcSpellDef *wind = &FC_SPELLS[FC_SPELL_WIND_STRIKE];
+    assert(wind->book == FC_SPELLBOOK_STANDARD && wind->level == 1 && wind->max_hit == 2 &&
+           wind->rune_count == 2 && wind->runes[0].id == FC_RUNE_AIR &&
+           wind->runes[0].quantity == 1 && wind->runes[1].id == FC_RUNE_MIND &&
+           wind->runes[1].quantity == 1);
+    const FcSpellDef *surge = &FC_SPELLS[FC_SPELL_WATER_SURGE];
+    assert(surge->level == 85 && surge->max_hit == 22 && surge->rune_count == 3 &&
+           surge->runes[0].id == FC_RUNE_AIR && surge->runes[0].quantity == 7 &&
+           surge->runes[1].id == FC_RUNE_WATER && surge->runes[1].quantity == 10 &&
+           surge->runes[2].id == FC_RUNE_WRATH && surge->runes[2].quantity == 1);
+    const FcSpellDef *smoke = &FC_SPELLS[FC_SPELL_SMOKE_RUSH];
+    assert(smoke->book == FC_SPELLBOOK_ANCIENT && smoke->level == 50 && smoke->max_hit == 13 &&
+           smoke->rune_count == 4 && smoke->runes[2].id == FC_RUNE_CHAOS &&
+           smoke->runes[2].quantity == 2 && smoke->runes[3].id == FC_RUNE_DEATH);
+    const FcSpellDef *shadow = &FC_SPELLS[FC_SPELL_SHADOW_BARRAGE];
+    assert(shadow->level == 88 && shadow->max_hit == 28 && shadow->runes[3].id == FC_RUNE_SOUL &&
+           shadow->runes[3].quantity == 3);
+    const FcSpellDef *blood = &FC_SPELLS[FC_SPELL_BLOOD_BLITZ];
+    assert(blood->level == 80 && blood->max_hit == 25 && blood->rune_count == 2 &&
+           blood->runes[0].id == FC_RUNE_BLOOD && blood->runes[0].quantity == 4);
+    const FcSpellDef *ice = &FC_SPELLS[FC_SPELL_ICE_BARRAGE];
+    assert(ice->level == 94 && ice->max_hit == 30 && ice->runes[0].id == FC_RUNE_WATER &&
+           ice->runes[0].quantity == 6 && ice->runes[2].id == FC_RUNE_DEATH &&
+           ice->runes[2].quantity == 4);
+    /* Each book in level order, and rc_content_magic_hit's effects by
+     * element (Smoke, Shadow, Blood, Ice) and tier (Rush .. Barrage). */
+    for (int spell = 0; spell < FC_SPELL_COUNT; spell++) {
+        const FcSpellDef *def = &FC_SPELLS[spell];
+        int ancient = spell >= FC_STANDARD_SPELL_COUNT;
+        int index = spell - (ancient ? FC_SPELL_SMOKE_RUSH : 0);
+        int tier = index / 4, element = index % 4;
+        assert(def->book == (ancient ? FC_SPELLBOOK_ANCIENT : FC_SPELLBOOK_STANDARD));
+        if (index > 0) assert(def->level > FC_SPELLS[spell - 1].level);
+        assert(def->freeze_ticks == (ancient && element == 3 ? 8 * (tier + 1) : 0));
+        assert(def->poison == (ancient && element == 0 ? (tier < 2 ? 2 : 4) : 0));
+        assert(def->drain_percent == (ancient && element == 1 ? (tier < 2 ? 10 : 15) : 0));
+        assert(def->heals == (ancient && element == 2));
+        /* The magic presets carry every rune either book uses. */
+        for (int r = 0; r < def->rune_count; r++) {
+            int carried = 0;
+            for (int k = 0; k < FC_PRESET_RUNE_COUNT; k++)
+                carried |= FC_PRESET_RUNES[k] == def->runes[r].id;
+            assert(carried);
+        }
+    }
+    assert(FC_STANDARD_SPELL_COUNT + FC_ANCIENT_SPELL_COUNT == FC_SPELL_COUNT);
+    /* rc_content_prepare_magic's elemental tables are the Standard spells'
+     * levels and max hits, so a spell hits as hard as the strongest of its
+     * tier the Magic level reaches. */
+    static const int levels[5][4] = {{1, 5, 9, 13}, {17, 23, 29, 35}, {41, 47, 53, 59},
+                                     {62, 65, 70, 75}, {81, 85, 90, 95}};
+    static const int hits[5][4] = {{2, 4, 6, 8}, {9, 10, 11, 12}, {13, 14, 15, 16},
+                                   {17, 18, 19, 20}, {21, 22, 23, 24}};
+    for (int tier = 0; tier < 5; tier++)
+        for (int j = 0; j < 4; j++)
+            assert(FC_SPELLS[tier * 4 + j].level == levels[tier][j] &&
+                   FC_SPELLS[tier * 4 + j].max_hit == hits[tier][j]);
+    assert(fc_spell_base_max_hit(FC_SPELL_WATER_BLAST, 47) == 14 &&
+           fc_spell_base_max_hit(FC_SPELL_WATER_BLAST, 59) == 16);
+    assert(fc_spell_base_max_hit(FC_SPELL_WATER_WAVE, 69) == 18 &&
+           fc_spell_base_max_hit(FC_SPELL_WATER_WAVE, 75) == 20);
+    assert(fc_spell_base_max_hit(FC_SPELL_WATER_SURGE, 94) == 23 &&
+           fc_spell_base_max_hit(FC_SPELL_WATER_SURGE, 99) == 24);
+    assert(fc_spell_base_max_hit(FC_SPELL_ICE_BARRAGE, 99) == 30);
+    puts("magic: spell definitions, effects and elemental scaling against RuneC passed");
+}
+
+static void magic_formula_test(void) {
+    /* Formula core test_magic_formula_uses_magic_prayer_damage_and_defence_blend:
+     * Magic 80 with Augury's 25% accuracy and 4% damage, +70 Magic attack and
+     * +10 Magic damage: (80 * 125 / 100 + 1 + 8) * (70 + 64) = 14606 and
+     * 20 + 20 * 14 / 100 = 22 from a max hit of 20; a Magic 70 NPC without a
+     * defence bonus rolls (70 + 9) * 64 = 5056. */
+    FcPrayerBonus augury = {.magic_attack = 25, .magic_damage = 4};
+    int roll, max_hit;
+    fc_magic_rolls(80, 70, 10, &augury, 20, &roll, &max_hit);
+    assert(roll == 14606 && max_hit == 22);
+    assert(fc_npc_roll(70, 0) == 5056);
+    /* The cave's NPCs roll their Magic level: Ket-Zek's 240. */
+    assert(fc_npc_roll(fc_npc_get_stats(NPC_KET_ZEK)->attack_level[ATTACK_MAGIC], 0) ==
+           249 * 64);
+    /* The presets' worn bonuses (items.bin) and their spell's rolls at their
+     * levels: smoke_staff_mystic's Water Blast at Magic 60 hits as Fire
+     * Blast's 16, kodai_virtus's Water Surge at 94 as Earth Surge's 23. */
+    static const struct {
+        const char *name;
+        int attack, damage, spell, roll, max_hit;
+    } presets[] = {
+        {"smoke_staff_mystic", 100, 2, FC_SPELL_WATER_BLAST, 69 * 164, 16},
+        {"kodai_virtus", 159, 37, FC_SPELL_WATER_SURGE, 103 * 223, 23 + 23 * 37 / 100},
+        {"harmonised_ancestral", 152, 38, FC_SPELL_WATER_SURGE, 108 * 216, 24 + 24 * 38 / 100},
+    };
+    FcState s;
+    for (int i = 0; i < (int)(sizeof(presets) / sizeof(presets[0])); i++) {
+        FcScenario scenario = magic_scenario(presets[i].name);
+        fc_init(&s);
+        fc_reset(&s, 101);
+        fc_apply_scenario(&s, &scenario);
+        int attack, damage;
+        fc_player_magic_bonuses(&s.player, &attack, &damage);
+        assert(attack == presets[i].attack && damage == presets[i].damage);
+        FcPrayerBonus none = {0};
+        fc_player_magic_rolls(&s.player, &none, presets[i].spell, &roll, &max_hit);
+        assert(roll == presets[i].roll && max_hit == presets[i].max_hit);
+    }
+#if FC_CAP_PRAYERS
+    /* The book prayers' magic percentages, the best active one's. */
+    s.caps.prayers = 1u << FC_BOOK_AUGURY;
+    FcPrayerBonus bonus = fc_prayer_bonus(&s);
+    assert(bonus.magic_attack == 25 && bonus.magic_damage == 4);
+    s.caps.prayers = 1u << FC_BOOK_MYSTIC_LORE;
+    bonus = fc_prayer_bonus(&s);
+    assert(bonus.magic_attack == 10 && bonus.magic_damage == 1);
+    fc_player_magic_rolls(&s.player, &bonus, FC_SPELL_WATER_SURGE, &roll, &max_hit);
+    assert(roll == (99 * 110 / 100 + 9) * 216 && max_hit == 24 + 24 * 39 / 100);
+#endif
+    puts("magic: accuracy and max hit against RuneC's formula core passed");
+}
+
+static void magic_rune_test(void) {
+    FcPlayer p = {0};
+    FcItemStack paid[FC_INVENTORY_SLOTS];
+    /* Magic runtime rune_sources: one mist rune cannot pay two air runes and
+     * a water rune; with an air rune too it pays, spending both. */
+    const FcSpellDef cost = {.rune_count = 2, .runes = {{FC_RUNE_AIR, 2}, {FC_RUNE_WATER, 1}}};
+    p.inventory[0] = (FcItemStack){FC_RUNE_MIST, 1, 0};
+    assert(!fc_spell_rune_plan(&p, &cost, paid));
+    p.inventory[1] = (FcItemStack){FC_RUNE_AIR, 1, 0};
+    assert(fc_spell_rune_plan(&p, &cost, paid));
+    assert(paid[0].item_id == 0 && paid[1].item_id == 0);
+    /* plan_payment spends a combination rune first for two elements at
+     * once: Water Surge from 5 mist, 2 air, 9 water and a wrath rune takes
+     * the 5 mist, the 2 air and 5 water. */
+    memset(p.inventory, 0, sizeof(p.inventory));
+    p.inventory[0] = (FcItemStack){FC_RUNE_MIST, 5, 0};
+    p.inventory[1] = (FcItemStack){FC_RUNE_AIR, 2, 0};
+    p.inventory[2] = (FcItemStack){FC_RUNE_WATER, 9, 0};
+    p.inventory[3] = (FcItemStack){FC_RUNE_WRATH, 1, 0};
+    assert(fc_spell_rune_plan(&p, &FC_SPELLS[FC_SPELL_WATER_SURGE], paid));
+    assert(!paid[0].item_id && !paid[1].item_id && paid[2].quantity == 4 && !paid[3].item_id);
+    /* Staves supply their elements (staff_elements): the Mystic smoke staff
+     * air and fire, so Water Blast takes 3 water and a death rune; the Kodai
+     * wand water, so Water Surge takes 7 air and a wrath rune; the
+     * Harmonised nightmare staff none. */
+    memset(p.inventory, 0, sizeof(p.inventory));
+    p.equipment[FC_EQUIP_SLOT_WEAPON] = (FcItemStack){12000, 1, 0};
+    p.inventory[0] = (FcItemStack){FC_RUNE_WATER, 3, 0};
+    p.inventory[1] = (FcItemStack){FC_RUNE_DEATH, 1, 0};
+    assert(fc_spell_rune_plan(&p, &FC_SPELLS[FC_SPELL_WATER_BLAST], paid));
+    assert(!paid[0].item_id && !paid[1].item_id);
+    p.inventory[0].quantity = 2;
+    assert(!fc_spell_rune_plan(&p, &FC_SPELLS[FC_SPELL_WATER_BLAST], paid));
+    p.equipment[FC_EQUIP_SLOT_WEAPON] = (FcItemStack){21006, 1, 0};
+    p.inventory[0] = (FcItemStack){FC_RUNE_AIR, 7, 0};
+    p.inventory[1] = (FcItemStack){FC_RUNE_WRATH, 1, 0};
+    assert(fc_spell_rune_plan(&p, &FC_SPELLS[FC_SPELL_WATER_SURGE], paid));
+    p.equipment[FC_EQUIP_SLOT_WEAPON] = (FcItemStack){24423, 1, 0};
+    assert(!fc_spell_rune_plan(&p, &FC_SPELLS[FC_SPELL_WATER_SURGE], paid));
+    puts("magic: rune payment, combination runes and staff-supplied runes passed");
+}
+
+/* Autocasting through fc_step: the spell set at reset (or, with the Ancient
+ * book, by fc_spell_set_autocast), casts at range on the cast's speed, the
+ * hit's arrival, the runes paid, RuneC's launch rejections, and the presets
+ * that bash or punch. */
+static void magic_autocast_test(void) {
+    FcState s;
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+    actions[FC_HEAD_ATTACK] = 1;
+#if FC_CAP_SPELLBOOK == 2
+    /* kodai_virtus's Water Surge is the other book's, so it is not set; Ice
+     * Rush is. */
+    FcScenario scenario = magic_scenario("kodai_virtus");
+    const int spell = FC_SPELL_ICE_RUSH;
+    magic_fixture(&s, &scenario, NPC_TOK_XIL, 20, 28);
+    assert(s.caps.autocast == 0);
+    assert(fc_spell_check(&s, FC_SPELL_WATER_SURGE) == FC_CAST_WRONG_BOOK);
+    assert(fc_spell_set_autocast(&s, spell) == FC_CAST_OK);
+#else
+    FcScenario scenario = magic_scenario("smoke_staff_mystic");
+    const int spell = FC_SPELL_WATER_BLAST;
+    magic_fixture(&s, &scenario, NPC_TOK_XIL, 20, 28);
+    assert(fc_spell_check(&s, FC_SPELL_ICE_BARRAGE) == FC_CAST_WRONG_BOOK);
+#endif
+    assert(s.caps.autocast == spell + 1 && fc_player_cast_spell(&s) == spell);
+    for (int r = 0; r < FC_PRESET_RUNE_COUNT; r++) {
+        assert(s.player.inventory[r].item_id == FC_PRESET_RUNES[r]);
+        assert(s.player.inventory[r].quantity == FC_PRESET_RUNE_QUANTITY);
+    }
+    /* The Tok-Xil's footprint is 8 tiles away, its centre tile 9: the cast
+     * needs no approach, lands 2 + (9 + 1) / 3 = 5 ticks after it
+     * (rc_content_player_hit_delay), and the next comes 5 ticks later. */
+    fc_step(&s, actions);
+    FcRenderEvents cast = s.render_events;
+    assert(cast.player_attack_fired && cast.player_attack_style == ATTACK_MAGIC &&
+           cast.player_attack_spell == spell + 1);
+    assert(s.player.x == 20 && s.player.y == 20 && s.player.attack_timer == 5 - 1);
+    assert(cast.player_attack_hit_delay_ticks == 3 + (9 + 1) / 3);
+    const FcPendingHit *hit = &s.npcs[0].pending_hits[0];
+    assert(s.npcs[0].num_pending_hits == 1 && hit->attack_style == ATTACK_MAGIC &&
+           hit->prayer_drain == spell + 1);
+    for (int r = 0; r < FC_PRESET_RUNE_COUNT; r++) {
+        int rune = FC_PRESET_RUNES[r];
+        assert(rune_total(&s.player, rune) ==
+               FC_PRESET_RUNE_QUANTITY - cast_cost(&s.player, spell, rune));
+    }
+    int landed = 0, next_cast = 0;
+    FcPrayerBonus none = {0};
+    int roll, max_hit;
+    fc_player_magic_rolls(&s.player, &none, spell, &roll, &max_hit);
+    for (int t = 1; t <= 6; t++) {
+        fc_step(&s, actions);
+        for (int i = 0; i < s.render_events.hit_count; i++) {
+            const FcRenderHit *h = &s.render_events.hits[i];
+            if (h->target_entity_type != ENTITY_NPC || h->attack_style != ATTACK_MAGIC) continue;
+            assert(!landed && h->damage <= 10 * max_hit);
+            landed = t;
+        }
+        if (s.render_events.player_attack_fired && !next_cast) next_cast = t;
+    }
+    assert(landed == 5 && next_cast == 5);
+
+    /* Below the spell's Magic level RuneC's launch rejects the cast and
+     * keeps the spell; without its runes (magic runtime: "enough runes") it
+     * clears the spell, and the staff then bashes. */
+    FcState low = s;
+    low.player.attack_timer = 0;
+    low.player.magic_level = FC_SPELLS[spell].level - 1;
+    fc_step(&low, actions);
+    assert(!low.render_events.player_attack_fired && low.caps.autocast == spell + 1);
+    FcState dry = s;
+    dry.player.attack_timer = 0;
+    for (int i = 0; i < FC_INVENTORY_SLOTS; i++)
+        if (dry.player.inventory[i].item_id == FC_RUNE_DEATH)
+            dry.player.inventory[i] = (FcItemStack){0};
+    assert(fc_spell_check(&dry, spell) == FC_CAST_RUNES);
+    fc_step(&dry, actions);
+    assert(!dry.render_events.player_attack_fired && dry.caps.autocast == 0 &&
+           fc_player_cast_spell(&dry) == -1);
+    fc_npc_spawn(&dry.npcs[0], NPC_TZ_KIH, 21, 20, 2);
+    dry.npcs[0].attack_timer = 100000;
+    dry.player.attack_timer = 0;
+    fc_step(&dry, actions);
+    assert(dry.render_events.player_attack_fired &&
+           dry.render_events.player_attack_style == ATTACK_MELEE &&
+           dry.player.attack_timer == dry.player.weapon_speed - 1);
+
+    /* The Harmonised nightmare staff autocasts only Standard spells, every 4
+     * ticks (rc_content_prepare_magic; magic runtime). */
+    FcScenario harmonised = magic_scenario("harmonised_ancestral");
+    magic_fixture(&s, &harmonised, NPC_TOK_XIL, 20, 28);
+#if FC_CAP_SPELLBOOK == 2
+    assert(s.caps.autocast == 0 && fc_spell_check(&s, FC_SPELL_ICE_BARRAGE) == FC_CAST_WEAPON);
+#else
+    assert(s.caps.autocast == FC_SPELL_WATER_SURGE + 1);
+    fc_step(&s, actions);
+    assert(s.render_events.player_attack_spell == FC_SPELL_WATER_SURGE + 1 &&
+           s.player.attack_timer == 4 - 1);
+#endif
+    /* No staff: rc_player_weapon_can_autocast fails; dead: RC_SPELL_DEAD. */
+    fc_init(&s);
+    fc_reset(&s, 101);
+    s.player.magic_level = 99;
+    assert(fc_spell_check(&s, FC_BOOK_FIRST_SPELL) == FC_CAST_WEAPON);
+    s.player.current_hp = 0;
+    assert(fc_spell_check(&s, FC_BOOK_FIRST_SPELL) == FC_CAST_DEAD);
+    assert(fc_spell_check(&s, -1) == FC_CAST_INVALID);
+    puts("magic: autocast through fc_step, cast timing, runes spent and launch "
+         "rejections passed");
+}
+
+/* The landed effects (rc_content_magic_hit; magic runtime's 20-damage
+ * checks), and through fc_step a frozen NPC that stays put and poison that
+ * lands. */
+static void magic_effects_test(void) {
+    FcState s;
+    FcScenario scenario = magic_scenario("kodai_virtus");
+    magic_fixture(&s, &scenario, NPC_TOK_XIL, 20, 28);
+    FcNpcSpellEffects *effects = &s.caps.npc_spells[0];
+    /* Blood heals a quarter of the damage in whole HP, up to max HP. */
+    s.player.max_hp = 990;
+    s.player.current_hp = 500;
+    fc_spell_land(&s, 0, FC_SPELL_BLOOD_BARRAGE, 200);
+    assert(s.player.current_hp == 550);
+    fc_spell_land(&s, 0, FC_SPELL_BLOOD_RUSH, 70);
+    assert(s.player.current_hp == 560);
+    s.player.current_hp = 985;
+    fc_spell_land(&s, 0, FC_SPELL_BLOOD_BLITZ, 200);
+    assert(s.player.current_hp == 990);
+    fc_spell_land(&s, 0, FC_SPELL_WATER_SURGE, 200);
+    assert(s.player.current_hp == 990 && effects->frozen_until == 0 &&
+           effects->poison_damage == 0 && effects->attack_drain == 0);
+    /* Ice freezes for its ticks and leaves the NPC immune 5 more; while
+     * immune another Ice spell changes nothing. */
+    s.tick = 100;
+    fc_spell_land(&s, 0, FC_SPELL_ICE_BARRAGE, 10);
+    assert(effects->frozen_until == 132 && effects->freeze_immune_until == 137);
+    s.tick = 136;
+    fc_spell_land(&s, 0, FC_SPELL_ICE_RUSH, 10);
+    assert(effects->frozen_until == 132 && effects->freeze_immune_until == 137);
+    s.tick = 137;
+    fc_spell_land(&s, 0, FC_SPELL_ICE_RUSH, 10);
+    assert(effects->frozen_until == 145 && effects->freeze_immune_until == 150);
+    /* Smoke poisons with the larger damage, 30 ticks to the first hit. */
+    fc_spell_land(&s, 0, FC_SPELL_SMOKE_RUSH, 10);
+    assert(effects->poison_damage == 2 && effects->poison_timer == 30);
+    fc_spell_land(&s, 0, FC_SPELL_SMOKE_BARRAGE, 10);
+    effects->poison_timer = 5;
+    fc_spell_land(&s, 0, FC_SPELL_SMOKE_RUSH, 10);
+    assert(effects->poison_damage == 4 && effects->poison_timer == 30);
+    /* Shadow lowers Attack to (100 - percent)%: Tok-Xil's 80 to 68 with
+     * Barrage, which Rush's 72 leaves; its melee attack rolls with it. */
+    fc_spell_land(&s, 0, FC_SPELL_SHADOW_RUSH, 10);
+    assert(effects->attack_drain == 8);
+    fc_spell_land(&s, 0, FC_SPELL_SHADOW_BARRAGE, 10);
+    fc_spell_land(&s, 0, FC_SPELL_SHADOW_RUSH, 10);
+    assert(effects->attack_drain == 12);
+    assert(fc_npc_attack_level(&s, 0, ATTACK_MELEE) == 68 &&
+           fc_npc_attack_level(&s, 0, ATTACK_RANGED) == 120);
+    /* A new NPC in the slot has none of it. */
+    s.npcs[0].active = 0;
+    assert(fc_spawn_npc_first_free(&s, NPC_TZ_KIH, 10, 10) == 0);
+    FcNpcSpellEffects clear = {0};
+    assert(memcmp(effects, &clear, sizeof(clear)) == 0);
+
+    /* Through the hit: a splash leaves no effect; a hit freezes Tz-Kih, which
+     * walks no further until the freeze ends 32 ticks after it lands. */
+    int idle[FC_NUM_ACTION_HEADS] = {0};
+    magic_fixture(&s, &scenario, NPC_TZ_KIH, 20, 32);
+    FcNpc *npc = &s.npcs[0];
+    fc_queue_pending_hit(npc->pending_hits, &npc->num_pending_hits, FC_MAX_PENDING_HITS,
+                         0, 1, ATTACK_MAGIC, -1, FC_SPELL_ICE_BARRAGE + 1);
+    fc_step(&s, idle);
+    assert(effects->frozen_until == 0 && npc->y == 31);
+    int landed = s.tick;
+    fc_queue_pending_hit(npc->pending_hits, &npc->num_pending_hits, FC_MAX_PENDING_HITS,
+                         10, 1, ATTACK_MAGIC, -1, FC_SPELL_ICE_BARRAGE + 1);
+    fc_step(&s, idle);
+    assert(effects->frozen_until == landed + 32 && npc->y == 30);
+    for (int t = 0; t < 31; t++) fc_step(&s, idle);
+    assert(npc->y == 30);
+    fc_step(&s, idle);
+    assert(npc->y == 29);
+    /* Poison: the first hit 31 ticks after the spell lands, then one less
+     * every 31 ticks; it is the NPC's status, not a player hit. */
+    magic_fixture(&s, &scenario, NPC_TOK_XIL, 20, 28);
+    npc = &s.npcs[0];
+    fc_queue_pending_hit(npc->pending_hits, &npc->num_pending_hits, FC_MAX_PENDING_HITS,
+                         10, 1, ATTACK_MAGIC, -1, FC_SPELL_SMOKE_BARRAGE + 1);
+    fc_step(&s, idle);
+    int hp = npc->current_hp;
+    assert(effects->poison_damage == 4 && hp == npc->max_hp - 10);
+    for (int damage = 4; damage > 0; damage--) {
+        for (int t = 0; t < 30; t++) fc_step(&s, idle);
+        assert(npc->current_hp == hp);
+        fc_step(&s, idle);
+        hp -= damage * 10;
+        assert(npc->current_hp == hp && s.hits_landed_this_tick == 0);
+        assert(s.render_events.hit_count == 1 &&
+               s.render_events.hits[0].attack_style == ATTACK_NONE);
+    }
+    assert(effects->poison_damage == 0);
+    for (int t = 0; t < 40; t++) fc_step(&s, idle);
+    assert(npc->current_hp == hp);
+    puts("magic: freeze, poison, drain and heal as RuneC lands them passed");
+}
+
+/* Each magic preset at its levels attacks the nearest NPC for a few hundred
+ * ticks and lands hits: casting its spell when it can (with the Ancient
+ * book the Kodai wand's Ice Barrage), spending its runes, or else bashing or
+ * punching. */
+static void magic_preset_episodes(void) {
+    for (int i = 0; i < MAGIC_PRESET_COUNT; i++) {
+        FcScenario scenario = magic_scenario(MAGIC_LEVELS[i].name);
+        FcState s;
+        fc_init(&s);
+        fc_reset(&s, 101);
+        fc_apply_scenario(&s, &scenario);
+#if FC_CAP_SPELLBOOK == 2
+        fc_spell_set_autocast(&s, FC_SPELL_ICE_BARRAGE);
+#endif
+        int spell = fc_player_cast_spell(&s);
+        int actions[FC_NUM_ACTION_HEADS] = {0};
+        actions[FC_HEAD_ATTACK] = 1;
+        int attacks = 0, casts = 0, hits = 0, ticks = 0;
+        for (; ticks < 300 && !fc_is_terminal(&s); ticks++) {
+            fc_step(&s, actions);
+            attacks += s.render_events.player_attack_fired;
+            casts += s.render_events.player_attack_spell > 0;
+            hits += s.hits_landed_this_tick;
+        }
+        assert(hits > 0 && attacks > 0);
+        if (spell >= 0) {
+            assert(casts == attacks);
+            for (int r = 0; r < FC_PRESET_RUNE_COUNT; r++)
+                assert(rune_total(&s.player, FC_PRESET_RUNES[r]) == FC_PRESET_RUNE_QUANTITY -
+                       casts * cast_cost(&s.player, spell, FC_PRESET_RUNES[r]));
+        } else {
+            assert(casts == 0);
+        }
+        printf("magic preset %s: autocasts %s, %d casts of %d attacks, %d hits in %d ticks\n",
+               MAGIC_LEVELS[i].name, spell >= 0 ? FC_SPELLS[spell].name : "nothing",
+               casts, attacks, hits, ticks);
+    }
+}
+
+#if FC_GEAR_SWITCHING
+/* Switching between ranged and magic sets: tbow_masori worn, then
+ * kodai_virtus, acb_armadyl and tbow_masori_no_ring as far as gear_sets
+ * goes. */
+static const char *const MAGIC_LINEUP[FC_MAX_GEAR_SETS] =
+    {"tbow_masori", "kodai_virtus", "acb_armadyl", "tbow_masori_no_ring"};
+
+static void magic_gear_switch_test(void) {
+    FcScenario scenario = fc_default_scenario();
+    for (int k = 0; k < FC_CAP_GEAR_SETS; k++)
+        scenario.gear_set[k] = fc_gear_preset_find(MAGIC_LINEUP[k]);
+    const int levels[FC_SKILL_COUNT] = {1, 1, 99, 99, 94, 99, 99};
+    memcpy(scenario.levels, levels, sizeof(levels));
+    char err[256], expected[192];
+    /* kodai_virtus's 11 items, acb_armadyl's 7 and the 10 runes must fit
+     * beside the supplies. */
+    FcItemStack items[FC_MAX_SWITCH_ITEMS];
+    int switch_items = fc_gear_switch_items(&scenario, items);
+    assert(switch_items == (FC_CAP_GEAR_SETS >= 3 ? 18 : 11));
+    scenario.sharks = FC_INVENTORY_SLOTS - switch_items - FC_PRESET_RUNE_COUNT;
+    assert(fc_scenario_check(&scenario, err, sizeof(err)) == 0);
+    scenario.sharks++;
+    assert(fc_scenario_check(&scenario, err, sizeof(err)) != 0);
+    snprintf(expected, sizeof(expected), "gear sets 2-%d put %d items in the inventory, the "
+             "magic sets carry 10 rune stacks and the supplies take %d slots: %d is more "
+             "than its 28", FC_CAP_GEAR_SETS, switch_items, scenario.sharks,
+             switch_items + 10 + scenario.sharks);
+    assert(strcmp(err, expected) == 0);
+    scenario.sharks = 0;
+
+    FcState s, again;
+    gear_fixture(&s, &scenario);
+    for (int i = 0; i < FC_INVENTORY_SLOTS; i++) {
+        int rune = i - switch_items;
+        assert(s.player.inventory[i].item_id ==
+               (i < switch_items ? items[i].item_id
+                : rune < FC_PRESET_RUNE_COUNT ? FC_PRESET_RUNES[rune] : 0));
+    }
+    assert(s.caps.autocast == 0 && wears_preset(&s.player, "tbow_masori"));
+    /* The gear block: the bow shoots, the Kodai wand casts 10 tiles every 5
+     * ticks. */
+    float obs[FC_POLICY_OBS_SIZE];
+    fc_write_obs(&s, obs);
+    const float *kodai = obs + FC_OBS_GEAR_START + FC_OBS_GEAR_WEAPONS + FC_OBS_GEAR_STRIDE;
+    assert(obs[FC_OBS_GEAR_START + FC_OBS_GEAR_WEAPONS + FC_OBS_GEAR_RANGED] == 1.0f);
+    assert(kodai[FC_OBS_GEAR_MAGIC] == 1.0f && kodai[FC_OBS_GEAR_RANGE] == 1.0f &&
+           kodai[FC_OBS_GEAR_SPEED] == 0.5f);
+
+    memset(s.npcs, 0, sizeof(s.npcs));
+    memset(s.walkable, 1, sizeof(s.walkable));
+    memset(s.movement_flags, 0, sizeof(s.movement_flags));
+    memset(s.los_flags, 0, sizeof(s.los_flags));
+    s.player.x = 20;
+    s.player.y = 20;
+    fc_npc_spawn(&s.npcs[0], NPC_TOK_XIL, 20, 28, 1);
+    s.npcs_remaining = 1;
+    s.npcs[0].attack_timer = 100000;
+    s.npcs[0].current_hp = s.npcs[0].max_hp = 100000;
+    again = s;
+    /* The switch wields the Kodai wand and sets kodai_virtus's Water Surge,
+     * which the attack in the same tick casts. With the Ancient book Water
+     * Surge cannot be set, and the autocast head's Ice Barrage is. */
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+    actions[FC_HEAD_ATTACK] = 1;
+    actions[FC_HEAD_GEAR_SET] = 2;
+#if FC_SPELLBOOK_HEAD
+    if (FC_PLAYER_SPELLBOOK == FC_SPELLBOOK_ANCIENT)
+        actions[FC_HEAD_AUTOCAST] = FC_SPELL_ICE_BARRAGE - FC_BOOK_FIRST_SPELL + 1;
+#endif
+    const int spell = FC_PLAYER_SPELLBOOK == FC_SPELLBOOK_ANCIENT
+        ? FC_SPELL_ICE_BARRAGE : FC_SPELL_WATER_SURGE;
+    fc_step(&s, actions);
+    assert(s.caps.gear_set == 1 && wears_preset(&s.player, "kodai_virtus"));
+    assert(s.caps.autocast == spell + 1 && s.render_events.player_attack_spell == spell + 1);
+    /* Back to the bow: the spell stays set, the bow shoots arrows. */
+    actions[FC_HEAD_GEAR_SET] = 1;
+#if FC_SPELLBOOK_HEAD
+    actions[FC_HEAD_AUTOCAST] = FC_AUTOCAST_KEEP;
+#endif
+    s.player.attack_timer = 0;
+    fc_step(&s, actions);
+    assert(s.caps.gear_set == 0 && s.caps.autocast == spell + 1 &&
+           fc_player_cast_spell(&s) == -1);
+    assert(s.render_events.player_attack_style == ATTACK_RANGED &&
+           item_total(&s.player, 11212) == 49999);
+
+    /* An episode switching every 25 ticks: both sets attack, the Kodai wand
+     * casting, deterministically. */
+    s = again;
+    int attacks[2] = {0}, casts = 0;
+    for (int tick = 0; tick < 400; tick++) {
+        int set = tick / 25 % 2;
+        actions[FC_HEAD_GEAR_SET] = s.caps.gear_set != set ? set + 1 : FC_GEAR_SET_NO_CHANGE;
+#if FC_SPELLBOOK_HEAD
+        actions[FC_HEAD_AUTOCAST] = tick == 25 && FC_PLAYER_SPELLBOOK == FC_SPELLBOOK_ANCIENT
+            ? FC_SPELL_ICE_BARRAGE - FC_BOOK_FIRST_SPELL + 1 : FC_AUTOCAST_KEEP;
+#endif
+        fc_step(&s, actions);
+        fc_step(&again, actions);
+        assert(fc_state_hash(&s) == fc_state_hash(&again));
+        attacks[set] += s.render_events.player_attack_fired;
+        casts += s.render_events.player_attack_spell == spell + 1;
+    }
+    assert(attacks[0] > 0 && attacks[1] > 0 && casts == attacks[1]);
+    assert(item_total(&s.player, 11212) == 50000 - attacks[0]);
+    for (int r = 0; r < FC_PRESET_RUNE_COUNT; r++)
+        assert(rune_total(&s.player, FC_PRESET_RUNES[r]) == FC_PRESET_RUNE_QUANTITY -
+               casts * cast_cost(&s.player, spell, FC_PRESET_RUNES[r]));
+    printf("magic gear sets: %d arrows with tbow_masori and %d casts of %s with "
+           "kodai_virtus in 400 ticks passed\n", attacks[0], casts, FC_SPELLS[spell].name);
+}
+#endif
+
+#if FC_SPELLBOOK_HEAD
+/* The autocast head reaches the core through the policy actions; its mask
+ * and the spellbook block are observed. */
+static void spellbook_adapter_test(void) {
+    const int head = FC_PUFFER_NUM_ATNS - 1;
+    const int mask = FC_PUFFER_MASK_SIZE - FC_AUTOCAST_DIM;
+    assert(FC_PUFFER_ACTION_HEADS[head] == FC_HEAD_AUTOCAST &&
+           strcmp(FC_HEAD_NAMES[FC_HEAD_AUTOCAST], "autocast") == 0 &&
+           FC_PUFFER_ACTION_DIMS[head] == FC_AUTOCAST_DIM);
+    Dict kwargs = {0};
+    puf_ini_set(&kwargs, "gear_set_1", "kodai_virtus");
+    other_gear_sets(&kwargs, "kodai_virtus");
+    dict_set(&kwargs, "magic_level", 80);
+    dict_set(&kwargs, "hitpoints_level", 90);
+    FightCaves* env = test_env(&kwargs);
+    Agent* a = &env->agents[0];
+    FcPlayer* p = &env->state.player;
+    const float* obs = a->observations + FC_OBS_SPELL_START;
+    /* At Magic 80 the book's spells above it are masked; kodai_virtus's
+     * Water Surge needs 85 (and with the Ancient book is the other book's),
+     * so nothing is autocast. */
+    assert(env->state.caps.autocast == 0);
+    assert(a->action_mask[mask + FC_AUTOCAST_KEEP] == 1);
+    for (int v = 1; v < FC_AUTOCAST_DIM; v++)
+        assert(a->action_mask[mask + v] == (FC_SPELLS[FC_BOOK_FIRST_SPELL + v - 1].level <= 80));
+    for (int i = 0; i < FC_OBS_SPELL_SIZE; i++) assert(obs[i] == 0.0f);
+    /* Autocast the book's first spell: it is observed. */
+    a->actions[head] = 1;
+    checked_step(env);
+    assert(env->state.caps.autocast == FC_BOOK_FIRST_SPELL + 1);
+    for (int k = 0; k < FC_BOOK_SPELL_COUNT; k++)
+        assert(obs[FC_OBS_SPELL_AUTOCAST + k] == (k == 0 ? 1.0f : 0.0f));
+    /* Without death runes the spells that need them are masked. */
+    a->actions[head] = FC_AUTOCAST_KEEP;
+    for (int i = 0; i < FC_INVENTORY_SLOTS; i++)
+        if (p->inventory[i].item_id == FC_RUNE_DEATH) p->inventory[i] = (FcItemStack){0};
+    fc_puffer_write_obs(env);
+    check_obs(env);
+    for (int v = 1; v < FC_AUTOCAST_DIM; v++) {
+        int spell = FC_BOOK_FIRST_SPELL + v - 1;
+        assert(a->action_mask[mask + v] ==
+               (FC_SPELLS[spell].level <= 80 && !cast_cost(p, spell, FC_RUNE_DEATH)));
+    }
+#if FC_CAP_SPELLBOOK == 2
+    /* Each visible NPC slot's spell effects. */
+    int visible[FC_VISIBLE_NPCS];
+    assert(fc_visible_npc_indices(&env->state, visible) > 0);
+    int attack = fc_npc_get_stats(env->state.npcs[visible[0]].npc_type)
+                     ->attack_level[ATTACK_MELEE];
+    env->state.caps.npc_spells[visible[0]] = (FcNpcSpellEffects){
+        env->state.tick + 16, env->state.tick + 21, 2, 30, attack / 10};
+    fc_puffer_write_obs(env);
+    check_obs(env);
+    const float* effects = obs + FC_OBS_SPELL_EFFECTS;
+    assert(effects[FC_OBS_SPELL_FROZEN] == 0.5f &&
+           effects[FC_OBS_SPELL_FREEZE_IMMUNE] == 21.0f / 37.0f &&
+           effects[FC_OBS_SPELL_POISON] == 0.5f &&
+           effects[FC_OBS_SPELL_DRAIN] == (float)(attack / 10) / (float)attack);
+    for (int i = FC_OBS_SPELL_STRIDE; i < FC_OBS_SPELL_STRIDE * FC_OBS_NPC_SLOTS; i++)
+        assert(effects[i] == 0.0f);
+#endif
+    /* Without the wand nothing can be autocast. */
+    assert(fc_unequip_item(&env->state, FC_EQUIP_SLOT_WEAPON) == FC_ITEM_OK);
+    fc_puffer_write_obs(env);
+    check_obs(env);
+    for (int v = 0; v < FC_AUTOCAST_DIM; v++)
+        assert(a->action_mask[mask + v] == (v == FC_AUTOCAST_KEEP));
+    checked_step(env);
+    test_free(env);
+    dict_clear(&kwargs);
+    puts("spellbook: autocast head, masks, autocast spell and effects observed passed");
+}
+#endif
+
+/* The magic presets' requirement and inventory errors. */
+static void magic_config_test(void) {
+    Dict kwargs = {0};
+    puf_ini_set(&kwargs, "gear_set_1", "kodai_virtus");
+    other_gear_sets(&kwargs, "kodai_virtus");
+    dict_set(&kwargs, "magic_level", 74);
+    expect_config_error(&kwargs, "gear_set_1 = kodai_virtus: Kodai wand needs 75 magic, "
+                        "but magic_level = 74");
+    puf_ini_set(&kwargs, "gear_set_1", "smoke_staff_mystic");
+    other_gear_sets(&kwargs, "smoke_staff_mystic");
+    dict_set(&kwargs, "magic_level", 60);
+    dict_set(&kwargs, "attack_level", 39);
+    expect_config_error(&kwargs, "gear_set_1 = smoke_staff_mystic: Mystic smoke staff "
+                        "needs 40 attack, but attack_level = 39");
+    dict_set(&kwargs, "attack_level", 40);
+    /* The 10 rune stacks and the supplies share the inventory. */
+    char expected[160];
+    dict_set(&kwargs, "initial_sharks", 19);
+    if (FC_CAP_GEAR_SETS == 1)
+        snprintf(expected, sizeof(expected), "gear_set_1 = smoke_staff_mystic carries 10 "
+                 "rune stacks and the supplies take 19 slots: 29 is more than its 28");
+    else
+        snprintf(expected, sizeof(expected), "gear sets 2-%d put 0 items in the inventory, "
+                 "the magic sets carry 10 rune stacks and the supplies take 19 slots: 29 "
+                 "is more than its 28", FC_CAP_GEAR_SETS);
+    expect_config_error(&kwargs, expected);
+    dict_set(&kwargs, "initial_sharks", 18);
+    FightCaves* env = test_env(&kwargs);
+    const FcPlayer* p = &env->state.player;
+    assert(env->state.active_loadout == FC_LOADOUT_SMOKE_STAFF_MYSTIC);
+    for (int i = 0; i < FC_INVENTORY_SLOTS; i++)
+        assert(p->inventory[i].item_id == (i < FC_PRESET_RUNE_COUNT
+               ? FC_PRESET_RUNES[i] : FC_ITEM_ID_SHARK));
+    assert(env->state.caps.autocast == (FC_PLAYER_SPELLBOOK == FC_SPELLBOOK_STANDARD
+                                        ? FC_SPELL_WATER_BLAST + 1 : 0));
+    check_obs(env);
+    test_free(env);
+    dict_clear(&kwargs);
+    puts("magic config: Magic and Attack requirements and the runes' inventory passed");
+}
 
 #if FC_CAP_CONSUMABLES
 /* The eat and drink heads reach the core through the policy actions, and
@@ -2061,19 +2844,26 @@ static int adapter_test(int graphical) {
 #if FC_GEAR_SWITCHING
     gear_adapter_test();
 #endif
+#if FC_SPELLBOOK_HEAD
+    spellbook_adapter_test();
+#endif
+    magic_config_test();
     terminal_and_log_test();
     /* The shipped INI with this build's capabilities, as on the command line.
      * Puffer's overrides replace only keys the INI has, so gear sets past the
      * first, which a gear_sets build needs, go into the section; the trace
      * never switches. */
     char consumables[] = "--env.consumables=1", prayers[] = "--env.prayers=all";
-    char gear_sets[32];
+    char gear_sets[32], spellbook[32];
     snprintf(gear_sets, sizeof(gear_sets), "--env.gear_sets=%d", FC_CAP_GEAR_SETS);
-    char* overrides[3] = {0};
+    snprintf(spellbook, sizeof(spellbook), "--env.spellbook=%s",
+             FC_CAP_SPELLBOOK == 2 ? "ancient" : "standard");
+    char* overrides[4] = {0};
     int override_count = 0;
     if (FC_CAP_CONSUMABLES) overrides[override_count++] = consumables;
     if (FC_CAP_PRAYERS) overrides[override_count++] = prayers;
     if (FC_GEAR_SWITCHING) overrides[override_count++] = gear_sets;
+    if (FC_SPELLBOOK_HEAD) overrides[override_count++] = spellbook;
     Ini ini = {0};
     puf_ini_load_env(&ini, "fight_caves", override_count, overrides);
     Dict* kwargs = puf_ini_section(&ini, "env", 0);
@@ -2210,7 +3000,14 @@ int main(int argc, char** argv) {
 #if FC_GEAR_SWITCHING
     gear_switch_test();
     gear_episode_test();
+    magic_gear_switch_test();
 #endif
+    magic_definitions_test();
+    magic_formula_test();
+    magic_rune_test();
+    magic_autocast_test();
+    magic_effects_test();
+    magic_preset_episodes();
     if (core_contract_test() || equipment_test() || episode_analytics_test() ||
         context_menu_test() || click_feedback_test() || model_picking_test() ||
         adapter_test(graphical)) return 1;

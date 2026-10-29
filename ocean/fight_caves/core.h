@@ -17,7 +17,8 @@
  */
 
 /* Gear preset ids, stored in the hashed FcState.active_loadout, so the values
- * are fixed; 2 was a duplicate of rcb_pure. */
+ * are fixed; 2 was a duplicate of rcb_pure, and 10 (Twinflame staff) waits for
+ * RuneC's data for that staff. */
 typedef enum {
     FC_LOADOUT_RCB_BLACK_DHIDE = 0,
     FC_LOADOUT_SOTA_TBOW = 1,
@@ -26,7 +27,10 @@ typedef enum {
     FC_LOADOUT_BLOWPIPE_PURE = 5,
     FC_LOADOUT_ACB_ARMADYL = 6,
     FC_LOADOUT_BOWFA_CRYSTAL = 7,
-    FC_LOADOUT_TBOW_MASORI_NO_RING = 8
+    FC_LOADOUT_TBOW_MASORI_NO_RING = 8,
+    FC_LOADOUT_SMOKE_STAFF_MYSTIC = 9,
+    FC_LOADOUT_KODAI_VIRTUS = 11,
+    FC_LOADOUT_HARMONISED_ANCESTRAL = 12
 } FcLoadoutId;
 
 #define FC_LOADOUT_EQUIP_MAX 12
@@ -71,6 +75,9 @@ typedef struct {
     int ammo;                   /* worn ammunition, or darts in a blowpipe */
     int equipment_count;
     int equipment[FC_LOADOUT_EQUIP_MAX];
+    int autocast;               /* FcSpell + 1 it autocasts once worn, or 0 */
+    int runes;                  /* how many of each FC_PRESET_RUNES rune it
+                                 * carries in the inventory, or 0 */
 } FcGearPreset;
 
 typedef enum {
@@ -91,13 +98,45 @@ typedef struct {
     int sharks, prayer_doses;
 } FcScenario;
 
-/* Stored in the hashed FcPlayer.weapon_kind, so the values are fixed. */
+/* Stored in the hashed FcPlayer.weapon_kind, so the values are fixed. A staff
+ * is RuneC's autocasting weapon type (22, staves and wands): it casts its
+ * autocast spell, and bashes in melee without one. */
 typedef enum {
     FC_WEAPON_GENERIC_RANGED = 0,
     FC_WEAPON_TWISTED_BOW = 1,
     FC_WEAPON_BOW_OF_FAERDHINEN = 2,
-    FC_WEAPON_UNARMED = 3
+    FC_WEAPON_UNARMED = 3,
+    FC_WEAPON_STAFF = 4
 } FcWeaponKind;
+
+/* The spellbooks whose combat spells the player can cast. */
+typedef enum {
+    FC_SPELLBOOK_STANDARD = 0,
+    FC_SPELLBOOK_ANCIENT = 1
+} FcSpellbook;
+
+/* The combat spells a staff can autocast, by book in spellbook order (by
+ * Magic level): each Standard tier Wind, Water, Earth and Fire, each Ancient
+ * tier Smoke, Shadow, Blood and Ice. The spellbook capability's head and
+ * observation number a book's spells in this order. */
+typedef enum {
+    FC_SPELL_WIND_STRIKE, FC_SPELL_WATER_STRIKE, FC_SPELL_EARTH_STRIKE,
+    FC_SPELL_FIRE_STRIKE, FC_SPELL_WIND_BOLT, FC_SPELL_WATER_BOLT,
+    FC_SPELL_EARTH_BOLT, FC_SPELL_FIRE_BOLT, FC_SPELL_WIND_BLAST,
+    FC_SPELL_WATER_BLAST, FC_SPELL_EARTH_BLAST, FC_SPELL_FIRE_BLAST,
+    FC_SPELL_WIND_WAVE, FC_SPELL_WATER_WAVE, FC_SPELL_EARTH_WAVE,
+    FC_SPELL_FIRE_WAVE, FC_SPELL_WIND_SURGE, FC_SPELL_WATER_SURGE,
+    FC_SPELL_EARTH_SURGE, FC_SPELL_FIRE_SURGE,
+    FC_SPELL_SMOKE_RUSH, FC_SPELL_SHADOW_RUSH, FC_SPELL_BLOOD_RUSH,
+    FC_SPELL_ICE_RUSH, FC_SPELL_SMOKE_BURST, FC_SPELL_SHADOW_BURST,
+    FC_SPELL_BLOOD_BURST, FC_SPELL_ICE_BURST, FC_SPELL_SMOKE_BLITZ,
+    FC_SPELL_SHADOW_BLITZ, FC_SPELL_BLOOD_BLITZ, FC_SPELL_ICE_BLITZ,
+    FC_SPELL_SMOKE_BARRAGE, FC_SPELL_SHADOW_BARRAGE, FC_SPELL_BLOOD_BARRAGE,
+    FC_SPELL_ICE_BARRAGE,
+    FC_SPELL_COUNT
+} FcSpell;
+#define FC_STANDARD_SPELL_COUNT 20   /* FC_SPELL_WIND_STRIKE .. FC_SPELL_FIRE_SURGE */
+#define FC_ANCIENT_SPELL_COUNT  16   /* FC_SPELL_SMOKE_RUSH .. FC_SPELL_ICE_BARRAGE */
 
 /* Types */
 
@@ -236,8 +275,8 @@ typedef enum {
  * Pending hit: a projectile in flight or a delayed melee hit. Attacks queue
  * one with a delay in ticks; pending hits resolve after the NPCs act, so a
  * delay of 1 lands on the attack tick. Melee uses 1; ranged and magic use the
- * projectile travel time from fc_ranged_hit_delay (player) or
- * fc_npc_hit_delay (NPCs).
+ * projectile travel time from fc_ranged_hit_delay or fc_spell_hit_delay
+ * (player) or fc_npc_hit_delay (NPCs).
  *
  * Prayer blocking is locked into the pending hit before impact:
  *   - normal Fight Caves NPCs snapshot prayer on the attack tick
@@ -251,7 +290,9 @@ typedef struct {
     int ticks_remaining;  /* ticks until hit resolves */
     int attack_style;     /* FcAttackStyle of the incoming hit */
     int source_npc_idx;   /* index into FcState.npcs[] of the attacker */
-    int prayer_drain;     /* base prayer drain in tenths (Tz-Kih adds final damage) */
+    int prayer_drain;     /* base prayer drain in tenths (Tz-Kih adds final damage);
+                           * the player's hits on an NPC drain none, and a
+                           * spell's holds its FcSpell + 1 instead */
     int prayer_snapshot;  /* prayer locked for this hit; -1 = snapshot pending */
     int prayer_lock_tick; /* first tick on which prayer_snapshot should be filled */
 } FcPendingHit;
@@ -470,9 +511,12 @@ typedef struct {
      * player.prayer alone cannot show its off edge. */
     int prayer_flick_performed;
 
-    /* Player ranged attack, captured at its authoritative stationary launch
-     * tile before later phases can change target state or facing direction. */
+    /* Player attack, captured at its authoritative stationary launch tile
+     * before later phases can change target state or facing direction: its
+     * FcAttackStyle and, for a spell, its FcSpell + 1 (0 otherwise). */
     int player_attack_fired;
+    int player_attack_style;
+    int player_attack_spell;
     int player_attack_source_x;
     int player_attack_source_y;
     int player_attack_target_npc_slot;
@@ -500,15 +544,29 @@ typedef struct {
     int player_move_waypoint_y[FC_MAX_RENDER_MOVE_WAYPOINTS];
 } FcRenderEvents;
 
-/* State a capability adds; zero is the state without it. It comes after the
- * shipped fields, and fc_state_hash covers it only in builds with a
- * capability, so the default contract hash is the shipped one. */
+/* What landed spells leave on one NPC slot, as RuneC's RcNpc keeps it: tick
+ * numbers, whole Hitpoints and levels. */
+typedef struct {
+    int frozen_until;          /* it does not move before this tick */
+    int freeze_immune_until;   /* no freeze takes before this tick */
+    int poison_damage;         /* the next poison hit, 0 when not poisoned */
+    int poison_timer;          /* ticks before that hit */
+    int attack_drain;          /* Attack levels a Shadow spell drained */
+} FcNpcSpellEffects;
+
+/* State a capability or Magic adds; zero is the state without them. It comes
+ * after the shipped fields, and fc_state_hash covers it in builds with a
+ * capability and otherwise only once it is not zero (a magic gear preset's
+ * autocast spell and spell effects), so the default contract hash is the
+ * shipped one. */
 typedef struct {
     uint32_t prayers;   /* active book prayers, bit FcBookPrayer (prayers = all) */
     /* gear_sets > 1: the gear set worn, 0 for gear_set_1 (the last one
      * switched to), and each set's FcLoadoutId; sets past gear_sets stay 0. */
     int gear_set;
     int gear_set_loadouts[FC_MAX_GEAR_SETS];
+    int autocast;       /* the FcSpell + 1 the player autocasts, or 0 */
+    FcNpcSpellEffects npc_spells[FC_MAX_NPCS];   /* by NPC index */
 } FcCapabilityState;
 
 /* Top-level simulation state */
@@ -618,6 +676,9 @@ typedef struct {
 #ifndef FC_CAP_GEAR_SETS
 #define FC_CAP_GEAR_SETS 1     /* 1-4 gear sets; more than 1 adds the gear_set head */
 #endif
+#ifndef FC_CAP_SPELLBOOK
+#define FC_CAP_SPELLBOOK 0     /* 0 none, 1 standard, 2 ancient: the autocast head */
+#endif
 
 #if FC_CAP_CONSUMABLES != 0 && FC_CAP_CONSUMABLES != 1
 #error "FC_CAP_CONSUMABLES must be 0 or 1"
@@ -628,14 +689,31 @@ typedef struct {
 #if FC_CAP_GEAR_SETS < 1 || FC_CAP_GEAR_SETS > FC_MAX_GEAR_SETS
 #error "FC_CAP_GEAR_SETS must be 1 to 4"
 #endif
+#if FC_CAP_SPELLBOOK < 0 || FC_CAP_SPELLBOOK > 2
+#error "FC_CAP_SPELLBOOK must be 0 (none), 1 (standard) or 2 (ancient)"
+#endif
 
 /* 1 with gear_sets > 1: the gear_set head, its observation block and the
  * switch items in the inventory. */
 #define FC_GEAR_SWITCHING (FC_CAP_GEAR_SETS > 1)
 
+/* 1 with spellbook = standard or ancient: the autocast head and its
+ * observation block. Its book is the player's spellbook; without it the
+ * player has the Standard book, RuneC's at the start, which the magic gear
+ * presets' spells are from. The head numbers the book's spells from
+ * FC_BOOK_FIRST_SPELL. */
+#define FC_SPELLBOOK_HEAD (FC_CAP_SPELLBOOK > 0)
+#define FC_PLAYER_SPELLBOOK \
+    (FC_CAP_SPELLBOOK == 2 ? FC_SPELLBOOK_ANCIENT : FC_SPELLBOOK_STANDARD)
+#define FC_BOOK_SPELL_COUNT \
+    (FC_CAP_SPELLBOOK == 2 ? FC_ANCIENT_SPELL_COUNT : \
+     FC_CAP_SPELLBOOK == 1 ? FC_STANDARD_SPELL_COUNT : 0)
+#define FC_BOOK_FIRST_SPELL \
+    (FC_CAP_SPELLBOOK == 2 ? FC_SPELL_SMOKE_RUSH : FC_SPELL_WIND_STRIKE)
+
 /* 1 when every capability has its default, the shipped layout. */
 #define FC_DEFAULT_CAPABILITIES (FC_CAP_CONSUMABLES == 0 && FC_CAP_PRAYERS == 0 && \
-                                 FC_CAP_GEAR_SETS == 1)
+                                 FC_CAP_GEAR_SETS == 1 && FC_CAP_SPELLBOOK == 0)
 
 
 /* Contracts */
@@ -787,10 +865,13 @@ typedef struct {
 
 /* Gear sets (gear_sets > 1, 6 floats per set: 12, 18 or 24). First which
  * set is worn, then what each set's weapon gives: the attack style one-hot,
- * as launch_player_attack attacks (Ranged with a weapon, unarmed melee
- * without; no weapon here casts Magic), then its range and attack speed, as
- * recalculate_equipment sets them (1 and 4 unarmed). The player features
- * already hold the worn weapon's attack timer and the ammunition left. */
+ * as process_player_target attacks (Ranged with a ranged weapon, Magic with
+ * a staff that autocasts the player's spellbook, which casts once a spell of
+ * that book is autocast, melee with any other staff or none), then its range
+ * and attack speed: a cast's 10 tiles and speed (fc_spell_cast_speed), or
+ * the weapon's as recalculate_equipment sets them (1 and 4 unarmed). The
+ * player features already hold the worn weapon's attack timer and the
+ * ammunition left. */
 #define FC_OBS_GEAR_START       (FC_OBS_BOOK_START + FC_OBS_BOOK_SIZE)
 #define FC_OBS_GEAR_WORN        0   /* 0..N-1: 1 if gear set k + 1 is worn */
 #define FC_OBS_GEAR_WEAPONS     FC_CAP_GEAR_SETS  /* then one stride per set: */
@@ -803,27 +884,47 @@ typedef struct {
 #define FC_OBS_GEAR_SIZE        (FC_GEAR_SWITCHING * (1 + FC_OBS_GEAR_STRIDE) * \
                                  FC_CAP_GEAR_SETS)
 
+/* Spellbook (spellbook = standard, 20 floats, or ancient, 48 floats). First
+ * the autocast spell, one-hot over the autocast head's spells (all zero with
+ * none). Then, with the Ancient book, whose spells leave effects, four
+ * floats for each visible NPC slot, in the NPC features' slot order. The
+ * mask already says which spells can be autocast now. */
+#define FC_OBS_SPELL_START      (FC_OBS_GEAR_START + FC_OBS_GEAR_SIZE)
+#define FC_OBS_SPELL_AUTOCAST   0   /* 0..N-1: 1 if the book's spell k is autocast */
+#define FC_OBS_SPELL_EFFECTS    FC_BOOK_SPELL_COUNT  /* then one stride per slot: */
+#define FC_OBS_SPELL_STRIDE     4
+#define FC_OBS_SPELL_FROZEN     0   /*   ticks it stays frozen / 32, Ice Barrage's freeze */
+#define FC_OBS_SPELL_FREEZE_IMMUNE 1 /*  ticks until a freeze takes again / 37 */
+#define FC_OBS_SPELL_POISON     2   /*   poison damage / 4, Smoke Blitz and Barrage's */
+#define FC_OBS_SPELL_DRAIN      3   /*   Attack levels drained / its Attack level */
+#define FC_OBS_SPELL_SIZE       (FC_BOOK_SPELL_COUNT + (FC_CAP_SPELLBOOK == 2) * \
+                                 FC_OBS_SPELL_STRIDE * FC_OBS_NPC_SLOTS)
+
 /* --- Policy observation total --- */
 #define FC_POLICY_OBS_SIZE      (FC_OBS_PLAYER_SIZE + FC_OBS_NPC_TOTAL + \
                                  FC_OBS_META_SIZE + FC_OBS_SUPPLY_SIZE + \
-                                 FC_OBS_BOOK_SIZE + FC_OBS_GEAR_SIZE)  /* 286 by default */
+                                 FC_OBS_BOOK_SIZE + FC_OBS_GEAR_SIZE + \
+                                 FC_OBS_SPELL_SIZE)  /* 286 by default */
 
 /*
  * Action space: 7 canonical core heads, then the prayer book head with
- * prayers = all and the gear set head with gear_sets > 1, shared by headless
- * training, policy replay and the playable viewer. The viewer translates
- * human input into these heads: a clicked tile becomes heads 5 and 6, a
- * clicked NPC its head 1 slot. Equipment and inventory changes between
- * ticks use the item transactions (fc_equip_item and friends) instead.
+ * prayers = all, the gear set head with gear_sets > 1 and the autocast head
+ * with spellbook = standard or ancient, shared by headless training, policy
+ * replay and the playable viewer. The viewer translates human input into
+ * these heads: a clicked tile becomes heads 5 and 6, a clicked NPC its head 1
+ * slot. Equipment and inventory changes between ticks use the item
+ * transactions (fc_equip_item and friends) instead.
  */
 
-#define FC_NUM_ACTION_HEADS     (7 + FC_CAP_PRAYERS + FC_GEAR_SWITCHING)
+#define FC_NUM_ACTION_HEADS     (7 + FC_CAP_PRAYERS + FC_GEAR_SWITCHING + \
+                                 FC_SPELLBOOK_HEAD)
 
 enum {
     FC_HEAD_MOVE, FC_HEAD_ATTACK, FC_HEAD_PRAYER, FC_HEAD_EAT, FC_HEAD_DRINK,
     FC_HEAD_TARGET_X, FC_HEAD_TARGET_Y,
     FC_HEAD_PRAYER_BOOK = 7,                    /* prayers = all only */
-    FC_HEAD_GEAR_SET = 7 + FC_CAP_PRAYERS       /* gear_sets > 1 only */
+    FC_HEAD_GEAR_SET = 7 + FC_CAP_PRAYERS,      /* gear_sets > 1 only */
+    FC_HEAD_AUTOCAST = 7 + FC_CAP_PRAYERS + FC_GEAR_SWITCHING  /* spellbook only */
 };
 
 /* Head 0: MOVE — directional tile movement (low-level) */
@@ -950,6 +1051,24 @@ typedef enum {
 #define FC_GEAR_SET_DIM         (1 + FC_CAP_GEAR_SETS)  /* 0=no change, 1-N=set */
 #define FC_GEAR_SET_NO_CHANGE   0
 
+/* The last head: AUTOCAST (spellbook = standard or ancient) — set the
+ * autocast spell */
+/*
+ *   0     = keep the autocast spell
+ *   1-N   = autocast the book's spell N - 1, FcSpell FC_BOOK_FIRST_SPELL + N - 1
+ *           (N = 20 Standard, 16 Ancient)
+ *
+ * The book's spells are those RuneC lets a staff autocast that a gear preset
+ * wields: the Standard elemental spells and every Ancient combat spell. A
+ * spell is masked unless RuneC's rc_player_set_autocast_spell would accept it
+ * now (fc_spell_check): the player is alive, the worn weapon autocasts the
+ * book, Magic is at the spell's level and the runes are there, a staff
+ * supplying its elements. It applies after a gear switch and before the
+ * attack, and leaves the attack target alone.
+ */
+#define FC_AUTOCAST_DIM         (1 + FC_BOOK_SPELL_COUNT)
+#define FC_AUTOCAST_KEEP        0
+
 /* Head dimensions; a capability's head is there only with it. */
 #if FC_CAP_PRAYERS
 #define FC_BOOK_ACT_SIZE        , FC_PRAYER_BOOK_DIM
@@ -961,8 +1080,13 @@ typedef enum {
 #else
 #define FC_GEAR_ACT_SIZE
 #endif
+#if FC_SPELLBOOK_HEAD
+#define FC_AUTOCAST_ACT_SIZE    , FC_AUTOCAST_DIM
+#else
+#define FC_AUTOCAST_ACT_SIZE
+#endif
 #define FC_ACT_SIZES { FC_MOVE_DIM, FC_ATTACK_DIM, FC_PRAYER_DIM, FC_EAT_DIM, FC_DRINK_DIM, FC_MOVE_TARGET_X_DIM, FC_MOVE_TARGET_Y_DIM \
-                       FC_BOOK_ACT_SIZE FC_GEAR_ACT_SIZE }
+                       FC_BOOK_ACT_SIZE FC_GEAR_ACT_SIZE FC_AUTOCAST_ACT_SIZE }
 
 /* Action head dimensions as a static array (for iteration in viewer/binding) */
 static const int FC_ACTION_DIMS[FC_NUM_ACTION_HEADS] = FC_ACT_SIZES;
@@ -974,6 +1098,9 @@ static const char* const FC_HEAD_NAMES[FC_NUM_ACTION_HEADS] = {
 #if FC_GEAR_SWITCHING
     "gear_set",
 #endif
+#if FC_SPELLBOOK_HEAD
+    "autocast",
+#endif
 };
 
 /*
@@ -981,12 +1108,14 @@ static const char* const FC_HEAD_NAMES[FC_NUM_ACTION_HEADS] = {
  * One float per action value per head.
  *
  * Layout: [MOVE(17)] [ATTACK(9)] [PRAYER(8)] [EAT(3)] [DRINK(2)] [TARGET_X(65)] [TARGET_Y(65)],
- * then [PRAYER_BOOK(25)] with prayers = all and [GEAR_SET(1 + N)] with
- * gear_sets = N > 1
+ * then [PRAYER_BOOK(25)] with prayers = all, [GEAR_SET(1 + N)] with
+ * gear_sets = N > 1 and [AUTOCAST(21 or 17)] with spellbook = standard or
+ * ancient
  */
 #define FC_ACTION_MASK_SIZE     (FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM + FC_EAT_DIM + FC_DRINK_DIM + FC_MOVE_TARGET_X_DIM + FC_MOVE_TARGET_Y_DIM + \
                                  FC_CAP_PRAYERS * FC_PRAYER_BOOK_DIM + \
-                                 FC_GEAR_SWITCHING * FC_GEAR_SET_DIM)  /* 169 by default */
+                                 FC_GEAR_SWITCHING * FC_GEAR_SET_DIM + \
+                                 FC_SPELLBOOK_HEAD * FC_AUTOCAST_DIM)  /* 169 by default */
 
 /* Mask region offsets within the mask buffer */
 #define FC_MASK_MOVE_START       0
@@ -998,6 +1127,7 @@ static const char* const FC_HEAD_NAMES[FC_NUM_ACTION_HEADS] = {
 #define FC_MASK_TARGET_Y_START   (FC_MASK_TARGET_X_START + FC_MOVE_TARGET_X_DIM) /* 104 */
 #define FC_MASK_BOOK_START       (FC_MASK_TARGET_Y_START + FC_MOVE_TARGET_Y_DIM) /* 169 */
 #define FC_MASK_GEAR_START       (FC_MASK_BOOK_START + FC_CAP_PRAYERS * FC_PRAYER_BOOK_DIM)
+#define FC_MASK_AUTOCAST_START   (FC_MASK_GEAR_START + FC_GEAR_SWITCHING * FC_GEAR_SET_DIM)
 
 static const int FC_MASK_HEAD_START[FC_NUM_ACTION_HEADS] = {
     FC_MASK_MOVE_START, FC_MASK_ATTACK_START, FC_MASK_PRAYER_START,
@@ -1008,6 +1138,9 @@ static const int FC_MASK_HEAD_START[FC_NUM_ACTION_HEADS] = {
 #endif
 #if FC_GEAR_SWITCHING
     FC_MASK_GEAR_START,
+#endif
+#if FC_SPELLBOOK_HEAD
+    FC_MASK_AUTOCAST_START,
 #endif
 };
 
@@ -1037,19 +1170,27 @@ static const int FC_MASK_HEAD_START[FC_NUM_ACTION_HEADS] = {
 #define FC_PUFFER_GEAR_HEADS
 #define FC_PUFFER_GEAR_DIMS
 #endif
+#if FC_SPELLBOOK_HEAD
+#define FC_PUFFER_SPELL_HEADS   , FC_HEAD_AUTOCAST
+#define FC_PUFFER_SPELL_DIMS    , FC_AUTOCAST_DIM
+#else
+#define FC_PUFFER_SPELL_HEADS
+#define FC_PUFFER_SPELL_DIMS
+#endif
 
 #define FC_PUFFER_NUM_ATNS      (3 + 2 * FC_CAP_CONSUMABLES + FC_CAP_PRAYERS + \
-                                 FC_GEAR_SWITCHING)
+                                 FC_GEAR_SWITCHING + FC_SPELLBOOK_HEAD)
 #define FC_PUFFER_HEADS \
     { FC_HEAD_MOVE, FC_HEAD_ATTACK, FC_HEAD_PRAYER FC_PUFFER_SUPPLY_HEADS \
-      FC_PUFFER_BOOK_HEADS FC_PUFFER_GEAR_HEADS }
+      FC_PUFFER_BOOK_HEADS FC_PUFFER_GEAR_HEADS FC_PUFFER_SPELL_HEADS }
 #define FC_PUFFER_ACT_SIZES \
     { FC_MOVE_DIM, FC_ATTACK_DIM, FC_PRAYER_DIM FC_PUFFER_SUPPLY_DIMS \
-      FC_PUFFER_BOOK_DIMS FC_PUFFER_GEAR_DIMS }
+      FC_PUFFER_BOOK_DIMS FC_PUFFER_GEAR_DIMS FC_PUFFER_SPELL_DIMS }
 #define FC_PUFFER_MASK_SIZE     (FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM + \
                                  FC_CAP_CONSUMABLES * (FC_EAT_DIM + FC_DRINK_DIM) + \
                                  FC_CAP_PRAYERS * FC_PRAYER_BOOK_DIM + \
-                                 FC_GEAR_SWITCHING * FC_GEAR_SET_DIM)
+                                 FC_GEAR_SWITCHING * FC_GEAR_SET_DIM + \
+                                 FC_SPELLBOOK_HEAD * FC_AUTOCAST_DIM)
 #define FC_PUFFER_OBS_SIZE      (FC_POLICY_OBS_SIZE + FC_PUFFER_MASK_SIZE)
 
 static const int FC_PUFFER_ACTION_DIMS[FC_PUFFER_NUM_ATNS] = FC_PUFFER_ACT_SIZES;
@@ -1067,7 +1208,9 @@ typedef struct {
     int attack_range;       /* primary attack range (1 for melee-only, 14 for ranged/magic) */
     int max_hit[ATTACK_STYLE_COUNT];      /* whole HP; 0 = no attack of that style */
     int attack_level[ATTACK_STYLE_COUNT]; /* Attack, Ranged and Magic levels; Magic
-                                           * is also the Twisted-bow target input */
+                                           * is also the Twisted-bow target input
+                                           * and the level the player's spells
+                                           * roll against */
     int attack_bonus[ATTACK_STYLE_COUNT];
     int def_level;          /* NPC defence level (for player attack accuracy) */
     int ranged_def_bonus;   /* NPC equipment defence vs Ranged */
@@ -1099,7 +1242,7 @@ typedef struct {
 typedef struct {
     int attack, strength, defence;
     int ranged_attack, ranged_strength;
-    int magic_defence;
+    int magic_attack, magic_damage, magic_defence;
 } FcPrayerBonus;
 
 
@@ -1213,10 +1356,10 @@ void fc_write_mask(const FcState* state, float* out);
 /*
  * Compute a deterministic hash of the game state.
  *
- * Implementation: FNV-1a over the state's fields (all but render_events) in
- * declaration order, least-significant byte first. The hashed structs are
- * asserted to have no padding, so two states with identical content produce
- * identical hashes.
+ * Implementation: FNV-1a over the state's fields (all but render_events, and
+ * caps as FcCapabilityState says) in declaration order, least-significant
+ * byte first. The hashed structs are asserted to have no padding, so two
+ * states with identical content produce identical hashes.
  *
  * Usage: Call after each fc_step to verify determinism. Two runs with
  * the same (seed, action_sequence) must produce identical hashes at every tick.
@@ -1238,7 +1381,32 @@ typedef struct {
     int weapon_kind, speed, range, ammo_kind;
     int ammo_tier;                /* supported ammunition: 0 standard, 1 dragon */
     int crystal_piece;
+    int magic_level, attack_level;   /* Magic and Attack needed to wear it */
+    int magic_attack;                /* Magic accuracy bonus */
+    int magic_damage;                /* Magic damage bonus in percent */
+    /* Staves: the FC_BOOK_BIT_* books it autocasts, the FC_RUNE_*_BIT
+     * elemental runes it supplies, and its attack speed autocasting a
+     * Standard spell when that is not RuneC's 5. */
+    int autocast, staff_runes, standard_autocast_speed;
 } FcItemDef;
+
+/* FcItemDef.autocast bits, by FcSpellbook. */
+enum { FC_BOOK_BIT_STANDARD = 1 << FC_SPELLBOOK_STANDARD,
+       FC_BOOK_BIT_ANCIENT = 1 << FC_SPELLBOOK_ANCIENT };
+
+/* Rune item ids: the elemental and catalytic runes the combat spells use and
+ * the combination runes that stand for two elements, with the element bits
+ * of RuneC's rc-content/combat/runes.c. */
+enum {
+    FC_RUNE_FIRE = 554, FC_RUNE_WATER = 555, FC_RUNE_AIR = 556,
+    FC_RUNE_EARTH = 557, FC_RUNE_MIND = 558, FC_RUNE_DEATH = 560,
+    FC_RUNE_CHAOS = 562, FC_RUNE_BLOOD = 565, FC_RUNE_SOUL = 566,
+    FC_RUNE_WRATH = 21880,
+    FC_RUNE_STEAM = 4694, FC_RUNE_MIST = 4695, FC_RUNE_DUST = 4696,
+    FC_RUNE_SMOKE = 4697, FC_RUNE_MUD = 4698, FC_RUNE_LAVA = 4699,
+};
+enum { FC_RUNE_AIR_BIT = 1, FC_RUNE_WATER_BIT = 2, FC_RUNE_EARTH_BIT = 4,
+       FC_RUNE_FIRE_BIT = 8 };
 
 typedef enum {
     FC_ITEM_OK, FC_ITEM_INVALID, FC_ITEM_NO_SPACE, FC_ITEM_REQUIREMENTS,
@@ -1299,6 +1467,8 @@ static void fc_wave_spawn(FcState* state, int wave_num);
 static void fc_tick(FcState* state, const int actions[FC_NUM_ACTION_HEADS]);
 static void fc_spawn_position(int spawn_dir, int* x, int* y);
 static void fc_wave_check_advance(FcState* state);
+static void fc_spell_land(FcState* state, int npc_idx, int spell,
+                          int damage_tenths);
 
 /* Combat */
 
@@ -1668,14 +1838,18 @@ static void fc_resolve_npc_pending_hits(FcState* state, int npc_idx) {
         FcPendingHit* h = &npc->pending_hits[i];
         h->ticks_remaining--;
         if (h->ticks_remaining <= 0) {
-            /* Player's hit lands on NPC */
+            /* Player's hit lands on NPC, or with ATTACK_NONE its poison
+             * (fc_npc_poison_tick), which is not the player's attack. */
+            int status = h->attack_style == ATTACK_NONE;
+            int hp_before = npc->current_hp;
+            int alive = !npc->is_dead && hp_before > 0;
             npc->current_hp -= h->damage;
             if (npc->current_hp < 0) npc->current_hp = 0;
 
             npc->damage_taken_this_tick += h->damage;
             state->damage_dealt_this_tick += h->damage;
 
-            if (h->damage > 0) {
+            if (h->damage > 0 && !status) {
                 state->hits_landed_this_tick++;
             }
             record_render_hit(state, ENTITY_NPC, npc_idx, -1,
@@ -1687,9 +1861,18 @@ static void fc_resolve_npc_pending_hits(FcState* state, int npc_idx) {
             }
 
             /* Yt-HurKot: any landed player attack distracts healer, including 0s. */
-            if (npc->npc_type == NPC_YT_HURKOT) {
+            if (npc->npc_type == NPC_YT_HURKOT && !status) {
                 npc->healer_distracted = 1;
                 npc->heal_target_idx = -1;
+            }
+
+            /* A spell that hit a living NPC leaves its effects, from the
+             * damage the NPC had left to take (RuneC's resolve_npc_hits caps
+             * it before rc_content_magic_hit). */
+            if (h->attack_style == ATTACK_MAGIC && h->prayer_drain > 0 &&
+                h->damage > 0 && alive) {
+                fc_spell_land(state, npc_idx, h->prayer_drain - 1,
+                              h->damage < hp_before ? h->damage : hp_before);
             }
 
             /* NPC death — keep active for a few ticks so viewer can
@@ -1737,7 +1920,8 @@ static void fc_episode_summary_build(const FcState* state, const FcRewardRuntime
 /*
  * The state hash is FNV-1a over FcState's bytes in declaration order, except
  * that render_events is skipped, route_x/route_y are fed as interleaved
- * (x, y) pairs, and caps is hashed only in builds with a capability. Every hashed field is a 4-byte int, uint32_t or float, or an
+ * (x, y) pairs, and caps is hashed only in builds with a capability or once it
+ * is not zero. Every hashed field is a 4-byte int, uint32_t or float, or an
  * arena map byte, so on a little-endian target this feeds each value
  * least-significant byte first. The asserts below pin that layout: a field
  * added to a hashed struct (or any padding) changes these sizes, which must
@@ -1776,14 +1960,25 @@ _Static_assert(offsetof(FcState, npcs) == sizeof(FcPlayer) &&
 _Static_assert(offsetof(FcState, caps) - offsetof(FcState, current_wave) ==
                    46 * 4 + 3 * FC_ARENA_WIDTH * FC_ARENA_HEIGHT,
                "FcState from current_wave: 46 4-byte fields and 3 arena maps");
-_Static_assert(sizeof(FcCapabilityState) == (2 + FC_MAX_GEAR_SETS) * 4 &&
+_Static_assert(sizeof(FcNpcSpellEffects) == 5 * 4 &&
+               sizeof(FcCapabilityState) ==
+                   (3 + FC_MAX_GEAR_SETS) * 4 + FC_MAX_NPCS * sizeof(FcNpcSpellEffects) &&
                sizeof(FcState) == offsetof(FcState, caps) + sizeof(FcCapabilityState),
-               "FcState ends with caps: 6 4-byte fields");
+               "FcState ends with caps: 7 4-byte fields and 5 per NPC");
 
 static uint32_t fc_hash_bytes(uint32_t hash, const void* data, size_t size) {
     const uint8_t* bytes = data;
     for (size_t i = 0; i < size; i++) hash = (hash ^ bytes[i]) * 0x01000193u;
     return hash;
+}
+
+/* Whether caps holds anything: in a build without capabilities, only Magic
+ * (a magic gear preset's autocast spell and spell effects) sets it. */
+static int fc_caps_set(const FcCapabilityState* caps) {
+    const uint8_t* bytes = (const uint8_t*)caps;
+    for (size_t i = 0; i < sizeof(*caps); i++)
+        if (bytes[i]) return 1;
+    return 0;
 }
 
 uint32_t fc_state_hash(const FcState* state) {
@@ -1800,16 +1995,25 @@ uint32_t fc_state_hash(const FcState* state) {
     hash = fc_hash_bytes(hash, &state->active_loadout, sizeof(int));
     hash = fc_hash_bytes(hash, &state->current_wave,
                          offsetof(FcState, caps) - offsetof(FcState, current_wave));
-#if !FC_DEFAULT_CAPABILITIES
-    hash = fc_hash_bytes(hash, &state->caps, sizeof(state->caps));
-#endif
+    if (!FC_DEFAULT_CAPABILITIES || fc_caps_set(&state->caps))
+        hash = fc_hash_bytes(hash, &state->caps, sizeof(state->caps));
     return hash;
 }
 
 /* Items */
 
 /* The gear presets' equipment and the supplies, pinned to the presets'
- * existing balance: equipment switching must not rebalance training. */
+ * existing balance: equipment switching must not rebalance training. The
+ * magic presets' items, Barrows gloves' Magic attack and the runes are
+ * RuneC_v4's b237 definitions (data/defs/items.bin): requirements, bonuses
+ * (melee_attack is the crush bonus a staff bashes with), RuneC weapon type 22
+ * as FC_WEAPON_STAFF with its speed and range, and from rc-content/combat
+ * the books a staff autocasts (magic.c rc_content_can_autocast), the runes it
+ * supplies (runes.c staff_elements) and Harmonised's Standard speed. RuneC
+ * has no bonuses or weapon data for the Twinflame staff, Confliction
+ * gauntlets and Avernic treads (max) (items.bin flags them without equipment
+ * stats; DSA-031 lists the Twinflame staff), so they have none here and the
+ * Twinflame staff fights like an empty hand, as in RuneC. */
 enum { AMMO_NONE, AMMO_ARROW, AMMO_BOLT, AMMO_LOADED_DART };
 static const FcItemDef ITEMS[] = {
     {.id=1169, .name="Coif", .slot=FC_EQUIP_SLOT_HEAD,
@@ -1886,7 +2090,8 @@ static const FcItemDef ITEMS[] = {
      .ranged_level=70, .defence_level=70, .hitpoints_level=0, .melee_attack=-6, .melee_strength=0},
     {.id=7462, .name="Barrows gloves", .slot=FC_EQUIP_SLOT_HANDS,
      .ranged_attack=12, .ranged_strength=0, .defence={12,12,12,6,12}, .prayer=0,
-     .ranged_level=0, .defence_level=0, .hitpoints_level=0, .melee_attack=12, .melee_strength=12},
+     .ranged_level=0, .defence_level=0, .hitpoints_level=0, .melee_attack=12, .melee_strength=12,
+     .magic_attack=6},
     {.id=23971, .name="Crystal helm", .slot=FC_EQUIP_SLOT_HEAD,
      .ranged_attack=9, .ranged_strength=0, .defence={12,8,14,10,18}, .prayer=2,
      .ranged_level=70, .defence_level=70, .hitpoints_level=0, .melee_attack=0, .melee_strength=0, .crystal_piece=FC_CRYSTAL_PIECE_HELM},
@@ -1922,6 +2127,97 @@ static const FcItemDef ITEMS[] = {
      .stackable=1, .ranged_strength=49, .ammo_kind=AMMO_ARROW},
     {.id=21946, .name="Diamond dragon bolts (e)", .slot=FC_EQUIP_SLOT_AMMO,
      .stackable=1, .ranged_strength=122, .ammo_kind=AMMO_BOLT, .ammo_tier=1},
+    /* The magic presets' equipment, in preset order. */
+    {.id=4089, .name="Mystic hat", .slot=FC_EQUIP_SLOT_HEAD, .defence_level=20,
+     .magic_level=40, .magic_attack=4, .defence={0,0,0,4,0}},
+    {.id=2412, .name="Saradomin cape", .slot=FC_EQUIP_SLOT_CAPE, .magic_level=60,
+     .magic_attack=10, .defence={1,1,2,10,0}},
+    {.id=1727, .name="Amulet of magic", .slot=FC_EQUIP_SLOT_NECK, .magic_attack=10},
+    {.id=12000, .name="Mystic smoke staff", .slot=FC_EQUIP_SLOT_WEAPON, .magic_level=40,
+     .attack_level=40, .magic_attack=14, .melee_attack=40, .melee_strength=50,
+     .defence={2,3,1,14,0}, .weapon_kind=FC_WEAPON_STAFF, .speed=5, .range=1,
+     .autocast=FC_BOOK_BIT_STANDARD, .staff_runes=FC_RUNE_AIR_BIT | FC_RUNE_FIRE_BIT},
+    {.id=4091, .name="Mystic robe top", .slot=FC_EQUIP_SLOT_BODY, .defence_level=20,
+     .magic_level=40, .magic_attack=20, .defence={0,0,0,20,0}},
+    {.id=6889, .name="Mage's book", .slot=FC_EQUIP_SLOT_SHIELD, .magic_level=60,
+     .magic_attack=15, .magic_damage=2, .defence={0,0,0,15,0}},
+    {.id=4093, .name="Mystic robe bottom", .slot=FC_EQUIP_SLOT_LEGS, .defence_level=20,
+     .magic_level=40, .magic_attack=15, .defence={0,0,0,15,0}},
+    {.id=4095, .name="Mystic gloves", .slot=FC_EQUIP_SLOT_HANDS, .defence_level=20,
+     .magic_level=40, .magic_attack=3, .defence={0,0,0,3,0}},
+    {.id=4097, .name="Mystic boots", .slot=FC_EQUIP_SLOT_FEET, .defence_level=20,
+     .magic_level=40, .magic_attack=3, .defence={0,0,0,3,0}},
+    {.id=6731, .name="Seers ring", .slot=FC_EQUIP_SLOT_RING, .magic_attack=6,
+     .defence={0,0,0,6,0}},
+    {.id=29019, .name="Blue moon helm", .slot=FC_EQUIP_SLOT_HEAD, .magic_attack=6,
+     .magic_damage=1, .melee_strength=3, .defence={0,0,10,6,0}},
+    {.id=21791, .name="Imbued saradomin cape", .slot=FC_EQUIP_SLOT_CAPE, .magic_level=50,
+     .magic_attack=15, .magic_damage=2, .defence={3,3,3,15,0}},
+    {.id=12002, .name="Occult necklace", .slot=FC_EQUIP_SLOT_NECK, .magic_level=70,
+     .magic_attack=12, .magic_damage=5, .prayer=2},
+    {.id=30634, .name="Twinflame staff", .slot=FC_EQUIP_SLOT_WEAPON,
+     .weapon_kind=FC_WEAPON_UNARMED, .speed=4, .range=1},
+    {.id=29013, .name="Blue moon chestplate", .slot=FC_EQUIP_SLOT_BODY, .magic_attack=30,
+     .magic_damage=1, .melee_strength=2, .defence={0,0,51,28,0}},
+    {.id=29016, .name="Blue moon tassets", .slot=FC_EQUIP_SLOT_LEGS, .magic_attack=22,
+     .magic_damage=1, .melee_strength=1, .defence={0,0,23,32,0}},
+    {.id=6920, .name="Infinity boots", .slot=FC_EQUIP_SLOT_FEET, .defence_level=25,
+     .magic_level=50, .magic_attack=5, .defence={0,0,0,5,0}},
+    {.id=11770, .name="Seers ring (i)", .slot=FC_EQUIP_SLOT_RING, .magic_attack=12,
+     .defence={0,0,0,12,0}},
+    {.id=26241, .name="Virtus mask", .slot=FC_EQUIP_SLOT_HEAD, .ranged_attack=-3,
+     .magic_attack=8, .magic_damage=2, .prayer=1, .defence={15,14,16,6,0}},
+    {.id=21006, .name="Kodai wand", .slot=FC_EQUIP_SLOT_WEAPON, .magic_level=75,
+     .magic_attack=28, .magic_damage=15, .defence={0,3,3,20,0}, .weapon_kind=FC_WEAPON_STAFF,
+     .speed=4, .range=1, .autocast=FC_BOOK_BIT_STANDARD | FC_BOOK_BIT_ANCIENT,
+     .staff_runes=FC_RUNE_WATER_BIT},
+    {.id=26243, .name="Virtus robe top", .slot=FC_EQUIP_SLOT_BODY, .ranged_attack=-11,
+     .magic_attack=35, .magic_damage=2, .prayer=2, .defence={47,36,56,31,0}},
+    {.id=25985, .name="Elidinis' ward", .slot=FC_EQUIP_SLOT_SHIELD, .magic_attack=5,
+     .magic_damage=3, .prayer=1, .defence={5,3,9,0,6}},
+    {.id=26245, .name="Virtus robe bottom", .slot=FC_EQUIP_SLOT_LEGS, .ranged_attack=-9,
+     .magic_attack=26, .magic_damage=2, .prayer=1, .defence={31,28,34,22,0}},
+    {.id=19544, .name="Tormented bracelet", .slot=FC_EQUIP_SLOT_HANDS, .hitpoints_level=75,
+     .magic_attack=10, .magic_damage=5, .prayer=2},
+    {.id=13235, .name="Eternal boots", .slot=FC_EQUIP_SLOT_FEET, .defence_level=75,
+     .magic_level=75, .magic_attack=8, .magic_damage=1, .defence={5,5,5,8,5}},
+    {.id=22947, .name="Rada's blessing 4", .slot=FC_EQUIP_SLOT_AMMO, .prayer=2},
+    {.id=21018, .name="Ancestral hat", .slot=FC_EQUIP_SLOT_HEAD, .defence_level=65,
+     .magic_level=75, .ranged_attack=-2, .magic_attack=8, .magic_damage=3,
+     .defence={12,11,13,5,0}},
+    {.id=24423, .name="Harmonised nightmare staff", .slot=FC_EQUIP_SLOT_WEAPON,
+     .hitpoints_level=50, .magic_level=75, .magic_attack=16, .magic_damage=15,
+     .defence={0,0,0,14,0}, .weapon_kind=FC_WEAPON_STAFF, .speed=5, .range=1,
+     .autocast=FC_BOOK_BIT_STANDARD, .standard_autocast_speed=4},
+    {.id=21021, .name="Ancestral robe top", .slot=FC_EQUIP_SLOT_BODY, .defence_level=65,
+     .magic_level=75, .ranged_attack=-8, .magic_attack=35, .magic_damage=3,
+     .defence={42,31,51,28,0}},
+    {.id=27251, .name="Elidinis' ward (f)", .slot=FC_EQUIP_SLOT_SHIELD, .magic_attack=25,
+     .magic_damage=5, .prayer=4, .defence={53,55,73,2,52}},
+    {.id=21024, .name="Ancestral robe bottom", .slot=FC_EQUIP_SLOT_LEGS, .defence_level=65,
+     .magic_level=75, .ranged_attack=-7, .magic_attack=26, .magic_damage=3,
+     .defence={27,24,30,20,0}},
+    {.id=31106, .name="Confliction gauntlets", .slot=FC_EQUIP_SLOT_HANDS},
+    {.id=31097, .name="Avernic treads (max)", .slot=FC_EQUIP_SLOT_FEET},
+    {.id=28313, .name="Magus ring", .slot=FC_EQUIP_SLOT_RING, .magic_attack=15,
+     .magic_damage=2},
+    /* Runes: stackable, carried in the inventory. */
+    {.id=FC_RUNE_AIR, .name="Air rune", .slot=-1, .stackable=1},
+    {.id=FC_RUNE_WATER, .name="Water rune", .slot=-1, .stackable=1},
+    {.id=FC_RUNE_EARTH, .name="Earth rune", .slot=-1, .stackable=1},
+    {.id=FC_RUNE_FIRE, .name="Fire rune", .slot=-1, .stackable=1},
+    {.id=FC_RUNE_MIND, .name="Mind rune", .slot=-1, .stackable=1},
+    {.id=FC_RUNE_CHAOS, .name="Chaos rune", .slot=-1, .stackable=1},
+    {.id=FC_RUNE_DEATH, .name="Death rune", .slot=-1, .stackable=1},
+    {.id=FC_RUNE_BLOOD, .name="Blood rune", .slot=-1, .stackable=1},
+    {.id=FC_RUNE_SOUL, .name="Soul rune", .slot=-1, .stackable=1},
+    {.id=FC_RUNE_WRATH, .name="Wrath rune", .slot=-1, .stackable=1},
+    {.id=FC_RUNE_STEAM, .name="Steam rune", .slot=-1, .stackable=1},
+    {.id=FC_RUNE_MIST, .name="Mist rune", .slot=-1, .stackable=1},
+    {.id=FC_RUNE_DUST, .name="Dust rune", .slot=-1, .stackable=1},
+    {.id=FC_RUNE_SMOKE, .name="Smoke rune", .slot=-1, .stackable=1},
+    {.id=FC_RUNE_MUD, .name="Mud rune", .slot=-1, .stackable=1},
+    {.id=FC_RUNE_LAVA, .name="Lava rune", .slot=-1, .stackable=1},
     {.id=FC_ITEM_ID_SHARK, .name="Shark", .slot=-1},
     {.id=FC_ITEM_ID_PRAYER_POTION_4, .name="Prayer potion(4)", .slot=-1},
     {.id=FC_ITEM_ID_PRAYER_POTION_3, .name="Prayer potion(3)", .slot=-1},
@@ -1972,7 +2268,8 @@ static void recalculate_equipment(FcPlayer *p) {
     if (weapon && weapon->ammo_kind == AMMO_LOADED_DART) {
         p->ammo_count = p->equipment[FC_EQUIP_SLOT_WEAPON].charges;
         p->ranged_strength_bonus += 17; /* preset's loaded adamant darts */
-    } else if (usable_ammo) {
+    } else if (usable_ammo && p->weapon_uses_ammo) {
+        /* Not a Rada's blessing beside a staff: ammunition it fires. */
         p->ammo_count = p->equipment[FC_EQUIP_SLOT_AMMO].quantity;
     }
 }
@@ -2009,11 +2306,12 @@ static void reset_supplies(FcPlayer *p, int sharks, int doses) {
 }
 
 /* A preset's item as a stack: its ammunition as one stack of the preset's
- * ammo, a blowpipe loaded with it, anything else one item. */
+ * ammo, a blowpipe loaded with it, anything else (a Rada's blessing in the
+ * ammunition slot too) one item. */
 static FcItemStack fc_preset_item_stack(const FcGearPreset *loadout,
                                         const FcItemDef *item) {
     return (FcItemStack){
-        item->id, item->slot == FC_EQUIP_SLOT_AMMO ? loadout->ammo : 1,
+        item->id, item->slot == FC_EQUIP_SLOT_AMMO && item->stackable ? loadout->ammo : 1,
         item->id == FC_ITEM_ID_TOXIC_BLOWPIPE ? loadout->ammo : 0
     };
 }
@@ -2079,7 +2377,8 @@ static FcItemResult fc_equip_plan(const FcPlayer *p,
     if (!item || item->slot < 0 || incoming.quantity <= 0 ||
         (!item->stackable && incoming.quantity != 1)) return FC_ITEM_INVALID;
     if (p->ranged_level < item->ranged_level || p->defence_level < item->defence_level ||
-        p->max_hp / 10 < item->hitpoints_level) return FC_ITEM_REQUIREMENTS;
+        p->max_hp / 10 < item->hitpoints_level || p->magic_level < item->magic_level ||
+        p->attack_level < item->attack_level) return FC_ITEM_REQUIREMENTS;
     FcItemStack *worn = &equipment[item->slot];
     if (item->stackable && worn->item_id == incoming.item_id) {
         int amount = INT_MAX - worn->quantity;
@@ -2197,6 +2496,454 @@ static void fc_items_spend_ammo(FcPlayer *p) {
         }
     }
 }
+
+
+/* Magic */
+
+/*
+ * Combat Magic as RuneC_v4 implements it: the spell definitions of
+ * data/defs/spells.bin, rc-core's rc_spell_available (spells.c), autocasting
+ * (combat.c) and the accuracy and max hit (combat_formula.c), and
+ * rc-content/combat's elemental scaling, staves, rune payment and landed
+ * effects (magic.c, runes.c). The player casts by autocasting: a staff with
+ * an autocast spell set attacks its target with the spell, as the magic gear
+ * presets and the autocast head set it. RuneC's one-off manual casts are not
+ * here. Every spell is a members' spell, and the player is in a members
+ * world, as for the prayers.
+ */
+
+/* A combat spell: RuneC's book, Magic level, max hit and runes, and the
+ * effects rc_content_magic_hit gives the spells whose effect flags have
+ * them: Ice spells freeze for 8, 16, 24 or 32 ticks, Smoke spells poison for
+ * 2 (Rush, Burst) or 4 (Blitz, Barrage), Shadow spells drain Attack by 10%
+ * (Rush, Burst) or 15% (Blitz, Barrage), Blood spells heal. */
+typedef struct {
+    const char* name;
+    int book;                 /* FcSpellbook */
+    int level;                /* Magic level needed */
+    int max_hit;              /* whole HP, before fc_spell_base_max_hit */
+    int rune_count;
+    struct { int id, quantity; } runes[4];   /* in RuneC's order */
+    int freeze_ticks, poison, drain_percent, heals;
+} FcSpellDef;
+
+static const FcSpellDef FC_SPELLS[FC_SPELL_COUNT] = {
+    [FC_SPELL_WIND_STRIKE] = {"Wind Strike", FC_SPELLBOOK_STANDARD, 1, 2, 2,
+                              {{FC_RUNE_AIR, 1}, {FC_RUNE_MIND, 1}}},
+    [FC_SPELL_WATER_STRIKE] = {"Water Strike", FC_SPELLBOOK_STANDARD, 5, 4, 3,
+                               {{FC_RUNE_AIR, 1}, {FC_RUNE_WATER, 1}, {FC_RUNE_MIND, 1}}},
+    [FC_SPELL_EARTH_STRIKE] = {"Earth Strike", FC_SPELLBOOK_STANDARD, 9, 6, 3,
+                               {{FC_RUNE_AIR, 1}, {FC_RUNE_EARTH, 2}, {FC_RUNE_MIND, 1}}},
+    [FC_SPELL_FIRE_STRIKE] = {"Fire Strike", FC_SPELLBOOK_STANDARD, 13, 8, 3,
+                              {{FC_RUNE_AIR, 2}, {FC_RUNE_FIRE, 3}, {FC_RUNE_MIND, 1}}},
+    [FC_SPELL_WIND_BOLT] = {"Wind Bolt", FC_SPELLBOOK_STANDARD, 17, 9, 2,
+                            {{FC_RUNE_AIR, 2}, {FC_RUNE_CHAOS, 1}}},
+    [FC_SPELL_WATER_BOLT] = {"Water Bolt", FC_SPELLBOOK_STANDARD, 23, 10, 3,
+                             {{FC_RUNE_AIR, 2}, {FC_RUNE_WATER, 2}, {FC_RUNE_CHAOS, 1}}},
+    [FC_SPELL_EARTH_BOLT] = {"Earth Bolt", FC_SPELLBOOK_STANDARD, 29, 11, 3,
+                             {{FC_RUNE_AIR, 2}, {FC_RUNE_EARTH, 3}, {FC_RUNE_CHAOS, 1}}},
+    [FC_SPELL_FIRE_BOLT] = {"Fire Bolt", FC_SPELLBOOK_STANDARD, 35, 12, 3,
+                            {{FC_RUNE_AIR, 3}, {FC_RUNE_FIRE, 4}, {FC_RUNE_CHAOS, 1}}},
+    [FC_SPELL_WIND_BLAST] = {"Wind Blast", FC_SPELLBOOK_STANDARD, 41, 13, 2,
+                             {{FC_RUNE_AIR, 3}, {FC_RUNE_DEATH, 1}}},
+    [FC_SPELL_WATER_BLAST] = {"Water Blast", FC_SPELLBOOK_STANDARD, 47, 14, 3,
+                              {{FC_RUNE_AIR, 3}, {FC_RUNE_WATER, 3}, {FC_RUNE_DEATH, 1}}},
+    [FC_SPELL_EARTH_BLAST] = {"Earth Blast", FC_SPELLBOOK_STANDARD, 53, 15, 3,
+                              {{FC_RUNE_AIR, 3}, {FC_RUNE_EARTH, 4}, {FC_RUNE_DEATH, 1}}},
+    [FC_SPELL_FIRE_BLAST] = {"Fire Blast", FC_SPELLBOOK_STANDARD, 59, 16, 3,
+                             {{FC_RUNE_AIR, 4}, {FC_RUNE_FIRE, 5}, {FC_RUNE_DEATH, 1}}},
+    [FC_SPELL_WIND_WAVE] = {"Wind Wave", FC_SPELLBOOK_STANDARD, 62, 17, 2,
+                            {{FC_RUNE_AIR, 5}, {FC_RUNE_BLOOD, 1}}},
+    [FC_SPELL_WATER_WAVE] = {"Water Wave", FC_SPELLBOOK_STANDARD, 65, 18, 3,
+                             {{FC_RUNE_AIR, 5}, {FC_RUNE_WATER, 7}, {FC_RUNE_BLOOD, 1}}},
+    [FC_SPELL_EARTH_WAVE] = {"Earth Wave", FC_SPELLBOOK_STANDARD, 70, 19, 3,
+                             {{FC_RUNE_AIR, 5}, {FC_RUNE_EARTH, 7}, {FC_RUNE_BLOOD, 1}}},
+    [FC_SPELL_FIRE_WAVE] = {"Fire Wave", FC_SPELLBOOK_STANDARD, 75, 20, 3,
+                            {{FC_RUNE_AIR, 5}, {FC_RUNE_FIRE, 7}, {FC_RUNE_BLOOD, 1}}},
+    [FC_SPELL_WIND_SURGE] = {"Wind Surge", FC_SPELLBOOK_STANDARD, 81, 21, 2,
+                             {{FC_RUNE_AIR, 7}, {FC_RUNE_WRATH, 1}}},
+    [FC_SPELL_WATER_SURGE] = {"Water Surge", FC_SPELLBOOK_STANDARD, 85, 22, 3,
+                              {{FC_RUNE_AIR, 7}, {FC_RUNE_WATER, 10}, {FC_RUNE_WRATH, 1}}},
+    [FC_SPELL_EARTH_SURGE] = {"Earth Surge", FC_SPELLBOOK_STANDARD, 90, 23, 3,
+                              {{FC_RUNE_AIR, 7}, {FC_RUNE_EARTH, 10}, {FC_RUNE_WRATH, 1}}},
+    [FC_SPELL_FIRE_SURGE] = {"Fire Surge", FC_SPELLBOOK_STANDARD, 95, 24, 3,
+                             {{FC_RUNE_AIR, 7}, {FC_RUNE_FIRE, 10}, {FC_RUNE_WRATH, 1}}},
+    [FC_SPELL_SMOKE_RUSH] = {"Smoke Rush", FC_SPELLBOOK_ANCIENT, 50, 13, 4,
+                             {{FC_RUNE_AIR, 1}, {FC_RUNE_FIRE, 1}, {FC_RUNE_CHAOS, 2},
+                              {FC_RUNE_DEATH, 2}}, .poison = 2},
+    [FC_SPELL_SHADOW_RUSH] = {"Shadow Rush", FC_SPELLBOOK_ANCIENT, 52, 14, 4,
+                              {{FC_RUNE_AIR, 1}, {FC_RUNE_CHAOS, 2}, {FC_RUNE_DEATH, 2},
+                               {FC_RUNE_SOUL, 1}}, .drain_percent = 10},
+    [FC_SPELL_BLOOD_RUSH] = {"Blood Rush", FC_SPELLBOOK_ANCIENT, 56, 15, 3,
+                             {{FC_RUNE_BLOOD, 1}, {FC_RUNE_CHAOS, 2}, {FC_RUNE_DEATH, 2}},
+                             .heals = 1},
+    [FC_SPELL_ICE_RUSH] = {"Ice Rush", FC_SPELLBOOK_ANCIENT, 58, 16, 3,
+                           {{FC_RUNE_WATER, 2}, {FC_RUNE_CHAOS, 2}, {FC_RUNE_DEATH, 2}},
+                           .freeze_ticks = 8},
+    [FC_SPELL_SMOKE_BURST] = {"Smoke Burst", FC_SPELLBOOK_ANCIENT, 62, 17, 4,
+                              {{FC_RUNE_AIR, 2}, {FC_RUNE_FIRE, 2}, {FC_RUNE_CHAOS, 4},
+                               {FC_RUNE_DEATH, 2}}, .poison = 2},
+    [FC_SPELL_SHADOW_BURST] = {"Shadow Burst", FC_SPELLBOOK_ANCIENT, 64, 18, 4,
+                               {{FC_RUNE_AIR, 1}, {FC_RUNE_CHAOS, 4}, {FC_RUNE_DEATH, 2},
+                                {FC_RUNE_SOUL, 2}}, .drain_percent = 10},
+    [FC_SPELL_BLOOD_BURST] = {"Blood Burst", FC_SPELLBOOK_ANCIENT, 68, 21, 3,
+                              {{FC_RUNE_BLOOD, 2}, {FC_RUNE_CHAOS, 4}, {FC_RUNE_DEATH, 2}},
+                              .heals = 1},
+    [FC_SPELL_ICE_BURST] = {"Ice Burst", FC_SPELLBOOK_ANCIENT, 70, 22, 3,
+                            {{FC_RUNE_WATER, 4}, {FC_RUNE_CHAOS, 4}, {FC_RUNE_DEATH, 2}},
+                            .freeze_ticks = 16},
+    [FC_SPELL_SMOKE_BLITZ] = {"Smoke Blitz", FC_SPELLBOOK_ANCIENT, 74, 23, 4,
+                              {{FC_RUNE_AIR, 2}, {FC_RUNE_FIRE, 2}, {FC_RUNE_BLOOD, 2},
+                               {FC_RUNE_DEATH, 2}}, .poison = 4},
+    [FC_SPELL_SHADOW_BLITZ] = {"Shadow Blitz", FC_SPELLBOOK_ANCIENT, 76, 24, 4,
+                               {{FC_RUNE_AIR, 2}, {FC_RUNE_BLOOD, 2}, {FC_RUNE_DEATH, 2},
+                                {FC_RUNE_SOUL, 2}}, .drain_percent = 15},
+    [FC_SPELL_BLOOD_BLITZ] = {"Blood Blitz", FC_SPELLBOOK_ANCIENT, 80, 25, 2,
+                              {{FC_RUNE_BLOOD, 4}, {FC_RUNE_DEATH, 2}}, .heals = 1},
+    [FC_SPELL_ICE_BLITZ] = {"Ice Blitz", FC_SPELLBOOK_ANCIENT, 82, 26, 3,
+                            {{FC_RUNE_WATER, 3}, {FC_RUNE_BLOOD, 2}, {FC_RUNE_DEATH, 2}},
+                            .freeze_ticks = 24},
+    [FC_SPELL_SMOKE_BARRAGE] = {"Smoke Barrage", FC_SPELLBOOK_ANCIENT, 86, 27, 4,
+                                {{FC_RUNE_AIR, 4}, {FC_RUNE_FIRE, 4}, {FC_RUNE_BLOOD, 2},
+                                 {FC_RUNE_DEATH, 4}}, .poison = 4},
+    [FC_SPELL_SHADOW_BARRAGE] = {"Shadow Barrage", FC_SPELLBOOK_ANCIENT, 88, 28, 4,
+                                 {{FC_RUNE_AIR, 4}, {FC_RUNE_BLOOD, 2}, {FC_RUNE_DEATH, 4},
+                                  {FC_RUNE_SOUL, 3}}, .drain_percent = 15},
+    [FC_SPELL_BLOOD_BARRAGE] = {"Blood Barrage", FC_SPELLBOOK_ANCIENT, 92, 29, 3,
+                                {{FC_RUNE_BLOOD, 4}, {FC_RUNE_DEATH, 4}, {FC_RUNE_SOUL, 1}},
+                                .heals = 1},
+    [FC_SPELL_ICE_BARRAGE] = {"Ice Barrage", FC_SPELLBOOK_ANCIENT, 94, 30, 3,
+                              {{FC_RUNE_WATER, 6}, {FC_RUNE_BLOOD, 2}, {FC_RUNE_DEATH, 4}},
+                              .freeze_ticks = 32},
+};
+
+/* The runes a magic gear preset carries, FcGearPreset.runes of each: every
+ * rune the autocast head's spells use, so any Standard elemental or Ancient
+ * spell can be paid for. RuneC spends runes from the inventory on each cast,
+ * so a preset carries large stacks, as the ranged presets carry 50,000
+ * arrows, bolts or darts. */
+static const int FC_PRESET_RUNES[] = {
+    FC_RUNE_AIR, FC_RUNE_WATER, FC_RUNE_EARTH, FC_RUNE_FIRE, FC_RUNE_MIND,
+    FC_RUNE_CHAOS, FC_RUNE_DEATH, FC_RUNE_BLOOD, FC_RUNE_SOUL, FC_RUNE_WRATH,
+};
+#define FC_PRESET_RUNE_COUNT \
+    ((int)(sizeof(FC_PRESET_RUNES) / sizeof(FC_PRESET_RUNES[0])))
+#define FC_PRESET_RUNE_QUANTITY 50000
+
+/* An autocast's range in tiles (RuneC's rc_player_attack_range). */
+#define FC_SPELL_RANGE 10
+
+/* RuneC's elemental scaling (rc_content_prepare_magic): a Standard spell
+ * hits as hard as the strongest spell of its tier, its group of four, that
+ * the Magic level reaches. Its tables are those spells' levels and max hits. */
+static int fc_spell_base_max_hit(int spell, int magic_level) {
+    const FcSpellDef* def = &FC_SPELLS[spell];
+    if (def->book != FC_SPELLBOOK_STANDARD) return def->max_hit;
+    int tier = spell / 4 * 4, max_hit = def->max_hit;
+    for (int j = 0; j < 4; j++)
+        if (magic_level >= FC_SPELLS[tier + j].level) max_hit = FC_SPELLS[tier + j].max_hit;
+    return max_hit;
+}
+
+/* The worn items' Magic attack and damage bonuses; RuneC's
+ * rc_recalc_bonuses sums every worn item. */
+static void fc_player_magic_bonuses(const FcPlayer* p, int* attack, int* damage) {
+    *attack = *damage = 0;
+    for (int i = 0; i < FC_EQUIPMENT_SLOTS; i++) {
+        const FcItemDef* item = fc_item_definition(p->equipment[i].item_id);
+        if (!item) continue;
+        *attack += item->magic_attack;
+        *damage += item->magic_damage;
+    }
+}
+
+/* A spell's attack roll and max hit (whole HP), as RuneC's rc_calc_magic
+ * makes them: Magic, raised by the book prayers' magic attack percentage,
+ * + 1 for a cast + 8, times the Magic attack bonus + 64; and the spell's max
+ * hit plus that times the Magic damage bonus and the prayers' magic damage
+ * percentage, in percent, rounded down. */
+static void fc_magic_rolls(int magic_level, int attack_bonus, int damage_bonus,
+                           const FcPrayerBonus* prayer, int spell_max_hit,
+                           int* attack_roll, int* max_hit) {
+    *attack_roll = (fc_prayer_level(magic_level, prayer->magic_attack) + 1 + 8) *
+                   (attack_bonus + 64);
+    *max_hit = spell_max_hit +
+               spell_max_hit * (damage_bonus + prayer->magic_damage) / 100;
+}
+
+/* fc_magic_rolls for the player casting a spell, with the worn items'
+ * bonuses and the scaled max hit. */
+static void fc_player_magic_rolls(const FcPlayer* p, const FcPrayerBonus* prayer,
+                                  int spell, int* attack_roll, int* max_hit) {
+    int attack_bonus, damage_bonus;
+    fc_player_magic_bonuses(p, &attack_bonus, &damage_bonus);
+    fc_magic_rolls(p->magic_level, attack_bonus, damage_bonus, prayer,
+                   fc_spell_base_max_hit(spell, p->magic_level), attack_roll, max_hit);
+}
+
+/* The element bit of an elemental rune, else 0 (runes.c element()). */
+static int fc_rune_element(int rune) {
+    switch (rune) {
+        case FC_RUNE_AIR: return FC_RUNE_AIR_BIT;
+        case FC_RUNE_WATER: return FC_RUNE_WATER_BIT;
+        case FC_RUNE_EARTH: return FC_RUNE_EARTH_BIT;
+        case FC_RUNE_FIRE: return FC_RUNE_FIRE_BIT;
+        default: return 0;
+    }
+}
+
+/* Combination runes, each paying one of two elements, in runes.c's order. */
+static const struct { int rune, first, second; } FC_COMBINATION_RUNES[] = {
+    {FC_RUNE_MIST, FC_RUNE_AIR, FC_RUNE_WATER},
+    {FC_RUNE_DUST, FC_RUNE_AIR, FC_RUNE_EARTH},
+    {FC_RUNE_MUD, FC_RUNE_WATER, FC_RUNE_EARTH},
+    {FC_RUNE_SMOKE, FC_RUNE_AIR, FC_RUNE_FIRE},
+    {FC_RUNE_STEAM, FC_RUNE_WATER, FC_RUNE_FIRE},
+    {FC_RUNE_LAVA, FC_RUNE_EARTH, FC_RUNE_FIRE},
+};
+
+/* Takes up to amount of a rune from the inventory, first slots first, and
+ * returns how many it took (runes.c take(), without a rune pouch). */
+static int fc_take_runes(FcItemStack inventory[FC_INVENTORY_SLOTS], int rune,
+                         int amount) {
+    int left = amount;
+    for (int i = 0; i < FC_INVENTORY_SLOTS && left > 0; i++) {
+        FcItemStack* slot = &inventory[i];
+        if (slot->item_id != rune || slot->quantity <= 0) continue;
+        int count = slot->quantity < left ? slot->quantity : left;
+        slot->quantity -= count;
+        left -= count;
+        if (!slot->quantity) *slot = (FcItemStack){0};
+    }
+    return amount - left;
+}
+
+/* The index of a rune in a spell's runes, or -1 (runes.c requirement()). */
+static int fc_spell_rune_index(const FcSpellDef* def, int rune) {
+    for (int i = 0; i < def->rune_count; i++)
+        if (def->runes[i].id == rune) return i;
+    return -1;
+}
+
+/* Pays a spell's runes from a copy of the inventory, as RuneC's
+ * plan_payment (rc-content/combat/runes.c): the elements the worn staff
+ * supplies cost nothing; a combination rune first pays two elements the
+ * spell needs at once, then the runes pay for themselves, then combination
+ * runes pay whichever elements are left. Returns 1 when everything is paid,
+ * with the inventory as it is after paying. RuneC's rune pouch, tomes,
+ * Bryophyta's staff, sunfire runes and Iban's staff charges are not here. */
+static int fc_spell_rune_plan(const FcPlayer* p, const FcSpellDef* def,
+                              FcItemStack inventory[FC_INVENTORY_SLOTS]) {
+    memcpy(inventory, p->inventory, sizeof(p->inventory));
+    const FcItemStack* held = &p->equipment[FC_EQUIP_SLOT_WEAPON];
+    const FcItemDef* weapon = fc_item_definition(held->item_id);
+    int unlimited = weapon && held->quantity > 0 ? weapon->staff_runes : 0;
+    int remaining[4] = {0};
+    for (int i = 0; i < def->rune_count; i++)
+        remaining[i] = unlimited & fc_rune_element(def->runes[i].id)
+            ? 0 : def->runes[i].quantity;
+    const int combinations = (int)(sizeof(FC_COMBINATION_RUNES) /
+                                   sizeof(FC_COMBINATION_RUNES[0]));
+    for (int c = 0; c < combinations; c++) {
+        int a = fc_spell_rune_index(def, FC_COMBINATION_RUNES[c].first);
+        int b = fc_spell_rune_index(def, FC_COMBINATION_RUNES[c].second);
+        if (a < 0 || b < 0 || !remaining[a] || !remaining[b]) continue;
+        int count = fc_take_runes(inventory, FC_COMBINATION_RUNES[c].rune,
+                                  remaining[a] < remaining[b] ? remaining[a] : remaining[b]);
+        remaining[a] -= count;
+        remaining[b] -= count;
+    }
+    for (int i = 0; i < def->rune_count; i++)
+        remaining[i] -= fc_take_runes(inventory, def->runes[i].id, remaining[i]);
+    for (int c = 0; c < combinations; c++) {
+        int a = fc_spell_rune_index(def, FC_COMBINATION_RUNES[c].first);
+        int b = fc_spell_rune_index(def, FC_COMBINATION_RUNES[c].second);
+        int first = a >= 0 ? remaining[a] : 0, second = b >= 0 ? remaining[b] : 0;
+        int count = fc_take_runes(inventory, FC_COMBINATION_RUNES[c].rune,
+                                  first > second ? first : second);
+        if (a >= 0) remaining[a] -= count < first ? count : first;
+        if (b >= 0) remaining[b] -= count < second ? count : second;
+    }
+    for (int i = 0; i < def->rune_count; i++)
+        if (remaining[i]) return 0;
+    return 1;
+}
+
+typedef enum {
+    FC_CAST_OK, FC_CAST_INVALID, FC_CAST_DEAD, FC_CAST_WRONG_BOOK,
+    FC_CAST_LEVEL, FC_CAST_WEAPON, FC_CAST_RUNES
+} FcCastResult;
+
+/* RuneC's rc_spell_result_message for each result. */
+static const char* fc_cast_result_message(FcCastResult result) {
+    switch (result) {
+        case FC_CAST_OK: return "";
+        case FC_CAST_DEAD: return "You cannot use spells while dead.";
+        case FC_CAST_WRONG_BOOK: return "That spell belongs to another spellbook.";
+        case FC_CAST_LEVEL: return "Your Magic level is too low for this spell.";
+        case FC_CAST_WEAPON: return "This weapon cannot autocast that spell.";
+        case FC_CAST_RUNES:
+            return "You do not have enough runes or valid source charges to cast this spell.";
+        default: return "That spell is unavailable.";
+    }
+}
+
+/* Whether the player can autocast a spell now, as RuneC's
+ * rc_spell_available checks it for autocast (rc-core/spells.c), in its
+ * order: alive (here also: the episode not over), the player's spellbook,
+ * the Magic level, a staff that autocasts the book
+ * (rc_player_weapon_can_autocast, rc_content_can_autocast), then the runes
+ * (rc_content_has_spell_runes). */
+static FcCastResult fc_spell_check(const FcState* state, int spell) {
+    if (spell < 0 || spell >= FC_SPELL_COUNT) return FC_CAST_INVALID;
+    if (!can_change_items(state)) return FC_CAST_DEAD;
+    const FcPlayer* p = &state->player;
+    const FcSpellDef* def = &FC_SPELLS[spell];
+    if (def->book != FC_PLAYER_SPELLBOOK) return FC_CAST_WRONG_BOOK;
+    if (p->magic_level < def->level) return FC_CAST_LEVEL;
+    const FcItemDef* weapon = fc_item_definition(p->equipment[FC_EQUIP_SLOT_WEAPON].item_id);
+    if (!weapon || weapon->weapon_kind != FC_WEAPON_STAFF ||
+        !(weapon->autocast & (1 << def->book))) return FC_CAST_WEAPON;
+    FcItemStack inventory[FC_INVENTORY_SLOTS];
+    if (!fc_spell_rune_plan(p, def, inventory)) return FC_CAST_RUNES;
+    return FC_CAST_OK;
+}
+
+/* Sets the autocast spell as RuneC's rc_player_set_autocast_spell does:
+ * only when fc_spell_check accepts it, else nothing changes. */
+static FcCastResult fc_spell_set_autocast(FcState* state, int spell) {
+    FcCastResult result = fc_spell_check(state, spell);
+    if (result == FC_CAST_OK) state->caps.autocast = spell + 1;
+    return result;
+}
+
+/* The spell the player's attacks cast, or -1. As RuneC's
+ * player_has_active_autocast makes the combat style Magic, it needs an
+ * autocast spell of the player's spellbook and a staff; whether that staff
+ * can cast it is checked when it attacks. */
+static int fc_player_cast_spell(const FcState* state) {
+    int spell = state->caps.autocast - 1;
+    if (spell < 0 || spell >= FC_SPELL_COUNT ||
+        state->player.weapon_kind != FC_WEAPON_STAFF ||
+        FC_SPELLS[spell].book != FC_PLAYER_SPELLBOOK) return -1;
+    return spell;
+}
+
+/* Ticks between casts: rc_player_attack_speed gives every autocast 5, and
+ * rc_content_prepare_magic gives the Harmonised nightmare staff's Standard
+ * autocasts 4. */
+static int fc_spell_cast_speed(const FcItemDef* weapon, int spell) {
+    if (weapon && weapon->standard_autocast_speed &&
+        FC_SPELLS[spell].book == FC_SPELLBOOK_STANDARD)
+        return weapon->standard_autocast_speed;
+    return 5;
+}
+
+/* The player's ticks between attacks, which the attack timer counts down
+ * from: a cast's, or the weapon's. */
+static int fc_player_attack_speed(const FcState* state) {
+    int spell = fc_player_cast_spell(state);
+    if (spell < 0) return state->player.weapon_speed;
+    return fc_spell_cast_speed(fc_item_definition(
+        state->player.equipment[FC_EQUIP_SLOT_WEAPON].item_id), spell);
+}
+
+/* The pending-hit delay of a spell (fc_queue_pending_hit). RuneC's
+ * rc_content_player_hit_delay lands it 2 + (d + 1) / 3 ticks after the cast,
+ * d the Chebyshev distance from the player to the target's centre tile
+ * (x + size / 2); the queue also resolves once in the cast's own tick. */
+static int fc_spell_hit_delay(const FcPlayer* p, const FcNpc* target) {
+    int dx = abs(p->x - (target->x + target->size / 2));
+    int dy = abs(p->y - (target->y + target->size / 2));
+    return 3 + ((dx > dy ? dx : dy) + 1) / 3;
+}
+
+/* A spell's effects once it hits a living NPC for damage (damage > 0 is
+ * RuneC's accurate hit), as rc_content_magic_hit applies them: a Blood spell
+ * heals the player a quarter of the damage in whole HP, up to max HP; a
+ * Smoke spell poisons (rc_npc_apply_poison: the larger poison damage, the
+ * first hit 30 ticks on); an Ice spell freezes unless the NPC is still
+ * immune, then leaves it immune for 5 ticks after; a Shadow spell lowers its
+ * Attack to (100 - percent)% of its level unless it is lower. NPC_STATS has
+ * no poison immunity, which RuneC reads from its NPC definitions and treats
+ * as none when missing; RuneC defers other immunities (DSA-031). */
+static void fc_spell_land(FcState* state, int npc_idx, int spell,
+                          int damage_tenths) {
+    if (spell < 0 || spell >= FC_SPELL_COUNT) return;
+    const FcSpellDef* def = &FC_SPELLS[spell];
+    FcNpcSpellEffects* effects = &state->caps.npc_spells[npc_idx];
+    FcPlayer* p = &state->player;
+    int heal = def->heals ? damage_tenths / 10 / 4 : 0;
+    if (def->poison > 0) {
+        if (def->poison > effects->poison_damage) effects->poison_damage = def->poison;
+        effects->poison_timer = 30;
+    }
+    if (def->freeze_ticks > 0 && state->tick >= effects->freeze_immune_until) {
+        effects->frozen_until = state->tick + def->freeze_ticks;
+        effects->freeze_immune_until = effects->frozen_until + 5;
+    }
+    if (def->drain_percent > 0) {
+        int level = fc_npc_get_stats(state->npcs[npc_idx].npc_type)->attack_level[ATTACK_MELEE];
+        int floor = level * (100 - def->drain_percent) / 100;
+        if (level - effects->attack_drain > floor) effects->attack_drain = level - floor;
+    }
+    if (heal > 0 && p->current_hp < p->max_hp) {
+        p->current_hp += heal * 10;
+        if (p->current_hp > p->max_hp) p->current_hp = p->max_hp;
+    }
+}
+
+/* The poison step of RuneC's rc_npc_status_tick for a living NPC, before its
+ * hits resolve: the timer counts down, then a hit of the poison damage lands
+ * this tick and the damage drops by one, every 31 ticks until it is 0. A full
+ * hit queue leaves it for the next tick. RuneC's NPC Hitpoints and stat
+ * regeneration in the same step needs a regeneration interval NPC_STATS does
+ * not have; RuneC gives an NPC definition without one none, as the cave's
+ * NPCs always had. */
+static void fc_npc_poison_tick(FcState* state, int npc_idx) {
+    FcNpc* npc = &state->npcs[npc_idx];
+    FcNpcSpellEffects* effects = &state->caps.npc_spells[npc_idx];
+    if (!npc->active || npc->is_dead || effects->poison_damage <= 0) return;
+    if (effects->poison_timer > 0) {
+        effects->poison_timer--;
+        return;
+    }
+    if (!fc_queue_pending_hit(npc->pending_hits, &npc->num_pending_hits,
+                              FC_MAX_PENDING_HITS, effects->poison_damage * 10, 1,
+                              ATTACK_NONE, -1, 0)) return;
+    effects->poison_damage--;
+    effects->poison_timer = effects->poison_damage > 0 ? 30 : 0;
+}
+
+/* Whether a freeze holds the NPC still this tick (rc_npc_movement_tick). */
+static int fc_npc_frozen(const FcState* state, int npc_idx) {
+    return state->tick < state->caps.npc_spells[npc_idx].frozen_until;
+}
+
+/* The level an NPC attacks with in a style: a Shadow spell's drain lowers
+ * its Attack, which RuneC's rc_npc_offensive_roll uses for melee only. */
+static int fc_npc_attack_level(const FcState* state, int npc_idx, int style) {
+    int level = fc_npc_get_stats(state->npcs[npc_idx].npc_type)->attack_level[style];
+    if (style == ATTACK_MELEE) level -= state->caps.npc_spells[npc_idx].attack_drain;
+    return level;
+}
+
+#if FC_SPELLBOOK_HEAD
+/* Whether an AUTOCAST action takes effect: keeping always does; spell k
+ * when fc_spell_check accepts the book's spell k. */
+static int fc_autocast_action_valid(const FcState* state, int action) {
+    if (action < 0 || action >= FC_AUTOCAST_DIM) return 0;
+    if (action == FC_AUTOCAST_KEEP) return 1;
+    return fc_spell_check(state, FC_BOOK_FIRST_SPELL + action - 1) == FC_CAST_OK;
+}
+
+/* Apply an AUTOCAST action: set the book's spell action - 1 when it can be
+ * autocast. Returns whether it set one. */
+static int fc_autocast_apply_action(FcState* state, int action) {
+    if (action <= FC_AUTOCAST_KEEP || action >= FC_AUTOCAST_DIM) return 0;
+    return fc_spell_set_autocast(state, FC_BOOK_FIRST_SPELL + action - 1) == FC_CAST_OK;
+}
+#endif
 
 
 /* Loadout */
@@ -2338,6 +3085,68 @@ static const FcGearPreset FC_GEAR_PRESETS[] = {
             13237,  /* Pegasian boots */
         },
     },
+    /* The magic presets of fc-rl-4.0-dlc's tiered loadouts (low, medium, high
+     * and maxed), each autocasting its tier's water spell and carrying
+     * FC_PRESET_RUNES, with RuneC's item definitions. */
+    {
+        .name = "smoke_staff_mystic", .id = FC_LOADOUT_SMOKE_STAFF_MYSTIC,
+        .combat_style_profile = 22,   /* staff */
+        .equipment_count = 10,
+        .equipment = {
+            4089,   /* Mystic hat */
+            2412,   /* Saradomin cape */
+            1727,   /* Amulet of magic */
+            12000,  /* Mystic smoke staff */
+            4091,   /* Mystic robe top */
+            6889,   /* Mage's book */
+            4093,   /* Mystic robe bottom */
+            4095,   /* Mystic gloves */
+            4097,   /* Mystic boots */
+            6731,   /* Seers ring */
+        },
+        .autocast = FC_SPELL_WATER_BLAST + 1,
+        .runes = FC_PRESET_RUNE_QUANTITY,
+    },
+    {
+        .name = "kodai_virtus", .id = FC_LOADOUT_KODAI_VIRTUS,
+        .combat_style_profile = 22,   /* staff */
+        .equipment_count = 11,
+        .equipment = {
+            26241,  /* Virtus mask */
+            21791,  /* Imbued saradomin cape */
+            12002,  /* Occult necklace */
+            21006,  /* Kodai wand */
+            26243,  /* Virtus robe top */
+            25985,  /* Elidinis' ward */
+            26245,  /* Virtus robe bottom */
+            19544,  /* Tormented bracelet */
+            13235,  /* Eternal boots */
+            11770,  /* Seers ring (i) */
+            22947,  /* Rada's blessing 4 */
+        },
+        .autocast = FC_SPELL_WATER_SURGE + 1,
+        .runes = FC_PRESET_RUNE_QUANTITY,
+    },
+    {
+        .name = "harmonised_ancestral", .id = FC_LOADOUT_HARMONISED_ANCESTRAL,
+        .combat_style_profile = 22,   /* staff */
+        .equipment_count = 11,
+        .equipment = {
+            21018,  /* Ancestral hat */
+            21791,  /* Imbued saradomin cape */
+            12002,  /* Occult necklace */
+            24423,  /* Harmonised nightmare staff */
+            21021,  /* Ancestral robe top */
+            27251,  /* Elidinis' ward (f) */
+            21024,  /* Ancestral robe bottom */
+            31106,  /* Confliction gauntlets */
+            31097,  /* Avernic treads (max) */
+            28313,  /* Magus ring */
+            22947,  /* Rada's blessing 4 */
+        },
+        .autocast = FC_SPELL_WATER_SURGE + 1,
+        .runes = FC_PRESET_RUNE_QUANTITY,
+    },
 };
 #define FC_GEAR_PRESET_COUNT ((int)(sizeof(FC_GEAR_PRESETS) / sizeof(FC_GEAR_PRESETS[0])))
 
@@ -2400,10 +3209,26 @@ static int fc_gear_switch_items(const FcScenario* scenario,
     return count;
 }
 
+/* The rune stacks the gear sets in use carry: each FC_PRESET_RUNES rune once,
+ * with the first magic set's quantity, or none without a magic set. They go
+ * in the inventory after the switch items, ahead of the supplies. The used
+ * sets must be valid presets. Returns the count. */
+static int fc_scenario_runes(const FcScenario* scenario,
+                             FcItemStack items[FC_PRESET_RUNE_COUNT]) {
+    int quantity = 0;
+    for (int k = 0; k < FC_CAP_GEAR_SETS && !quantity; k++)
+        quantity = FC_GEAR_PRESETS[scenario->gear_set[k]].runes;
+    if (!quantity) return 0;
+    for (int r = 0; r < FC_PRESET_RUNE_COUNT; r++)
+        items[r] = (FcItemStack){FC_PRESET_RUNES[r], quantity, 0};
+    return FC_PRESET_RUNE_COUNT;
+}
+
 /* Every level is 1-99; gear sets 1 .. gear_sets name presets and no other
  * set is set; each set's items are wearable at those levels; and the
- * inventory holds the switch items (fc_gear_switch_items) and the supplies.
- * Returns 0, or -1 with the reason in err. Supplies are clamped instead. */
+ * inventory holds the switch items (fc_gear_switch_items), the runes
+ * (fc_scenario_runes) and the supplies. Returns 0, or -1 with the reason in
+ * err. Supplies are clamped instead. */
 static int fc_scenario_check(const FcScenario* scenario, char* err, size_t err_size) {
     for (int s = 0; s < FC_SKILL_COUNT; s++) {
         if (scenario->levels[s] < 1 || scenario->levels[s] > 99) {
@@ -2437,6 +3262,8 @@ static int fc_scenario_check(const FcScenario* scenario, char* err, size_t err_s
                 {item->ranged_level, FC_SKILL_RANGED},
                 {item->defence_level, FC_SKILL_DEFENCE},
                 {item->hitpoints_level, FC_SKILL_HITPOINTS},
+                {item->magic_level, FC_SKILL_MAGIC},
+                {item->attack_level, FC_SKILL_ATTACK},
             };
             for (unsigned r = 0; r < sizeof(reqs) / sizeof(reqs[0]); r++) {
                 if (scenario->levels[reqs[r].skill] < reqs[r].need) {
@@ -2451,14 +3278,29 @@ static int fc_scenario_check(const FcScenario* scenario, char* err, size_t err_s
             }
         }
     }
-    FcItemStack items[FC_MAX_SWITCH_ITEMS];
+    FcItemStack items[FC_MAX_SWITCH_ITEMS], runes[FC_PRESET_RUNE_COUNT];
     int switch_items = fc_gear_switch_items(scenario, items);
+    int rune_stacks = fc_scenario_runes(scenario, runes);
     int supplies = fc_supply_slots(scenario->sharks, scenario->prayer_doses);
-    if (switch_items + supplies > FC_INVENTORY_SLOTS) {
+    int slots = switch_items + rune_stacks + supplies;
+    if (slots > FC_INVENTORY_SLOTS && !rune_stacks) {
         snprintf(err, err_size, "gear sets 2-%d put %d items in the inventory and "
                  "the supplies take %d slots: %d is more than its %d",
-                 FC_CAP_GEAR_SETS, switch_items, supplies, switch_items + supplies,
-                 FC_INVENTORY_SLOTS);
+                 FC_CAP_GEAR_SETS, switch_items, supplies, slots, FC_INVENTORY_SLOTS);
+        return -1;
+    }
+    if (slots > FC_INVENTORY_SLOTS && FC_CAP_GEAR_SETS == 1) {
+        snprintf(err, err_size, "gear_set_1 = %s carries %d rune stacks and the "
+                 "supplies take %d slots: %d is more than its %d",
+                 FC_GEAR_PRESETS[scenario->gear_set[0]].name, rune_stacks, supplies,
+                 slots, FC_INVENTORY_SLOTS);
+        return -1;
+    }
+    if (slots > FC_INVENTORY_SLOTS) {
+        snprintf(err, err_size, "gear sets 2-%d put %d items in the inventory, the "
+                 "magic sets carry %d rune stacks and the supplies take %d slots: "
+                 "%d is more than its %d", FC_CAP_GEAR_SETS, switch_items,
+                 rune_stacks, supplies, slots, FC_INVENTORY_SLOTS);
         return -1;
     }
     return 0;
@@ -2513,8 +3355,9 @@ static int fc_gear_action_valid(const FcState* state, int action) {
 
 /* Apply a GEAR_SET action that takes effect: the planned items go on at
  * once, which, as after fc_equip_item, recalculates the bonuses and ends the
- * current interaction, and the set is worn. The attack timer and the attacks
- * in flight are left alone. Returns whether it switched. */
+ * current interaction, and the set is worn, with a magic set's autocast
+ * spell. The attack timer and the attacks in flight are left alone. Returns
+ * whether it switched. */
 static int fc_gear_apply_action(FcState* state, int action) {
     if (action <= FC_GEAR_SET_NO_CHANGE || action >= FC_GEAR_SET_DIM) return 0;
     FcItemStack inventory[FC_INVENTORY_SLOTS], equipment[FC_EQUIPMENT_SLOTS];
@@ -2526,6 +3369,10 @@ static int fc_gear_apply_action(FcState* state, int action) {
     set_player_target(p, -1); /* held-item action interrupts interaction */
     state->caps.gear_set = action - 1;
     state->active_loadout = state->caps.gear_set_loadouts[action - 1];
+    /* A magic set's autocast spell, as setting it once its staff is wielded
+     * (fc_spell_set_autocast: nothing changes when it cannot be). */
+    const FcGearPreset* preset = fc_gear_preset_by_id(state->active_loadout);
+    if (preset->autocast) fc_spell_set_autocast(state, preset->autocast - 1);
     return 1;
 }
 #endif
@@ -2536,7 +3383,7 @@ static int fc_gear_apply_action(FcState* state, int action) {
  * NPC stats and AI. Each tick an active NPC (fc_npc_tick):
  *   1. Decrements its attack timer.
  *   2. Walks toward the player (greedy step) unless it can already attack
- *      from its tile.
+ *      from its tile or a spell froze it.
  *   3. Attacks once its timer is ready and the player is in reach, queueing
  *      a pending hit.
  *
@@ -2813,12 +3660,12 @@ static void npc_reach(const FcState* state, const FcNpc* npc,
 }
 
 /* Walk toward the player, at most movement_speed steps, unless the NPC can
- * already attack from its tile. */
+ * already attack from its tile or a spell froze it. */
 static void npc_chase_player(FcState* state, int npc_idx) {
     FcNpc* npc = &state->npcs[npc_idx];
     int melee, distant;
     npc_reach(state, npc, &melee, &distant);
-    if (melee || distant) return;
+    if (melee || distant || fc_npc_frozen(state, npc_idx)) return;
     for (int step = 0; step < npc->movement_speed; step++) {
         int target_x, target_y;
         npc_naive_player_chase_destination(npc, &state->player,
@@ -2906,7 +3753,7 @@ static void npc_attack(FcState* state, FcNpc* npc, int npc_idx) {
     FcAttackType attack_type =
         style == ATTACK_MELEE ? (FcAttackType)stats->melee_attack_type :
         style == ATTACK_RANGED ? FC_ATTACK_TYPE_RANGED : FC_ATTACK_TYPE_MAGIC;
-    int attack_roll = fc_npc_roll(stats->attack_level[style],
+    int attack_roll = fc_npc_roll(fc_npc_attack_level(state, npc_idx, style),
                                   stats->attack_bonus[style]);
     FcPrayerBonus prayer = fc_prayer_bonus(state);
     float hit_chance = fc_hit_chance(attack_roll,
@@ -3049,7 +3896,7 @@ static void yt_hurkot_follow_jad(FcState* state, FcNpc* npc, int npc_idx) {
     FcNpc* jad = &state->npcs[jad_idx];
     yt_hurkot_heal_cycle(state, npc, jad);
     if (fc_distance_between_areas(npc->x, npc->y, 1, jad->x, jad->y, 1) >
-            FC_HURKOT_HEAL_RANGE) {
+            FC_HURKOT_HEAL_RANGE && !fc_npc_frozen(state, npc_idx)) {
         npc_step_toward(state, npc_idx, jad->x, jad->y);
     }
 }
@@ -3665,8 +4512,8 @@ static int fc_pathfind_attack_position(
  * RuneC's members-world flag and unlock varbits are not modelled: every
  * prayer here counts as unlocked, in a members world. Rapid Restore and
  * Preserve act on lowered and boosted stats (rc_stat_restore_tick), which
- * nothing in the cave has, so they only drain. No player attack uses Magic,
- * so the magic attack and damage percentages have no effect.
+ * nothing in the cave has, so they only drain. The magic attack and damage
+ * percentages apply to the player's spells.
  */
 typedef struct {
     const char* name;
@@ -3830,6 +4677,10 @@ static FcPrayerBonus fc_prayer_bonus(const FcState* state) {
             bonus.ranged_attack = def->ranged_attack;
         if (def->ranged_strength > bonus.ranged_strength)
             bonus.ranged_strength = def->ranged_strength;
+        if (def->magic_attack > bonus.magic_attack)
+            bonus.magic_attack = def->magic_attack;
+        if (def->magic_damage > bonus.magic_damage)
+            bonus.magic_damage = def->magic_damage;
         if (def->magic_defence > bonus.magic_defence)
             bonus.magic_defence = def->magic_defence;
     }
@@ -4318,6 +5169,8 @@ static int fc_spawn_npc_first_free(FcState* state, int npc_type, int x, int y) {
         if (state->npcs[slot].active) continue;
         fc_npc_spawn(&state->npcs[slot], npc_type, x, y,
                      state->next_spawn_index++);
+        /* The new NPC has none of the last one's spell effects. */
+        state->caps.npc_spells[slot] = (FcNpcSpellEffects){0};
         return slot;
     }
     return -1;
@@ -4449,9 +5302,10 @@ static void init_player(FcPlayer* p) {
 
 /* Reset-time configuration from [env], applied after fc_reset to a scenario
  * that passes fc_scenario_check: the scenario's levels, gear set 1 worn,
- * with gear_sets > 1 the other sets' switch items in the inventory, then the
- * supplies, at full hitpoints and prayer. With the default scenario this only
- * empties the inventory. */
+ * with gear_sets > 1 the other sets' switch items in the inventory, then a
+ * magic set's runes and the supplies, at full hitpoints and prayer, and set
+ * 1's autocast spell. With the default scenario this only empties the
+ * inventory. */
 static void fc_apply_scenario(FcState* state, const FcScenario* scenario) {
     if (!state || state->tick != 0) return;
     FcPlayer* p = &state->player;
@@ -4462,17 +5316,21 @@ static void fc_apply_scenario(FcState* state, const FcScenario* scenario) {
     p->current_hp = p->max_hp;
     p->current_prayer = p->max_prayer;
     state->active_loadout = preset->id;
-#if FC_GEAR_SWITCHING
-    /* The switch items go ahead of the supplies; the check made room. */
-    FcItemStack items[FC_MAX_SWITCH_ITEMS];
+    /* The switch items and the runes go ahead of the supplies; the check
+     * made room. */
+    FcItemStack items[FC_MAX_SWITCH_ITEMS + FC_PRESET_RUNE_COUNT];
     int count = fc_gear_switch_items(scenario, items);
+    count += fc_scenario_runes(scenario, items + count);
     memmove(p->inventory + count, p->inventory,
             (size_t)(FC_INVENTORY_SLOTS - count) * sizeof(FcItemStack));
     memcpy(p->inventory, items, (size_t)count * sizeof(FcItemStack));
+#if FC_GEAR_SWITCHING
     state->caps.gear_set = 0;
     for (int k = 0; k < FC_CAP_GEAR_SETS; k++)
         state->caps.gear_set_loadouts[k] = FC_GEAR_PRESETS[scenario->gear_set[k]].id;
 #endif
+    /* As setting it once the staff and the runes are there. */
+    if (preset->autocast) fc_spell_set_autocast(state, preset->autocast - 1);
 }
 
 /* The loadout fc_reset wears: the first preset, and with gear_sets > 1 that
@@ -4814,8 +5672,9 @@ void fc_write_obs(const FcState* state, float* out) {
     player[FC_OBS_PLAYER_Y]         = (float)p->y / (float)FC_ARENA_HEIGHT;
     /* Clamped: switching to a faster weapon mid-cooldown leaves a timer
      * longer than the new weapon's speed. */
-    player[FC_OBS_PLAYER_ATK_TIMER] = (p->weapon_speed > 0)
-        ? clamp01((float)p->attack_timer / (float)p->weapon_speed) : 0.0f;
+    int attack_speed = fc_player_attack_speed(state);
+    player[FC_OBS_PLAYER_ATK_TIMER] = (attack_speed > 0)
+        ? clamp01((float)p->attack_timer / (float)attack_speed) : 0.0f;
     player[FC_OBS_PLAYER_PRAY_MEL]  = (p->prayer == PRAYER_PROTECT_MELEE) ? 1.0f : 0.0f;
     player[FC_OBS_PLAYER_PRAY_RNG]  = (p->prayer == PRAYER_PROTECT_RANGE) ? 1.0f : 0.0f;
     player[FC_OBS_PLAYER_PRAY_MAG]  = (p->prayer == PRAYER_PROTECT_MAGIC) ? 1.0f : 0.0f;
@@ -4951,11 +5810,38 @@ void fc_write_obs(const FcState* state, float* out) {
         const FcItemDef* weapon = fc_gear_preset_weapon(
             fc_gear_preset_by_id(state->caps.gear_set_loadouts[k]));
         float* set = gear + FC_OBS_GEAR_WEAPONS + k * FC_OBS_GEAR_STRIDE;
-        int unarmed = !weapon || weapon->weapon_kind == FC_WEAPON_UNARMED;
-        set[unarmed ? FC_OBS_GEAR_MELEE : FC_OBS_GEAR_RANGED] = 1.0f;
-        set[FC_OBS_GEAR_RANGE] = (float)(weapon ? weapon->range : 1) / 10.0f;
-        set[FC_OBS_GEAR_SPEED] = (float)(weapon ? weapon->speed : 4) / 10.0f;
+        int casts = weapon && weapon->weapon_kind == FC_WEAPON_STAFF &&
+                    (weapon->autocast & (1 << FC_PLAYER_SPELLBOOK));
+        int melee = !weapon || weapon->weapon_kind == FC_WEAPON_UNARMED ||
+                    weapon->weapon_kind == FC_WEAPON_STAFF;
+        set[casts ? FC_OBS_GEAR_MAGIC : melee ? FC_OBS_GEAR_MELEE : FC_OBS_GEAR_RANGED] = 1.0f;
+        set[FC_OBS_GEAR_RANGE] =
+            (float)(casts ? FC_SPELL_RANGE : weapon ? weapon->range : 1) / 10.0f;
+        set[FC_OBS_GEAR_SPEED] = (float)(casts ? fc_spell_cast_speed(weapon, FC_BOOK_FIRST_SPELL)
+                                         : weapon ? weapon->speed : 4) / 10.0f;
     }
+#endif
+
+#if FC_SPELLBOOK_HEAD
+    float* spells = out + FC_OBS_SPELL_START;
+    int autocast = state->caps.autocast - 1 - FC_BOOK_FIRST_SPELL;
+    if (state->caps.autocast > 0 && autocast >= 0 && autocast < FC_BOOK_SPELL_COUNT)
+        spells[FC_OBS_SPELL_AUTOCAST + autocast] = 1.0f;
+#if FC_CAP_SPELLBOOK == 2
+    for (int slot = 0; slot < visible; slot++) {
+        int idx = active_indices[slot];
+        const FcNpcSpellEffects* effects = &state->caps.npc_spells[idx];
+        float* npc = spells + FC_OBS_SPELL_EFFECTS + slot * FC_OBS_SPELL_STRIDE;
+        npc[FC_OBS_SPELL_FROZEN] =
+            clamp01((float)(effects->frozen_until - state->tick) / 32.0f);
+        npc[FC_OBS_SPELL_FREEZE_IMMUNE] =
+            clamp01((float)(effects->freeze_immune_until - state->tick) / 37.0f);
+        npc[FC_OBS_SPELL_POISON] = clamp01((float)effects->poison_damage / 4.0f);
+        int attack = fc_npc_get_stats(state->npcs[idx].npc_type)->attack_level[ATTACK_MELEE];
+        npc[FC_OBS_SPELL_DRAIN] = attack > 0
+            ? clamp01((float)effects->attack_drain / (float)attack) : 0.0f;
+    }
+#endif
 #endif
 }
 
@@ -5011,6 +5897,14 @@ void fc_write_mask(const FcState* state, float* out) {
     for (int action = 1; action < FC_GEAR_SET_DIM; action++) {
         if (!fc_gear_action_valid(state, action))
             out[FC_MASK_GEAR_START + action] = 0.0f;
+    }
+#endif
+
+#if FC_SPELLBOOK_HEAD
+    /* AUTOCAST: a spell that cannot be autocast now is masked. */
+    for (int action = 1; action < FC_AUTOCAST_DIM; action++) {
+        if (!fc_autocast_action_valid(state, action))
+            out[FC_MASK_AUTOCAST_START + action] = 0.0f;
     }
 #endif
 }
@@ -5073,15 +5967,17 @@ static void fc_fill_render_events(const FcState* state, FcRenderEvents* events) 
  *   2. Process player actions:
  *      a. Prayer toggles (instant): the overhead, then the prayer book
  *      b. Eat food / drink potion (if timer ready)
- *      c. Gear set switch (gear_sets > 1)
- *      d. Attack initiation from the pre-movement tile
+ *      c. Gear set switch (gear_sets > 1), then the autocast spell (spellbook)
+ *      d. Attack initiation from the pre-movement tile: a cast, a ranged
+ *         attack or melee
  *      e. Movement (route or directional head), unless an attack fired
  *      f. Run-energy drain or restoration from actual movement
  *   3. Decrement player timers (attack, food, potion, combo)
  *   4. Prayer drain (only if prayer stayed active across the tick boundary),
  *      then HP regeneration
  *   5. NPC AI tick (movement + attack) for all active NPCs
- *   6. Resolve pending hits (NPC → player, player → NPC), then death timers
+ *   6. Resolve pending hits (NPC → player, then for each NPC its poison and
+ *      the player's hits on it), then death timers
  *   7. Check terminal conditions, wave advancement and Jad healer spawns
  *   8. Episode analytics
  *   9. Increment tick and lock prayer snapshots due at the new boundary
@@ -5232,10 +6128,16 @@ static void prepare_player_interaction(FcState* state, int explicit_move,
     }
 }
 
+/* Whether the player attacks in melee without a spell: unarmed, or a staff
+ * bashing (RuneC's staff styles, accurate crush like the punch). */
+static int fc_player_melee(const FcPlayer* p) {
+    return p->weapon_kind == FC_WEAPON_UNARMED || p->weapon_kind == FC_WEAPON_STAFF;
+}
+
 static void launch_player_attack(FcState* state, FcNpc* target, int distance) {
     FcPlayer* player = &state->player;
     FcPrayerBonus prayer = fc_prayer_bonus(state);
-    int melee = player->weapon_kind == FC_WEAPON_UNARMED;
+    int melee = fc_player_melee(player);
     int att_roll, max_hit;
     if (melee) {
         /* Fight Caves NPCs all have zero crush defence bonus, including the
@@ -5257,6 +6159,7 @@ static void launch_player_attack(FcState* state, FcNpc* target, int distance) {
                          melee ? ATTACK_MELEE : ATTACK_RANGED, -1, 0);
     state->attack_attempt_this_tick = 1;
     state->render_events.player_attack_fired = 1;
+    state->render_events.player_attack_style = melee ? ATTACK_MELEE : ATTACK_RANGED;
     state->render_events.player_attack_source_x = player->x;
     state->render_events.player_attack_source_y = player->y;
     state->render_events.player_attack_target_npc_slot =
@@ -5271,6 +6174,57 @@ static void launch_player_attack(FcState* state, FcNpc* target, int distance) {
         fc_items_spend_ammo(player);
     }
     player->hit_landed_this_tick = 1;
+}
+
+/* Cast the autocast spell at the target, as RuneC's rc_combat_tick_player
+ * launches one: fc_spell_check first, and out of runes the autocast spell
+ * goes too (clear_failed_player_spell_attack), leaving the staff to bash;
+ * no cast with a full hit queue. Then the hit roll against the NPC's Magic
+ * level with a magic defence bonus of 0, NPC_STATS having none (RuneC rolls
+ * every ordinary NPC with 0, DSA-027), FC's damage roll as for the other
+ * attacks, the hit queued with the spell for its effects, the runes paid and
+ * the cast's attack speed. Returns whether it cast. */
+static int launch_player_spell(FcState* state, FcNpc* target, int spell) {
+    FcPlayer* player = &state->player;
+    FcCastResult result = fc_spell_check(state, spell);
+    if (result != FC_CAST_OK) {
+        if (result == FC_CAST_RUNES) state->caps.autocast = 0;
+        return 0;
+    }
+    if (target->num_pending_hits >= FC_MAX_PENDING_HITS) return 0;
+    FcItemStack inventory[FC_INVENTORY_SLOTS];
+    fc_spell_rune_plan(player, &FC_SPELLS[spell], inventory);
+    FcPrayerBonus prayer = fc_prayer_bonus(state);
+    int att_roll, max_hit;
+    fc_player_magic_rolls(player, &prayer, spell, &att_roll, &max_hit);
+    const FcNpcStats* target_stats = fc_npc_get_stats(target->npc_type);
+    int def_roll = fc_npc_roll(target_stats->attack_level[ATTACK_MAGIC], 0);
+    float chance = fc_hit_chance(att_roll, def_roll);
+    int hit = fc_rng_float(state) < chance ? 1 : 0;
+    int damage = hit ? fc_roll_damage_tenths(state, max_hit, 1) : 0;
+    int delay = fc_spell_hit_delay(player, target);
+
+    fc_queue_pending_hit(target->pending_hits, &target->num_pending_hits,
+                         FC_MAX_PENDING_HITS, damage, delay, ATTACK_MAGIC, -1,
+                         spell + 1);
+    memcpy(player->inventory, inventory, sizeof(inventory));
+    state->attack_attempt_this_tick = 1;
+    FcRenderEvents* events = &state->render_events;
+    events->player_attack_fired = 1;
+    events->player_attack_style = ATTACK_MAGIC;
+    events->player_attack_spell = spell + 1;
+    events->player_attack_source_x = player->x;
+    events->player_attack_source_y = player->y;
+    events->player_attack_target_npc_slot = player->attack_target_idx;
+    events->player_attack_target_x = target->x;
+    events->player_attack_target_y = target->y;
+    events->player_attack_target_size = target->size;
+    events->player_attack_hit_delay_ticks = delay;
+
+    player->attack_timer = fc_spell_cast_speed(
+        fc_item_definition(player->equipment[FC_EQUIP_SLOT_WEAPON].item_id), spell);
+    player->hit_landed_this_tick = 1;
+    return 1;
 }
 
 static void process_player_target(FcState* state,
@@ -5292,8 +6246,9 @@ static void process_player_target(FcState* state,
     }
 
     int dist = fc_distance_to_npc(player->x, player->y, target);
-    int weapon_range = player->weapon_kind == FC_WEAPON_UNARMED
-        ? FC_ROUTE_MELEE_RANGE : player->weapon_range;
+    int spell = fc_player_cast_spell(state);
+    int weapon_range = spell >= 0 ? FC_SPELL_RANGE
+        : fc_player_melee(player) ? FC_ROUTE_MELEE_RANGE : player->weapon_range;
     int target_can_fire = fc_can_attack_from(
         player->x, player->y, target->x, target->y, target->size,
         weapon_range, state->movement_flags, state->los_flags);
@@ -5335,7 +6290,8 @@ static void process_player_target(FcState* state,
         target_y - ((float)player->y + 0.5f));
 
     if (target_can_fire && target_ready) {
-        launch_player_attack(state, target, dist);
+        if (spell >= 0) launch_player_spell(state, target, spell);
+        else launch_player_attack(state, target, dist);
     }
 }
 
@@ -5482,6 +6438,10 @@ static void process_player_actions(FcState* state,
     /* A switch ends the interaction as an equip does, before this tick's
      * attack action picks its target. */
     fc_gear_apply_action(state, actions[FC_HEAD_GEAR_SET]);
+#endif
+#if FC_SPELLBOOK_HEAD
+    /* After a switch that may wield another staff, before the attack. */
+    fc_autocast_apply_action(state, actions[FC_HEAD_AUTOCAST]);
 #endif
 
     prepare_player_interaction(state, explicit_move, explicit_attack,
@@ -5658,6 +6618,7 @@ static void fc_tick(FcState* state, const int actions[FC_NUM_ACTION_HEADS]) {
     fc_resolve_player_pending_hits(state);
     for (int i = 0; i < FC_MAX_NPCS; i++) {
         if (state->npcs[i].active) {
+            fc_npc_poison_tick(state, i);
             fc_resolve_npc_pending_hits(state, i);
         }
     }
