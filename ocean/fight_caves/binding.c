@@ -9,10 +9,19 @@
 #include "fight_caves.h"
 #undef FC_CORE_IMPLEMENTATION
 
-/* Capabilities as built, by [env] key. A key that is set must match; a
- * missing one, as in a config-less viewer or a test, takes the built value. */
-static const struct { const char* key; int built; } FC_BUILT_CAPABILITIES[] = {
-    {"consumables", FC_CAP_CONSUMABLES},
+#include <strings.h>
+
+/* Capabilities as built, by [env] key, with the name of each compiled value
+ * (an empty name is not a choice). A key that is set must match; a missing
+ * one, as in a config-less viewer or a test, takes the built value. */
+#define FC_CAPABILITY_CHOICES 5
+static const struct {
+    const char* key;
+    int built;
+    int numeric;   /* compared as the number PufferLib parsed: 1, 1.0, true */
+    const char* names[FC_CAPABILITY_CHOICES];
+} FC_BUILT_CAPABILITIES[] = {
+    {"consumables", FC_CAP_CONSUMABLES, 1, {"0", "1"}},
 };
 #define FC_BUILT_CAPABILITY_COUNT \
     ((int)(sizeof(FC_BUILT_CAPABILITIES) / sizeof(FC_BUILT_CAPABILITIES[0])))
@@ -30,16 +39,35 @@ static int fc_read_env_config(Dict* kwargs, FcRewardParams* reward,
             fc_reward_setting_store(reward, &FC_REWARD_SETTINGS[i], item->value);
     }
     for (int i = 0; i < FC_BUILT_CAPABILITY_COUNT; i++) {
-        DictItem* item = dict_find(kwargs, FC_BUILT_CAPABILITIES[i].key);
+        const char* key = FC_BUILT_CAPABILITIES[i].key;
+        const char* const* names = FC_BUILT_CAPABILITIES[i].names;
+        DictItem* item = dict_find(kwargs, key);
         if (item == NULL) continue;
-        int value = (int)item->value;
+        char number[32];
+        const char* text = item->str;
+        if (FC_BUILT_CAPABILITIES[i].numeric || text == NULL) {
+            snprintf(number, sizeof(number), "%g", item->value);
+            text = number;
+        }
+        int value = -1;
+        for (int v = 0; v < FC_CAPABILITY_CHOICES && names[v]; v++)
+            if (names[v][0] && strcasecmp(text, names[v]) == 0) value = v;
+        if (value < 0) {
+            int n = snprintf(err, err_size, "%s = %s: must be", key,
+                             item->str ? item->str : text);
+            for (int v = 0, listed = 0; v < FC_CAPABILITY_CHOICES && names[v] &&
+                 n > 0 && (size_t)n < err_size; v++)
+                if (names[v][0])
+                    n += snprintf(err + n, err_size - n, "%s %s",
+                                  listed++ ? " or" : "", names[v]);
+            return -1;
+        }
         if (value != FC_BUILT_CAPABILITIES[i].built) {
             snprintf(err, err_size,
-                     "%s = %d, but this build has %s = %d. Capabilities change the "
+                     "%s = %s, but this build has %s = %s. Capabilities change the "
                      "action heads and observation, so set them in "
                      "config/fight_caves.ini and rebuild: ./build.sh fight_caves",
-                     FC_BUILT_CAPABILITIES[i].key, value,
-                     FC_BUILT_CAPABILITIES[i].key, FC_BUILT_CAPABILITIES[i].built);
+                     key, names[value], key, names[FC_BUILT_CAPABILITIES[i].built]);
             return -1;
         }
     }
@@ -88,7 +116,11 @@ static void fc_apply_env_config(Dict* kwargs, FcRewardParams* reward,
 
 /* What this build's policy sees and does, and what an episode starts with. */
 static void fc_print_summary(FILE* out, const FcScenario* scenario) {
-    fprintf(out, "Fight Caves: consumables=%d | heads", FC_CAP_CONSUMABLES);
+    fprintf(out, "Fight Caves:");
+    for (int i = 0; i < FC_BUILT_CAPABILITY_COUNT; i++)
+        fprintf(out, " %s=%s", FC_BUILT_CAPABILITIES[i].key,
+                FC_BUILT_CAPABILITIES[i].names[FC_BUILT_CAPABILITIES[i].built]);
+    fprintf(out, " | heads");
     for (int h = 0; h < FC_PUFFER_NUM_ATNS; h++)
         fprintf(out, "%s %s %d", h ? "," : "",
                 FC_HEAD_NAMES[FC_PUFFER_ACTION_HEADS[h]], FC_PUFFER_ACTION_DIMS[h]);

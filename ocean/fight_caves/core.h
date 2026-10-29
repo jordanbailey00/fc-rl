@@ -494,6 +494,13 @@ typedef struct {
     int player_move_waypoint_y[FC_MAX_RENDER_MOVE_WAYPOINTS];
 } FcRenderEvents;
 
+/* State a capability adds; zero is the state without it. It comes after the
+ * shipped fields, and fc_state_hash covers it only in builds with a
+ * capability, so the default contract hash is the shipped one. */
+typedef struct {
+    uint32_t prayers;   /* active prayers beyond the overhead (prayers = all) */
+} FcCapabilityState;
+
 /* Top-level simulation state */
 typedef struct {
     FcPlayer player;
@@ -575,6 +582,8 @@ typedef struct {
     int ep_wrong_prayer_hits;   /* hits where prayer active but wrong type */
     int ep_reached_wave_63;     /* 1 if episode reached Jad wave */
     int ep_jad_killed;          /* 1 if Jad died at any point this episode */
+
+    FcCapabilityState caps;     /* last; see FcCapabilityState */
 } FcState;
 
 
@@ -1536,8 +1545,8 @@ static void fc_episode_summary_build(const FcState* state, const FcRewardRuntime
 
 /*
  * The state hash is FNV-1a over FcState's bytes in declaration order, except
- * that render_events is skipped and route_x/route_y are fed as interleaved
- * (x, y) pairs. Every hashed field is a 4-byte int, uint32_t or float, or an
+ * that render_events is skipped, route_x/route_y are fed as interleaved
+ * (x, y) pairs, and caps is hashed only in builds with a capability. Every hashed field is a 4-byte int, uint32_t or float, or an
  * arena map byte, so on a little-endian target this feeds each value
  * least-significant byte first. The asserts below pin that layout: a field
  * added to a hashed struct (or any padding) changes these sizes, which must
@@ -1573,9 +1582,12 @@ _Static_assert(offsetof(FcState, npcs) == sizeof(FcPlayer) &&
                offsetof(FcState, current_wave) ==
                    offsetof(FcState, render_events) + sizeof(FcRenderEvents),
                "FcState: player, npcs, active_loadout, render_events, current_wave");
-_Static_assert(sizeof(FcState) - offsetof(FcState, current_wave) ==
+_Static_assert(offsetof(FcState, caps) - offsetof(FcState, current_wave) ==
                    46 * 4 + 3 * FC_ARENA_WIDTH * FC_ARENA_HEIGHT,
                "FcState from current_wave: 46 4-byte fields and 3 arena maps");
+_Static_assert(sizeof(FcCapabilityState) == 1 * 4 &&
+               sizeof(FcState) == offsetof(FcState, caps) + sizeof(FcCapabilityState),
+               "FcState ends with caps: 1 4-byte field");
 
 static uint32_t fc_hash_bytes(uint32_t hash, const void* data, size_t size) {
     const uint8_t* bytes = data;
@@ -1595,8 +1607,12 @@ uint32_t fc_state_hash(const FcState* state) {
                          sizeof(FcPlayer) - offsetof(FcPlayer, route_len));
     hash = fc_hash_bytes(hash, state->npcs, sizeof(state->npcs));
     hash = fc_hash_bytes(hash, &state->active_loadout, sizeof(int));
-    return fc_hash_bytes(hash, &state->current_wave,
-                         sizeof(FcState) - offsetof(FcState, current_wave));
+    hash = fc_hash_bytes(hash, &state->current_wave,
+                         offsetof(FcState, caps) - offsetof(FcState, current_wave));
+#if !FC_DEFAULT_CAPABILITIES
+    hash = fc_hash_bytes(hash, &state->caps, sizeof(state->caps));
+#endif
+    return hash;
 }
 
 /* Items */

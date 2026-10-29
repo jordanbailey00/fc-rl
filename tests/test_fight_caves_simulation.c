@@ -126,7 +126,8 @@ static int core_contract_test(void) {
     if (!fc_is_terminal(&first))
         fail("test trajectory did not exercise a terminal transition");
 
-    if (steps != 483 || fc_state_hash(&first) != 0x5c53c26du)
+    /* Capability builds also hash FcState.caps, so only the default pins it. */
+    if (steps != 483 || (FC_DEFAULT_CAPABILITIES && fc_state_hash(&first) != 0x5c53c26du))
         fail("fixed-seed trajectory changed; review and update the contract fixture intentionally");
 
     printf("core_contract_test: passed (%d steps, hash=%08x)\n",
@@ -1271,6 +1272,8 @@ static void scenario_config_test(void) {
     expect_config_error(&kwargs, FC_CAP_CONSUMABLES
         ? "consumables = 0, but this build has consumables = 1"
         : "consumables = 1, but this build has consumables = 0");
+    dict_set(&kwargs, "consumables", 2);
+    expect_config_error(&kwargs, "consumables = 2: must be 0 or 1");
     dict_set(&kwargs, "consumables", FC_CAP_CONSUMABLES);
 
     puf_ini_set(&kwargs, "gear_set_1", "dragon_claws");

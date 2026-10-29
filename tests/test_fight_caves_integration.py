@@ -218,7 +218,7 @@ def test_config_contains_only_supported_native_settings():
     core = (ENV_ROOT / "core.h").read_text()
     env_keys = set(re.findall(r'kwargs,\s*"([^"]+)"', binding))
     reward_keys = set(re.findall(r'\{"(\w+)",\s*offsetof\(FcRewardParams,', core))
-    capability_keys = set(re.findall(r'\{"(\w+)",\s*FC_CAP_\w+\}', binding))
+    capability_keys = set(re.findall(r'\{"(\w+)",\s*FC_CAP_\w+,', binding))
     skills = re.search(r"FC_SKILL_NAMES\[FC_SKILL_COUNT\] = \{([^}]*)\}", core).group(1)
     level_keys = {f"{skill}_level" for skill in re.findall(r'"(\w+)"', skills)}
     # The build (tools.py cflags) and puf_init's check know the same capabilities.

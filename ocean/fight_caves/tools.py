@@ -28,10 +28,11 @@ RESOURCE_ROOT = REPO_ROOT / "resources" / "fight_caves"
 MANIFEST = RESOURCE_ROOT / "asset_manifest.json"
 # Written into each installed bundle directory: the SHA-256 of its archive.
 STAMP = ".archive-sha256"
-# Capabilities by [env] key with their allowed values; a missing key means 0.
-# core.h has the same names as FC_CAP_<KEY>, and puf_init checks the INI it
-# trains with against the values compiled in.
-CAPABILITIES = {"consumables": (0, 1)}
+# Capabilities by [env] key: each value's name and the number compiled in as
+# FC_CAP_<KEY>; a missing key takes the first. binding.c's
+# FC_BUILT_CAPABILITIES has the same names, and puf_init checks the INI it
+# trains with against the build.
+CAPABILITIES = {"consumables": {"0": 0, "1": 1}}
 
 
 class AssetError(RuntimeError):
@@ -51,18 +52,25 @@ def capability_flags(config: Path) -> list[str]:
     parser.read([REPO_ROOT / "config" / "default.ini", config])
     env = parser["env"] if parser.has_section("env") else {}
     flags = []
-    for key, allowed in CAPABILITIES.items():
-        raw = env.get(key, "0").strip().replace("_", "")
-        value = {"true": 1.0, "false": 0.0}.get(raw.lower())
-        try:
-            value = float(raw) if value is None else value
-        except ValueError:
-            value = None
-        if value is None or value not in allowed:
-            choices = " or ".join(str(v) for v in allowed)
-            raise ConfigError(f"{key} = {env.get(key)}: must be {choices}")
-        flags.append(f"-DFC_CAP_{key.upper()}={int(value)}")
+    for key, choices in CAPABILITIES.items():
+        raw = env.get(key, next(iter(choices))).strip()
+        name = capability_name(raw)
+        if name not in choices:
+            raise ConfigError(f"{key} = {raw}: must be {' or '.join(choices)}")
+        flags.append(f"-DFC_CAP_{key.upper()}={choices[name]}")
     return flags
+
+
+def capability_name(raw: str) -> str:
+    """Numbers the way PufferLib parses them, so 1, 1.0 and true agree."""
+    text = raw.lower()
+    if text in ("true", "false"):
+        return "1" if text == "true" else "0"
+    try:
+        number = float(text.replace("_", ""))
+    except ValueError:
+        return text
+    return str(int(number)) if number.is_integer() else text
 
 
 def sha256_file(path: Path) -> str:
