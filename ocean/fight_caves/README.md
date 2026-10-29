@@ -36,6 +36,27 @@ The `[env]` section holds three kinds of settings:
   so the build compiles them in from the INI and training stops with a message
   if the INI and the build disagree; rebuild after changing one.
   `consumables = 1` adds eat and drink heads and observes their cooldowns.
+  `prayers = all` (default `protection`) adds a `prayer_book` head for the
+  rest of the prayer book that RuneC v4, the OSRS engine these rules are
+  ported from, implements: the skin, strength, reflex, eye and mystic tiers,
+  Rapid Restore, Rapid Heal, Preserve, Chivalry, Deadeye, Mystic Vigour,
+  Piety, Rigour and Augury. Each value toggles one prayer, as RuneC does: base
+  Prayer and Defence requirements, Deadeye and Mystic Vigour replacing Eagle
+  Eye and Mystic Might once available, conflicting prayers switched off,
+  their drain added to the protection prayer's, every prayer off at zero
+  points, their accuracy, damage and Defence percentages on the player's
+  attacks and defence, and Rapid Heal's faster Hitpoints regeneration. The
+  mask allows only toggles that take effect, and the observation adds which
+  prayers are on and what the active ones drain. Every prayer counts as
+  unlocked, as in a members world; RuneC's unlock varbits are not modelled.
+  In the cave Rapid Restore and Preserve only drain, since nothing lowers or
+  boosts the stats they act on. Not available until RuneC implements it:
+  - Protect Item, Retribution and Redemption: RuneC rejects them as not yet
+    implemented, pending player-death item retention and verified trigger
+    order.
+  - Smite: RuneC applies it only through boss encounter hooks; ordinary
+    NPCs, the cave's among them, have no Prayer to drain.
+  - The Ruinous Powers book, which RuneC leaves out.
 - **Scenario** settings are what an episode starts with and need no rebuild:
   `gear_set_1` names a gear preset, the `*_level` keys set skill levels, and
   `initial_sharks` and `initial_prayer_doses` fill the inventory. Gear must be
@@ -77,11 +98,14 @@ Manual play needs no CUDA or checkpoint. Space starts and pauses, Right Arrow
 steps one tick, R resets and Q quits. Left-click walks or attacks, right-click
 opens menus, right-drag orbits the camera and the wheel zooms; 1/2/3 toggle the
 protection prayers. The side panel has the combat, inventory, equipment and
-prayer tabs; clicking the minimap walks there and its orb toggles running. The
-console in the chat box lists targets, jumps to a wave, sets the tick rate,
-toggles god mode and debug overlays, and shows player state, observations, the
-action mask, rewards and the event log. The full key list is at the top of
-`viewer.c`.
+prayer tabs; clicking the minimap walks there and its orb toggles running.
+With `prayers = all` the prayer tab holds every prayer the policy can use,
+bright when a click would toggle it; Preserve, Chivalry, Deadeye, Mystic
+Vigour, Piety, Rigour and Augury show their names, as the pinned assets have
+no icons for them. The console in the chat box lists targets, jumps to a wave,
+sets the tick rate, toggles god mode and debug overlays, and shows player
+state, observations, the action mask, rewards and the event log. The full key
+list is at the top of `viewer.c`.
 
 ## Replay and check checkpoints
 

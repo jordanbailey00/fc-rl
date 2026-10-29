@@ -22,6 +22,7 @@ static const struct {
     const char* names[FC_CAPABILITY_CHOICES];
 } FC_BUILT_CAPABILITIES[] = {
     {"consumables", FC_CAP_CONSUMABLES, 1, {"0", "1"}},
+    {"prayers", FC_CAP_PRAYERS, 0, {"protection", "all"}},
 };
 #define FC_BUILT_CAPABILITY_COUNT \
     ((int)(sizeof(FC_BUILT_CAPABILITIES) / sizeof(FC_BUILT_CAPABILITIES[0])))

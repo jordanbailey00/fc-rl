@@ -103,9 +103,13 @@ int main(void) {
             fc_write_obs(&env->state, expected);
             fc_write_mask(&env->state, mask);
             assert(memcmp(obs[i], expected, FC_POLICY_OBS_SIZE * sizeof(float)) == 0);
-            for (int m = 0; m < FC_PUFFER_MASK_SIZE; m++) {
-                assert(obs[i][FC_POLICY_OBS_SIZE + m] == mask[m]);
-                assert(masks[i][m] == (mask[m] != 0.0f));
+            /* Each policy head's segment of the core mask, in policy order. */
+            for (int h = 0, m = 0; h < FC_PUFFER_NUM_ATNS; h++) {
+                const float* head = mask + FC_MASK_HEAD_START[FC_PUFFER_ACTION_HEADS[h]];
+                for (int v = 0; v < FC_PUFFER_ACTION_DIMS[h]; v++, m++) {
+                    assert(obs[i][FC_POLICY_OBS_SIZE + m] == head[v]);
+                    assert(masks[i][m] == (head[v] != 0.0f));
+                }
             }
             episodes += terminals[i] != 0.0f;
             trace = (trace ^ fc_state_hash(&env->state)) * 16777619u;

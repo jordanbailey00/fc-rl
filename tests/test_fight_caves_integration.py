@@ -234,11 +234,15 @@ def test_cflags_compile_in_the_configured_capabilities(tmp_path):
     tools = load_module(TOOLS)
     config = tmp_path / "fight_caves.ini"
     config.write_text("[env]\nw_progress = 0.001\n")
-    assert tools.capability_flags(config) == ["-DFC_CAP_CONSUMABLES=0"]
-    config.write_text("[env]\nconsumables = 1  # eat and drink\n")
-    assert tools.capability_flags(config) == ["-DFC_CAP_CONSUMABLES=1"]
+    assert tools.capability_flags(config) == ["-DFC_CAP_CONSUMABLES=0", "-DFC_CAP_PRAYERS=0"]
+    config.write_text("[env]\nconsumables = 1  # eat and drink\nprayers = All\n")
+    assert tools.capability_flags(config) == ["-DFC_CAP_CONSUMABLES=1", "-DFC_CAP_PRAYERS=1"]
     config.write_text("[env]\nconsumables = 2\n")
     with pytest.raises(tools.ConfigError, match="consumables = 2: must be 0 or 1"):
+        tools.capability_flags(config)
+    # Named values: a number is not a name.
+    config.write_text("[env]\nprayers = 1\n")
+    with pytest.raises(tools.ConfigError, match="prayers = 1: must be protection or all"):
         tools.capability_flags(config)
 
 

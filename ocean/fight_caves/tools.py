@@ -32,7 +32,8 @@ STAMP = ".archive-sha256"
 # FC_CAP_<KEY>; a missing key takes the first. binding.c's
 # FC_BUILT_CAPABILITIES has the same names, and puf_init checks the INI it
 # trains with against the build.
-CAPABILITIES = {"consumables": {"0": 0, "1": 1}}
+CAPABILITIES = {"consumables": {"0": 0, "1": 1},
+                "prayers": {"protection": 0, "all": 1}}
 
 
 class AssetError(RuntimeError):

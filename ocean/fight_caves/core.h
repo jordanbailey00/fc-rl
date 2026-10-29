@@ -211,6 +211,7 @@ typedef enum {
 #define FC_COMBO_EAT_TICKS        1  /* karambwan combo delay after food */
 #define FC_MAX_EPISODE_TICKS   200000 /* ~33 hours at 0.6s/tick — force prayer drain */
 #define FC_HP_REGEN_INTERVAL     100 /* HP regen: 1 HP every 100 ticks (60 seconds) */
+#define FC_RAPID_HEAL_REGEN_INTERVAL 50 /* with Rapid Heal on (RuneC rc_stat_restore_tick) */
 
 /* OSRS run energy uses 100 internal units per displayed percent. The canonical
  * no-supplies Masori/Twisted-bow loadout floors to 30 kg. Applying the current
@@ -498,7 +499,7 @@ typedef struct {
  * shipped fields, and fc_state_hash covers it only in builds with a
  * capability, so the default contract hash is the shipped one. */
 typedef struct {
-    uint32_t prayers;   /* active prayers beyond the overhead (prayers = all) */
+    uint32_t prayers;   /* active book prayers, bit FcBookPrayer (prayers = all) */
 } FcCapabilityState;
 
 /* Top-level simulation state */
@@ -546,7 +547,8 @@ typedef struct {
     int hits_landed_this_tick;   /* count of player pending-hits that dealt damage this tick */
     int damage_taken_this_tick;
     int prayer_lost_this_tick;   /* prayer points lost this tick, in tenths */
-    int overhead_prayer_lost_this_tick; /* passive overhead drain, in tenths */
+    int overhead_prayer_lost_this_tick; /* passive drain of the overhead (and the
+                                         * book prayers), in tenths */
     int tz_kih_prayer_drain_this_tick; /* Tz-Kih share of prayer loss, in tenths */
     int npcs_killed_this_tick;
     int respawned_jad_healers_killed_this_tick;
@@ -600,13 +602,19 @@ typedef struct {
 #ifndef FC_CAP_CONSUMABLES
 #define FC_CAP_CONSUMABLES 0   /* eat and drink heads */
 #endif
+#ifndef FC_CAP_PRAYERS
+#define FC_CAP_PRAYERS 0       /* 0 protection, 1 all: the prayer book head */
+#endif
 
 #if FC_CAP_CONSUMABLES != 0 && FC_CAP_CONSUMABLES != 1
 #error "FC_CAP_CONSUMABLES must be 0 or 1"
 #endif
+#if FC_CAP_PRAYERS != 0 && FC_CAP_PRAYERS != 1
+#error "FC_CAP_PRAYERS must be 0 (protection) or 1 (all)"
+#endif
 
 /* 1 when every capability has its default, the shipped layout. */
-#define FC_DEFAULT_CAPABILITIES (FC_CAP_CONSUMABLES == 0)
+#define FC_DEFAULT_CAPABILITIES (FC_CAP_CONSUMABLES == 0 && FC_CAP_PRAYERS == 0)
 
 
 /* Contracts */
@@ -649,7 +657,8 @@ typedef struct {
 #define FC_OBS_PLAYER_PRAY_DDL_RNG 18  /* style-specific prayer deadline urgency for actionable ranged hits */
 #define FC_OBS_PLAYER_PRAY_DDL_MAG 19  /* style-specific prayer deadline urgency for actionable magic hits */
 #define FC_OBS_PLAYER_PRAYER_LOST 20   /* total prayer lost this tick / max_prayer */
-#define FC_OBS_PLAYER_OVERHEAD_PRAYER_LOST 21 /* 1 if passive overhead drain removed prayer this tick */
+#define FC_OBS_PLAYER_OVERHEAD_PRAYER_LOST 21 /* 1 if passive overhead (and book prayer) drain
+                                              * removed prayer this tick */
 #define FC_OBS_PLAYER_RUN_ENERGY 22 /* current run energy / FC_RUN_ENERGY_MAX */
 #define FC_OBS_PLAYER_SIZE      23
 
@@ -746,23 +755,35 @@ typedef struct {
 #define FC_OBS_SUPPLY_COMBO_TIMER  2  /* combo_timer / FC_COMBO_EAT_TICKS */
 #define FC_OBS_SUPPLY_SIZE      (3 * FC_CAP_CONSUMABLES)
 
+/* Prayer book (prayers = all, 25 floats). Prayer points and the drain counter
+ * are player feature 1 and meta feature 3. */
+#define FC_OBS_BOOK_START       (FC_OBS_SUPPLY_START + FC_OBS_SUPPLY_SIZE)
+#define FC_OBS_BOOK_ACTIVE      0   /* 0-23: 1 if FcBookPrayer i is on */
+#define FC_OBS_BOOK_DRAIN       24  /* summed drain of the active prayers, overhead
+                                     * included, / drain resistance: the Prayer
+                                     * points they cost per tick */
+#define FC_OBS_BOOK_SIZE        (25 * FC_CAP_PRAYERS)
+
 /* --- Policy observation total --- */
 #define FC_POLICY_OBS_SIZE      (FC_OBS_PLAYER_SIZE + FC_OBS_NPC_TOTAL + \
-                                 FC_OBS_META_SIZE + FC_OBS_SUPPLY_SIZE)  /* 286 by default */
+                                 FC_OBS_META_SIZE + FC_OBS_SUPPLY_SIZE + \
+                                 FC_OBS_BOOK_SIZE)  /* 286 by default */
 
 /*
- * Action space: 7 canonical core heads, shared by headless training, policy
- * replay and the playable viewer. The viewer translates human input into
- * these heads: a clicked tile becomes heads 5 and 6, a clicked NPC its head 1
- * slot. Equipment and inventory changes between ticks use the item
- * transactions (fc_equip_item and friends) instead.
+ * Action space: 7 canonical core heads, and the prayer book head 7 with
+ * prayers = all, shared by headless training, policy replay and the playable
+ * viewer. The viewer translates human input into these heads: a clicked tile
+ * becomes heads 5 and 6, a clicked NPC its head 1 slot. Equipment and
+ * inventory changes between ticks use the item transactions (fc_equip_item
+ * and friends) instead.
  */
 
-#define FC_NUM_ACTION_HEADS     7
+#define FC_NUM_ACTION_HEADS     (7 + FC_CAP_PRAYERS)
 
 enum {
     FC_HEAD_MOVE, FC_HEAD_ATTACK, FC_HEAD_PRAYER, FC_HEAD_EAT, FC_HEAD_DRINK,
-    FC_HEAD_TARGET_X, FC_HEAD_TARGET_Y
+    FC_HEAD_TARGET_X, FC_HEAD_TARGET_Y,
+    FC_HEAD_PRAYER_BOOK   /* prayers = all only */
 };
 
 /* Head 0: MOVE — directional tile movement (low-level) */
@@ -851,22 +872,55 @@ static const int FC_MOVE_DY[17] = {
 /* Head 6: MOVE_TARGET_Y — BFS pathfinding target Y coordinate */
 #define FC_MOVE_TARGET_Y_DIM    65  /* 0=no-op, 1-64=tile y 0-63 */
 
+/* Head 7: PRAYER_BOOK (prayers = all) — toggle a prayer of the prayer book */
+/*
+ *   0     = no change
+ *   1-24  = toggle FcBookPrayer (value - 1)
+ *
+ * The prayers RuneC implements besides the protection prayers, in prayer book
+ * order. Switching one on follows RuneC: it needs its Prayer and Defence
+ * levels, no available prayer may replace it, Prayer points must be above
+ * zero, and it switches off the active prayers it conflicts with. Switching
+ * one off always works.
+ */
+typedef enum {
+    FC_BOOK_THICK_SKIN, FC_BOOK_BURST_OF_STRENGTH, FC_BOOK_CLARITY_OF_THOUGHT,
+    FC_BOOK_SHARP_EYE, FC_BOOK_MYSTIC_WILL, FC_BOOK_ROCK_SKIN,
+    FC_BOOK_SUPERHUMAN_STRENGTH, FC_BOOK_IMPROVED_REFLEXES, FC_BOOK_RAPID_RESTORE,
+    FC_BOOK_RAPID_HEAL, FC_BOOK_HAWK_EYE, FC_BOOK_MYSTIC_LORE, FC_BOOK_STEEL_SKIN,
+    FC_BOOK_ULTIMATE_STRENGTH, FC_BOOK_INCREDIBLE_REFLEXES, FC_BOOK_EAGLE_EYE,
+    FC_BOOK_MYSTIC_MIGHT, FC_BOOK_PRESERVE, FC_BOOK_CHIVALRY, FC_BOOK_DEADEYE,
+    FC_BOOK_MYSTIC_VIGOUR, FC_BOOK_PIETY, FC_BOOK_RIGOUR, FC_BOOK_AUGURY,
+    FC_BOOK_PRAYER_COUNT
+} FcBookPrayer;
+#define FC_PRAYER_BOOK_DIM      25  /* 0=no change, 1-24=FcBookPrayer 0-23 */
+#define FC_PRAYER_BOOK_NO_CHANGE 0
+
 /* Head dimensions */
+#if FC_CAP_PRAYERS
+#define FC_ACT_SIZES { FC_MOVE_DIM, FC_ATTACK_DIM, FC_PRAYER_DIM, FC_EAT_DIM, FC_DRINK_DIM, FC_MOVE_TARGET_X_DIM, FC_MOVE_TARGET_Y_DIM, FC_PRAYER_BOOK_DIM }
+#else
 #define FC_ACT_SIZES { FC_MOVE_DIM, FC_ATTACK_DIM, FC_PRAYER_DIM, FC_EAT_DIM, FC_DRINK_DIM, FC_MOVE_TARGET_X_DIM, FC_MOVE_TARGET_Y_DIM }
+#endif
 
 /* Action head dimensions as a static array (for iteration in viewer/binding) */
 static const int FC_ACTION_DIMS[FC_NUM_ACTION_HEADS] = FC_ACT_SIZES;
 static const char* const FC_HEAD_NAMES[FC_NUM_ACTION_HEADS] = {
-    "move", "attack", "prayer", "eat", "drink", "move_target_x", "move_target_y"
+    "move", "attack", "prayer", "eat", "drink", "move_target_x", "move_target_y",
+#if FC_CAP_PRAYERS
+    "prayer_book",
+#endif
 };
 
 /*
  * Action mask. Per-tick binary mask: 1.0 = valid, 0.0 = invalid.
  * One float per action value per head.
  *
- * Layout: [MOVE(17)] [ATTACK(9)] [PRAYER(8)] [EAT(3)] [DRINK(2)] [TARGET_X(65)] [TARGET_Y(65)]
+ * Layout: [MOVE(17)] [ATTACK(9)] [PRAYER(8)] [EAT(3)] [DRINK(2)] [TARGET_X(65)] [TARGET_Y(65)],
+ * then [PRAYER_BOOK(25)] with prayers = all
  */
-#define FC_ACTION_MASK_SIZE     (FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM + FC_EAT_DIM + FC_DRINK_DIM + FC_MOVE_TARGET_X_DIM + FC_MOVE_TARGET_Y_DIM)  /* 169 */
+#define FC_ACTION_MASK_SIZE     (FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM + FC_EAT_DIM + FC_DRINK_DIM + FC_MOVE_TARGET_X_DIM + FC_MOVE_TARGET_Y_DIM + \
+                                 FC_CAP_PRAYERS * FC_PRAYER_BOOK_DIM)  /* 169 by default */
 
 /* Mask region offsets within the mask buffer */
 #define FC_MASK_MOVE_START       0
@@ -876,11 +930,15 @@ static const char* const FC_HEAD_NAMES[FC_NUM_ACTION_HEADS] = {
 #define FC_MASK_DRINK_START      (FC_MASK_EAT_START + FC_EAT_DIM)              /* 37 */
 #define FC_MASK_TARGET_X_START   (FC_MASK_DRINK_START + FC_DRINK_DIM)           /* 39 */
 #define FC_MASK_TARGET_Y_START   (FC_MASK_TARGET_X_START + FC_MOVE_TARGET_X_DIM) /* 104 */
+#define FC_MASK_BOOK_START       (FC_MASK_TARGET_Y_START + FC_MOVE_TARGET_Y_DIM) /* 169 */
 
 static const int FC_MASK_HEAD_START[FC_NUM_ACTION_HEADS] = {
     FC_MASK_MOVE_START, FC_MASK_ATTACK_START, FC_MASK_PRAYER_START,
     FC_MASK_EAT_START, FC_MASK_DRINK_START, FC_MASK_TARGET_X_START,
-    FC_MASK_TARGET_Y_START
+    FC_MASK_TARGET_Y_START,
+#if FC_CAP_PRAYERS
+    FC_MASK_BOOK_START,
+#endif
 };
 
 /* Puffer-facing policy contract: the core heads the policy emits, in order.
@@ -895,14 +953,24 @@ static const int FC_MASK_HEAD_START[FC_NUM_ACTION_HEADS] = {
 #define FC_PUFFER_SUPPLY_HEADS
 #define FC_PUFFER_SUPPLY_DIMS
 #endif
+#if FC_CAP_PRAYERS
+#define FC_PUFFER_BOOK_HEADS    , FC_HEAD_PRAYER_BOOK
+#define FC_PUFFER_BOOK_DIMS     , FC_PRAYER_BOOK_DIM
+#else
+#define FC_PUFFER_BOOK_HEADS
+#define FC_PUFFER_BOOK_DIMS
+#endif
 
-#define FC_PUFFER_NUM_ATNS      (3 + 2 * FC_CAP_CONSUMABLES)
+#define FC_PUFFER_NUM_ATNS      (3 + 2 * FC_CAP_CONSUMABLES + FC_CAP_PRAYERS)
 #define FC_PUFFER_HEADS \
-    { FC_HEAD_MOVE, FC_HEAD_ATTACK, FC_HEAD_PRAYER FC_PUFFER_SUPPLY_HEADS }
+    { FC_HEAD_MOVE, FC_HEAD_ATTACK, FC_HEAD_PRAYER FC_PUFFER_SUPPLY_HEADS \
+      FC_PUFFER_BOOK_HEADS }
 #define FC_PUFFER_ACT_SIZES \
-    { FC_MOVE_DIM, FC_ATTACK_DIM, FC_PRAYER_DIM FC_PUFFER_SUPPLY_DIMS }
+    { FC_MOVE_DIM, FC_ATTACK_DIM, FC_PRAYER_DIM FC_PUFFER_SUPPLY_DIMS \
+      FC_PUFFER_BOOK_DIMS }
 #define FC_PUFFER_MASK_SIZE     (FC_MOVE_DIM + FC_ATTACK_DIM + FC_PRAYER_DIM + \
-                                 FC_CAP_CONSUMABLES * (FC_EAT_DIM + FC_DRINK_DIM))
+                                 FC_CAP_CONSUMABLES * (FC_EAT_DIM + FC_DRINK_DIM) + \
+                                 FC_CAP_PRAYERS * FC_PRAYER_BOOK_DIM)
 #define FC_PUFFER_OBS_SIZE      (FC_POLICY_OBS_SIZE + FC_PUFFER_MASK_SIZE)
 
 static const int FC_PUFFER_ACTION_DIMS[FC_PUFFER_NUM_ATNS] = FC_PUFFER_ACT_SIZES;
@@ -945,6 +1013,15 @@ typedef struct {
     int changed;   /* the overhead prayer differs from before the action */
     int flicked;   /* a flick action turned an active prayer off and back on */
 } FcPrayerTransition;
+
+/* The active book prayers' combat percentages (all zero without prayers =
+ * all), as RuneC's rc_prayer_*_bonus combine them: Defence adds up, the other
+ * kinds take the best active prayer. */
+typedef struct {
+    int attack, strength, defence;
+    int ranged_attack, ranged_strength;
+    int magic_defence;
+} FcPrayerBonus;
 
 
 /* Reward */
@@ -1131,7 +1208,8 @@ static int fc_step_toward(
     const uint8_t walkable[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
     const uint8_t movement_flags[FC_ARENA_WIDTH][FC_ARENA_HEIGHT],
     const uint8_t occupied[FC_ARENA_WIDTH][FC_ARENA_HEIGHT]);
-static int fc_prayer_apply_loss_tenths(FcPlayer* p, int requested_loss_tenths);
+static int fc_prayer_apply_loss_tenths(FcState* state, int requested_loss_tenths);
+static FcPrayerBonus fc_prayer_bonus(const FcState* state);
 static void fc_npc_tz_kek_split(FcState* state, int dead_x, int dead_y);
 static int fc_spawn_find_available_footprint(const FcState* state,
                                              int preferred_x, int preferred_y,
@@ -1159,8 +1237,24 @@ static int fc_npc_roll(int level, int bonus) {
     return (level + 9) * (bonus + 64);
 }
 
-/* Player defence roll against one incoming attack type. */
-static int fc_player_def_roll(const FcPlayer* p, FcAttackType attack_type) {
+/* A level raised by a prayer percentage and rounded down, as RuneC's
+ * effective levels raise it before adding the stance and 8
+ * (rc-core/combat_formula.c). */
+static int fc_prayer_level(int level, int percent) {
+    return level * (100 + percent) / 100;
+}
+
+/* RuneC's Strength and ranged Strength levels: a 5% prayer adds at least one
+ * level up to level 20. */
+static int fc_prayer_strength_level(int level, int percent) {
+    if (level <= 20 && percent == 5) return level + 1;
+    return fc_prayer_level(level, percent);
+}
+
+/* Player defence roll against one incoming attack type, with the book
+ * prayers' Defence and Magic Defence percentages. */
+static int fc_player_def_roll(const FcPlayer* p, const FcPrayerBonus* prayer,
+                              FcAttackType attack_type) {
     int def_bonus;
     switch (attack_type) {
         case FC_ATTACK_TYPE_STAB:   def_bonus = p->defence_stab; break;
@@ -1171,13 +1265,15 @@ static int fc_player_def_roll(const FcPlayer* p, FcAttackType attack_type) {
         default:                    def_bonus = 0; break;
     }
 
+    int defence = fc_prayer_level(p->defence_level, prayer->defence);
     int eff_def;
     if (attack_type == FC_ATTACK_TYPE_MAGIC) {
-        /* OSRS truncates the Defence and Magic contributions separately. */
-        eff_def = 3 * p->defence_level / 10 +
-                  7 * p->magic_level / 10 + 8;
+        /* OSRS truncates the Defence and Magic contributions separately,
+         * each already raised by its prayer. */
+        eff_def = 3 * defence / 10 +
+                  7 * fc_prayer_level(p->magic_level, prayer->magic_defence) / 10 + 8;
     } else {
-        eff_def = p->defence_level + 8;
+        eff_def = defence + 8;
     }
     return eff_def * (def_bonus + 64);
 }
@@ -1224,15 +1320,19 @@ static int fc_apply_basis_points(int value, int bonus_bp) {
 }
 
 /* Player ranged attack roll and max hit (whole HP) against a target. Rapid is
- * the active style for every ranged weapon here, so the effective level is
- * Ranged + 8. The Twisted bow scales both by the target's Magic level and the
- * Bow of faerdhinen by the crystal armour pieces worn. */
-static void fc_player_ranged_rolls(const FcPlayer* p, const FcNpc* target,
+ * the active style for every ranged weapon here, so the effective levels are
+ * Ranged, raised by the book prayers' ranged attack and strength percentages,
+ * + 8. The Twisted bow scales both by the target's Magic level and the Bow of
+ * faerdhinen by the crystal armour pieces worn. */
+static void fc_player_ranged_rolls(const FcPlayer* p, const FcPrayerBonus* prayer,
+                                   const FcNpc* target,
                                    int* attack_roll, int* max_hit) {
-    int level = p->ranged_level + 8;
-    *attack_roll = level * (p->ranged_attack_bonus + 64);
-    *max_hit = (int)(((int64_t)level * (p->ranged_strength_bonus + 64) + 320) /
-                     640);
+    int attack_level = fc_prayer_level(p->ranged_level, prayer->ranged_attack) + 8;
+    int strength_level =
+        fc_prayer_strength_level(p->ranged_level, prayer->ranged_strength) + 8;
+    *attack_roll = attack_level * (p->ranged_attack_bonus + 64);
+    *max_hit = (int)(((int64_t)strength_level * (p->ranged_strength_bonus + 64) +
+                      320) / 640);
     if (p->weapon_kind == FC_WEAPON_TWISTED_BOW) {
         const FcNpcStats* stats = fc_npc_get_stats(target->npc_type);
         int magic = stats->attack_level[ATTACK_MAGIC];
@@ -1246,6 +1346,18 @@ static void fc_player_ranged_rolls(const FcPlayer* p, const FcNpc* target,
         *attack_roll = fc_apply_basis_points(*attack_roll, accuracy_bp);
         *max_hit = fc_apply_basis_points(*max_hit, damage_bp);
     }
+}
+
+/* Player unarmed attack roll and max hit (whole HP). Punch is accurate/crush:
+ * Attack, raised by the book prayers' attack percentage, + 3 + 8, and
+ * Strength, raised by their strength percentage, + 8. */
+static void fc_player_melee_rolls(const FcPlayer* p, const FcPrayerBonus* prayer,
+                                  int* attack_roll, int* max_hit) {
+    *attack_roll = (fc_prayer_level(p->attack_level, prayer->attack) + 11) *
+                   (p->melee_attack_bonus + 64);
+    *max_hit = (320 + (fc_prayer_strength_level(p->strength_level,
+                                                prayer->strength) + 8) *
+                (p->melee_strength_bonus + 64)) / 640;
 }
 
 /* Damage of a successful hit in tenths: a uniform roll of 0..max_hit whole HP,
@@ -1389,7 +1501,7 @@ static void fc_resolve_player_pending_hits(FcState* state) {
             if (h->prayer_drain > 0) {
                 int drain = h->prayer_drain;
                 if (source->npc_type == NPC_TZ_KIH) drain += final_damage;
-                int actual_drain = fc_prayer_apply_loss_tenths(p, drain);
+                int actual_drain = fc_prayer_apply_loss_tenths(state, drain);
                 state->prayer_lost_this_tick += actual_drain;
                 state->tz_kih_prayer_drain_this_tick += actual_drain;
                 source->prayer_drain_dealt_this_tick += actual_drain;
@@ -2570,8 +2682,9 @@ static void npc_attack(FcState* state, FcNpc* npc, int npc_idx) {
         style == ATTACK_RANGED ? FC_ATTACK_TYPE_RANGED : FC_ATTACK_TYPE_MAGIC;
     int attack_roll = fc_npc_roll(stats->attack_level[style],
                                   stats->attack_bonus[style]);
+    FcPrayerBonus prayer = fc_prayer_bonus(state);
     float hit_chance = fc_hit_chance(attack_roll,
-                                     fc_player_def_roll(player, attack_type));
+                                     fc_player_def_roll(player, &prayer, attack_type));
     int hit = fc_rng_float(state) < hit_chance;
     int damage = hit ? fc_roll_damage_tenths(state, stats->max_hit[style], 0) : 0;
     int delay = fc_npc_hit_delay(npc->npc_type, style,
@@ -3304,7 +3417,8 @@ static int fc_pathfind_attack_position(
  *   prayerDrainResistance = 60 + (prayerBonus * 2)
  *   While counter > resistance: drain 1 prayer point, counter -= resistance
  *
- *   Protection prayers all cost drain=12 per tick (from prayers.toml).
+ *   Protection prayers all cost drain=12 per tick (from prayers.toml); with
+ *   prayers = all the book prayers add their RuneC drains to the same counter.
  *   Prayer points are in tenths (430 = 43 prayer points).
  *   Each "drain 1 point" = subtract 10 tenths.
  *
@@ -3315,31 +3429,241 @@ static int fc_pathfind_attack_position(
 
 #define PRAYER_OVERHEAD_DRAIN_RATE 12
 
-static void enforce_post_loss_invariant(FcPlayer* p) {
+#if FC_CAP_PRAYERS
+/*
+ * The prayer book (prayers = all): RuneC_v4's definitions, as
+ * tools/export_prayers.py writes them to data/defs/prayers.bin, of every
+ * prayer it implements besides the protection prayers. RuneC rejects Protect
+ * Item, Retribution and Redemption (RC_PRAYER_EFFECT_UNAVAILABLE), and its
+ * Smite has no Prayer to drain from ordinary NPCs, so those are not here.
+ * RuneC's members-world flag and unlock varbits are not modelled: every
+ * prayer here counts as unlocked, in a members world. Rapid Restore and
+ * Preserve act on lowered and boosted stats (rc_stat_restore_tick), which
+ * nothing in the cave has, so they only drain. No player attack uses Magic,
+ * so the magic attack and damage percentages have no effect.
+ */
+typedef struct {
+    const char* name;
+    int level, defence_level;   /* base Prayer and Defence levels needed */
+    int drain;                  /* added to the drain counter each tick */
+    int groups;                 /* FC_BOOK_DEF/STR/ATK conflict groups */
+    int replaces;               /* the FcBookPrayer it replaces once available, or -1 */
+    int attack, strength, defence;            /* combat percentages */
+    int ranged_attack, ranged_strength;
+    int magic_attack, magic_defence, magic_damage;
+} FcBookPrayerDef;
+
+/* RuneC's conflict groups (export_prayers.py G_*): switching a prayer on
+ * switches off the active ones that share a group with it. The ranged and
+ * magic prayers take the attack and strength groups. */
+enum {
+    FC_BOOK_DEF = 1 << 0, FC_BOOK_STR = 1 << 1, FC_BOOK_ATK = 1 << 2,
+    FC_BOOK_RANGED = FC_BOOK_ATK | FC_BOOK_STR,
+    FC_BOOK_MAGIC = FC_BOOK_ATK | FC_BOOK_STR,
+};
+
+/* Name, Prayer and Defence level, drain, groups, replaces, then the nonzero
+ * percentages. */
+static const FcBookPrayerDef FC_BOOK_PRAYERS[FC_BOOK_PRAYER_COUNT] = {
+    [FC_BOOK_THICK_SKIN] = {"Thick Skin", 1, 0, 1, FC_BOOK_DEF, -1, .defence = 5},
+    [FC_BOOK_BURST_OF_STRENGTH] =
+        {"Burst of Strength", 4, 0, 1, FC_BOOK_STR, -1, .strength = 5},
+    [FC_BOOK_CLARITY_OF_THOUGHT] =
+        {"Clarity of Thought", 7, 0, 1, FC_BOOK_ATK, -1, .attack = 5},
+    [FC_BOOK_SHARP_EYE] = {"Sharp Eye", 8, 0, 1, FC_BOOK_RANGED, -1,
+                           .ranged_attack = 5, .ranged_strength = 5},
+    [FC_BOOK_MYSTIC_WILL] = {"Mystic Will", 9, 0, 1, FC_BOOK_MAGIC, -1,
+                             .magic_attack = 5, .magic_defence = 5},
+    [FC_BOOK_ROCK_SKIN] = {"Rock Skin", 10, 0, 6, FC_BOOK_DEF, -1, .defence = 10},
+    [FC_BOOK_SUPERHUMAN_STRENGTH] =
+        {"Superhuman Strength", 13, 0, 6, FC_BOOK_STR, -1, .strength = 10},
+    [FC_BOOK_IMPROVED_REFLEXES] =
+        {"Improved Reflexes", 16, 0, 6, FC_BOOK_ATK, -1, .attack = 10},
+    [FC_BOOK_RAPID_RESTORE] = {"Rapid Restore", 19, 0, 1, 0, -1},
+    [FC_BOOK_RAPID_HEAL] = {"Rapid Heal", 22, 0, 2, 0, -1},
+    [FC_BOOK_HAWK_EYE] = {"Hawk Eye", 26, 0, 6, FC_BOOK_RANGED, -1,
+                          .ranged_attack = 10, .ranged_strength = 10},
+    [FC_BOOK_MYSTIC_LORE] = {"Mystic Lore", 27, 0, 6, FC_BOOK_MAGIC, -1,
+                             .magic_attack = 10, .magic_defence = 10,
+                             .magic_damage = 1},
+    [FC_BOOK_STEEL_SKIN] = {"Steel Skin", 28, 0, 12, FC_BOOK_DEF, -1, .defence = 15},
+    [FC_BOOK_ULTIMATE_STRENGTH] =
+        {"Ultimate Strength", 31, 0, 12, FC_BOOK_STR, -1, .strength = 15},
+    [FC_BOOK_INCREDIBLE_REFLEXES] =
+        {"Incredible Reflexes", 34, 0, 12, FC_BOOK_ATK, -1, .attack = 15},
+    [FC_BOOK_EAGLE_EYE] = {"Eagle Eye", 44, 0, 12, FC_BOOK_RANGED, -1,
+                           .ranged_attack = 15, .ranged_strength = 15},
+    [FC_BOOK_MYSTIC_MIGHT] = {"Mystic Might", 45, 0, 12, FC_BOOK_MAGIC, -1,
+                              .magic_attack = 15, .magic_defence = 15,
+                              .magic_damage = 2},
+    [FC_BOOK_PRESERVE] = {"Preserve", 55, 0, 2, 0, -1},
+    [FC_BOOK_CHIVALRY] = {"Chivalry", 60, 65, 24, FC_BOOK_ATK | FC_BOOK_STR | FC_BOOK_DEF,
+                          -1, .attack = 15, .strength = 18, .defence = 20},
+    [FC_BOOK_DEADEYE] = {"Deadeye", 62, 0, 12, FC_BOOK_RANGED, FC_BOOK_EAGLE_EYE,
+                         .defence = 5, .ranged_attack = 18, .ranged_strength = 18},
+    [FC_BOOK_MYSTIC_VIGOUR] = {"Mystic Vigour", 63, 0, 12, FC_BOOK_MAGIC,
+                               FC_BOOK_MYSTIC_MIGHT, .defence = 5,
+                               .magic_attack = 18, .magic_defence = 18,
+                               .magic_damage = 3},
+    [FC_BOOK_PIETY] = {"Piety", 70, 70, 24, FC_BOOK_ATK | FC_BOOK_STR | FC_BOOK_DEF,
+                       -1, .attack = 20, .strength = 23, .defence = 25},
+    [FC_BOOK_RIGOUR] = {"Rigour", 74, 70, 24, FC_BOOK_RANGED | FC_BOOK_DEF, -1,
+                        .defence = 25, .ranged_attack = 20, .ranged_strength = 23},
+    [FC_BOOK_AUGURY] = {"Augury", 77, 70, 24, FC_BOOK_MAGIC | FC_BOOK_DEF, -1,
+                        .defence = 25, .magic_attack = 25, .magic_defence = 25,
+                        .magic_damage = 4},
+};
+_Static_assert(FC_PRAYER_BOOK_DIM == 1 + FC_BOOK_PRAYER_COUNT,
+               "the prayer book head toggles each book prayer");
+
+/* RuneC's requirements(): the base Prayer and Defence levels. */
+static int fc_book_prayer_meets_levels(const FcPlayer* p, int prayer) {
+    const FcBookPrayerDef* def = &FC_BOOK_PRAYERS[prayer];
+    return p->prayer_level >= def->level && p->defence_level >= def->defence_level;
+}
+
+/* RuneC's rc_prayer_available(): the levels are met and no prayer that
+ * replaces this one meets its own, as Deadeye and Mystic Vigour replace Eagle
+ * Eye and Mystic Might. */
+static int fc_book_prayer_available(const FcPlayer* p, int prayer) {
+    if (!fc_book_prayer_meets_levels(p, prayer)) return 0;
+    for (int i = 0; i < FC_BOOK_PRAYER_COUNT; i++) {
+        if (FC_BOOK_PRAYERS[i].replaces == prayer &&
+            fc_book_prayer_meets_levels(p, i)) return 0;
+    }
+    return 1;
+}
+
+/* Whether a prayer book action takes effect, as in rc_player_set_prayer:
+ * switching a prayer off always does; switching one on needs it available
+ * and Prayer points above zero. */
+static int fc_book_action_valid(const FcState* state, int action) {
+    if (action < 0 || action >= FC_PRAYER_BOOK_DIM) return 0;
+    if (action == FC_PRAYER_BOOK_NO_CHANGE) return 1;
+    int prayer = action - 1;
+    if (state->caps.prayers & (1u << prayer)) return 1;
+    return state->player.current_prayer > 0 &&
+           fc_book_prayer_available(&state->player, prayer);
+}
+
+/* Set the active book prayers. As in RuneC's commit_active, switching Rapid
+ * Heal on or off restarts the regeneration timer: -1 skips this tick's step. */
+static void fc_book_prayers_set(FcState* state, uint32_t prayers) {
+    uint32_t changed = state->caps.prayers ^ prayers;
+    if (changed & (1u << FC_BOOK_RAPID_HEAL)) state->player.hp_regen_counter = -1;
+    state->caps.prayers = prayers;
+}
+
+/* Apply a PRAYER_BOOK action that takes effect, toggling FcBookPrayer
+ * action - 1. Switching one on first switches off the active prayers that
+ * share a group with it (RuneC's select_prayer). Returns whether the set
+ * changed. */
+static int fc_book_apply_action(FcState* state, int action) {
+    if (action == FC_PRAYER_BOOK_NO_CHANGE || !fc_book_action_valid(state, action))
+        return 0;
+    int prayer = action - 1;
+    uint32_t prayers = state->caps.prayers;
+    if (prayers & (1u << prayer)) {
+        prayers &= ~(1u << prayer);
+    } else {
+        for (int i = 0; i < FC_BOOK_PRAYER_COUNT; i++) {
+            if (FC_BOOK_PRAYERS[i].groups & FC_BOOK_PRAYERS[prayer].groups)
+                prayers &= ~(1u << i);
+        }
+        prayers |= 1u << prayer;
+    }
+    fc_book_prayers_set(state, prayers);
+    return 1;
+}
+
+/* RuneC's drain of a set of book prayers: the sum of theirs. */
+static int fc_book_prayers_drain(uint32_t prayers) {
+    int drain = 0;
+    for (int i = 0; i < FC_BOOK_PRAYER_COUNT; i++)
+        if (prayers & (1u << i)) drain += FC_BOOK_PRAYERS[i].drain;
+    return drain;
+}
+
+/* The drain of every active prayer, the overhead included. */
+static int fc_prayer_active_drain(const FcState* state) {
+    return (state->player.prayer != PRAYER_NONE ? PRAYER_OVERHEAD_DRAIN_RATE : 0) +
+           fc_book_prayers_drain(state->caps.prayers);
+}
+#endif
+
+static FcPrayerBonus fc_prayer_bonus(const FcState* state) {
+    FcPrayerBonus bonus = {0};
+#if FC_CAP_PRAYERS
+    for (int i = 0; i < FC_BOOK_PRAYER_COUNT; i++) {
+        if (!(state->caps.prayers & (1u << i))) continue;
+        const FcBookPrayerDef* def = &FC_BOOK_PRAYERS[i];
+        bonus.defence += def->defence;
+        if (def->attack > bonus.attack) bonus.attack = def->attack;
+        if (def->strength > bonus.strength) bonus.strength = def->strength;
+        if (def->ranged_attack > bonus.ranged_attack)
+            bonus.ranged_attack = def->ranged_attack;
+        if (def->ranged_strength > bonus.ranged_strength)
+            bonus.ranged_strength = def->ranged_strength;
+        if (def->magic_defence > bonus.magic_defence)
+            bonus.magic_defence = def->magic_defence;
+    }
+#else
+    (void)state;
+#endif
+    return bonus;
+}
+
+/* At zero Prayer points every prayer goes off and the drain counter clears. */
+static void enforce_post_loss_invariant(FcState* state) {
+    FcPlayer* p = &state->player;
     if (p->current_prayer > 0) return;
     p->current_prayer = 0;
     p->prayer = PRAYER_NONE;
     p->prayer_drain_counter = 0;
+#if FC_CAP_PRAYERS
+    fc_book_prayers_set(state, 0);
+#endif
 }
 
-/* Drain prayer points based on active prayer and bonus. prayer_at_tick_start
- * is the prayer before this tick's actions, so 1-tick flicks do not drain. */
-static int fc_prayer_drain_tick(FcPlayer* p, int prayer_at_tick_start,
-                                int flicked) {
+/* The drain counter's increase this tick. The overhead drains when it was on
+ * before this tick's actions (prayer_at_tick_start), is still on and was not
+ * flicked, so 1-tick flicks do not drain. With prayers = all, RuneC charges
+ * every active prayer from the tick after the first one went on
+ * (rc_prayer_drain_tick): a book prayer that was on at the start of the tick
+ * keeps the drain running like the overhead, and the rate covers every prayer
+ * on after the actions. The counter keeps its value when every prayer goes
+ * off, as it always has for the overhead (RuneC's commit_active clears it). */
+static int fc_prayer_drain_rate(const FcState* state, int prayer_at_tick_start,
+                                int flicked, uint32_t book_at_tick_start) {
+    const FcPlayer* p = &state->player;
+    int overhead_kept = p->prayer != PRAYER_NONE &&
+                        prayer_at_tick_start != PRAYER_NONE && !flicked;
+#if FC_CAP_PRAYERS
+    if (!overhead_kept && !book_at_tick_start) return 0;
+    return fc_prayer_active_drain(state);
+#else
+    (void)book_at_tick_start;
+    return overhead_kept ? PRAYER_OVERHEAD_DRAIN_RATE : 0;
+#endif
+}
+
+/* Drain prayer points by this tick's drain rate and the prayer bonus. */
+static int fc_prayer_drain_tick(FcState* state, int prayer_at_tick_start,
+                                int flicked, uint32_t book_at_tick_start) {
+    FcPlayer* p = &state->player;
     int prayer_before = p->current_prayer;
 
     if (p->current_prayer <= 0) {
-        enforce_post_loss_invariant(p);
+        enforce_post_loss_invariant(state);
         return 0;
     }
 
-    if (p->prayer == PRAYER_NONE) return 0;
-    if (prayer_at_tick_start == PRAYER_NONE) return 0;
-    if (flicked) return 0;
+    int drain_rate = fc_prayer_drain_rate(state, prayer_at_tick_start, flicked,
+                                          book_at_tick_start);
+    if (drain_rate == 0) return 0;
 
     /* Counter-based drain matching OSRS PrayerDrain.kt exactly:
      * Accumulate drain rate each tick, drain 1 point when counter exceeds resistance. */
-    int drain_rate = PRAYER_OVERHEAD_DRAIN_RATE;  /* all 3 protect prayers = 12 */
     int resistance = 60 + 2 * p->prayer_bonus;
 
     p->prayer_drain_counter += drain_rate;
@@ -3352,7 +3676,7 @@ static int fc_prayer_drain_tick(FcPlayer* p, int prayer_at_tick_start,
     }
 
     if (requested_loss > 0) {
-        fc_prayer_apply_loss_tenths(p, requested_loss);
+        fc_prayer_apply_loss_tenths(state, requested_loss);
     }
     return prayer_before - p->current_prayer;
 }
@@ -3383,16 +3707,17 @@ static FcPrayerTransition fc_prayer_apply_action(FcPlayer* p, int prayer_action)
 }
 
 /* Apply capped Prayer loss in tenths. Every Prayer-loss source uses this
- * boundary so depletion always deactivates the overhead and clears the drain
+ * boundary so depletion always deactivates every prayer and clears the drain
  * counter. */
-static int fc_prayer_apply_loss_tenths(FcPlayer* p, int requested_loss_tenths) {
+static int fc_prayer_apply_loss_tenths(FcState* state, int requested_loss_tenths) {
+    FcPlayer* p = &state->player;
     int prayer_before = p->current_prayer;
     if (requested_loss_tenths > 0 && p->current_prayer > 0) {
         int loss = requested_loss_tenths;
         if (loss > p->current_prayer) loss = p->current_prayer;
         p->current_prayer -= loss;
     }
-    enforce_post_loss_invariant(p);
+    enforce_post_loss_invariant(state);
     return prayer_before - p->current_prayer;
 }
 
@@ -4357,6 +4682,15 @@ void fc_write_obs(const FcState* state, float* out) {
     supply[FC_OBS_SUPPLY_COMBO_TIMER] =
         clamp01((float)p->combo_timer / (float)FC_COMBO_EAT_TICKS);
 #endif
+
+#if FC_CAP_PRAYERS
+    float* book = out + FC_OBS_BOOK_START;
+    for (int i = 0; i < FC_BOOK_PRAYER_COUNT; i++)
+        book[FC_OBS_BOOK_ACTIVE + i] = (state->caps.prayers >> i) & 1u ? 1.0f : 0.0f;
+    int resistance = 60 + 2 * p->prayer_bonus;
+    book[FC_OBS_BOOK_DRAIN] = resistance > 0
+        ? clamp01((float)fc_prayer_active_drain(state) / (float)resistance) : 0.0f;
+#endif
 }
 
 void fc_write_mask(const FcState* state, float* out) {
@@ -4396,6 +4730,15 @@ void fc_write_mask(const FcState* state, float* out) {
     if (!fc_drink_action_valid(state, FC_DRINK_PRAYER_POT)) {
         out[FC_MASK_DRINK_START + FC_DRINK_PRAYER_POT] = 0.0f;
     }
+
+#if FC_CAP_PRAYERS
+    /* PRAYER_BOOK: a prayer that cannot be switched on is masked; switching
+     * one off never is. */
+    for (int action = 1; action < FC_PRAYER_BOOK_DIM; action++) {
+        if (!fc_book_action_valid(state, action))
+            out[FC_MASK_BOOK_START + action] = 0.0f;
+    }
+#endif
 }
 
 static int fc_is_terminal(const FcState* state) {
@@ -4454,7 +4797,7 @@ static void fc_fill_render_events(const FcState* state, FcRenderEvents* events) 
  *
  *   1. Clear per-tick event flags
  *   2. Process player actions:
- *      a. Prayer toggle (instant)
+ *      a. Prayer toggles (instant): the overhead, then the prayer book
  *      b. Eat food / drink potion (if timer ready)
  *      c. Attack initiation from the pre-movement tile
  *      d. Movement (route or directional head), unless an attack fired
@@ -4616,17 +4959,15 @@ static void prepare_player_interaction(FcState* state, int explicit_move,
 
 static void launch_player_attack(FcState* state, FcNpc* target, int distance) {
     FcPlayer* player = &state->player;
+    FcPrayerBonus prayer = fc_prayer_bonus(state);
     int melee = player->weapon_kind == FC_WEAPON_UNARMED;
     int att_roll, max_hit;
     if (melee) {
-        /* Unarmed Punch is accurate/crush (+3 Attack). Fight Caves NPCs all
-         * have zero crush defence bonus, including the ranged-resistant
-         * healers. */
-        att_roll = (player->attack_level + 11) * (player->melee_attack_bonus + 64);
-        max_hit = (320 + (player->strength_level + 8) *
-                   (player->melee_strength_bonus + 64)) / 640;
+        /* Fight Caves NPCs all have zero crush defence bonus, including the
+         * ranged-resistant healers. */
+        fc_player_melee_rolls(player, &prayer, &att_roll, &max_hit);
     } else {
-        fc_player_ranged_rolls(player, target, &att_roll, &max_hit);
+        fc_player_ranged_rolls(player, &prayer, target, &att_roll, &max_hit);
     }
     const FcNpcStats* target_stats = fc_npc_get_stats(target->npc_type);
     int def_roll = fc_npc_roll(target_stats->def_level,
@@ -4854,8 +5195,13 @@ static void process_player_actions(FcState* state,
         requested_attack_idx = npc_slot_to_index(state, act_attack - 1);
     }
 
-    /* Prayer remains instant and precedes supplies. */
+    /* Prayer remains instant and precedes supplies: the overhead, then the
+     * prayer book. */
     apply_player_prayer_action(state, act_prayer, prayer_transition);
+#if FC_CAP_PRAYERS
+    if (fc_book_apply_action(state, actions[FC_HEAD_PRAYER_BOOK]))
+        p->prayer_changed_this_tick = 1;
+#endif
     apply_player_supplies(state, act_eat, act_drink);
 
     prepare_player_interaction(state, explicit_move, explicit_attack,
@@ -4988,6 +5334,7 @@ static void lock_pending_prayers_at_boundary(FcState* state) {
 
 static void fc_tick(FcState* state, const int actions[FC_NUM_ACTION_HEADS]) {
     state->player.prayer_at_tick_start = state->player.prayer;
+    uint32_t book_at_tick_start = state->caps.prayers;
     FcPrayerTransition prayer_transition = {0};
 
     /* 1. Clear per-tick flags */
@@ -5000,15 +5347,20 @@ static void fc_tick(FcState* state, const int actions[FC_NUM_ACTION_HEADS]) {
 
     /* 4. Prayer drain */
     state->overhead_prayer_lost_this_tick =
-        fc_prayer_drain_tick(&state->player,
-                             state->player.prayer_at_tick_start,
-                             prayer_transition.flicked);
+        fc_prayer_drain_tick(state, state->player.prayer_at_tick_start,
+                             prayer_transition.flicked, book_at_tick_start);
     state->prayer_lost_this_tick += state->overhead_prayer_lost_this_tick;
 
-    /* 4b. HP regen (1 HP = 10 tenths every FC_HP_REGEN_INTERVAL ticks) */
+    /* 4b. HP regen (1 HP = 10 tenths every FC_HP_REGEN_INTERVAL ticks, or
+     * FC_RAPID_HEAL_REGEN_INTERVAL with Rapid Heal on) */
+    int regen_interval = FC_HP_REGEN_INTERVAL;
+#if FC_CAP_PRAYERS
+    if (state->caps.prayers & (1u << FC_BOOK_RAPID_HEAL))
+        regen_interval = FC_RAPID_HEAL_REGEN_INTERVAL;
+#endif
     if (state->player.current_hp > 0 && state->player.current_hp < state->player.max_hp) {
         state->player.hp_regen_counter++;
-        if (state->player.hp_regen_counter >= FC_HP_REGEN_INTERVAL) {
+        if (state->player.hp_regen_counter >= regen_interval) {
             state->player.hp_regen_counter = 0;
             state->player.current_hp += 10;  /* 1 HP in tenths */
             if (state->player.current_hp > state->player.max_hp) {

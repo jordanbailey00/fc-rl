@@ -5817,6 +5817,22 @@ static const char* npc_short_name(int npc_type) {
         ? names[npc_type] : "?";
 }
 
+#if FC_CAP_PRAYERS
+/* The names of the active prayer book prayers in out, or "no book prayer". */
+static const char* book_prayer_names(uint32_t prayers, char* out, size_t size) {
+    size_t n = 0;
+    out[0] = '\0';
+    for (int i = 0; i < FC_BOOK_PRAYER_COUNT && n < size; i++) {
+        if (!(prayers & (1u << i))) continue;
+        int written = snprintf(out + n, size - n, "%s%s", n ? ", " : "",
+                               FC_BOOK_PRAYERS[i].name);
+        if (written < 0) break;
+        n += (size_t)written;
+    }
+    return out[0] ? out : "no book prayer";
+}
+#endif
+
 /* Call once per tick to auto-generate events from state changes.
  * Reads current state and emits relevant log entries. */
 void dbg_log_tick(const FcState* state) {
@@ -5849,8 +5865,15 @@ void dbg_log_tick(const FcState* state) {
     /* Player switched prayer */
     if (p->prayer_changed_this_tick) {
         static const char* pray_names[] = {"OFF","Prot Melee","Prot Range","Prot Magic"};
+#if FC_CAP_PRAYERS
+        char book[DBG_LOG_MAX_MSG];
+        dbg_log_event(t, CLITERAL(Color){255,255,100,255}, "Prayer -> %s | %s",
+                      pray_names[p->prayer],
+                      book_prayer_names(state->caps.prayers, book, sizeof(book)));
+#else
         dbg_log_event(t, CLITERAL(Color){255,255,100,255},
                       "Prayer -> %s", pray_names[p->prayer]);
+#endif
     }
 
     /* Player attack attempt */
@@ -6131,6 +6154,15 @@ int dbg_draw_panel_tabs(const FcState* state,
         dbg_print_line(x, &by, lh, DBG_COL_LABEL,
                        "Prayer:%s Drain:%d Bonus:+%d", pray_str[p->prayer],
                        p->prayer_drain_counter, p->prayer_bonus);
+#if FC_CAP_PRAYERS
+        {
+            char book[160];
+            dbg_print_line(x, &by, lh, DBG_COL_LABEL, "Rate:%d Book:%s",
+                           fc_prayer_active_drain(state),
+                           book_prayer_names(state->caps.prayers, book,
+                                             sizeof(book)));
+        }
+#endif
         dbg_print_line(x, &by, lh, DBG_COL_LABEL, "Shark:%d Dose:%d Ammo:%d",
                        p->sharks_remaining, p->prayer_doses_remaining,
                        p->ammo_count);
@@ -6193,6 +6225,18 @@ int dbg_draw_panel_tabs(const FcState* state,
                        obs[mbase + FC_OBS_META_WAVE_PROG],
                        obs[mbase + FC_OBS_META_WORK_REM],
                        obs[mbase + FC_OBS_META_NO_PROG]);
+#if FC_CAP_PRAYERS
+        {
+            /* The prayer book block: FcBookPrayer 0-23 on, then the drain. */
+            char on[FC_BOOK_PRAYER_COUNT + 1];
+            for (int i = 0; i < FC_BOOK_PRAYER_COUNT; i++)
+                on[i] = obs[FC_OBS_BOOK_START + FC_OBS_BOOK_ACTIVE + i] > 0.5f
+                    ? '1' : '0';
+            on[FC_BOOK_PRAYER_COUNT] = '\0';
+            dbg_print_line(x, &by, lh, DBG_COL_LABEL, "Book %s Drain:%.2f", on,
+                           obs[FC_OBS_BOOK_START + FC_OBS_BOOK_DRAIN]);
+        }
+#endif
 
         by += 2;
         dbg_print_line(x, &by, lh - 1, DBG_COL_DIM, "NPC slots:");
@@ -6217,7 +6261,8 @@ int dbg_draw_panel_tabs(const FcState* state,
 
     } else if (dbg_tab == 2) {
         /* Action mask, one bit per action. Heads 0-6 are move, attack,
-         * prayer, eat, drink and the two move-target coordinates. */
+         * prayer, eat, drink and the two move-target coordinates; head 7 is
+         * the prayer book with prayers = all. */
         static const char* labels[] = { "MOVE:", "ATK:", "PRAY:" };
         float mask[FC_ACTION_MASK_SIZE];
         char bits[FC_ACTION_MASK_SIZE + 1];
@@ -6237,6 +6282,10 @@ int dbg_draw_panel_tabs(const FcState* state,
         int valid_y = dbg_mask_bits(mask, 6, bits);
         dbg_print_line(x, &by, lh, DBG_COL_LABEL, "TGT_X:%d/%d TGT_Y:%d/%d",
                        valid_x, FC_ACTION_DIMS[5], valid_y, FC_ACTION_DIMS[6]);
+#if FC_CAP_PRAYERS
+        dbg_mask_bits(mask, FC_HEAD_PRAYER_BOOK, bits);
+        dbg_print_line(x, &by, lh, DBG_COL_LABEL, "BOOK:%s", bits);
+#endif
 
     } else if (dbg_tab == 3) {
         const FcRewardBreakdown* b = reward_breakdown;
@@ -6339,6 +6388,62 @@ static const FcProtectionPrayer FC_PROTECTION_PRAYERS[] = {
 #define FC_PROTECTION_PRAYER_COUNT \
     ((int)(sizeof(FC_PROTECTION_PRAYERS) / sizeof(FC_PROTECTION_PRAYERS[0])))
 
+#if FC_CAP_PRAYERS
+/* The prayeron_N / prayeroff_N frame of each prayer book prayer, or -1. In
+ * the pinned viewer assets frames 0-23 are the prayers up to Mystic Might,
+ * Protect Item, the protection prayers, Retribution, Redemption and Smite
+ * among them; no frame is Preserve or a later prayer, which the Prayer tab
+ * labels by name instead. */
+static const int FC_BOOK_PRAYER_SPRITES[FC_BOOK_PRAYER_COUNT] = {
+    [FC_BOOK_THICK_SKIN] = 0, [FC_BOOK_BURST_OF_STRENGTH] = 1,
+    [FC_BOOK_CLARITY_OF_THOUGHT] = 2, [FC_BOOK_SHARP_EYE] = 18,
+    [FC_BOOK_MYSTIC_WILL] = 19, [FC_BOOK_ROCK_SKIN] = 3,
+    [FC_BOOK_SUPERHUMAN_STRENGTH] = 4, [FC_BOOK_IMPROVED_REFLEXES] = 5,
+    [FC_BOOK_RAPID_RESTORE] = 6, [FC_BOOK_RAPID_HEAL] = 7,
+    [FC_BOOK_HAWK_EYE] = 20, [FC_BOOK_MYSTIC_LORE] = 21,
+    [FC_BOOK_STEEL_SKIN] = 9, [FC_BOOK_ULTIMATE_STRENGTH] = 10,
+    [FC_BOOK_INCREDIBLE_REFLEXES] = 11, [FC_BOOK_EAGLE_EYE] = 22,
+    [FC_BOOK_MYSTIC_MIGHT] = 23, [FC_BOOK_PRESERVE] = -1,
+    [FC_BOOK_CHIVALRY] = -1, [FC_BOOK_DEADEYE] = -1,
+    [FC_BOOK_MYSTIC_VIGOUR] = -1, [FC_BOOK_PIETY] = -1,
+    [FC_BOOK_RIGOUR] = -1, [FC_BOOK_AUGURY] = -1,
+};
+
+/* The Prayer tab with prayers = all: every prayer the policy can use, in
+ * RuneC's prayer order, five to a row. book is the FcBookPrayer, or -1 for
+ * FC_PROTECTION_PRAYERS row protection. label, in lines that fit a cell, is
+ * drawn for a prayer without a sprite. */
+typedef struct {
+    int book;
+    int protection;
+    const char* label;
+} FcPrayerTabCell;
+
+static const FcPrayerTabCell FC_PRAYER_TAB_CELLS[] = {
+    {FC_BOOK_THICK_SKIN, -1, NULL}, {FC_BOOK_BURST_OF_STRENGTH, -1, NULL},
+    {FC_BOOK_CLARITY_OF_THOUGHT, -1, NULL}, {FC_BOOK_SHARP_EYE, -1, NULL},
+    {FC_BOOK_MYSTIC_WILL, -1, NULL}, {FC_BOOK_ROCK_SKIN, -1, NULL},
+    {FC_BOOK_SUPERHUMAN_STRENGTH, -1, NULL},
+    {FC_BOOK_IMPROVED_REFLEXES, -1, NULL}, {FC_BOOK_RAPID_RESTORE, -1, NULL},
+    {FC_BOOK_RAPID_HEAL, -1, NULL}, {FC_BOOK_HAWK_EYE, -1, NULL},
+    {FC_BOOK_MYSTIC_LORE, -1, NULL}, {FC_BOOK_STEEL_SKIN, -1, NULL},
+    {FC_BOOK_ULTIMATE_STRENGTH, -1, NULL},
+    {FC_BOOK_INCREDIBLE_REFLEXES, -1, NULL},
+    {-1, 2, NULL}, {-1, 1, NULL}, {-1, 0, NULL},  /* magic, missiles, melee */
+    {FC_BOOK_EAGLE_EYE, -1, NULL}, {FC_BOOK_MYSTIC_MIGHT, -1, NULL},
+    {FC_BOOK_PRESERVE, -1, "Pre\nserve"}, {FC_BOOK_CHIVALRY, -1, "Chiv\nalry"},
+    {FC_BOOK_DEADEYE, -1, "Dead\neye"},
+    {FC_BOOK_MYSTIC_VIGOUR, -1, "Mystic\nVigour"},
+    {FC_BOOK_PIETY, -1, "Piety"}, {FC_BOOK_RIGOUR, -1, "Rigour"},
+    {FC_BOOK_AUGURY, -1, "Augury"},
+};
+#define FC_PRAYER_TAB_CELL_COUNT \
+    ((int)(sizeof(FC_PRAYER_TAB_CELLS) / sizeof(FC_PRAYER_TAB_CELLS[0])))
+_Static_assert(FC_PRAYER_TAB_CELL_COUNT ==
+                   FC_BOOK_PRAYER_COUNT + FC_PROTECTION_PRAYER_COUNT,
+               "the Prayer tab shows every prayer once");
+#endif
+
 /* Viewer state */
 typedef struct ViewerState {
     FcState state;
@@ -6379,6 +6484,9 @@ typedef struct ViewerState {
     AnimCache* anim_cache;
     /* Buffered key inputs (captured every frame, consumed on tick) */
     int pending_prayer, pending_eat, pending_drink;
+#if FC_CAP_PRAYERS
+    int pending_book;             /* PRAYER_BOOK action for the next tick */
+#endif
     int pending_attack_npc;
     int pending_tile_x, pending_tile_y;
     FcClickFeedback click_feedback;
@@ -6394,6 +6502,11 @@ typedef struct ViewerState {
      * Prayer tab and (on) the overhead icon. */
     Texture2D prayer_on[FC_PROTECTION_PRAYER_COUNT];
     Texture2D prayer_off[FC_PROTECTION_PRAYER_COUNT];
+#if FC_CAP_PRAYERS
+    /* The same per prayer book prayer that has a sprite. */
+    Texture2D book_on[FC_BOOK_PRAYER_COUNT];
+    Texture2D book_off[FC_BOOK_PRAYER_COUNT];
+#endif
     Texture2D click_cross_tex[FC_CLICK_CROSS_FRAME_COUNT * 2];
     /* Debug overlay — toggled with O key */
     int dbg_flags;       /* bitmask of DBG_* flags */
@@ -6440,6 +6553,16 @@ static void queue_viewer_prayer_button(ViewerState* v,
         return;
     v->pending_prayer = protection_prayer_toggle(p, row);
 }
+
+#if FC_CAP_PRAYERS
+/* Toggle FcBookPrayer book on the next tick, if the toggle takes effect now
+ * (switching it off always does). */
+static void queue_viewer_book_button(ViewerState* v, int book) {
+    if (!v || !fc_book_action_valid(&v->state, book + 1))
+        return;
+    v->pending_book = book + 1;
+}
+#endif
 
 static int load_ui_item_icon(FcUiState* ui, uint32_t item_id) {
     if (!ui || item_id == 0) return 0;
@@ -6673,6 +6796,19 @@ static void handle_fc_ui_intent(ViewerState* v) {
             break;
         case FC_UI_INTENT_PRAYER_SLOT: {
             int row = intent->primary;
+#if FC_CAP_PRAYERS
+            /* The slot is a FC_PRAYER_TAB_CELLS cell: a book prayer, or a
+             * protection prayer handled below. */
+            if (row < 0 || row >= FC_PRAYER_TAB_CELL_COUNT) break;
+            int book = FC_PRAYER_TAB_CELLS[row].book;
+            if (book >= 0) {
+                int active = (v->state.caps.prayers >> book) & 1u;
+                if (intent->secondary == (active ? -1 : 1) && !v->policy_replay)
+                    queue_viewer_book_button(v, book);
+                break;
+            }
+            row = FC_PRAYER_TAB_CELLS[row].protection;
+#endif
             if (row < 0 || row >= FC_PROTECTION_PRAYER_COUNT ||
                 p->current_prayer <= 0)
                 break;
@@ -6839,6 +6975,9 @@ static void fc_viewer_reset_presentation(ViewerState* v) {
     v->item_message_seconds = 0.0f;
     memset(v->actions, 0, sizeof(v->actions));
     v->pending_prayer = 0;
+#if FC_CAP_PRAYERS
+    v->pending_book = 0;
+#endif
     v->pending_eat = 0;
     v->pending_drink = 0;
     v->pending_attack_npc = -1;
@@ -7015,6 +7154,10 @@ static void build_human_actions(ViewerState* v) {
     v->actions[2] = v->pending_prayer;
     v->actions[3] = v->pending_eat;
     v->actions[4] = v->pending_drink;
+#if FC_CAP_PRAYERS
+    v->actions[FC_HEAD_PRAYER_BOOK] = v->pending_book;
+    v->pending_book = 0;
+#endif
     /* Clear buffers */
     v->pending_prayer = 0;
     v->pending_eat = 0;
@@ -7727,6 +7870,145 @@ static void draw_tex_fit(Texture2D tex, int dx, int dy, int dw, int dh,
     DrawTexturePro(tex, src, dst, (Vector2){0, 0}, 0, tint);
 }
 
+#if FC_CAP_PRAYERS
+#define FC_PRAYER_TAB_COLUMNS 5
+#define FC_PRAYER_TAB_CELL_SIZE 37
+
+/* A FC_PRAYER_TAB_CELLS cell's place, below the two header lines. */
+static Rectangle fc_prayer_cell_rect(Rectangle content, int cell) {
+    int x = (int)content.x + ((int)content.width -
+             FC_PRAYER_TAB_COLUMNS * FC_PRAYER_TAB_CELL_SIZE) / 2 +
+            cell % FC_PRAYER_TAB_COLUMNS * FC_PRAYER_TAB_CELL_SIZE;
+    int y = (int)content.y + 34 +
+            cell / FC_PRAYER_TAB_COLUMNS * FC_PRAYER_TAB_CELL_SIZE;
+    return (Rectangle){(float)x, (float)y, FC_PRAYER_TAB_CELL_SIZE,
+                       FC_PRAYER_TAB_CELL_SIZE};
+}
+
+/* A cell's prayer as the tab shows it: whether it is on, whether a click
+ * would toggle it, and its sprites (id 0 for a book prayer without one). */
+typedef struct {
+    const char* name;
+    int active, usable;
+    Texture2D on, off;
+} FcPrayerTabView;
+
+static FcPrayerTabView prayer_tab_view(const ViewerState* v, int cell) {
+    const FcPrayerTabCell* c = &FC_PRAYER_TAB_CELLS[cell];
+    FcPrayerTabView view = {0};
+    if (c->book >= 0) {
+        view.name = FC_BOOK_PRAYERS[c->book].name;
+        view.active = (v->state.caps.prayers >> c->book) & 1u;
+        view.usable = fc_book_action_valid(&v->state, c->book + 1);
+        view.on = v->book_on[c->book];
+        view.off = v->book_off[c->book];
+    } else {
+        const FcProtectionPrayer* row = &FC_PROTECTION_PRAYERS[c->protection];
+        view.name = row->name;
+        view.active = fc_actor_animation_render_prayer(
+            &v->actor_animation, &v->state) == row->prayer;
+        view.usable = v->state.player.current_prayer > 0;
+        view.on = v->prayer_on[c->protection];
+        view.off = v->prayer_off[c->protection];
+    }
+    return view;
+}
+
+/* The FC_PRAYER_TAB_CELLS cell under pos, or -1. */
+static int prayer_tab_cell_at(Rectangle content, Vector2 pos) {
+    for (int c = 0; c < FC_PRAYER_TAB_CELL_COUNT; c++)
+        if (CheckCollisionPointRec(pos, fc_prayer_cell_rect(content, c)))
+            return c;
+    return -1;
+}
+
+/* The Prayer tab with prayers = all: Prayer points and bonus, then the
+ * hovered prayer's requirements or the active prayers' drain, then every
+ * prayer. As in the game, an icon is bright when clicking it would toggle the
+ * prayer and dark when it cannot be switched on; an active prayer is
+ * highlighted. */
+static void draw_fc_prayer_tab(ViewerState* v, Rectangle content) {
+    BeginScissorMode((int)content.x, (int)content.y,
+                     (int)content.width, (int)content.height);
+
+    DrawRectangleRec(content, COL_PANEL);
+
+    FcPlayer* p = &v->state.player;
+    int x = (int)content.x + 8;
+    int by = (int)content.y + 4;
+    int right = (int)(content.x + content.width) - 4;
+    char b[96];
+
+    snprintf(b, sizeof(b), "Prayer: %d / %d   Bonus: +%d",
+             p->current_prayer / 10, p->max_prayer / 10, p->prayer_bonus);
+    text_s(b, x, by, COL_PRAY_BLUE);
+    by += 14;
+
+    int hovered = prayer_tab_cell_at(content, GetMousePosition());
+    int drain = fc_prayer_active_drain(&v->state);
+    if (hovered >= 0) {
+        int book = FC_PRAYER_TAB_CELLS[hovered].book;
+        const char* name = prayer_tab_view(v, hovered).name;
+        if (book < 0)
+            snprintf(b, sizeof(b), "%s", name);
+        else if (FC_BOOK_PRAYERS[book].defence_level > 0)
+            snprintf(b, sizeof(b), "%s: Prayer %d, Defence %d", name,
+                     FC_BOOK_PRAYERS[book].level,
+                     FC_BOOK_PRAYERS[book].defence_level);
+        else
+            snprintf(b, sizeof(b), "%s: Prayer %d", name,
+                     FC_BOOK_PRAYERS[book].level);
+        text_s(b, x, by, COL_TEXT_YELLOW);
+    } else if (drain > 0) {
+        snprintf(b, sizeof(b), "Drain rate: %d / %d resist", drain,
+                 60 + 2 * p->prayer_bonus);
+        text_s(b, x, by, COL_TEXT_DIM);
+    } else {
+        text_s("No prayer active", x, by, COL_TEXT_DIM);
+    }
+    by += 14;
+    DrawLine((int)content.x + 4, by, right, by, COL_PANEL_BORDER);
+
+    const Color pray_active = CLITERAL(Color){60, 120, 200, 200};
+    const Color tab_hover = CLITERAL(Color){72, 63, 51, 255};
+    for (int c = 0; c < FC_PRAYER_TAB_CELL_COUNT; c++) {
+        Rectangle r = fc_prayer_cell_rect(content, c);
+        FcPrayerTabView view = prayer_tab_view(v, c);
+        if (view.active) {
+            DrawRectangleRec(r, pray_active);
+            DrawRectangleLinesEx(r, 1, COL_TEXT_WHITE);
+        } else if (c == hovered && view.usable) {
+            DrawRectangleRec(r, tab_hover);
+        }
+        Texture2D icon = view.usable ? view.on : view.off;
+        const char* label = FC_PRAYER_TAB_CELLS[c].label;
+        if (icon.id > 0) {
+            draw_tex_fit(icon, (int)r.x + 3, (int)r.y + 3, 30, 30, WHITE);
+        } else if (label) {
+            /* The label's lines, centred in the cell. */
+            Color tc = view.active ? COL_TEXT_WHITE
+                : view.usable ? COL_TEXT_YELLOW : COL_TEXT_DIM;
+            int lines = 1;
+            for (const char* s = label; *s; s++) lines += *s == '\n';
+            int line_h = 12;
+            int ly = (int)(r.y + (r.height - lines * line_h) / 2);
+            for (const char* s = label; *s; ly += line_h) {
+                char line[16];
+                size_t n = strcspn(s, "\n");
+                if (n >= sizeof(line)) n = sizeof(line) - 1;
+                memcpy(line, s, n);
+                line[n] = '\0';
+                Vector2 size = fc_osrs_measure_text(line);
+                text_s(line, (int)(r.x + (r.width - size.x) / 2), ly, tc);
+                s += strcspn(s, "\n");
+                if (*s) s++;
+            }
+        }
+    }
+
+    EndScissorMode();
+}
+#else
 static Rectangle fc_prayer_button_rect(Rectangle content, int index) {
     const int btn_h = 34;
     const int gap = 3;
@@ -7816,6 +8098,7 @@ static void draw_fc_prayer_tab(ViewerState* v, Rectangle content) {
 
     EndScissorMode();
 }
+#endif
 
 static void draw_fc_side_overrides(ViewerState* v) {
     Rectangle content = fc_ui_side_content_rect(GetScreenWidth(), GetScreenHeight());
@@ -7836,6 +8119,20 @@ static int process_fc_prayer_click(ViewerState* v) {
     if (!CheckCollisionPointRec(mouse, content))
         return 0;
 
+#if FC_CAP_PRAYERS
+    int cell = prayer_tab_cell_at(content, mouse);
+    if (cell >= 0) {
+        const FcPrayerTabCell* c = &FC_PRAYER_TAB_CELLS[cell];
+        if (right_click) {
+            FcPrayerTabView view = prayer_tab_view(v, cell);
+            fc_ui_open_prayer_context(&v->ui, mouse, cell, view.name, view.active);
+        } else if (c->book >= 0) {
+            queue_viewer_book_button(v, c->book);
+        } else {
+            queue_viewer_prayer_button(v, &FC_PROTECTION_PRAYERS[c->protection]);
+        }
+    }
+#else
     for (int i = 0; i < FC_PROTECTION_PRAYER_COUNT; i++) {
         const FcProtectionPrayer* row = &FC_PROTECTION_PRAYERS[i];
         Rectangle r = fc_prayer_button_rect(content, i);
@@ -7850,6 +8147,7 @@ static int process_fc_prayer_click(ViewerState* v) {
         }
         return 1;
     }
+#endif
 
     return 1;
 }
@@ -7865,6 +8163,12 @@ static void fc_viewer_destroy(ViewerState* v) {
         if (v->prayer_on[i].id > 0) UnloadTexture(v->prayer_on[i]);
         if (v->prayer_off[i].id > 0) UnloadTexture(v->prayer_off[i]);
     }
+#if FC_CAP_PRAYERS
+    for (int i = 0; i < FC_BOOK_PRAYER_COUNT; i++) {
+        if (v->book_on[i].id > 0) UnloadTexture(v->book_on[i]);
+        if (v->book_off[i].id > 0) UnloadTexture(v->book_off[i]);
+    }
+#endif
     for (int i = 0; i < FC_CLICK_CROSS_FRAME_COUNT * 2; i++) {
         if (v->click_cross_tex[i].id > 0)
             UnloadTexture(v->click_cross_tex[i]);
@@ -8018,6 +8322,24 @@ static ViewerState* fc_viewer_create(int replay) {
     }
     fprintf(stderr, "Prayer icons loaded: %d/%d\n", prayer_icons_loaded,
             2 * FC_PROTECTION_PRAYER_COUNT);
+#if FC_CAP_PRAYERS
+    /* The prayer book's sprites, where the assets have one. */
+    int book_icons_loaded = 0, book_icons = 0;
+    for (int i = 0; i < FC_BOOK_PRAYER_COUNT; i++) {
+        if (FC_BOOK_PRAYER_SPRITES[i] < 0) continue;
+        char path[64];
+        snprintf(path, sizeof(path), "data/sprites/ui/prayeron_%d.png",
+                 FC_BOOK_PRAYER_SPRITES[i]);
+        v->book_on[i] = fc_load_texture_asset(path);
+        snprintf(path, sizeof(path), "data/sprites/ui/prayeroff_%d.png",
+                 FC_BOOK_PRAYER_SPRITES[i]);
+        v->book_off[i] = fc_load_texture_asset(path);
+        book_icons_loaded += (v->book_on[i].id > 0) + (v->book_off[i].id > 0);
+        book_icons += 2;
+    }
+    fprintf(stderr, "Prayer book icons loaded: %d/%d\n", book_icons_loaded,
+            book_icons);
+#endif
 
     /* Native b237 click crosses: frames 0-3 are movement (yellow), frames
      * 4-7 are interaction (red). RuneC advances one frame every 100 ms. */
@@ -8073,6 +8395,10 @@ static ViewerState* fc_viewer_create(int replay) {
         "projectile, spot-animation, healthbar, and hitsplat data");
     REQUIRE_VIEWER_RESOURCE(prayer_icons_loaded == 2 * FC_PROTECTION_PRAYER_COUNT,
                             "Prayer tab and overhead icons");
+#if FC_CAP_PRAYERS
+    REQUIRE_VIEWER_RESOURCE(book_icons_loaded == book_icons,
+                            "Prayer tab prayer book icons");
+#endif
     REQUIRE_VIEWER_RESOURCE(
         click_cross_loaded == FC_CLICK_CROSS_FRAME_COUNT * 2,
         "click cross sprites");

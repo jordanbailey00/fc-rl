@@ -91,13 +91,15 @@ static void check_observation(const FcState* state) {
 static int core_contract_test(void) {
     _Static_assert(FC_STATE_HASH_VERSION == 6, "analytics state hash version drifted");
     /* 286 + 34 = 320 floats and three heads with the default capabilities. */
-    _Static_assert(FC_POLICY_OBS_SIZE == 286 + 3 * FC_CAP_CONSUMABLES,
+    _Static_assert(FC_POLICY_OBS_SIZE ==
+                       286 + 3 * FC_CAP_CONSUMABLES + 25 * FC_CAP_PRAYERS,
                    "policy observation contract drifted");
-    _Static_assert(FC_PUFFER_MASK_SIZE == 34 + 5 * FC_CAP_CONSUMABLES,
+    _Static_assert(FC_PUFFER_MASK_SIZE ==
+                       34 + 5 * FC_CAP_CONSUMABLES + 25 * FC_CAP_PRAYERS,
                    "Puffer mask contract drifted");
     _Static_assert(FC_PUFFER_OBS_SIZE == FC_POLICY_OBS_SIZE + FC_PUFFER_MASK_SIZE,
                    "Puffer observation contract drifted");
-    _Static_assert(FC_PUFFER_NUM_ATNS == 3 + 2 * FC_CAP_CONSUMABLES,
+    _Static_assert(FC_PUFFER_NUM_ATNS == 3 + 2 * FC_CAP_CONSUMABLES + FC_CAP_PRAYERS,
                    "Puffer action-head count drifted");
 
     FcState first;
@@ -342,8 +344,9 @@ static int constant_tables(void) {
         CHECK(fc_player_visual_profile(&player)->projectile.travel_spot != 0);
         for (int type = NPC_TZ_KIH; type < NPC_TYPE_COUNT; type++) {
             FcNpc target = {.npc_type = type};
+            FcPrayerBonus no_prayer = {0};
             int attack_roll, max_hit;
-            fc_player_ranged_rolls(&player, &target, &attack_roll, &max_hit);
+            fc_player_ranged_rolls(&player, &no_prayer, &target, &attack_roll, &max_hit);
             CHECK(max_hit > 0);
         }
     }
@@ -1275,6 +1278,14 @@ static void scenario_config_test(void) {
     dict_set(&kwargs, "consumables", 2);
     expect_config_error(&kwargs, "consumables = 2: must be 0 or 1");
     dict_set(&kwargs, "consumables", FC_CAP_CONSUMABLES);
+    /* Named values match without case. */
+    puf_ini_set(&kwargs, "prayers", FC_CAP_PRAYERS ? "Protection" : "ALL");
+    expect_config_error(&kwargs, FC_CAP_PRAYERS
+        ? "prayers = protection, but this build has prayers = all"
+        : "prayers = all, but this build has prayers = protection");
+    puf_ini_set(&kwargs, "prayers", "1");
+    expect_config_error(&kwargs, "prayers = 1: must be protection or all");
+    puf_ini_set(&kwargs, "prayers", FC_CAP_PRAYERS ? "all" : "protection");
 
     puf_ini_set(&kwargs, "gear_set_1", "dragon_claws");
     expect_config_error(&kwargs, "gear_set_1 = dragon_claws: no such gear preset; "
@@ -1321,6 +1332,318 @@ static void scenario_config_test(void) {
     puts("scenario config: capability check, presets, levels and requirements passed");
 }
 
+#if FC_CAP_PRAYERS
+#define BOOK(prayer) (1u << FC_BOOK_##prayer)
+
+/* An idle cave for the prayer book rules: no NPC to attack or drain the
+ * player, and a wave that is not cleared. Prayer bonus 0 gives the drain
+ * resistance of RuneC's tests, 60. */
+static void prayer_fixture(FcState* s, int prayer_level, int defence_level) {
+    fc_init(s);
+    fc_reset(s, 101);
+    memset(s->npcs, 0, sizeof(s->npcs));
+    s->npcs_remaining = 1;
+    s->player.prayer_level = prayer_level;
+    s->player.max_prayer = s->player.current_prayer = 10 * prayer_level;
+    s->player.defence_level = defence_level;
+    s->player.prayer_bonus = 0;
+}
+
+/* One tick toggling FcBookPrayer prayer (-1 for none) with an overhead
+ * FC_PRAYER_* action. */
+static void book_step(FcState* s, int prayer, int overhead) {
+    int actions[FC_NUM_ACTION_HEADS] = {0};
+    actions[FC_HEAD_PRAYER] = overhead;
+    actions[FC_HEAD_PRAYER_BOOK] = prayer + 1;
+    fc_step(s, actions);
+}
+
+/* The book prayers that are off and could be switched on now. */
+static uint32_t book_available(const FcState* s) {
+    uint32_t available = 0;
+    for (int b = 0; b < FC_BOOK_PRAYER_COUNT; b++)
+        if (!(s->caps.prayers & (1u << b)) && fc_book_action_valid(s, b + 1))
+            available |= 1u << b;
+    return available;
+}
+
+/* The prayer book rules against RuneC_v4: rc-core/prayer.c and
+ * combat_formula.c, and the expected values of
+ * tests/test_prayer_spell_actions_runtime.c (prayer runtime) and
+ * tests/test_combat_phase5_formula_core.c (formula core). */
+static void prayer_book_test(void) {
+    const uint32_t all = (1u << FC_BOOK_PRAYER_COUNT) - 1;
+    FcState s;
+    FcPrayerBonus bonus;
+
+    /* The definitions: prayer runtime test_definition_validation's groups, by
+     * RuneC id less Protect Item, the protection prayers, Retribution,
+     * Redemption and Smite, and main's spot checks. */
+    static const int groups[FC_BOOK_PRAYER_COUNT] =
+        {1, 2, 4, 6, 6, 1, 2, 4, 0, 0, 6, 6, 1, 2, 4, 6, 6, 0, 7, 6, 6, 7, 7, 7};
+    for (int b = 0; b < FC_BOOK_PRAYER_COUNT; b++)
+        assert(FC_BOOK_PRAYERS[b].groups == groups[b]);
+    assert(FC_BOOK_PRAYERS[FC_BOOK_AUGURY].level == 77 &&
+           FC_BOOK_PRAYERS[FC_BOOK_AUGURY].magic_damage == 4);
+    assert(FC_BOOK_PRAYERS[FC_BOOK_DEADEYE].defence == 5 &&
+           FC_BOOK_PRAYERS[FC_BOOK_DEADEYE].ranged_strength == 18);
+    assert(FC_BOOK_PRAYERS[FC_BOOK_THICK_SKIN].drain == 1);
+    s.caps.prayers = BOOK(PIETY);
+    bonus = fc_prayer_bonus(&s);
+    assert(bonus.attack == 20 && bonus.strength == 23 && bonus.defence == 25);
+    s.caps.prayers = BOOK(RIGOUR);
+    bonus = fc_prayer_bonus(&s);
+    assert(bonus.ranged_attack == 20 && bonus.ranged_strength == 23);
+    s.caps.prayers = BOOK(AUGURY);
+    assert(fc_prayer_bonus(&s).magic_defence == 25);
+
+    /* Requirements (requirements() and rc_prayer_available): Prayer 1 allows
+     * only Thick Skin; Piety needs Prayer 70, then Defence 70 (RC_PRAYER_LEVEL,
+     * then RC_PRAYER_DEFENCE); Chivalry needs Defence 65. */
+    prayer_fixture(&s, 1, 1);
+    assert(book_available(&s) == BOOK(THICK_SKIN));
+    prayer_fixture(&s, 99, 64);
+    assert(book_available(&s) == (all & ~(BOOK(CHIVALRY) | BOOK(PIETY) |
+           BOOK(RIGOUR) | BOOK(AUGURY) | BOOK(EAGLE_EYE) | BOOK(MYSTIC_MIGHT))));
+    s.player.defence_level = 69;
+    assert(book_available(&s) & BOOK(CHIVALRY));
+    assert(!(book_available(&s) & (BOOK(PIETY) | BOOK(RIGOUR) | BOOK(AUGURY))));
+    s.player.defence_level = 70;
+    assert(book_available(&s) == (all & ~(BOOK(EAGLE_EYE) | BOOK(MYSTIC_MIGHT))));
+    /* Deadeye (Prayer 62) and Mystic Vigour (63) replace Eagle Eye and Mystic
+     * Might once available (RC_PRAYER_REPLACED). */
+    const uint32_t eyes = BOOK(EAGLE_EYE) | BOOK(DEADEYE) | BOOK(MYSTIC_MIGHT) |
+                          BOOK(MYSTIC_VIGOUR);
+    s.player.prayer_level = 61;
+    assert((book_available(&s) & eyes) == (BOOK(EAGLE_EYE) | BOOK(MYSTIC_MIGHT)));
+    s.player.prayer_level = 62;
+    assert((book_available(&s) & eyes) == (BOOK(DEADEYE) | BOOK(MYSTIC_MIGHT)));
+    s.player.prayer_level = 63;
+    assert((book_available(&s) & eyes) == (BOOK(DEADEYE) | BOOK(MYSTIC_VIGOUR)));
+    /* Nothing switches on without Prayer points (RC_PRAYER_EMPTY); switching
+     * a prayer off always works, even one whose levels are not met. */
+    s.player.current_prayer = 0;
+    assert(book_available(&s) == 0 && fc_book_action_valid(&s, FC_PRAYER_BOOK_NO_CHANGE));
+    assert(!fc_book_action_valid(&s, -1) && !fc_book_action_valid(&s, FC_PRAYER_BOOK_DIM));
+    prayer_fixture(&s, 1, 1);
+    s.caps.prayers = BOOK(RIGOUR);
+    assert(fc_book_action_valid(&s, FC_BOOK_RIGOUR + 1));
+    book_step(&s, FC_BOOK_RIGOUR, FC_PRAYER_NO_CHANGE);
+    assert(s.caps.prayers == 0 && s.player.prayer_changed_this_tick);
+    book_step(&s, FC_BOOK_PIETY, FC_PRAYER_NO_CHANGE);
+    assert(s.caps.prayers == 0 && !s.player.prayer_changed_this_tick);
+
+    /* Conflicts (select_prayer; prayer runtime test_collision_matrix):
+     * switching b on after a leaves b, and a too when they share no group. */
+    prayer_fixture(&s, 99, 99);
+    const uint32_t available = book_available(&s);
+    for (int a = 0; a < FC_BOOK_PRAYER_COUNT; a++) {
+        for (int b = 0; b < FC_BOOK_PRAYER_COUNT; b++) {
+            if (a == b || !(available & (1u << a)) || !(available & (1u << b)))
+                continue;
+            s.caps.prayers = 1u << a;
+            assert(fc_book_apply_action(&s, b + 1));
+            uint32_t expected = 1u << b;
+            if (!(FC_BOOK_PRAYERS[a].groups & FC_BOOK_PRAYERS[b].groups))
+                expected |= 1u << a;
+            assert(s.caps.prayers == expected);
+        }
+    }
+    /* test_requirements_and_lifecycle's sequence through the head; the
+     * overhead has its own head and stays on. */
+    prayer_fixture(&s, 99, 70);
+    book_step(&s, FC_BOOK_PIETY, FC_PRAYER_MELEE);
+    assert(s.caps.prayers == BOOK(PIETY) && s.player.prayer == PRAYER_PROTECT_MELEE);
+    book_step(&s, FC_BOOK_MYSTIC_VIGOUR, FC_PRAYER_NO_CHANGE);
+    assert(s.caps.prayers == BOOK(MYSTIC_VIGOUR));
+    book_step(&s, FC_BOOK_MYSTIC_MIGHT, FC_PRAYER_NO_CHANGE);
+    assert(s.caps.prayers == BOOK(MYSTIC_VIGOUR));
+    book_step(&s, FC_BOOK_BURST_OF_STRENGTH, FC_PRAYER_NO_CHANGE);
+    book_step(&s, FC_BOOK_SHARP_EYE, FC_PRAYER_NO_CHANGE);
+    assert(s.caps.prayers == BOOK(SHARP_EYE));
+    book_step(&s, FC_BOOK_THICK_SKIN, FC_PRAYER_NO_CHANGE);
+    assert(s.caps.prayers == (BOOK(SHARP_EYE) | BOOK(THICK_SKIN)));
+    assert(s.player.prayer == PRAYER_PROTECT_MELEE);
+    /* Prayer runtime main: Thick Skin and Deadeye together add their Defence
+     * to 10; Rigour then replaces both. */
+    prayer_fixture(&s, 99, 99);
+    book_step(&s, FC_BOOK_THICK_SKIN, FC_PRAYER_NO_CHANGE);
+    book_step(&s, FC_BOOK_DEADEYE, FC_PRAYER_NO_CHANGE);
+    assert(s.caps.prayers == (BOOK(THICK_SKIN) | BOOK(DEADEYE)));
+    assert(fc_prayer_bonus(&s).defence == 10);
+    book_step(&s, FC_BOOK_RIGOUR, FC_PRAYER_NO_CHANGE);
+    assert(s.caps.prayers == BOOK(RIGOUR));
+
+    /* Drain (rc_prayer_drain_tick; test_drain_resource_and_quick): Thick Skin,
+     * 1 per tick against resistance 60, starts the tick after it goes on; 60
+     * ticks reach counter 60 with no point lost, the 61st loses one. */
+    prayer_fixture(&s, 99, 99);
+    book_step(&s, FC_BOOK_THICK_SKIN, FC_PRAYER_NO_CHANGE);
+    assert(s.player.prayer_drain_counter == 0);
+    for (int i = 0; i < 60; i++) book_step(&s, -1, FC_PRAYER_NO_CHANGE);
+    assert(s.player.current_prayer == 990 && s.player.prayer_drain_counter == 60);
+    book_step(&s, -1, FC_PRAYER_NO_CHANGE);
+    assert(s.player.current_prayer == 980 && s.player.prayer_drain_counter == 1);
+    /* test_transition_edges: a prayer switched on while another drains is
+     * charged from that tick, one switched off is not. */
+    prayer_fixture(&s, 99, 99);
+    book_step(&s, FC_BOOK_THICK_SKIN, FC_PRAYER_NO_CHANGE);
+    book_step(&s, -1, FC_PRAYER_NO_CHANGE);
+    assert(s.player.prayer_drain_counter == 1);
+    book_step(&s, FC_BOOK_BURST_OF_STRENGTH, FC_PRAYER_NO_CHANGE);
+    assert(s.player.prayer_drain_counter == 3);
+    book_step(&s, FC_BOOK_BURST_OF_STRENGTH, FC_PRAYER_NO_CHANGE);
+    assert(s.player.prayer_drain_counter == 4);
+    /* With the overhead: Protect from Melee 12 and Piety 24 share the counter,
+     * 36 a tick from the tick after they go on: 36, 72 (a point), 48, 84 (a
+     * point), 60. */
+    prayer_fixture(&s, 99, 99);
+    book_step(&s, FC_BOOK_PIETY, FC_PRAYER_MELEE);
+    assert(s.player.prayer_drain_counter == 0);
+    for (int i = 0; i < 5; i++) book_step(&s, -1, FC_PRAYER_NO_CHANGE);
+    assert(s.player.current_prayer == 970 && s.player.prayer_drain_counter == 60);
+    /* A book prayer on for one tick costs nothing. A flick keeps the drain
+     * while a book prayer stays on, since the set never empties; without one
+     * it does not drain, as before. */
+    prayer_fixture(&s, 99, 99);
+    book_step(&s, FC_BOOK_PIETY, FC_PRAYER_NO_CHANGE);
+    book_step(&s, FC_BOOK_PIETY, FC_PRAYER_NO_CHANGE);
+    assert(s.caps.prayers == 0 && s.player.prayer_drain_counter == 0);
+    book_step(&s, FC_BOOK_RAPID_RESTORE, FC_PRAYER_MELEE);
+    book_step(&s, -1, FC_PRAYER_FLICK_MAGIC);
+    assert(s.player.prayer == PRAYER_PROTECT_MAGIC && s.player.prayer_drain_counter == 13);
+    book_step(&s, FC_BOOK_RAPID_RESTORE, FC_PRAYER_NO_CHANGE);
+    assert(s.player.prayer_drain_counter == 25);
+    book_step(&s, -1, FC_PRAYER_FLICK_MELEE);
+    assert(s.player.prayer_drain_counter == 25);
+    /* Running out switches every prayer off and clears the counter, from the
+     * drain and from any other Prayer loss. */
+    prayer_fixture(&s, 99, 99);
+    book_step(&s, FC_BOOK_PIETY, FC_PRAYER_MELEE);
+    s.player.current_prayer = 10;
+    s.player.prayer_drain_counter = 50;
+    book_step(&s, -1, FC_PRAYER_NO_CHANGE);
+    assert(s.player.current_prayer == 0 && s.player.prayer == PRAYER_NONE);
+    assert(s.caps.prayers == 0 && s.player.prayer_drain_counter == 0);
+    s.player.current_prayer = 500;
+    s.caps.prayers = BOOK(PIETY);
+    assert(fc_prayer_apply_loss_tenths(&s, 600) == 500 && s.caps.prayers == 0);
+
+    /* Combat percentages, as combat_formula.c applies them to the level before
+     * the stance and 8. Ranged, formula core
+     * test_ranged_formula_uses_ranged_prayers_and_strength_bonus: Ranged 75,
+     * Rigour, rapid, +90 attack and +40 strength: levels 98 and 100, roll
+     * 15092, max hit 16. */
+    FcNpc target = {.npc_type = NPC_TZ_KIH};
+    int roll, max_hit;
+    FcPlayer ranged = {.weapon_kind = FC_WEAPON_GENERIC_RANGED, .ranged_level = 75,
+                       .ranged_attack_bonus = 90, .ranged_strength_bonus = 40};
+    s.caps.prayers = BOOK(RIGOUR);
+    bonus = fc_prayer_bonus(&s);
+    fc_player_ranged_rolls(&ranged, &bonus, &target, &roll, &max_hit);
+    assert(roll == 15092 && max_hit == 16);
+    /* Melee, test_melee_formula_uses_boosts_prayer_equipment_and_npc_defence's
+     * Piety, Attack 70, Strength 80, +100 attack and +50 strength, with the
+     * env's accurate Punch instead of its aggressive stance: Attack
+     * 70 * 120 / 100 + 3 + 8 = 95 and Strength 80 * 123 / 100 + 8 = 106, so
+     * roll 95 * 164 = 15580 and max hit (106 * 114 + 320) / 640 = 19. */
+    FcPlayer melee = {.attack_level = 70, .strength_level = 80,
+                      .melee_attack_bonus = 100, .melee_strength_bonus = 50};
+    s.caps.prayers = BOOK(PIETY);
+    bonus = fc_prayer_bonus(&s);
+    fc_player_melee_rolls(&melee, &bonus, &roll, &max_hit);
+    assert(roll == 15580 && max_hit == 19);
+    /* Prayer runtime test_prayer_stats: at level 10 the 5% Burst of Strength
+     * and Sharp Eye add one Strength and ranged Strength level. */
+    assert(fc_prayer_level(10, 5) == 10 && fc_prayer_strength_level(10, 5) == 11);
+    /* Defence (rc_player_effective_defence_level, no stance here): Piety at
+     * Defence 99 is 99 * 125 / 100 + 8 = 131, against +64 crush defence. */
+    FcPlayer defender = {.defence_level = 99, .magic_level = 1, .defence_crush = 64};
+    assert(fc_player_def_roll(&defender, &bonus, FC_ATTACK_TYPE_CRUSH) == 131 * 128);
+    /* Magic defence, test_magic_formula_uses_magic_prayer_damage_and_defence_blend:
+     * Magic 80, Defence 50, +30 magic defence and 25% magic defence give
+     * 100 * 7 / 10 + 50 * 3 / 10 + 8 = 93 and roll 8742. Its Augury has no
+     * Defence; RuneC's real Augury adds 25%: 70 + 62 * 3 / 10 + 8 = 96. */
+    FcPlayer caster = {.defence_level = 50, .magic_level = 80, .defence_magic = 30};
+    FcPrayerBonus magic_only = {.magic_defence = 25};
+    assert(fc_player_def_roll(&caster, &magic_only, FC_ATTACK_TYPE_MAGIC) == 8742);
+    s.caps.prayers = BOOK(AUGURY);
+    bonus = fc_prayer_bonus(&s);
+    assert(fc_player_def_roll(&caster, &bonus, FC_ATTACK_TYPE_MAGIC) == 96 * 94);
+
+    /* Rapid Heal (rc_stat_restore_tick; test_prayer_stats): switching it on
+     * restarts the timer, and the next HP comes 50 ticks later; switching it
+     * off restores 100. */
+    prayer_fixture(&s, 99, 99);
+    s.player.current_hp = 500;
+    s.player.hp_regen_counter = 37;
+    book_step(&s, FC_BOOK_RAPID_HEAL, FC_PRAYER_NO_CHANGE);
+    assert(s.player.hp_regen_counter == 0);
+    for (int i = 0; i < 49; i++) book_step(&s, -1, FC_PRAYER_NO_CHANGE);
+    assert(s.player.current_hp == 500);
+    book_step(&s, -1, FC_PRAYER_NO_CHANGE);
+    assert(s.player.current_hp == 510);
+    book_step(&s, FC_BOOK_RAPID_HEAL, FC_PRAYER_NO_CHANGE);
+    for (int i = 0; i < 99; i++) book_step(&s, -1, FC_PRAYER_NO_CHANGE);
+    assert(s.player.current_hp == 510);
+    book_step(&s, -1, FC_PRAYER_NO_CHANGE);
+    assert(s.player.current_hp == 520);
+    fc_destroy(&s);
+    puts("prayer book: definitions, requirements, conflicts, drain, combat percentages "
+         "and Rapid Heal passed");
+}
+
+/* The prayer book head reaches the core through the policy actions; its mask
+ * and the active prayers and their drain are observed. */
+static void prayer_book_adapter_test(void) {
+    enum { PRAYER = 2 };
+    const int book = FC_PUFFER_NUM_ATNS - 1;
+    const int book_mask = FC_PUFFER_MASK_SIZE - FC_PRAYER_BOOK_DIM;
+    assert(FC_PUFFER_ACTION_HEADS[PRAYER] == FC_HEAD_PRAYER &&
+           FC_PUFFER_ACTION_HEADS[book] == FC_HEAD_PRAYER_BOOK);
+    Dict kwargs = {0};
+    dict_set(&kwargs, "prayer_level", 70);
+    FightCaves* env = test_env(&kwargs);
+    FcPlayer* p = &env->state.player;
+    Agent* a = &env->agents[0];
+    const float* obs = a->observations + FC_OBS_BOOK_START;
+    /* Prayer 70 masks Rigour and Augury, and Eagle Eye and Mystic Might,
+     * which Deadeye and Mystic Vigour replace. */
+    const uint32_t masked = BOOK(RIGOUR) | BOOK(AUGURY) | BOOK(EAGLE_EYE) |
+                            BOOK(MYSTIC_MIGHT);
+    assert(a->action_mask[book_mask + FC_PRAYER_BOOK_NO_CHANGE] == 1);
+    for (int b = 0; b < FC_BOOK_PRAYER_COUNT; b++)
+        assert(a->action_mask[book_mask + 1 + b] == !(masked & (1u << b)));
+    for (int i = 0; i < FC_OBS_BOOK_SIZE; i++) assert(obs[i] == 0.0f);
+    /* Piety with Protect from Melee: 12 + 24 against resistance 60 + 2 * 6
+     * (tbow_masori's prayer bonus). */
+    a->actions[PRAYER] = FC_PRAYER_MELEE;
+    a->actions[book] = FC_BOOK_PIETY + 1;
+    checked_step(env);
+    for (int b = 0; b < FC_BOOK_PRAYER_COUNT; b++)
+        assert(obs[FC_OBS_BOOK_ACTIVE + b] == (b == FC_BOOK_PIETY ? 1.0f : 0.0f));
+    assert(obs[FC_OBS_BOOK_DRAIN] == 36.0f / 72.0f);
+    /* Out of Prayer points every toggle that would switch a prayer on is
+     * masked, but Piety can still go off; the next tick switches it off. */
+    a->actions[PRAYER] = FC_PRAYER_NO_CHANGE;
+    a->actions[book] = FC_PRAYER_BOOK_NO_CHANGE;
+    p->current_prayer = 0;
+    fc_puffer_write_obs(env);
+    check_obs(env);
+    for (int b = 0; b < FC_BOOK_PRAYER_COUNT; b++)
+        assert(a->action_mask[book_mask + 1 + b] == (b == FC_BOOK_PIETY));
+    checked_step(env);
+    assert(env->state.caps.prayers == 0 && p->prayer == PRAYER_NONE);
+    for (int i = 0; i < FC_OBS_BOOK_SIZE; i++) assert(obs[i] == 0.0f);
+    for (int b = 0; b < FC_PRAYER_BOOK_DIM; b++)
+        assert(a->action_mask[book_mask + b] == (b == FC_PRAYER_BOOK_NO_CHANGE));
+    test_free(env);
+    dict_clear(&kwargs);
+    puts("prayer book: head, masks, active prayers and drain observed passed");
+}
+#undef BOOK
+#endif
+
 #if FC_CAP_CONSUMABLES
 /* The eat and drink heads reach the core through the policy actions, and
  * their masks and cooldowns are observed. */
@@ -1362,12 +1685,18 @@ static int adapter_test(int graphical) {
 #if FC_CAP_CONSUMABLES
     consumables_test();
 #endif
+#if FC_CAP_PRAYERS
+    prayer_book_adapter_test();
+#endif
     terminal_and_log_test();
     /* The shipped INI with this build's capabilities, as on the command line. */
-    char consumables[] = "--env.consumables=1";
-    char* overrides[] = {consumables};
+    char consumables[] = "--env.consumables=1", prayers[] = "--env.prayers=all";
+    char* overrides[2] = {0};
+    int override_count = 0;
+    if (FC_CAP_CONSUMABLES) overrides[override_count++] = consumables;
+    if (FC_CAP_PRAYERS) overrides[override_count++] = prayers;
     Ini ini = {0};
-    puf_ini_load_env(&ini, "fight_caves", FC_CAP_CONSUMABLES ? 1 : 0, overrides);
+    puf_ini_load_env(&ini, "fight_caves", override_count, overrides);
     Dict* kwargs = puf_ini_section(&ini, "env", 0);
     FightCaves* env = test_env(kwargs);
     FightCaves* rendered = test_env(kwargs);
@@ -1489,6 +1818,9 @@ int main(int argc, char** argv) {
     }
     wave_rotation_test();
     cpu_policy_test();
+#if FC_CAP_PRAYERS
+    prayer_book_test();
+#endif
     if (core_contract_test() || equipment_test() || episode_analytics_test() ||
         context_menu_test() || click_feedback_test() || model_picking_test() ||
         adapter_test(graphical)) return 1;
