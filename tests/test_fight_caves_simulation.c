@@ -980,11 +980,11 @@ static void draw_player_cell(ModelEntry *entry, AnimCache *cache, int cell,
     anim_model_state_free(pose);
 }
 
-/* Every gear preset composes from its equipment, and a ranged preset's
- * weapon animations and projectile spot animations ship. The pinned assets
- * predate the magic and melee presets: their items without models are left
- * out of the figure, and their missing stances, attacks, casts and spell
- * graphics are listed; melee weapons fire nothing. With FC_TEST_OUTPUT_DIR
+/* Every gear preset composes from its equipment (ammunition and rings are
+ * not drawn), and its weapon's animations, or its spell's cast, and the spot
+ * animations they fire ship; melee weapons fire nothing. The one sequence
+ * the bundle lacks, the Harmonised nightmare staff's stance, is listed: the
+ * viewer stands it in with the human one. With FC_TEST_OUTPUT_DIR
  * set, each is drawn to <preset>.png there: idle from the front and side,
  * then two frames of its attack. */
 static int gear_preset_appearances(FcPlayerAppearance *appearance, AnimCache *cache) {
@@ -1023,32 +1023,22 @@ static int gear_preset_appearances(FcPlayerAppearance *appearance, AnimCache *ca
         const FcProjectileProfile *shot = &profile->projectile;
         const uint32_t spot_ids[] = {shot->travel_spot, shot->launch_spot, shot->impact_spot};
         int melee = state.player.weapon_kind == FC_WEAPON_MELEE;
-        int newer = preset->autocast || melee;   /* the bundle predates it */
         if ((shot->travel_spot == 0) != melee) return 1;
-        char missing[256] = "";
         for (int i = 0; i < (int)(sizeof(sequences) / sizeof(sequences[0])); i++) {
             if (anim_get_sequence(cache, sequences[i])) continue;
-            if (!newer) return 1;
-            snprintf(missing + strlen(missing), sizeof(missing) - strlen(missing),
-                     " sequence %d", sequences[i]);
+            if (sequences[i] != 4504) return 1;   /* nightmare-staff stance */
+            printf("appearance preset %s lacks sequence %d\n", preset->name,
+                   sequences[i]);
         }
-        for (int i = 0; i < 3; i++) {
-            if (!spot_ids[i] || (spotanim_find(spots, (int)spot_ids[i]) &&
-                model_find(projectiles, PROJ_SPOTANIM_MODEL_BASE + spot_ids[i]))) continue;
-            if (!newer) return 1;
-            snprintf(missing + strlen(missing), sizeof(missing) - strlen(missing),
-                     " spot %u", spot_ids[i]);
-        }
-        for (int i = 0; i < preset->equipment_count; i++) {
-            if (appearance_record(appearance, preset->equipment[i]) >= 0 ||
-                fc_item_definition(preset->equipment[i])->slot == FC_EQUIP_SLOT_AMMO ||
-                fc_item_definition(preset->equipment[i])->slot == FC_EQUIP_SLOT_RING)
-                continue;
-            if (!newer) return 1;
-            snprintf(missing + strlen(missing), sizeof(missing) - strlen(missing),
-                     " item %d", preset->equipment[i]);
-        }
-        if (missing[0]) printf("appearance preset %s lacks:%s\n", preset->name, missing);
+        for (int i = 0; i < 3; i++)
+            if (spot_ids[i] && !(spotanim_find(spots, (int)spot_ids[i]) &&
+                model_find(projectiles, PROJ_SPOTANIM_MODEL_BASE + spot_ids[i])))
+                return 1;
+        for (int i = 0; i < preset->equipment_count; i++)
+            if (appearance_record(appearance, preset->equipment[i]) < 0 &&
+                fc_item_definition(preset->equipment[i])->slot != FC_EQUIP_SLOT_AMMO &&
+                fc_item_definition(preset->equipment[i])->slot != FC_EQUIP_SLOT_RING)
+                return 1;
         if (dir) {
             const AnimSequence *attack = anim_get_sequence(cache, profile->attack_anim);
             int frames = attack ? attack->frame_count : 0;

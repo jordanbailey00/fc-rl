@@ -275,8 +275,8 @@ def test_asset_manifest_pins_both_bundles():
 
 def test_installed_viewer_bundle_has_equipment_parts_and_menu_font(executable):
     viewer = RESOURCE_ROOT / "viewer"  # installed by the executable fixture's build
-    for name in ("fc_player.parts", "fc_player.models", "data/fonts/runescape_bold.ttf",
-                 "data/sprites/items/item_28310.png"):
+    for name in ("fc_player.parts", "fc_player.models", "fc_player.atlas", "fc_player.tanim",
+                 "data/fonts/runescape_bold.ttf", "data/sprites/items/item_28310.png"):
         assert (viewer / name).is_file(), name
     assert not (viewer / "data/sprites/items/item_25487.png").exists()
 

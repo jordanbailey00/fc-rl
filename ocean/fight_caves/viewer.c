@@ -103,20 +103,6 @@ unsigned char* fc_asset_read_all(const char* logical_path, size_t* out_size) {
     return data;
 }
 
-/* Whether an asset file is there, found as fc_asset_read_all finds it,
- * without reporting a missing one: for the graphics the pinned bundle may
- * not have, which fall back instead. */
-int fc_asset_present(const char* logical_path) {
-    const char* root = getenv("FC_ASSET_ROOT");
-    char path[1024];
-    if (!root || !root[0]) root = "resources/fight_caves/viewer";
-    snprintf(path, sizeof(path), "%s/%s", root, logical_path);
-    FILE* f = fopen(path, "rb");
-    if (!f) return 0;
-    fclose(f);
-    return 1;
-}
-
 /* Asset Reader */
 
 /* Bounds-checked reader over a whole asset file. The first failure (a short
@@ -1711,14 +1697,22 @@ const SpotAnimDef *spotanim_find(const SpotAnimSet *set, int id) {
 /* Model id given to the composed player model. */
 #define FC_PLAYER_MODEL_ID 0xFC000001u
 
+/* fc_player.parts maps each worn item to the identity kits (body parts) it
+ * hides; fc_player.models holds the kits and the items' models, textured from
+ * fc_player.atlas, whose cells fc_player.tanim scrolls (the capes' lava). */
 typedef struct {
+    FcAnimatedAtlas atlas; /* the parts and the composed model borrow it */
     ModelSet *parts;
     ModelSet *model;
-    struct { uint32_t item_id, hide_mask; } records[64];
+    struct { uint32_t item_id, hide_mask; } records[256];
     int record_count;
     int worn_ids[FC_EQUIPMENT_SLOTS];
 } FcPlayerAppearance;
 
+void fc_player_appearance_free(FcPlayerAppearance *appearance);
+
+/* Keeps the records of the items in ITEMS: the bundle also serves fc-rl's
+ * larger item set, whose other items no preset wears. */
 int fc_player_appearance_load(FcPlayerAppearance *appearance) {
     memset(appearance, 0, sizeof(*appearance));
     const char *path = "fc_player.parts";
@@ -1726,31 +1720,41 @@ int fc_player_appearance_load(FcPlayerAppearance *appearance) {
     if (!fc_reader_open(&r, path)) return 0;
     uint32_t magic = fc_read_u32(&r);
     uint32_t count = fc_read_u32(&r);
-    fc_reader_require(&r, magic == 0x31504346 && count > 0 && count <= 64,
+    fc_reader_require(&r, magic == 0x31504346 && count > 0 && count <= 256,
                       "bad header");
     for (uint32_t i = 0; r.ok && i < count; i++) {
         uint32_t item_id = fc_read_u32(&r);
         uint32_t hide_mask = fc_read_u32(&r);
-        fc_reader_require(&r, fc_item_definition((int)item_id) != NULL
-                              && hide_mask <= 127,
-                          "unknown item or bad hide mask");
-        appearance->records[i].item_id = item_id;
-        appearance->records[i].hide_mask = hide_mask;
+        fc_reader_require(&r, hide_mask <= 127, "bad hide mask");
+        if (!r.ok || !fc_item_definition((int)item_id)) continue;
+        int record = appearance->record_count++;
+        appearance->records[record].item_id = item_id;
+        appearance->records[record].hide_mask = hide_mask;
     }
     fc_reader_require(&r, r.pos == r.size, "unexpected data after the last item");
     fc_reader_close(&r);
-    if (!r.ok) { fprintf(stderr, "Invalid player appearance map: %s\n", path); return 0; }
-    appearance->record_count = (int)count;
-    appearance->parts = models_load("fc_player.models", (Texture2D){0});
-    if (!appearance->parts || appearance->parts->has_textures) return 0;
+    if (!r.ok) {
+        fprintf(stderr, "Invalid player appearance map: %s\n", path);
+        goto fail;
+    }
+    if (!fc_animated_atlas_load(&appearance->atlas, "fc_player.atlas",
+                                "fc_player.tanim")) goto fail;
+    appearance->parts = models_load("fc_player.models", appearance->atlas.texture);
+    if (!appearance->parts || !appearance->parts->has_textures) goto fail;
     for (int i = 0; i < 7; i++)
-        if (!model_find(appearance->parts, 0xFC100000u + (uint32_t)i)) return 0;
+        if (!model_find(appearance->parts, 0xFC100000u + (uint32_t)i)) goto fail;
     for (int i = 0; i < appearance->record_count; i++)
-        if (!model_find(appearance->parts, appearance->records[i].item_id)) return 0;
+        if (!model_find(appearance->parts, appearance->records[i].item_id)) goto fail;
     return 1;
+fail:
+    fprintf(stderr, "Player appearance needs textured fc_player.models with "
+                    "fc_player.parts, .atlas and .tanim\n");
+    fc_player_appearance_free(appearance);
+    return 0;
 }
 
-static ModelSet *compose(ModelEntry *parts[], int count, uint32_t id) {
+static ModelSet *compose(ModelEntry *parts[], int count, uint32_t id,
+                         Texture2D atlas) {
     int vertices = 0, faces = 0;
     for (int i = 0; i < count; i++) {
         vertices += parts[i]->base_vert_count;
@@ -1769,14 +1773,18 @@ static ModelSet *compose(ModelEntry *parts[], int count, uint32_t id) {
     out->base_verts = malloc((size_t)vertices * 3 * sizeof(int16_t));
     out->vertex_skins = malloc((size_t)vertices);
     out->face_indices = malloc((size_t)faces * 3 * sizeof(uint16_t));
+    out->face_uvs = malloc((size_t)faces * sizeof(*out->face_uvs));
     out->rest_verts = malloc((size_t)faces * 9 * sizeof(float));
     Mesh mesh = {.vertexCount = faces * 3, .triangleCount = faces};
     mesh.vertices = malloc((size_t)faces * 9 * sizeof(float));
     mesh.normals = malloc((size_t)faces * 9 * sizeof(float));
     mesh.colors = malloc((size_t)faces * 12);
+    mesh.texcoords = malloc((size_t)faces * 6 * sizeof(float));
     if (!out->base_verts || !out->vertex_skins || !out->face_indices ||
-        !out->rest_verts || !mesh.vertices || !mesh.normals || !mesh.colors) {
+        !out->face_uvs || !out->rest_verts || !mesh.vertices ||
+        !mesh.normals || !mesh.colors || !mesh.texcoords) {
         free(mesh.vertices); free(mesh.normals); free(mesh.colors);
+        free(mesh.texcoords);
         models_free(set);
         return NULL;
     }
@@ -1791,23 +1799,37 @@ static ModelSet *compose(ModelEntry *parts[], int count, uint32_t id) {
         for (int f = 0; f < part->face_count * 3; f++)
             out->face_indices[face_offset * 3 + f] =
                 (uint16_t)(part->face_indices[f] + vertex_offset);
+        /* A textured face's projection names three base vertices, which
+         * move with the part's like the face indices. */
+        for (int f = 0; f < part->face_count; f++) {
+            ModelFaceUvInfo info = part->face_uvs[f];
+            if (info.textured) {
+                info.tex_a += vertex_offset;
+                info.tex_b += vertex_offset;
+                info.tex_c += vertex_offset;
+            }
+            out->face_uvs[face_offset + f] = info;
+        }
         memcpy(mesh.vertices + face_offset * 9, part->rest_verts,
                (size_t)part->face_count * 9 * sizeof(float));
         memcpy(mesh.normals + face_offset * 9, source->normals,
                (size_t)part->face_count * 9 * sizeof(float));
         memcpy(mesh.colors + face_offset * 12, source->colors,
                (size_t)part->face_count * 12);
+        memcpy(mesh.texcoords + face_offset * 6, source->texcoords,
+               (size_t)part->face_count * 6 * sizeof(float));
         vertex_offset += part->base_vert_count;
         face_offset += part->face_count;
     }
     memcpy(out->rest_verts, mesh.vertices, (size_t)faces * 9 * sizeof(float));
     UploadMesh(&mesh, true);
     out->model = LoadModelFromMesh(mesh);
+    out->model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = atlas;
+    set->has_textures = 1;
     return set;
 }
 
-/* The fc_player.parts record of a worn item, or -1. The pinned bundle has
- * none for the magic and melee presets' items but the Barrows gloves. */
+/* The fc_player.parts record of a worn item, or -1. */
 static int appearance_record(const FcPlayerAppearance *appearance, int item_id) {
     for (int record = 0; record < appearance->record_count; record++)
         if (appearance->records[record].item_id == (uint32_t)item_id) return record;
@@ -1815,8 +1837,7 @@ static int appearance_record(const FcPlayerAppearance *appearance, int item_id) 
 }
 
 /* 1 = rebuilt, 0 = unchanged, -1 = missing/invalid asset or allocation
- * failure. A worn item without a model in the bundle is left out, hiding
- * nothing of the body. */
+ * failure. */
 int fc_player_appearance_sync(FcPlayerAppearance *appearance,
                                const FcPlayer *player, uint32_t model_id) {
     int ids[FC_EQUIPMENT_SLOTS];
@@ -1830,18 +1851,18 @@ int fc_player_appearance_sync(FcPlayerAppearance *appearance,
     for (int slot = 0; slot < FC_EQUIPMENT_SLOTS; slot++) {
         if (!ids[slot] || slot == FC_EQUIP_SLOT_AMMO || slot == FC_EQUIP_SLOT_RING) continue;
         int record = appearance_record(appearance, ids[slot]);
-        if (record >= 0) hidden |= appearance->records[record].hide_mask;
+        if (record < 0) return -1;
+        hidden |= appearance->records[record].hide_mask;
     }
     /* Identity kits precede equipped models, matching client composition. */
     for (int body = 0; body < 7; body++)
         if (!(hidden & (1u << body)))
             selected[count++] = model_find(appearance->parts, 0xFC100000u + (uint32_t)body);
     for (int slot = 0; slot < FC_EQUIPMENT_SLOTS; slot++)
-        if (ids[slot] && slot != FC_EQUIP_SLOT_AMMO && slot != FC_EQUIP_SLOT_RING &&
-            appearance_record(appearance, ids[slot]) >= 0)
+        if (ids[slot] && slot != FC_EQUIP_SLOT_AMMO && slot != FC_EQUIP_SLOT_RING)
             selected[count++] = model_find(appearance->parts, (uint32_t)ids[slot]);
     for (int i = 0; i < count; i++) if (!selected[i]) return -1;
-    ModelSet *model = compose(selected, count, model_id);
+    ModelSet *model = compose(selected, count, model_id, appearance->atlas.texture);
     if (!model) return -1;
     models_free(appearance->model);
     appearance->model = model;
@@ -1852,6 +1873,7 @@ int fc_player_appearance_sync(FcPlayerAppearance *appearance,
 void fc_player_appearance_free(FcPlayerAppearance *appearance) {
     models_free(appearance->model);
     models_free(appearance->parts);
+    fc_animated_atlas_unload(&appearance->atlas);
     memset(appearance, 0, sizeof(*appearance));
 }
 
@@ -1969,9 +1991,31 @@ static const Rectangle FC_OSRS_COMBAT_SPECIAL_BAR = {20, 200, 150, 26};
 
 /* Ui Assets */
 
+/* Each spell's icon: the bundle names it spell_<id> by the spell's id in
+ * fc-rl's 4.0-dlc spell table (fc-core/src/fc_magic.c). */
+#define FC_SPELL_ICON_LIST(X) \
+    X(WIND_STRIKE, 30) X(WATER_STRIKE, 37) X(EARTH_STRIKE, 20) X(FIRE_STRIKE, 21) \
+    X(WIND_BOLT, 36) X(WATER_BOLT, 34) X(EARTH_BOLT, 19) X(FIRE_BOLT, 2) \
+    X(WIND_BLAST, 43) X(WATER_BLAST, 26) X(EARTH_BLAST, 44) X(FIRE_BLAST, 1) \
+    X(WIND_WAVE, 45) X(WATER_WAVE, 35) X(EARTH_WAVE, 13) X(FIRE_WAVE, 3) \
+    X(WIND_SURGE, 158) X(WATER_SURGE, 159) X(EARTH_SURGE, 160) X(FIRE_SURGE, 161) \
+    X(SMOKE_RUSH, 28) X(SHADOW_RUSH, 29) X(BLOOD_RUSH, 88) X(ICE_RUSH, 7) \
+    X(SMOKE_BURST, 96) X(SHADOW_BURST, 119) X(BLOOD_BURST, 85) X(ICE_BURST, 6) \
+    X(SMOKE_BLITZ, 121) X(SHADOW_BLITZ, 120) X(BLOOD_BLITZ, 118) X(ICE_BLITZ, 5) \
+    X(SMOKE_BARRAGE, 82) X(SHADOW_BARRAGE, 97) X(BLOOD_BARRAGE, 58) X(ICE_BARRAGE, 4)
+#define FC_SPELL_ICON_NAME(spell, id) "spell_" #id,
+#define FC_SPELL_ICON_ENTRY(spell, id) [FC_SPELL_##spell] = "spell_" #id,
+static const char *const FC_SPELL_ICONS[FC_SPELL_COUNT] = {
+    FC_SPELL_ICON_LIST(FC_SPELL_ICON_ENTRY)
+};
+_Static_assert(sizeof((const char *[]){FC_SPELL_ICON_LIST(FC_SPELL_ICON_NAME)})
+                   == FC_SPELL_COUNT * sizeof(const char *),
+               "every spell needs an icon");
+
 /* Sprites loaded from data/sprites/ui/<name>.png. The viewer refuses to
  * start unless every one of them loads. */
 static const char *const g_ui_asset_names[] = {
+    FC_SPELL_ICON_LIST(FC_SPELL_ICON_NAME)
     "tradebacking_dark",
     "chatbox_bg",
     "main_stones_bottom",
@@ -2561,9 +2605,9 @@ typedef struct FcUiState {
     const FcUiCombatProfile *combat_profile;
     int combat_style;             /* the attack style index the attacks use */
     /* A staff's autocast box: shown with autocast_box, selected while the
-     * attacks cast autocast_name. */
+     * attacks cast the spell autocast_icon shows (NULL for none). */
     int autocast_box, casting;
-    char autocast_name[32];
+    const char *autocast_icon;
 
     int hitpoints;
     int hitpoints_max;
@@ -3570,34 +3614,10 @@ static const Texture2D *ui_item_icon_texture(const FcUiState *ui,
     return NULL;
 }
 
-/* An item the pinned assets have no icon for: the start of each of the
- * first three words of its name, one per line, at the bottom of the slot
- * below a stack's quantity. */
-static void draw_item_name(const FcUiState *ui, const char *name, Rectangle r) {
-    char words[3][8];
-    int count = 0;
-    for (const char *s = name; *s && count < 3;) {
-        while (*s == ' ') s++;
-        if (!*s) break;
-        size_t n = strcspn(s, " ");
-        size_t keep = n < 4 ? n : 4;
-        memcpy(words[count], s, keep);
-        words[count++][keep] = '\0';
-        s += n;
-    }
-    const float line = 10.0f;
-    float y = r.y + r.height - line * (float)count;
-    for (int i = 0; i < count; i++, y += line)
-        draw_centered_text(ui, words[i], (Rectangle){r.x, y, r.width, line}, 12,
-                           (Color){230, 220, 200, 255});
-}
-
 static void draw_inventory_item(const FcUiState *ui, const FcUiSlot *slot, Rectangle r) {
     const Texture2D *icon = ui_item_icon_texture(ui, slot->item_id);
-    if (!icon) {
-        draw_item_name(ui, slot->label, r);
+    if (!icon)
         return;
-    }
     float sx = r.width / (float)icon->width;
     float sy = r.height / (float)icon->height;
     float scale = sx < sy ? sx : sy;
@@ -3688,17 +3708,12 @@ static void draw_combat(const FcUiState *ui, const FcUiLayout *layout) {
                            10, active ? OSRS_YELLOW : OSRS_ORANGE);
     }
     if (ui->autocast_box) {
-        /* RuneC's autocast box: the spell's name, the pinned assets having
-         * no spell icons, or the empty-spell icon. Clicking it picks one. */
+        /* RuneC's autocast box: the spell's icon, or the empty-spell icon.
+         * Clicking it picks one. */
         Rectangle box = side_ref_rect(layout, FC_OSRS_COMBAT_AUTOCAST);
         draw_combat_box(ui, box, ui->casting);
-        if (ui->autocast_name[0])
-            draw_centered_text(ui, ui->autocast_name,
-                               (Rectangle){box.x, box.y + 8, box.width, 14}, 10,
-                               ui->casting ? OSRS_YELLOW : OSRS_ORANGE);
-        else
-            draw_asset_centered(ui, "sideicons_interface_6",
-                                (Rectangle){box.x + 22, box.y + 3, 24, 24}, 24, 24, WHITE);
+        draw_asset_centered(ui, ui->autocast_icon ? ui->autocast_icon : "sideicons_interface_6",
+                            (Rectangle){box.x + 22, box.y + 3, 24, 24}, 24, 24, WHITE);
         draw_centered_text(ui, "Spell", (Rectangle){box.x, box.y + 29, box.width, 15},
                            12, OSRS_ORANGE);
     }
@@ -4789,8 +4804,8 @@ static uint16_t profile_pose_sequence(const FcPlayerVisualProfile *profile,
     }
 }
 
-/* The weapon's stance sequence, or the human one when the pinned assets
- * lack it (the staves' and melee weapons' stances). */
+/* The weapon's stance sequence, or the human one when the assets lack it
+ * (the Harmonised nightmare staff's). */
 static uint16_t player_pose_sequence(AnimCache *cache,
                                      const FcPlayerVisualProfile *profile,
                                      FcVisualLocomotion locomotion) {
@@ -7032,38 +7047,13 @@ static int load_ui_item_icon(FcUiState* ui, uint32_t item_id) {
     return 1;
 }
 
-/* Whether the pinned viewer bundle was made with an item's icon and worn
- * model: the ranged gear presets' equipment and the supplies, not the magic
- * and melee presets' equipment or the runes, which it predates. */
-static int fc_viewer_bundle_has_item(int item_id) {
-    for (int p = 0; p < FC_GEAR_PRESET_COUNT; p++) {
-        const FcGearPreset *preset = &FC_GEAR_PRESETS[p];
-        int kind = fc_gear_preset_weapon(preset)->weapon_kind;
-        if (kind == FC_WEAPON_STAFF || kind == FC_WEAPON_MELEE) continue;
-        for (int i = 0; i < preset->equipment_count; i++)
-            if (preset->equipment[i] == item_id) return 1;
-    }
-    const FcItemDef *item = fc_item_definition(item_id);
-    return item && item->slot < 0 && !item->stackable;
-}
-
 /* Icons for every item the simulation knows: the gear presets' equipment,
- * the runes and the supplies. Those of fc_viewer_bundle_has_item are
- * required; the others show their names until a bundle has them. */
+ * the runes and the supplies. */
 static int load_fc_ui_item_icons(ViewerState* v) {
     if (!v) return 0;
-    int ready = 1, missing = 0;
-    for (int i = 0; i < (int)(sizeof(ITEMS) / sizeof(ITEMS[0])); i++) {
-        char path[128];
-        snprintf(path, sizeof(path), "data/sprites/items/item_%d.png", ITEMS[i].id);
-        if (fc_viewer_bundle_has_item(ITEMS[i].id))
-            ready &= load_ui_item_icon(&v->ui, (uint32_t)ITEMS[i].id);
-        else if (!fc_asset_present(path) || !load_ui_item_icon(&v->ui, (uint32_t)ITEMS[i].id))
-            missing++;
-    }
-    if (missing)
-        fprintf(stderr, "%d magic and melee item and rune icons are not in the viewer "
-                "assets; those items show their names\n", missing);
+    int ready = 1;
+    for (int i = 0; i < (int)(sizeof(ITEMS) / sizeof(ITEMS[0])); i++)
+        ready &= load_ui_item_icon(&v->ui, (uint32_t)ITEMS[i].id);
     return ready;
 }
 
@@ -7123,8 +7113,8 @@ static void sync_fc_ui_status(ViewerState* v) {
     v->ui.autocast_box = weapon && weapon->weapon_kind == FC_WEAPON_STAFF;
     v->ui.casting = fc_player_cast_spell(&v->state) >= 0;
     int autocast = v->state.caps.autocast - 1;
-    snprintf(v->ui.autocast_name, sizeof(v->ui.autocast_name), "%s",
-             autocast >= 0 && autocast < FC_SPELL_COUNT ? FC_SPELLS[autocast].name : "");
+    v->ui.autocast_icon = autocast >= 0 && autocast < FC_SPELL_COUNT
+        ? FC_SPELL_ICONS[autocast] : NULL;
     if (!v->ui.autocast_box) v->autocast_picker = 0;
 #if FC_CAP_SPECIAL_ATTACKS
     v->ui.special_energy = v->state.caps.special_energy / 100;
@@ -7938,7 +7928,9 @@ static void draw_scene(ViewerState* v) {
         draw_actor_footprint(v, e);
         /* sync_player_appearance composes the player model every frame and
          * startup requires every NPC type's model. Facing comes from the
-         * client-style actor runtime. */
+         * client-style actor runtime. The player draws one-sided, as RuneC
+         * draws equipped models: a cape's reverse faces would otherwise
+         * cover its outer texture. */
         ModelEntry* model;
         if (e->entity_type == ENTITY_PLAYER) {
             model = fc_actor_player_model_entry(v->appearance.model);
@@ -7952,7 +7944,7 @@ static void draw_scene(ViewerState* v) {
                     &v->actor_animation, e->npc_slot, model);
             }
         }
-        rlDisableBackfaceCulling();
+        if (e->entity_type != ENTITY_PLAYER) rlDisableBackfaceCulling();
         DrawModelEx(model->model, (Vector3){ex, gy, ey}, (Vector3){0,1,0},
                     pose.yaw_degrees, (Vector3){1,1,1}, WHITE);
         rlEnableBackfaceCulling();
@@ -8628,24 +8620,27 @@ static void draw_fc_prayer_tab(ViewerState* v, Rectangle content) {
 #endif
 
 /* Magic: the spellbook tab with the spellbook capability and the combat
- * tab's autocast picker for a staff. Both list the player's spellbook's
- * spells in two columns by name, the pinned assets having no spell icons:
- * bright when the spell can be autocast now (fc_spell_check), dark when not,
- * the autocast spell highlighted. Clicking one autocasts it, through the
- * autocast head on the next tick with the capability, else at once, as
- * RuneC's rc_player_set_autocast_spell sets it. */
+ * tab's autocast picker for a staff. Both show the player's spellbook's
+ * spells by their icons, as RuneC's spellbook does, a row per tier in
+ * FcSpell's order: bright when the spell can be autocast now
+ * (fc_spell_check), dark when not, the autocast spell highlighted. Clicking
+ * one autocasts it, through the autocast head on the next tick with the
+ * capability, else at once, as RuneC's rc_player_set_autocast_spell sets
+ * it. */
 #define FC_VIEWER_BOOK_FIRST (FC_PLAYER_SPELLBOOK == FC_SPELLBOOK_ANCIENT \
                               ? FC_SPELL_SMOKE_RUSH : FC_SPELL_WIND_STRIKE)
 #define FC_VIEWER_BOOK_COUNT (FC_PLAYER_SPELLBOOK == FC_SPELLBOOK_ANCIENT \
                               ? FC_ANCIENT_SPELL_COUNT : FC_STANDARD_SPELL_COUNT)
 #define FC_SPELL_GRID_TOP 34
-#define FC_SPELL_GRID_ROW 20
+#define FC_SPELL_GRID_COLS 4      /* a tier's elements */
+#define FC_SPELL_GRID_ROW 34
 
 /* The cell of the book's spell i, below the two header lines. */
 static Rectangle fc_spell_cell_rect(Rectangle content, int i) {
-    float width = (content.width - 8.0f) / 2.0f;
-    return (Rectangle){content.x + 4.0f + (float)(i % 2) * width,
-                       content.y + FC_SPELL_GRID_TOP + (float)(i / 2) * FC_SPELL_GRID_ROW,
+    float width = (content.width - 8.0f) / FC_SPELL_GRID_COLS;
+    return (Rectangle){content.x + 4.0f + (float)(i % FC_SPELL_GRID_COLS) * width,
+                       content.y + FC_SPELL_GRID_TOP
+                           + (float)(i / FC_SPELL_GRID_COLS) * FC_SPELL_GRID_ROW,
                        width - 2.0f, FC_SPELL_GRID_ROW - 2.0f};
 }
 
@@ -8686,8 +8681,9 @@ static void viewer_set_autocast(ViewerState* v, int spell) {
 #endif
 }
 
-/* A header line, the hovered spell's level and max hit, or why it cannot
- * be autocast, then the book's spells. */
+/* Two header lines, the title and the autocast spell, or the hovered
+ * spell's name and its level and max hit, or why it cannot be autocast;
+ * then the book's spells. */
 static void draw_fc_spell_list(ViewerState* v, Rectangle content, const char* title) {
     BeginScissorMode((int)content.x, (int)content.y,
                      (int)content.width, (int)content.height);
@@ -8695,9 +8691,10 @@ static void draw_fc_spell_list(ViewerState* v, Rectangle content, const char* ti
     int x = (int)content.x + 8;
     int by = (int)content.y + 4;
     char b[96];
-    text_s(title, x, by, COL_TEXT_YELLOW);
-    by += 14;
     int hovered = fc_spell_cell_at(content, GetMousePosition());
+    text_s(hovered >= 0 ? FC_SPELLS[FC_VIEWER_BOOK_FIRST + hovered].name : title,
+           x, by, COL_TEXT_YELLOW);
+    by += 14;
     if (hovered >= 0) {
         int spell = FC_VIEWER_BOOK_FIRST + hovered;
         FcCastResult result = fc_spell_check(&v->state, spell);
@@ -8725,8 +8722,8 @@ static void draw_fc_spell_list(ViewerState* v, Rectangle content, const char* ti
         if (active) DrawRectangleRec(r, autocast_bg);
         else if (i == hovered && usable) DrawRectangleRec(r, hover_bg);
         DrawRectangleLinesEx(r, 1, COL_PANEL_BORDER);
-        text_s(FC_SPELLS[spell].name, (int)r.x + 3, (int)r.y + 3,
-               active ? COL_TEXT_WHITE : usable ? COL_TEXT_YELLOW : COL_TEXT_DIM);
+        draw_asset_centered(&v->ui, FC_SPELL_ICONS[spell], r, r.height, r.height,
+                            usable ? WHITE : CLITERAL(Color){85, 85, 85, 255});
     }
     EndScissorMode();
 }
@@ -9286,6 +9283,7 @@ static int fc_viewer_frame(ViewerState* v) {
         &v->actor_animation, &v->state, v->anim_cache, v->tps, frame_dt,
         !v->paused || v->policy_replay, deferred_deaths);
     fc_animated_atlas_update(&v->atlas, frame_dt);
+    fc_animated_atlas_update(&v->appearance.atlas, frame_dt);
     fc_combat_presentation_update(v->combat_presentation,
                                   &combat_context, frame_dt);
     fc_combat_presentation_deferred_deaths(

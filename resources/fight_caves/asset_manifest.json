@@ -1,7 +1,7 @@
 {
   "source": {
     "repository": "https://github.com/jordanbailey00/fc-rl",
-    "revision": "73129580cb7f7aaae9955511ea377b77ab853026"
+    "revision": "763cf5e09a10e63bfc4a1ddb2c4c56261c5941ca"
   },
   "bundles": [
     {
@@ -11,9 +11,9 @@
       "install_prefix": "runtime"
     },
     {
-      "archive": "fight-caves-viewer-assets-v3.tar.gz",
-      "url": "https://github.com/jordanbailey00/fc-rl/releases/download/fight-caves-assets-v3/fight-caves-viewer-assets-v3.tar.gz",
-      "sha256": "7f43e3c1a55b43fc791097f3e25c925250bd939d2adc9aa7438018fced247943",
+      "archive": "fight-caves-viewer-assets-v4.tar.gz",
+      "url": "https://github.com/jordanbailey00/fc-rl/releases/download/fight-caves-assets-v4/fight-caves-viewer-assets-v4.tar.gz",
+      "sha256": "99888b737b0bd903be00a0e3d1b519b96c7acc7656e3b78a988cdb6c7c6f7982",
       "install_prefix": "viewer"
     }
   ]

@@ -277,21 +277,19 @@ steps one tick, R resets and Q quits. Left-click walks or attacks, right-click
 opens menus, right-drag orbits the camera and the wheel zooms; 1/2/3 toggle the
 protection prayers, and with `gear_sets` above 1, F1 to F4 switch to gear sets 1
 to 4. The side panel has the combat, inventory, equipment and
-prayer tabs, and with `spellbook` the spellbook tab, which lists the book's
+prayer tabs, and with `spellbook` the spellbook tab, which shows the book's
 spells and autocasts the one clicked; clicking the minimap walks there and its
 orb toggles running. The combat tab shows the weapon's attack styles with the
 one the attacks use; a staff's also shows the autocast spell, and clicking it
-lists the spells to autocast. The pinned assets predate the magic and melee
-presets: their items (but the Barrows gloves) and the runes show their names
-instead of icons and are left off the player model, the spells show their
-names, and the casts, spell graphics, melee stances and melee attacks the
-bundle lacks are skipped, the human stance standing in.
+lists the spells to autocast. The assets have every preset's items, normal
+attacks, casts and spell graphics, and every stance but the Harmonised
+nightmare staff's (RuneC's sequence 4504), for which the human one stands in.
 With `prayers = all` the prayer tab holds every prayer the policy can use,
 bright when a click would toggle it; Preserve, Chivalry, Deadeye, Mystic
-Vigour, Piety, Rigour and Augury show their names, as the pinned assets have
-no icons for them. With `special_attacks = 1` the special attack orb under the
+Vigour, Piety, Rigour and Augury show their names, as the assets have no
+icons for them. With `special_attacks = 1` the special attack orb under the
 run orb and the bar in the combat tab show the energy, green while the special
-is armed, and clicking either arms or disarms it. The pinned assets lack the
+is armed, and clicking either arms or disarms it. The assets lack the
 Armadyl crossbow's special animation and both specials' graphics (RuneC's
 sequence 427 and spot animations 301 and 1043), so a special looks like the
 weapon's normal attack, which for the blowpipe is also RuneC's special one.
@@ -324,13 +322,14 @@ and run log with your checkpoints.
 
 ## Assets
 
-The first build downloads the pinned
-[Fight Caves v3 bundles](https://github.com/jordanbailey00/fc-rl/releases/tag/fight-caves-assets-v3)
-(about 6 MB) listed in `resources/fight_caves/asset_manifest.json`:
+The first build downloads the two bundles pinned in
+`resources/fight_caves/asset_manifest.json` (about 9 MB):
 
-- `resources/fight_caves/runtime/`: collision, movement and line-of-sight maps.
-- `resources/fight_caves/viewer/`: models, equipment parts, animations, terrain,
-  textures, UI sprites and fonts, and the minimap.
+- `resources/fight_caves/runtime/`: collision, movement and line-of-sight maps,
+  from the [v3 release](https://github.com/jordanbailey00/fc-rl/releases/tag/fight-caves-assets-v3).
+- `resources/fight_caves/viewer/`: models, equipment parts and their textures,
+  animations, spot animations, terrain, UI sprites and fonts, and the minimap,
+  from the [v4 release](https://github.com/jordanbailey00/fc-rl/releases/tag/fight-caves-assets-v4).
 
 Each archive's SHA-256 is checked before extraction and recorded in the installed
 directory's `.archive-sha256` stamp. Later builds reuse a matching install offline
